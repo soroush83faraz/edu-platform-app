@@ -3,7 +3,7 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
 /** Only these paths may touch the DB access boundary (`src/db/client`). */
-const DB_CLIENT_ALLOWED = ["src/lib/actions/**", "src/db/**", "src/app/api/health/**", "scripts/**", "tests/int/**"];
+const DB_CLIENT_ALLOWED = ["src/lib/actions/**", "src/lib/ctx.ts", "src/db/**", "src/app/api/health/**", "scripts/**", "tests/int/**"];
 
 const dbClientPatterns = [
   {

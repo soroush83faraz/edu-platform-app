@@ -8,6 +8,8 @@ export const FA_MESSAGES: Record<ErrorCode, string> = {
   VALIDATION: "اطلاعات واردشده معتبر نیست.",
   CONFLICT: "این مورد قبلاً ثبت شده یا با دادهٴ دیگری تداخل دارد.",
   RATE_LIMITED: "تعداد درخواست‌ها بیش از حد است. لطفاً کمی بعد دوباره تلاش کنید.",
+  PASSWORD_CHANGE_REQUIRED: "ابتدا رمز خود را تغییر دهید.",
+  INVALID_REFERENCE: "مورد ارجاع‌شده وجود ندارد یا در دسترس شما نیست.",
   INTERNAL: "خطایی رخ داد. لطفاً دوباره تلاش کنید.",
 };
 
@@ -22,3 +24,5 @@ export const validation = (details?: unknown, msg?: string) => appError("VALIDAT
 export const conflict = (msg?: string) => appError("CONFLICT", msg);
 export const rateLimited = (msg?: string) => appError("RATE_LIMITED", msg);
 export const internal = (msg?: string) => appError("INTERNAL", msg);
+export const passwordChangeRequired = (msg?: string) => appError("PASSWORD_CHANGE_REQUIRED", msg);
+export const invalidReference = (msg?: string) => appError("INVALID_REFERENCE", msg);
