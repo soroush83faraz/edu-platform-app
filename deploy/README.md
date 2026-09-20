@@ -39,13 +39,16 @@ ssh deploy@SERVER 'chmod 600 /srv/school/.env && chmod +x /srv/school/*.sh && na
 
 ```bash
 docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 \
-  -c "ALTER ROLE app_backup BYPASSRLS;"
+  -c "ALTER ROLE app_backup BYPASSRLS;" \
+  -c "ALTER ROLE app_rw SET idle_in_transaction_session_timeout = '30s';" \
+  -c "ALTER ROLE app_rw SET lock_timeout = '5s';"
 ```
 
 - `app_backup BYPASSRLS` (۱۴۰۵/۰۶/۲۹): بدون آن `pg_dump -U app_backup` روی همهٴ جدول‌های FORCE RLS خطا می‌دهد یا خالی می‌خواند. این نقش فقط `SELECT` دارد، پس BYPASSRLS فقط خواندن را گسترده می‌کند؛ `BACKUP_DATABASE_URL` را مثل یک اعتبارنامهٴ «خواندن همهٴ مستأجرها» نگه دارید (فقط در `.env` سرور، `chmod 600`).
+- `app_rw` timeouts (۱۴۰۵/۰۶/۲۹): تراکنشِ رهاشدهٴ یک درخواستِ crash‌کرده بعد از ۳۰ ثانیه بسته می‌شود (وگرنه context RLS و قفل‌ها را روی اتصالِ pool نگه می‌داشت) و انتظار برای قفل بعد از ۵ ثانیه شکست می‌خورد (`statement_timeout=10s` از قبل بود). `ALTER ROLE … SET` فقط برای session‌های جدید اثر دارد؛ بعد از آن `docker compose restart app`.
 - مجوزهای schema `drizzle` برای `app_backup` را خودِ مهاجرت (`app.apply_grants()` در `0007`) می‌دهد؛ گام دستی ندارد.
 
-بررسی: `docker compose exec -T db psql -U postgres -c "select rolname, rolbypassrls from pg_roles where rolname like 'app_%'"` → فقط `app_backup` باید `t` باشد. سپس `docker compose exec -T db pg_dump -Fc -U app_backup app > /dev/null && echo ok`.
+بررسی: `docker compose exec -T db psql -U postgres -c "select rolname, rolbypassrls, rolconfig from pg_roles where rolname like 'app_%'"` → فقط `app_backup` باید `rolbypassrls = t` باشد و `app_rw` سه تنظیم را در `rolconfig` داشته باشد. سپس `docker compose exec -T db pg_dump -Fc -U app_backup app > /dev/null && echo ok`.
 
 ## بازگشت دستی
 

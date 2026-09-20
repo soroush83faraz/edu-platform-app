@@ -1,0 +1,1 @@
+ALTER TABLE "iam"."role_assignment" ADD CONSTRAINT "role_assignment_valid_range_chk" CHECK ("iam"."role_assignment"."valid_to" IS NULL OR "iam"."role_assignment"."valid_from" <= "iam"."role_assignment"."valid_to");

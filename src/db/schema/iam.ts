@@ -329,6 +329,7 @@ export const roleAssignment = iam.table(
       "role_assignment_source_type_chk",
       sql`${t.sourceType} IN ('manual', 'guardian_relationship', 'teacher_assignment', 'counselor_assignment', 'enrollment')`,
     ),
+    check("role_assignment_valid_range_chk", sql`${t.validTo} IS NULL OR ${t.validFrom} <= ${t.validTo}`),
     // Exclusive arc: exactly the scope column named by scope_type is set (none for 'organization').
     check(
       "role_assignment_scope_arc_chk",

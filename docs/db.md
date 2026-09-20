@@ -7,7 +7,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 | نقش | مجوز | استفاده |
 |---|---|---|
 | `app_owner` | مالک همهٴ اسکیماها و جدول‌ها. **بدون BYPASSRLS** (FORCE RLS روی خودش هم اعمال می‌شود) | فقط `scripts/migrate` و seed (`MIGRATION_DATABASE_URL`) |
-| `app_rw` | `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`؛ فقط DML؛ `statement_timeout=10s` | برنامه (`DATABASE_URL`) |
+| `app_rw` | `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`؛ فقط DML؛ `statement_timeout=10s`, `idle_in_transaction_session_timeout=30s`, `lock_timeout=5s` (role-level؛ روی سرور موجود گام اپراتور) | برنامه (`DATABASE_URL`) |
 | `app_backup` | فقط SELECT روی همهٴ اسکیماها (از جمله `drizzle`)، **`BYPASSRLS`** | `pg_dump` (`BACKUP_DATABASE_URL`) |
 
 **تصمیم بکاپ:** `pg_dump` همهٴ جدول‌ها را قفل و می‌خواند؛ نقشی بدون BYPASSRLS روی جدول‌های FORCE RLS خطا می‌دهد (یا خالی می‌خواند) و `app_owner` هم BYPASSRLS ندارد. پس نقشِ dump، `app_backup`، BYPASSRLS دارد اما هیچ مجوز نوشتنی ندارد (تست `tests/int/backup-role.test.ts`: بدون context همهٴ ردیف‌های `iam.person` را می‌بیند، INSERT → `42501`). `BACKUP_DATABASE_URL` یک اعتبارنامهٴ «خواندن همهٴ مستأجرها» است. Restore با `postgres`. **روی سرورِ موجود** این attribute باید یک‌بار دستی داده شود (`deploy/README.md`، «گام‌های یک‌بارهٴ اپراتور»)؛ محلی: `docker compose -f docker-compose.dev.yml exec -T db psql -U postgres -c "ALTER ROLE app_backup BYPASSRLS"`.
@@ -28,7 +28,8 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 - جدول‌های سراسری (بدون RLS): `tenancy.organization`, `iam.user_account`, `iam.auth_identity`, `iam.user_session`, `iam.login_attempt`, `iam.permission`, `iam.role_permission`. دو تای آخر برای `app_rw` فقط‌خواندنی‌اند (seed آن‌ها را می‌نویسد).
 - چون `FORCE` روی مالک هم اعمال می‌شود، **seed هم باید قبل از نوشتن در جدول‌های مستأجری `set_config('app.current_org_id', …, true)` بزند** (نمونه: `tests/int/global-setup.ts`).
 - در کد فقط `withTenant(ctx, fn)` / `withoutTenant(fn)` از `src/db/client` (اولین دستورِ تراکنش `set_config(..., true)` است؛ با پایان تراکنش پاک می‌شود و از pool به درخواست دیگر نشت نمی‌کند). `withoutTenant` فقط برای جدول‌های سراسری.
-- توابع `app.apply_grants()` و `app.apply_rls()` idempotent‌اند و **هر مهاجرتی که جدول/اسکیمای جدید می‌سازد باید در انتها `SELECT app.apply_grants();` و `SELECT app.apply_rls();` را (هر یک به‌عنوان یک statement جدا) صدا بزند.** تست `tests/int/rls-meta.test.ts` جدولِ بدون RLS را رد می‌کند.
+- توابع `app.apply_grants()`، `app.apply_rls()` و `app.apply_updated_at_triggers()` idempotent‌اند و **هر مهاجرتی که جدول/اسکیمای جدید می‌سازد باید در انتها `SELECT app.apply_grants();`، `SELECT app.apply_rls();` و `SELECT app.apply_updated_at_triggers();` را (هر یک به‌عنوان یک statement جدا) صدا بزند.** تست `tests/int/rls-meta.test.ts` جدولِ بدون RLS و `tests/int/guards.test.ts` جدولِ دارای `updated_at` بدون تریگر را رد می‌کند.
+- `updated_at` را سرور نگه می‌دارد: تریگر `set_updated_at` (`BEFORE UPDATE FOR EACH ROW` → `app.set_updated_at()`، مهاجرت `0009`) روی هر جدولی که این ستون را دارد؛ مقدارِ فرستادهٴ کلاینت نادیده گرفته می‌شود. `$onUpdate` در Drizzle هم می‌ماند (فقط برای type و خوانایی).
 
 ## گردش کار مهاجرت
 
@@ -64,14 +65,14 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 | user_session (سراسری) | `token_hash` | ایندکس `(user_account_id) WHERE revoked_at IS NULL` |
 | login_attempt (سراسری) | — | ایندکس `(identifier, at)`, `(ip, at)` |
 | organization_membership | `(organization_id, user_account_id)`؛ `person_id` | `status ∈ invited,active,suspended,left`؛ ایندکس `(user_account_id)` (جست‌وجوی عضویت‌ها هنگام ورود) |
-| person | `(organization_id, external_ref)` (partial) | `search_text` تولیدی = `app.fa_norm(first_name ‖ ' ' ‖ last_name)` + ایندکس GIN trgm |
+| person | `(organization_id, external_ref)` (partial) | `search_text` تولیدی (STORED) = `app.fa_norm(first_name ‖ ' ' ‖ last_name)` + ایندکس GIN trgm. `fa_norm` (از `0009`): حذف اعراب U+064B–U+0652 و کشیده U+0640 (`محمّد` → `محمد`)، ZWNJ → فاصله، ي/ك/ة/ى/أ/إ → فارسی، ارقام → ASCII، فشرده‌سازی فاصله، `lower`. **توجه:** `CREATE OR REPLACE` تابع، مقادیر STORED موجود را بازمحاسبه نمی‌کند؛ امروز ردیف واقعی نداریم. اگر بعداً تغییر کرد: PG16 حذف و افزودن دوبارهٴ ستون + ایندکس (PG17: `ALTER COLUMN … SET EXPRESSION AS (…)`) |
 | contact_point | — | `kind ∈ mobile,landline,email,address` |
 | student_profile | `(organization_id, student_number)`؛ `person_id` | `status ∈ prospective,active,graduated,withdrawn` |
 | staff_profile | `person_id` | `employment_type ∈ full_time,part_time,contractor` |
 | role | `(organization_id, code)` **NULLS NOT DISTINCT** | `organization_id NULL` = الگوی سیستمی؛ `cloned_from_role_id` فقط الگو یا نقشِ همان سازمان (تریگر `role_cloned_from_tenant_trg`) |
 | permission (سراسری) | `code` (PK) | فقط‌خواندنی برای app_rw |
 | role_permission | `(role_id, permission_code)` (PK) | فقط‌خواندنی برای app_rw؛ ایندکس `(permission_code)` |
-| role_assignment | `(person_id, role_id, scope_type, scope_id) WHERE revoked_at IS NULL` | `scope_id` تولیدی = `coalesce(…, organization_id)`؛ CHECK قوس انحصاری (دقیقاً ستونِ متناظر با `scope_type` پر باشد)؛ `role_id` فقط الگو یا نقشِ همان سازمان (تریگر `role_assignment_role_tenant_trg`)؛ ایندکس‌های `(role_id)` و `(organization_id, <scope>_id) WHERE … IS NOT NULL` برای هر ستون scope |
+| role_assignment | `(person_id, role_id, scope_type, scope_id) WHERE revoked_at IS NULL` | `scope_id` تولیدی = `coalesce(…, organization_id)`؛ CHECK قوس انحصاری (دقیقاً ستونِ متناظر با `scope_type` پر باشد)؛ CHECK `valid_to IS NULL OR valid_from <= valid_to`؛ `role_id` فقط الگو یا نقشِ همان سازمان (تریگر `role_assignment_role_tenant_trg`)؛ ایندکس‌های `(role_id)` و `(organization_id, <scope>_id) WHERE … IS NOT NULL` برای هر ستون scope |
 
 ### نگهبان‌های بین‌مستأجری (مهاجرت `0006`)
 

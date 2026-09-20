@@ -11,7 +11,8 @@
 # Existing servers (initialized before these attributes/settings were added) do NOT re-run this file. Apply once
 # as the postgres superuser — see deploy/README.md ("operator steps"):
 #   ALTER ROLE app_backup BYPASSRLS;
-#   ALTER ROLE app_rw SET statement_timeout = '10s';
+#   ALTER ROLE app_rw SET idle_in_transaction_session_timeout = '30s';
+#   ALTER ROLE app_rw SET lock_timeout = '5s';
 set -euo pipefail
 
 : "${APP_OWNER_PASSWORD:?APP_OWNER_PASSWORD is required}"
@@ -31,5 +32,10 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 \c app_test
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+-- Runtime role guard rails (role-level, cluster-wide): no statement runs past 10s, a transaction left open by a
+-- crashed request is killed after 30s idle (it would otherwise hold RLS context + locks on a pooled connection),
+-- and lock waits fail fast instead of piling up behind a migration.
 ALTER ROLE app_rw SET statement_timeout = '10s';
+ALTER ROLE app_rw SET idle_in_transaction_session_timeout = '30s';
+ALTER ROLE app_rw SET lock_timeout = '5s';
 EOSQL
