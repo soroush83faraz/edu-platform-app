@@ -17,7 +17,12 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 - هر جدول در اسکیماهای مستأجری (`tenancy, iam, academic, workspace, notif, files, audit, config, integ`) که ستون `organization_id` دارد: `ENABLE` + `FORCE ROW LEVEL SECURITY` و سیاست `tenant_isolation`:
   `USING (organization_id = app.current_org_id()) WITH CHECK (organization_id = app.current_org_id())`.
 - `app.current_org_id()` مقدار `current_setting('app.current_org_id', true)` است؛ وقتی تنظیم نشده → `NULL` → هیچ سطری دیده/نوشته نمی‌شود (**fail-closed**).
-- استثنا: `iam.role` با `organization_id` NULL = الگوی سیستمی؛ برای همه خواندنی است (`organization_id IS NULL OR …`) اما فقط `app_owner` (seed) با سیاست `system_templates` می‌تواند آن را بنویسد.
+- استثنا: جدول‌هایی که `organization_id` آن‌ها nullable است (امروز فقط `iam.role`؛ ردیف NULL = الگوی سیستمی). این جدول‌ها به‌جای یک سیاست `FOR ALL`، **چهار سیاست به‌ازای هر دستور** می‌گیرند (مهاجرت `0004`):
+  - `tenant_isolation_select` — `FOR SELECT USING (organization_id IS NULL OR organization_id = app.current_org_id())`: الگوها برای همهٴ مستأجرها (و تراکنش بدون context، یعنی `withoutTenant`) خواندنی‌اند.
+  - `tenant_isolation_write` — `FOR INSERT WITH CHECK (organization_id = app.current_org_id())`.
+  - `tenant_isolation_update` — `FOR UPDATE USING (… = current_org) WITH CHECK (… = current_org)` و `tenant_isolation_delete` — `FOR DELETE USING (… = current_org)`: **هیچ سیاستی برای `app_rw` ردیف NULL را هدف UPDATE/DELETE قرار نمی‌دهد** (سیاست قبلیِ `FOR ALL` با `USING (… IS NULL OR …)` اجازه می‌داد هر مستأجر الگوها را حذف یا با `SET organization_id = خودش` تصاحب کند — رفع‌شده در `0004`).
+  - `system_templates` — `TO app_owner USING (organization_id IS NULL) WITH CHECK (organization_id IS NULL)`: فقط seed (`app_owner`) الگوها را می‌نویسد.
+  تست‌ها: `tests/int/rls-templates.test.ts` و `rls-meta.test.ts` (نام و شکل سیاست‌ها را از کاتالوگ بررسی می‌کند).
 - جدول‌های سراسری (بدون RLS): `tenancy.organization`, `iam.user_account`, `iam.auth_identity`, `iam.user_session`, `iam.login_attempt`, `iam.permission`, `iam.role_permission`. دو تای آخر برای `app_rw` فقط‌خواندنی‌اند (seed آن‌ها را می‌نویسد).
 - چون `FORCE` روی مالک هم اعمال می‌شود، **seed هم باید قبل از نوشتن در جدول‌های مستأجری `set_config('app.current_org_id', …, true)` بزند** (نمونه: `tests/int/global-setup.ts`).
 - در کد فقط `withTenant(ctx, fn)` / `withoutTenant(fn)` از `src/db/client` (اولین دستورِ تراکنش `set_config(..., true)` است؛ با پایان تراکنش پاک می‌شود و از pool به درخواست دیگر نشت نمی‌کند). `withoutTenant` فقط برای جدول‌های سراسری.

@@ -6,6 +6,9 @@ const TENANT_SCHEMAS = ["tenancy", "iam", "academic", "workspace", "notif", "fil
 /** tenancy (10 - organization) + iam (13 - user_account, auth_identity, user_session, login_attempt, permission, role_permission). */
 const EXPECTED_TENANT_TABLES = 9 + 7;
 
+/** Tables whose organization_id is nullable: NULL rows are shared system templates (read-only for tenants). */
+const NULLABLE_ORG_TABLES = ["iam.role"];
+
 describe("RLS meta-checks (catalog)", () => {
   it("every table with organization_id has RLS enabled + forced and at least one policy", async () => {
     const rows = await asAppRw(async (c) => {
@@ -33,19 +36,74 @@ describe("RLS meta-checks (catalog)", () => {
     expect(bad, `tables missing RLS: ${bad.map((r) => `${r.schema}.${r.table}`).join(", ")}`).toEqual([]);
   });
 
-  it("every tenant_isolation policy is bound to app.current_org_id()", async () => {
+  it("NOT NULL organization_id -> one tenant_isolation policy bound to app.current_org_id()", async () => {
     const rows = await asAppRw(async (c) => {
-      const res = await c.query<{ table: string; qual: string; with_check: string }>(
-        `select schemaname || '.' || tablename as table, qual, with_check
-           from pg_policies where policyname = 'tenant_isolation' and schemaname = any($1)`,
+      const res = await c.query<{ table: string; qual: string; with_check: string; cmd: string }>(
+        `select p.schemaname || '.' || p.tablename as table, p.qual, p.with_check, p.cmd
+           from pg_policies p
+           join pg_namespace n on n.nspname = p.schemaname
+           join pg_class c on c.relnamespace = n.oid and c.relname = p.tablename
+           join pg_attribute a on a.attrelid = c.oid and a.attname = 'organization_id'
+          where p.policyname = 'tenant_isolation' and p.schemaname = any($1) and a.attnotnull`,
         [TENANT_SCHEMAS],
       );
       return res.rows;
     });
-    expect(rows).toHaveLength(EXPECTED_TENANT_TABLES);
+    expect(rows).toHaveLength(EXPECTED_TENANT_TABLES - NULLABLE_ORG_TABLES.length);
     for (const r of rows) {
-      expect(r.qual, r.table).toContain("organization_id = app.current_org_id()");
+      expect(r.cmd, r.table).toBe("ALL");
+      expect(r.qual, r.table).toBe("(organization_id = app.current_org_id())");
       expect(r.with_check, r.table).toBe("(organization_id = app.current_org_id())");
+    }
+  });
+
+  it("nullable organization_id (system templates) -> per-command policies; UPDATE/DELETE never target NULL rows", async () => {
+    const tables = await asAppRw(async (c) => {
+      const res = await c.query<{ table: string }>(
+        `select n.nspname || '.' || c.relname as table
+           from pg_class c
+           join pg_namespace n on n.oid = c.relnamespace
+           join pg_attribute a on a.attrelid = c.oid and a.attname = 'organization_id' and not a.attisdropped
+          where c.relkind = 'r' and n.nspname = any($1) and not a.attnotnull
+          order by 1`,
+        [TENANT_SCHEMAS],
+      );
+      return res.rows.map((r) => r.table);
+    });
+    expect(tables).toEqual(NULLABLE_ORG_TABLES);
+
+    for (const table of tables) {
+      const [schema, name] = table.split(".");
+      const policies = await asAppRw(async (c) => {
+        const res = await c.query<{ policyname: string; cmd: string; roles: string[]; qual: string | null; with_check: string | null }>(
+          `select policyname, cmd, roles::text[] as roles, qual, with_check from pg_policies where schemaname = $1 and tablename = $2 order by policyname`,
+          [schema, name],
+        );
+        return res.rows;
+      });
+      const byName = Object.fromEntries(policies.map((p) => [p.policyname, p]));
+      expect(Object.keys(byName).sort(), table).toEqual(
+        ["system_templates", "tenant_isolation_delete", "tenant_isolation_select", "tenant_isolation_update", "tenant_isolation_write"].sort(),
+      );
+      const ownRows = "(organization_id = app.current_org_id())";
+      expect(byName.tenant_isolation_select, table).toMatchObject({
+        cmd: "SELECT",
+        roles: ["public"],
+        qual: "((organization_id IS NULL) OR (organization_id = app.current_org_id()))",
+        with_check: null,
+      });
+      expect(byName.tenant_isolation_write, table).toMatchObject({ cmd: "INSERT", roles: ["public"], qual: null, with_check: ownRows });
+      expect(byName.tenant_isolation_update, table).toMatchObject({ cmd: "UPDATE", roles: ["public"], qual: ownRows, with_check: ownRows });
+      expect(byName.tenant_isolation_delete, table).toMatchObject({ cmd: "DELETE", roles: ["public"], qual: ownRows, with_check: null });
+      expect(byName.system_templates, table).toMatchObject({
+        cmd: "ALL",
+        roles: ["app_owner"],
+        qual: "(organization_id IS NULL)",
+        with_check: "(organization_id IS NULL)",
+      });
+      // No policy applicable to app_rw admits a NULL row for UPDATE or DELETE.
+      const publicWrite = policies.filter((p) => p.roles.includes("public") && ["ALL", "UPDATE", "DELETE"].includes(p.cmd));
+      for (const p of publicWrite) expect(p.qual, `${table}.${p.policyname}`).not.toContain("IS NULL");
     }
   });
 
