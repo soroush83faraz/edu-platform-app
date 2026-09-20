@@ -11,7 +11,17 @@
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:int": "vitest run --project int",
-    "verify": "pnpm typecheck && pnpm lint && pnpm test:unit"
+    "verify": "pnpm typecheck && pnpm lint && pnpm test:unit",
+    "verify:full": "pnpm verify && pnpm test:int",
+    "db:up": "docker compose -f docker-compose.dev.yml up -d --wait",
+    "db:down": "docker compose -f docker-compose.dev.yml down",
+    "db:generate": "drizzle-kit generate",
+    "db:generate:custom": "drizzle-kit generate --custom",
+    "db:check": "drizzle-kit check",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:migrate:test": "tsx scripts/migrate.ts --test",
+    "db:reset:test": "tsx scripts/reset-test-db.ts",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@node-rs/argon2": "2.2.1",

@@ -3,7 +3,7 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
 /** Only these paths may touch the DB access boundary (`src/db/client`). */
-const DB_CLIENT_ALLOWED = ["src/lib/actions/**", "src/db/**", "scripts/**", "tests/int/**"];
+const DB_CLIENT_ALLOWED = ["src/lib/actions/**", "src/db/**", "src/app/api/health/**", "scripts/**", "tests/int/**"];
 
 const dbClientPatterns = [
   {
@@ -31,6 +31,11 @@ const eslintConfig = defineConfig([
     rules: {
       "no-restricted-imports": ["error", { patterns: dbClientPatterns.filter((p) => !p.group.includes("@/db/client")) }],
     },
+  },
+  {
+    // Plain-Node CommonJS entry points that run inside the standalone image without a build step.
+    files: ["scripts/**/*.js"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
   },
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts", "drizzle/**", "deploy/**"]),
 ]);
