@@ -5,7 +5,7 @@
 //   D  a principal of ONE school (not the other one)
 //   E  Mousavi wears three hats (vice principal @ boys school, teacher @ one offering, guardian of one student)
 import { describe, expect, it } from "vitest";
-import { canPure, organizationChain, type Assignment, type ScopeChain } from "@/modules/iam/can";
+import { canAtAnyScope, canBroadly, canPure, organizationChain, type Assignment, type ScopeChain } from "@/modules/iam/can";
 
 const ORG = "org-A";
 const SCHOOL_G = "school-girls";
@@ -173,5 +173,24 @@ describe("canPure — negatives and edge cases", () => {
   it("null scopeId on a non-organization assignment never matches", () => {
     const broken: Assignment[] = [{ roleCode: "teacher", roleId: "r", scopeType: "school", scopeId: null, permissions: TEACHER_PERMS }];
     expect(canPure(broken, chainSchool(SCHOOL_G), "workspace.work_item.read")).toBe(false);
+  });
+});
+
+describe("canAtAnyScope / canBroadly — personal-inbox checks", () => {
+  const karimi = [a("teacher", "class_offering", OFF_MATH_10_1, TEACHER_PERMS)];
+  const saraScoped = [a("student", "student", SARA, STUDENT_PERMS)];
+  const rezaei = [a("school_principal", "school", SCHOOL_G, PRINCIPAL_PERMS)];
+  it("a teacher (offering scope) and a student (profile scope) hold inbox permissions at some scope but not broadly", () => {
+    expect(canAtAnyScope(karimi, "workspace.work_item.read")).toBe(true);
+    expect(canAtAnyScope(saraScoped, "workspace.work_item.read")).toBe(true);
+    expect(canAtAnyScope(saraScoped, "workspace.work_item.create")).toBe(false);
+    expect(canBroadly(karimi, "workspace.work_item.read")).toBe(false);
+    expect(canBroadly(saraScoped, "workspace.work_item.read")).toBe(false);
+  });
+  it("a principal's school-scoped role is broad; implicit permissions are always held", () => {
+    expect(canBroadly(rezaei, "workspace.work_item.read")).toBe(true);
+    expect(canBroadly(rezaei, "iam.admin.access")).toBe(false);
+    expect(canAtAnyScope([], "iam.account.self")).toBe(true);
+    expect(canAtAnyScope([], "workspace.work_item.read")).toBe(false);
   });
 });

@@ -124,3 +124,22 @@ export async function can(tx: Tx, ctx: CanContext, permission: Permission, ref?:
   if (!chain) return false;
   return canPure(ctx.assignments, chain, permission);
 }
+
+/**
+ * "Does the caller hold `permission` at ANY scope?" — the check for personal-inbox operations (my کارتابل, my
+ * notifications, items I can already see). The row filter (`inbox_entry.person_id = ctx.personId`,
+ * `canViewWorkItem`) is the real boundary there; a teacher's offering-scoped or a student's profile-scoped role
+ * must not fail an organization-level check. Never use it for operations that target a scope (assign to a class).
+ */
+export function canAtAnyScope(assignments: readonly Assignment[], permission: Permission): boolean {
+  if (IMPLICIT_PERMISSIONS.includes(permission)) return true;
+  return assignments.some((a) => a.permissions.includes(permission));
+}
+
+/** Scope types that see "everything below them" — an admin/principal/vice-principal hat, never a teacher's or student's. */
+export const BROAD_SCOPE_TYPES: readonly ScopeType[] = ["organization", "school", "branch"];
+
+/** Holds `permission` through a broad (organization/school/branch) assignment — phase-1 "sees all items of the org". */
+export function canBroadly(assignments: readonly Assignment[], permission: Permission): boolean {
+  return assignments.some((a) => BROAD_SCOPE_TYPES.includes(a.scopeType) && a.permissions.includes(permission));
+}

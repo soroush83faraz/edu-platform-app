@@ -8,7 +8,7 @@ import { withTenant, type Tx } from "@/db/client";
 import { getRequestContext, requireContext, type Ctx } from "@/lib/ctx";
 import { AppError, FA_MESSAGES, forbidden, passwordChangeRequired, type ErrorCode } from "@/lib/errors";
 import { logger } from "@/lib/logger";
-import { can } from "@/modules/iam/can";
+import { can, canAtAnyScope } from "@/modules/iam/can";
 import type { Permission, ScopeRef } from "@/modules/iam/permissions";
 import { readSessionToken, setSessionCookie } from "@/modules/iam/session";
 
@@ -29,8 +29,12 @@ export interface ActionOptions<S extends z.ZodType> {
   schema: S;
   /** REQUIRED. The only anonymous entry points are login and /api/health, and neither uses defineAction. */
   permission: Permission;
-  /** The entity the action operates on; undefined = organization-level check. Derived from the PARSED input. */
-  scope?: (input: z.output<S>) => ScopeRef | undefined;
+  /**
+   * The entity the action operates on; undefined = organization-level check. Derived from the PARSED input.
+   * `"any"` = the caller must hold the permission at SOME scope (personal-inbox operations, where the row filter
+   * `person_id = ctx.personId` / `canViewWorkItem` is the boundary; see `canAtAnyScope`).
+   */
+  scope?: ((input: z.output<S>) => ScopeRef | undefined) | "any";
   /** Only changePasswordAction / logoutAction may run while `must_change_password` is set. */
   allowPasswordChangePending?: boolean;
 }
@@ -81,6 +85,12 @@ export function toResult(err: unknown, requestId: string): Result<never> {
   return fail("INTERNAL");
 }
 
+/** `scope: "any"` → held at any scope (no DB); otherwise the scoped/organization-level `can()`. */
+async function permitted(tx: Tx, ctx: Ctx, permission: Permission, scope: unknown, ref: ScopeRef | undefined): Promise<boolean> {
+  if (scope === "any") return canAtAnyScope(ctx.assignments, permission);
+  return can(tx, ctx, permission, ref);
+}
+
 async function authorize<S extends z.ZodType>(ctx: Ctx, opts: ActionOptions<S>, raw: unknown): Promise<z.output<S>> {
   if (ctx.mustChangePassword && !opts.allowPasswordChangePending) throw passwordChangeRequired();
   return opts.schema.parse(toPlainInput(raw)) as z.output<S>;
@@ -107,9 +117,9 @@ export function defineAction<S extends z.ZodType, R>(
       const ctx = await requireContext();
       requestId = ctx.requestId;
       const input = await authorize(ctx, opts, raw);
-      const ref = opts.scope?.(input);
+      const ref = typeof opts.scope === "function" ? opts.scope(input) : undefined;
       const data = await withTenant({ orgId: ctx.orgId, personId: ctx.personId }, async (tx) => {
-        if (!(await can(tx, ctx, opts.permission, ref))) throw forbidden();
+        if (!(await permitted(tx, ctx, opts.permission, opts.scope, ref))) throw forbidden();
         return handler(tx, input, ctx);
       });
       await reissueCookieIfExtended(ctx);
@@ -123,7 +133,7 @@ export function defineAction<S extends z.ZodType, R>(
 export interface QueryOptions<S extends z.ZodType | undefined> {
   schema?: S;
   permission: Permission;
-  scope?: (input: S extends z.ZodType ? z.output<S> : undefined) => ScopeRef | undefined;
+  scope?: ((input: S extends z.ZodType ? z.output<S> : undefined) => ScopeRef | undefined) | "any";
   allowPasswordChangePending?: boolean;
 }
 
@@ -141,9 +151,9 @@ export function defineQuery<R, S extends z.ZodType | undefined = undefined>(
       requestId = ctx.requestId;
       if (ctx.mustChangePassword && !opts.allowPasswordChangePending) throw passwordChangeRequired();
       const input = (opts.schema ? opts.schema.parse(raw ?? {}) : undefined) as QueryInput<S>;
-      const ref = opts.scope?.(input);
+      const ref = typeof opts.scope === "function" ? opts.scope(input) : undefined;
       const data = await withTenant({ orgId: ctx.orgId, personId: ctx.personId }, async (tx) => {
-        if (!(await can(tx, ctx, opts.permission, ref))) throw forbidden();
+        if (!(await permitted(tx, ctx, opts.permission, opts.scope, ref))) throw forbidden();
         return handler(tx, input, ctx);
       });
       return ok(data);
