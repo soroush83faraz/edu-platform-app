@@ -24,38 +24,42 @@ import { Pool } from "pg";
 import * as schema from "../src/db/schema";
 import { assignTeacher, enrollStudent, type ServiceCtx } from "../src/modules/academic/service";
 import { IMPLICIT_PERMISSIONS, PERMISSIONS, type Permission, type ScopeType } from "../src/modules/iam/permissions";
-import { generateInitialPassword, hashPassword } from "../src/modules/iam/password";
+import { generateInitialPassword } from "../src/modules/iam/password";
+import { assignRole, createStaff, createStudent, findAccountOfPerson, setAccountPassword, updatePerson } from "../src/modules/iam/service";
+import {
+  findAcademicYearByName,
+  findClassGroupByName,
+  findDefaultBranch,
+  findEducationLevelByCode,
+  findGradeLevelByCode,
+  findOffering,
+  findSchoolByCode,
+  findSubjectByCode,
+} from "../src/modules/tenancy/repo";
+import {
+  createAcademicYear,
+  createBranch,
+  createClassGroup,
+  createClassOffering,
+  createEducationLevel,
+  createGradeLevel,
+  createSchool,
+  createSubject,
+  structureCounts,
+  updateAcademicYear,
+  updateClassGroup,
+  updateClassOffering,
+  updateEducationLevel,
+  updateGradeLevel,
+  updateSchool,
+  updateSubject,
+  upsertTerm,
+} from "../src/modules/tenancy/service";
 
 type Db = NodePgDatabase<typeof schema>;
 
 
-const {
-  organization,
-  school,
-  branch,
-  academicYear,
-  term,
-  educationLevel,
-  gradeLevel,
-  subject,
-  classGroup,
-  classOffering,
-  userAccount,
-  authIdentity,
-  person,
-  organizationMembership,
-  studentProfile,
-  staffProfile,
-  role,
-  permission,
-  rolePermission,
-  roleAssignment,
-  workItemType,
-  workItemStatus,
-  notificationType,
-  classEnrollment,
-  teacherAssignment,
-} = schema;
+const { organization, person, studentProfile, staffProfile, role, permission, rolePermission, roleAssignment, workItemType, workItemStatus, notificationType, classEnrollment, teacherAssignment } = schema;
 
 // ---------------------------------------------------------------------------------------------------------------
 // catalog
@@ -81,13 +85,24 @@ interface SystemRole {
 /** System role templates (doc 03 §7). Custom roles are out of phase 1. */
 export const SYSTEM_ROLES: SystemRole[] = [
   { code: "org_admin", name: "مدیر سازمان", description: "همهٴ دسترسی‌ها در سطح سازمان", allowedScopeTypes: ["organization"], permissions: ALL_ROLE_PERMS },
+  // Holds `iam.role_assignment.write` too, but the service only lets a school-scoped admin grant school-scoped roles.
   { code: "school_principal", name: "مدیر مدرسه", description: "همهٴ دسترسی‌ها در سطح یک مدرسه", allowedScopeTypes: ["school"], permissions: ALL_ROLE_PERMS },
   {
     code: "vice_principal",
     name: "معاون",
-    description: "کارتابل و افراد در سطح مدرسه یا شعبه",
+    description: "کارتابل، افراد، ثبت‌نام و حساب‌ها در سطح مدرسه یا شعبه",
     allowedScopeTypes: ["school", "branch"],
-    permissions: ["tenancy.structure.read", "iam.person.read", ...WORK_ITEM_ALL, "notif.notification.read"],
+    permissions: [
+      "iam.admin.access",
+      "tenancy.structure.read",
+      "iam.person.read",
+      "iam.person.write",
+      "academic.enrollment.write",
+      "iam.account.reset_password",
+      "iam.account.unlock",
+      ...WORK_ITEM_ALL,
+      "notif.notification.read",
+    ],
   },
   {
     code: "teacher",
@@ -454,7 +469,7 @@ interface DemoOptions {
   phoneOffset: number;
 }
 
-export interface DemoCounts {
+export interface DemoCounts extends Record<string, number> {
   schoolEnrollments: number;
   classEnrollments: number;
   teacherAssignments: number;
@@ -472,193 +487,193 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
   return db.transaction(async (tx) => {
     await tx.execute(sql`select set_config('app.current_org_id', ${orgId}, true)`);
     const k = (s: string) => `${spec.key}:${s}`;
+    // The demo org admin is the actor of every seeded change (audit rows, granted_by). Their person row is created
+    // below through createStaff with this deterministic id.
+    const ctx: ServiceCtx = { orgId, personId: demoId(k("person:admin")), userId: null, requestId: "seed" };
 
-    // ---- structure ----
-    const [level] = await tx
-      .insert(educationLevel)
-      .values({ id: demoId(k("level:SEC2")), organizationId: orgId, name: "متوسطهٴ دوم", code: "SEC2", sequence: 1 })
-      .onConflictDoUpdate({ target: [educationLevel.organizationId, educationLevel.code], set: { name: "متوسطهٴ دوم", sequence: 1 } })
-      .returning({ id: educationLevel.id });
+    // ---- structure (find by natural key → update in place, else create with the deterministic id) ----
+    const levelRow = await findEducationLevelByCode(tx, "SEC2");
+    let levelId: string;
+    if (levelRow) {
+      await updateEducationLevel(tx, ctx, levelRow.id, { name: "متوسطهٴ دوم", sequence: 1 });
+      levelId = levelRow.id;
+    } else {
+      levelId = (await createEducationLevel(tx, ctx, { id: demoId(k("level:SEC2")), name: "متوسطهٴ دوم", code: "SEC2", sequence: 1 })).educationLevelId;
+    }
 
     const gradeIds: Record<string, string> = {};
     for (const g of spec.grades) {
-      const [row] = await tx
-        .insert(gradeLevel)
-        .values({ id: demoId(k(`grade:${g.code}`)), organizationId: orgId, educationLevelId: level.id, name: g.name, code: g.code, sequence: g.seq })
-        .onConflictDoUpdate({ target: [gradeLevel.organizationId, gradeLevel.code], set: { name: g.name, sequence: g.seq, educationLevelId: level.id } })
-        .returning({ id: gradeLevel.id });
-      gradeIds[g.code] = row.id;
+      const existing = await findGradeLevelByCode(tx, g.code);
+      if (existing) {
+        await updateGradeLevel(tx, ctx, existing.id, { name: g.name, sequence: g.seq, educationLevelId: levelId });
+        gradeIds[g.code] = existing.id;
+      } else {
+        gradeIds[g.code] = (await createGradeLevel(tx, ctx, { id: demoId(k(`grade:${g.code}`)), educationLevelId: levelId, name: g.name, code: g.code, sequence: g.seq })).gradeLevelId;
+      }
     }
 
     const subjectIds: Record<string, string> = {};
-    for (const s of spec.subjects) {
-      const [row] = await tx
-        .insert(subject)
-        .values({ id: demoId(k(`subject:${s.code}`)), organizationId: orgId, name: s.name, code: s.code })
-        .onConflictDoUpdate({ target: [subject.organizationId, subject.code], set: { name: s.name } })
-        .returning({ id: subject.id });
-      subjectIds[s.code] = row.id;
+    for (const sj of spec.subjects) {
+      const existing = await findSubjectByCode(tx, sj.code);
+      if (existing) {
+        await updateSubject(tx, ctx, existing.id, { name: sj.name });
+        subjectIds[sj.code] = existing.id;
+      } else {
+        subjectIds[sj.code] = (await createSubject(tx, ctx, { id: demoId(k(`subject:${sj.code}`)), name: sj.name, code: sj.code })).subjectId;
+      }
     }
 
     const schoolIds: Record<string, string> = {};
     const offeringIds: Record<string, string> = {};
     const classIds: Record<string, string> = {};
     for (const s of spec.schools) {
-      const [sch] = await tx
-        .insert(school)
-        .values({ id: demoId(k(`school:${s.code}`)), organizationId: orgId, name: s.name, code: s.code, genderPolicy: s.gender, isDefault: s.isDefault })
-        .onConflictDoUpdate({ target: [school.organizationId, school.code], set: { name: s.name, genderPolicy: s.gender, isDefault: s.isDefault } })
-        .returning({ id: school.id });
-      schoolIds[s.code] = sch.id;
+      let schoolId: string;
+      let branchId: string;
+      const existing = await findSchoolByCode(tx, s.code);
+      if (existing) {
+        await updateSchool(tx, ctx, existing.id, { name: s.name, genderPolicy: s.gender, isDefault: s.isDefault });
+        schoolId = existing.id;
+        const br = await findDefaultBranch(tx, schoolId);
+        branchId = br ? br.id : (await createBranch(tx, ctx, { id: demoId(k(`branch:${s.code}`)), schoolId, name: "مرکزی", isDefault: true })).branchId;
+      } else {
+        const created = await createSchool(tx, ctx, {
+          id: demoId(k(`school:${s.code}`)),
+          branchId: demoId(k(`branch:${s.code}`)),
+          name: s.name,
+          code: s.code,
+          genderPolicy: s.gender,
+          isDefault: s.isDefault,
+        });
+        schoolId = created.schoolId;
+        branchId = created.branchId;
+      }
+      schoolIds[s.code] = schoolId;
 
-      const [br] = await tx
-        .insert(branch)
-        .values({ id: demoId(k(`branch:${s.code}`)), organizationId: orgId, schoolId: sch.id, name: "مرکزی", isDefault: true })
-        .onConflictDoUpdate({ target: branch.id, set: { name: "مرکزی", isDefault: true, schoolId: sch.id } })
-        .returning({ id: branch.id });
-
-      const [year] = await tx
-        .insert(academicYear)
-        .values({
-          id: demoId(k(`year:${s.code}:1405`)),
-          organizationId: orgId,
-          schoolId: sch.id,
-          name: "۱۴۰۵-۱۴۰۶",
-          startsOn: "2026-09-23",
-          endsOn: "2027-06-21",
-          isCurrent: true,
-        })
-        .onConflictDoUpdate({ target: academicYear.id, set: { name: "۱۴۰۵-۱۴۰۶", startsOn: "2026-09-23", endsOn: "2027-06-21", isCurrent: true } })
-        .returning({ id: academicYear.id });
-
-      const termIds: string[] = [];
+      const yearName = "۱۴۰۵-۱۴۰۶";
+      const yearInput = { name: yearName, startsOn: "2026-09-23", endsOn: "2027-06-21", isCurrent: true };
       const terms = [
         { seq: 1, name: "نوبت اول", startsOn: "2026-09-23", endsOn: "2027-01-20" },
         { seq: 2, name: "نوبت دوم", startsOn: "2027-01-21", endsOn: "2027-06-21" },
       ];
+      const existingYear = await findAcademicYearByName(tx, schoolId, yearName);
+      let yearId: string;
+      if (existingYear) {
+        await updateAcademicYear(tx, ctx, existingYear.id, yearInput);
+        yearId = existingYear.id;
+      } else {
+        yearId = (await createAcademicYear(tx, ctx, { id: demoId(k(`year:${s.code}:1405`)), schoolId, ...yearInput })).academicYearId;
+      }
+      const termIds: string[] = [];
       for (const t of terms) {
-        const [row] = await tx
-          .insert(term)
-          .values({ id: demoId(k(`term:${s.code}:${t.seq}`)), organizationId: orgId, academicYearId: year.id, name: t.name, sequence: t.seq, startsOn: t.startsOn, endsOn: t.endsOn })
-          .onConflictDoUpdate({ target: [term.academicYearId, term.sequence], set: { name: t.name, startsOn: t.startsOn, endsOn: t.endsOn } })
-          .returning({ id: term.id });
-        termIds.push(row.id);
+        const res = await upsertTerm(tx, ctx, { id: demoId(k(`term:${s.code}:${t.seq}`)), academicYearId: yearId, name: t.name, sequence: t.seq, startsOn: t.startsOn, endsOn: t.endsOn });
+        termIds.push(res.termId);
       }
 
       for (const c of s.classes) {
-        const [cg] = await tx
-          .insert(classGroup)
-          .values({ id: demoId(k(`class:${s.code}:${c.name}`)), organizationId: orgId, branchId: br.id, academicYearId: year.id, gradeLevelId: gradeIds[c.grade], name: c.name, capacity: 30 })
-          .onConflictDoUpdate({ target: [classGroup.academicYearId, classGroup.branchId, classGroup.name], set: { gradeLevelId: gradeIds[c.grade], status: "active" } })
-          .returning({ id: classGroup.id });
-        classIds[`${s.code}:${c.name}`] = cg.id;
+        const existingClass = await findClassGroupByName(tx, yearId, branchId, c.name);
+        let classGroupId: string;
+        if (existingClass) {
+          await updateClassGroup(tx, ctx, existingClass.id, { gradeLevelId: gradeIds[c.grade], status: "active" });
+          classGroupId = existingClass.id;
+        } else {
+          const res = await createClassGroup(tx, ctx, { id: demoId(k(`class:${s.code}:${c.name}`)), branchId, academicYearId: yearId, gradeLevelId: gradeIds[c.grade], name: c.name, capacity: 30 });
+          classGroupId = res.classGroupId;
+        }
+        classIds[`${s.code}:${c.name}`] = classGroupId;
         for (const code of spec.offered) {
-          const [off] = await tx
-            .insert(classOffering)
-            .values({ id: demoId(k(`offering:${s.code}:${c.name}:${code}`)), organizationId: orgId, classGroupId: cg.id, subjectId: subjectIds[code], termId: termIds[0], weeklyHours: "4.0", status: "active" })
-            .onConflictDoUpdate({ target: [classOffering.classGroupId, classOffering.subjectId, classOffering.termId], set: { status: "active" } })
-            .returning({ id: classOffering.id });
-          offeringIds[`${s.code}:${c.name}:${code}`] = off.id;
+          const existingOffering = await findOffering(tx, classGroupId, subjectIds[code], termIds[0]);
+          let offeringId: string;
+          if (existingOffering) {
+            await updateClassOffering(tx, ctx, existingOffering.id, { status: "active" });
+            offeringId = existingOffering.id;
+          } else {
+            const res = await createClassOffering(tx, ctx, {
+              id: demoId(k(`offering:${s.code}:${c.name}:${code}`)),
+              classGroupId,
+              subjectId: subjectIds[code],
+              termId: termIds[0],
+              weeklyHours: 4,
+              status: "active",
+            });
+            offeringId = res.classOfferingId;
+          }
+          offeringIds[`${s.code}:${c.name}:${code}`] = offeringId;
         }
       }
     }
 
-    // ---- people ----
+    // ---- people (find by external_ref `demo:<key>` → update names + reset password, else create through the services) ----
     const logins: DemoLogin[] = [];
     const studentProfileIds: string[] = [];
     const teacherPlans: Array<{ staffProfileId: string; classOfferingId: string }> = [];
     for (const [i, p] of spec.persons.entries()) {
-      const personId = demoId(k(`person:${p.key}`));
       const phone = demoPhone(opts.phoneOffset + i);
-      await tx
-        .insert(person)
-        .values({ id: personId, organizationId: orgId, firstName: p.firstName, lastName: p.lastName, gender: p.gender, externalRef: `demo:${p.key}`, status: "active" })
-        .onConflictDoUpdate({ target: person.id, set: { firstName: p.firstName, lastName: p.lastName, gender: p.gender, status: "active" } });
-
+      const externalRef = `demo:${p.key}`;
+      const [existingPerson] = await tx.select({ id: person.id }).from(person).where(eq(person.externalRef, externalRef)).limit(1);
+      let personId: string;
       let studentProfileId: string | undefined;
-      if (p.kind === "student") {
-        const [sp] = await tx
-          .insert(studentProfile)
-          .values({ id: demoId(k(`student:${p.key}`)), organizationId: orgId, personId, studentNumber: p.studentNumber!, status: "active", admittedOn: "2026-09-23" })
-          .onConflictDoUpdate({ target: [studentProfile.organizationId, studentProfile.studentNumber], set: { status: "active" } })
-          .returning({ id: studentProfile.id });
-        studentProfileId = sp.id;
-        studentProfileIds.push(sp.id);
+      let staffProfileId: string | undefined;
+      let userAccountId: string | null;
+      if (existingPerson) {
+        personId = existingPerson.id;
+        await updatePerson(tx, ctx, personId, { firstName: p.firstName, lastName: p.lastName, gender: p.gender, status: "active" });
+        if (p.kind === "student") {
+          const [sp] = await tx.select({ id: studentProfile.id }).from(studentProfile).where(eq(studentProfile.personId, personId)).limit(1);
+          studentProfileId = sp.id;
+        } else {
+          const [st] = await tx.select({ id: staffProfile.id }).from(staffProfile).where(eq(staffProfile.personId, personId)).limit(1);
+          staffProfileId = st.id;
+        }
+        const account = await findAccountOfPerson(tx, personId);
+        userAccountId = account?.userAccountId ?? null;
+      } else if (p.kind === "student") {
+        const res = await createStudent(tx, ctx, {
+          id: demoId(k(`person:${p.key}`)),
+          firstName: p.firstName,
+          lastName: p.lastName,
+          gender: p.gender,
+          studentNumber: p.studentNumber!,
+          externalRef,
+          contactPhone: phone,
+          login: { createAccount: true, identifier: phone },
+        });
+        personId = res.personId;
+        studentProfileId = res.studentProfileId;
+        userAccountId = res.userAccountId;
       } else {
-        const [st] = await tx
-          .insert(staffProfile)
-          .values({ id: demoId(k(`staff:${p.key}`)), organizationId: orgId, personId, employmentType: "full_time", hiredOn: "2026-09-01" })
-          .onConflictDoUpdate({ target: staffProfile.personId, set: { employmentType: "full_time" } })
-          .returning({ id: staffProfile.id });
+        const res = await createStaff(tx, ctx, { id: demoId(k(`person:${p.key}`)), firstName: p.firstName, lastName: p.lastName, gender: p.gender, phone, externalRef });
+        personId = res.personId;
+        staffProfileId = res.staffProfileId;
+        userAccountId = res.userAccountId;
+      }
+      if (!userAccountId) throw new Error(`demo person ${p.key} has no account`);
+      // Re-seeding RESETS the demo password (known value; kept encrypted so the credentials sheet can be printed).
+      await setAccountPassword(tx, ctx, { userAccountId, password: opts.password, mustChangePassword: opts.forceChange, storeInitial: opts.forceChange });
+
+      if (p.kind === "student") {
+        studentProfileIds.push(studentProfileId!);
+      } else {
         for (const r of p.roles) {
           if (r.scope !== "class_offering") continue;
           const classOfferingId = offeringIds[r.offering];
           if (!classOfferingId) throw new Error(`unresolved offering for ${p.key}: ${r.offering}`);
-          teacherPlans.push({ staffProfileId: st.id, classOfferingId });
+          teacherPlans.push({ staffProfileId: staffProfileId!, classOfferingId });
         }
       }
-
-      // Global rows: account + password identity (re-seeding resets the demo password).
-      const [acct] = await tx
-        .insert(userAccount)
-        .values({ id: demoId(k(`account:${p.key}`)), loginIdentifier: phone, phoneE164: phone, status: "active", mustChangePassword: opts.forceChange })
-        .onConflictDoUpdate({
-          target: userAccount.loginIdentifier,
-          set: { phoneE164: phone, status: "active", mustChangePassword: opts.forceChange, failedLoginCount: 0, lockedUntil: null },
-        })
-        .returning({ id: userAccount.id });
-      const secretHash = await hashPassword(opts.password);
-      await tx
-        .insert(authIdentity)
-        .values({ id: demoId(k(`identity:${p.key}`)), userAccountId: acct.id, provider: "password", secretHash })
-        .onConflictDoUpdate({ target: [authIdentity.userAccountId, authIdentity.provider], set: { secretHash, initialPasswordEnc: null } });
-
-      await tx
-        .insert(organizationMembership)
-        .values({ id: demoId(k(`membership:${p.key}`)), organizationId: orgId, userAccountId: acct.id, personId, status: "active", isDefaultOrg: true })
-        .onConflictDoUpdate({ target: [organizationMembership.organizationId, organizationMembership.userAccountId], set: { status: "active", isDefaultOrg: true } });
 
       for (const r of p.roles) {
         // Teacher roles are DERIVED from academic.teacher_assignment by the academic service (below), not inserted here.
         if (r.scope === "class_offering") continue;
-        const roleId = opts.roleIds[r.role];
-        if (!roleId) throw new Error(`system role ${r.role} missing — run --catalog first`);
-        let scope: { scopeType: ScopeType; schoolId?: string; studentProfileId?: string };
-        let scopeId: string | undefined;
-        if (r.scope === "organization") {
-          scope = { scopeType: "organization" };
-          scopeId = orgId;
-        } else if (r.scope === "school") {
-          scopeId = schoolIds[r.school];
-          scope = { scopeType: "school", schoolId: scopeId };
-        } else {
-          scopeId = studentProfileId;
-          scope = { scopeType: "student", studentProfileId: scopeId };
-        }
-        if (!scopeId) throw new Error(`unresolved scope for ${p.key}: ${JSON.stringify(r)}`);
-        const existing = await tx
-          .select({ id: roleAssignment.id })
-          .from(roleAssignment)
-          .where(and(eq(roleAssignment.personId, personId), eq(roleAssignment.roleId, roleId), eq(roleAssignment.scopeType, scope.scopeType), eq(roleAssignment.scopeId, scopeId), isNull(roleAssignment.revokedAt)))
-          .limit(1);
-        if (existing.length === 0) {
-          await tx.insert(roleAssignment).values({
-            id: demoId(k(`assignment:${p.key}:${r.role}:${scopeId}`)),
-            organizationId: orgId,
-            personId,
-            roleId,
-            ...scope,
-            sourceType: "manual",
-            grantedByPersonId: demoId(k("person:admin")),
-          });
-        }
+        if (r.scope === "organization") await assignRole(tx, ctx, { personId, roleCode: r.role as "org_admin" });
+        else if (r.scope === "school") await assignRole(tx, ctx, { personId, roleCode: r.role as "school_principal" | "vice_principal", schoolId: schoolIds[r.school] });
+        else await assignRole(tx, ctx, { personId, roleCode: "student", studentProfileId });
       }
 
       logins.push({ org: spec.name, name: `${p.firstName} ${p.lastName}`, label: p.label, phone });
     }
 
     // ---- enrollments + teacher assignments: through the academic service, so the derived rows come from the service ----
-    const svcCtx: ServiceCtx = { orgId, personId: demoId(k("person:admin")), userId: demoId(k("account:admin")), requestId: "seed" };
+    const svcCtx: ServiceCtx = ctx;
 
     // Step 1's seed hand-inserted the teacher role_assignments with source_type = 'teacher_assignment' and no
     // source_id; the real rows below carry source_id = teacher_assignment.id. Drop the legacy ones (no-op afterwards).
@@ -704,6 +719,10 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
       return res.rows[0].n;
     };
     const counts: DemoCounts = {
+      ...(await structureCounts(tx)),
+      persons: await count("iam.person"),
+      accounts: await count("iam.organization_membership"),
+      roleAssignments: await count("iam.role_assignment", "where revoked_at is null"),
       schoolEnrollments: await count("academic.school_enrollment"),
       classEnrollments: await count("academic.class_enrollment", "where status = 'active'"),
       teacherAssignments: await count("academic.teacher_assignment", "where valid_to is null"),
@@ -789,7 +808,7 @@ async function main(): Promise<void> {
       console.log(`[seed] demo: ${logins.length} accounts in 2 organizations`);
       for (const [slug, c] of Object.entries(counts)) {
         console.log(
-          `[seed] demo ${slug}: ${c.schoolEnrollments} school enrollments, ${c.classEnrollments} active class enrollments, ${c.teacherAssignments} teacher assignments, ${c.derivedTeacherRoles} derived teacher roles`,
+          `[seed] demo ${slug}: ${c.school} schools, ${c.classGroup} classes, ${c.classOffering} offerings, ${c.persons} persons, ${c.accounts} accounts, ${c.roleAssignments} role assignments, ${c.schoolEnrollments} school enrollments, ${c.classEnrollments} active class enrollments, ${c.teacherAssignments} teacher assignments, ${c.derivedTeacherRoles} derived teacher roles`,
         );
       }
       printLogins(logins, password, generated, process.env.SEED_DEMO_NO_FORCE !== "1");

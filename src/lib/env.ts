@@ -12,6 +12,12 @@ const EnvSchema = z.object({
   MIGRATION_DATABASE_URL: z.url(),
   /** ≥ 32 chars; used to derive session/CSRF secrets. */
   SESSION_SECRET: z.string().min(32),
+  /**
+   * 32 bytes as 64 hex chars — AES-256-GCM key for `iam.auth_identity.initial_password_enc` (src/lib/crypto.ts), so
+   * the credentials sheet of a class can be printed after the accounts were created. Rotating it makes older
+   * initial passwords unreadable (they show as «— تغییر داده شده»); it never affects login (argon2 hashes).
+   */
+  INITIAL_PASSWORD_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, "must be 32 bytes as 64 hex characters"),
   /** Public origin, e.g. https://school.example.ir (no trailing slash). */
   PUBLIC_ORIGIN: z.url(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),

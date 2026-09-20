@@ -40,3 +40,4 @@ process.env.DATABASE_URL = RW_URL;
 process.env.MIGRATION_DATABASE_URL = OWNER_URL;
 process.env.SESSION_SECRET ??= "integration-test-session-secret-0123456789abcdef";
 process.env.PUBLIC_ORIGIN ??= "http://localhost:3000";
+process.env.INITIAL_PASSWORD_KEY ??= "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";

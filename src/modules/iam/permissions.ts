@@ -11,6 +11,7 @@ export const PERMISSIONS = [
   { code: "iam.person.write", module: "iam", name: "ایجاد و ویرایش افراد", isSensitive: true },
   { code: "iam.role_assignment.write", module: "iam", name: "تخصیص و لغو نقش", isSensitive: true },
   { code: "iam.account.reset_password", module: "iam", name: "بازنشانی رمز حساب کاربری", isSensitive: true },
+  { code: "iam.account.unlock", module: "iam", name: "رفع قفل حساب کاربری", isSensitive: true },
   { code: "tenancy.structure.read", module: "tenancy", name: "مشاهدهٴ ساختار مدرسه", isSensitive: false },
   { code: "tenancy.structure.write", module: "tenancy", name: "ویرایش ساختار مدرسه", isSensitive: true },
   { code: "academic.enrollment.write", module: "academic", name: "ثبت‌نام دانش‌آموز در کلاس", isSensitive: false },
