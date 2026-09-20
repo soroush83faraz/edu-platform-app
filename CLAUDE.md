@@ -20,6 +20,7 @@ Service signature: `(tx, ctx, input)`. Repos take `tx`. Explicit column selects,
 - Every Server Action and Route Handler goes through `defineAction({ schema, permission, scope }, handler)` in `src/lib/actions`. `permission` is REQUIRED (no anonymous actions except login/health). Order: session → must_change_password → Zod `.strict()` → `can()` → `withTenant` → audit in the same transaction.
 - `organization_id`, `person_id`, `created_by` come ONLY from the session — never from input. Never spread client input into `.set()` / `.values()`; map fields explicitly.
 - Errors leave the boundary only as `AppError` (`src/lib/errors`) with Persian messages. Proxy is a convenience redirect, NOT a security boundary.
+- Auth facts come from `getRequestContext()` (`src/lib/ctx.ts`: cookie → DB session → membership → assignments) — never from proxy headers or the cookie alone. `can(tx, ctx, perm, ref?)` runs inside the action's transaction; login is the only `definePublicAction`.
 
 ## Frontend rules
 - `<html lang="fa" dir="rtl">` is set ONLY in `src/app/layout.tsx`. Never set `dir` elsewhere except `<bdi dir="ltr">` around phone numbers, codes and URLs.
@@ -35,4 +36,5 @@ tRPC · GraphQL · Prisma · Redis · BullMQ/queues · Auth.js/NextAuth · micro
 ## Workflow
 - `pnpm verify` (typecheck + lint + unit tests) must pass before every commit; `pnpm build` before every deploy. Int tests: `pnpm test:int` (needs Docker Postgres).
 - Deploy = `deploy/ship.ps1` (build on Windows → `docker save | ssh docker load` → `deploy.sh`). Never build on the VPS.
+- Edit files with the Edit tool, Python or Git Bash `sed` — never `Get-Content | Set-Content` in PowerShell 5.1 (it re-encodes UTF-8 through the ANSI codepage and destroys Persian text).
 - **45-minute rule:** a bug not fixed in 45 min → revert to the last green commit and ask for a simpler approach. Commit after every vertical slice.

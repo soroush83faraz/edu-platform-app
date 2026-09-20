@@ -1,4 +1,4 @@
-// Seed. Runs as app_owner (MIGRATION_DATABASE_URL) with its OWN pool â€” never through withTenant/withoutTenant.
+// Seed. Runs as app_owner (MIGRATION_DATABASE_URL) with its OWN pool — never through withTenant/withoutTenant.
 //
 //   pnpm seed            = tsx scripts/seed.ts --catalog            (idempotent; run after every migrate)
 //   pnpm seed:demo       = tsx scripts/seed.ts --catalog --demo     (needs SEED_DEMO=1; demo organizations)
@@ -6,7 +6,7 @@
 // --catalog: iam.permission from PERMISSIONS + the system role templates (organization_id NULL) and their
 //            role_permission rows (authoritative: extra rows of a system role are removed).
 // --demo:    two organizations with schools, years, terms, levels/grades, subjects, classes, offerings, persons,
-//            accounts and role assignments. Deterministic ids and phones â†’ re-running updates in place and RESETS
+//            accounts and role assignments. Deterministic ids and phones → re-running updates in place and RESETS
 //            the demo passwords (SEED_DEMO_PASSWORD or a random one printed once).
 // Refuses to run against production unless SEED_ALLOW=1. Tenant rows need `set_config('app.current_org_id')`
 // inside the transaction because app_owner is subject to FORCE ROW LEVEL SECURITY like everyone else.
@@ -68,35 +68,35 @@ interface SystemRole {
   permissions: Permission[];
 }
 
-/** System role templates (doc 03 آ§7). Custom roles are out of phase 1. */
+/** System role templates (doc 03 §7). Custom roles are out of phase 1. */
 export const SYSTEM_ROLES: SystemRole[] = [
-  { code: "org_admin", name: "ظ…ط¯غŒط± ط³ط§ط²ظ…ط§ظ†", description: "ظ‡ظ…ظ‡ظ´ ط¯ط³طھط±ط³غŒâ€Œظ‡ط§ ط¯ط± ط³ط·ط­ ط³ط§ط²ظ…ط§ظ†", allowedScopeTypes: ["organization"], permissions: ALL_ROLE_PERMS },
-  { code: "school_principal", name: "ظ…ط¯غŒط± ظ…ط¯ط±ط³ظ‡", description: "ظ‡ظ…ظ‡ظ´ ط¯ط³طھط±ط³غŒâ€Œظ‡ط§ ط¯ط± ط³ط·ط­ غŒع© ظ…ط¯ط±ط³ظ‡", allowedScopeTypes: ["school"], permissions: ALL_ROLE_PERMS },
+  { code: "org_admin", name: "مدیر سازمان", description: "همهٴ دسترسی‌ها در سطح سازمان", allowedScopeTypes: ["organization"], permissions: ALL_ROLE_PERMS },
+  { code: "school_principal", name: "مدیر مدرسه", description: "همهٴ دسترسی‌ها در سطح یک مدرسه", allowedScopeTypes: ["school"], permissions: ALL_ROLE_PERMS },
   {
     code: "vice_principal",
-    name: "ظ…ط¹ط§ظˆظ†",
-    description: "ع©ط§ط±طھط§ط¨ظ„ ظˆ ط§ظپط±ط§ط¯ ط¯ط± ط³ط·ط­ ظ…ط¯ط±ط³ظ‡ غŒط§ ط´ط¹ط¨ظ‡",
+    name: "معاون",
+    description: "کارتابل و افراد در سطح مدرسه یا شعبه",
     allowedScopeTypes: ["school", "branch"],
     permissions: ["tenancy.structure.read", "iam.person.read", ...WORK_ITEM_ALL, "notif.notification.read"],
   },
   {
     code: "teacher",
-    name: "ظ…ط¹ظ„ظ…",
-    description: "ع©ط§ط±طھط§ط¨ظ„ ط¯ط±ط³â€Œظ‡ط§غŒ ط®ظˆط¯",
+    name: "معلم",
+    description: "کارتابل درس‌های خود",
     allowedScopeTypes: ["class_offering", "class_group"],
     permissions: [...WORK_ITEM_ALL, "notif.notification.read", "iam.person.read"],
   },
   {
     code: "student",
-    name: "ط¯ط§ظ†ط´â€Œط¢ظ…ظˆط²",
-    description: "ع©ط§ط±طھط§ط¨ظ„ ط®ظˆط¯",
+    name: "دانش‌آموز",
+    description: "کارتابل خود",
     allowedScopeTypes: ["student"],
     permissions: ["workspace.work_item.read", "workspace.work_item.update", "workspace.work_item.comment", "notif.notification.read"],
   },
   {
     code: "guardian_full",
-    name: "ظˆظ„غŒ",
-    description: "ظ…ط´ط§ظ‡ط¯ظ‡ظ´ ع©ط§ط±طھط§ط¨ظ„ ظپط±ط²ظ†ط¯",
+    name: "ولی",
+    description: "مشاهدهٴ کارتابل فرزند",
     allowedScopeTypes: ["student", "family"],
     permissions: ["workspace.work_item.read", "workspace.work_item.comment", "notif.notification.read"],
   },
@@ -156,31 +156,31 @@ interface DemoPerson {
   lastName: string;
   gender: "female" | "male";
   kind: "staff" | "student";
-  /** role code â†’ scope; resolved after the structure exists */
+  /** role code → scope; resolved after the structure exists */
   roles: Array<{ role: string; scope: "organization" } | { role: string; scope: "school"; school: string } | { role: string; scope: "class_offering"; offering: string } | { role: string; scope: "student" }>;
   studentNumber?: string;
   label: string;
 }
 
 const GIRLS = [
-  ["ظ†ط±ع¯ط³", "ط­ط³غŒظ†غŒ"],
-  ["ظپط§ط·ظ…ظ‡", "ع©ط§ط¸ظ…غŒ"],
-  ["ظ…ظ‡ط³ط§", "ط±ط­غŒظ…غŒ"],
-  ["ظ†ع¯ط§ط±", "طµط§ط¯ظ‚غŒ"],
-  ["ط§ظ„ظ‡ط§ظ…", "ط¬ط¹ظپط±غŒ"],
-  ["ظ¾ط±غŒط³ط§", "ظ†ظˆط±غŒ"],
-  ["ط±غŒط­ط§ظ†ظ‡", "ظ‚ط§ط³ظ…غŒ"],
-  ["غŒط§ط³ظ…ظ†", "ط´ط±غŒظپغŒ"],
-  ["ظ…غŒظ†ط§", "ط¹ط¨ط§ط³غŒ"],
-  ["ظ‡ط³طھغŒ", "ط·ط§ظ‡ط±غŒ"],
-  ["ط³ط­ط±", "ط²ط§ط±ط¹غŒ"],
-  ["ظ†غŒظ„ظˆظپط±", "ط¨ط§ظ‚ط±غŒ"],
+  ["نرگس", "حسینی"],
+  ["فاطمه", "کاظمی"],
+  ["مهسا", "رحیمی"],
+  ["نگار", "صادقی"],
+  ["الهام", "جعفری"],
+  ["پریسا", "نوری"],
+  ["ریحانه", "قاسمی"],
+  ["یاسمن", "شریفی"],
+  ["مینا", "عباسی"],
+  ["هستی", "طاهری"],
+  ["سحر", "زارعی"],
+  ["نیلوفر", "باقری"],
 ] as const;
 
 const NOOR_STUDENTS = [
-  ["ط§ظ…غŒط±", "ط±ط¶ظˆط§ظ†غŒ", "male"],
-  ["ط­ط³غŒظ†", "ظپظ„ط§ط­", "male"],
-  ["ظ…ظ‡ط¯غŒ", "ط³ظ„ط·ط§ظ†غŒ", "male"],
+  ["امیر", "رضوانی", "male"],
+  ["حسین", "فلاح", "male"],
+  ["مهدی", "سلطانی", "male"],
 ] as const;
 
 interface DemoOrgSpec {
@@ -197,48 +197,48 @@ interface DemoOrgSpec {
 
 const DANESH: DemoOrgSpec = {
   key: "danesh",
-  name: "ظ…ط¬طھظ…ط¹ ط¯ط§ظ†ط´",
+  name: "مجتمع دانش",
   slug: "danesh-demo",
   schools: [
-    { code: "G", name: "ط¯ط¨غŒط±ط³طھط§ظ† ط¯ط®طھط±ط§ظ†ظ‡ظ´ ط¯ط§ظ†ط´", gender: "girls", isDefault: true, classes: [{ name: "غ±غ°/غ±", grade: "G10" }, { name: "غ±غ°/غ²", grade: "G10" }] },
-    { code: "B", name: "ط¯ط¨غŒط±ط³طھط§ظ† ظ¾ط³ط±ط§ظ†ظ‡ظ´ ط¯ط§ظ†ط´", gender: "boys", isDefault: false, classes: [{ name: "غ±غ±/غ³", grade: "G11" }] },
+    { code: "G", name: "دبیرستان دخترانهٴ دانش", gender: "girls", isDefault: true, classes: [{ name: "۱۰/۱", grade: "G10" }, { name: "۱۰/۲", grade: "G10" }] },
+    { code: "B", name: "دبیرستان پسرانهٴ دانش", gender: "boys", isDefault: false, classes: [{ name: "۱۱/۳", grade: "G11" }] },
   ],
   grades: [
-    { code: "G10", name: "ط¯ظ‡ظ…", seq: 1 },
-    { code: "G11", name: "غŒط§ط²ط¯ظ‡ظ…", seq: 2 },
-    { code: "G12", name: "ط¯ظˆط§ط²ط¯ظ‡ظ…", seq: 3 },
+    { code: "G10", name: "دهم", seq: 1 },
+    { code: "G11", name: "یازدهم", seq: 2 },
+    { code: "G12", name: "دوازدهم", seq: 3 },
   ],
   subjects: [
-    { code: "MATH", name: "ط±غŒط§ط¶غŒ" },
-    { code: "PHYS", name: "ظپغŒط²غŒع©" },
-    { code: "CHEM", name: "ط´غŒظ…غŒ" },
-    { code: "ENG", name: "ط²ط¨ط§ظ†" },
+    { code: "MATH", name: "ریاضی" },
+    { code: "PHYS", name: "فیزیک" },
+    { code: "CHEM", name: "شیمی" },
+    { code: "ENG", name: "زبان" },
   ],
   offered: ["MATH", "PHYS"],
   persons: [
-    { key: "admin", firstName: "ظ…ط­ظ…ط¯", lastName: "ط§ظ…غŒظ†غŒ", gender: "male", kind: "staff", label: "ظ…ط¯غŒط± ط³ط§ط²ظ…ط§ظ†", roles: [{ role: "org_admin", scope: "organization" }] },
-    { key: "rezaei", firstName: "ظ…ط±غŒظ…", lastName: "ط±ط¶ط§غŒغŒ", gender: "female", kind: "staff", label: "ظ…ط¯غŒط± ط¯ط¨غŒط±ط³طھط§ظ† ط¯ط®طھط±ط§ظ†ظ‡", roles: [{ role: "school_principal", scope: "school", school: "G" }] },
+    { key: "admin", firstName: "محمد", lastName: "امینی", gender: "male", kind: "staff", label: "مدیر سازمان", roles: [{ role: "org_admin", scope: "organization" }] },
+    { key: "rezaei", firstName: "مریم", lastName: "رضایی", gender: "female", kind: "staff", label: "مدیر دبیرستان دخترانه", roles: [{ role: "school_principal", scope: "school", school: "G" }] },
     {
       key: "karimi",
-      firstName: "ط¹ظ„غŒ",
-      lastName: "ع©ط±غŒظ…غŒ",
+      firstName: "علی",
+      lastName: "کریمی",
       gender: "male",
       kind: "staff",
-      label: "ظ…ط¹ظ„ظ… ط±غŒط§ط¶غŒ غ±غ°/غ± ظˆ غ±غ°/غ²",
+      label: "معلم ریاضی ۱۰/۱ و ۱۰/۲",
       roles: [
-        { role: "teacher", scope: "class_offering", offering: "G:غ±غ°/غ±:MATH" },
-        { role: "teacher", scope: "class_offering", offering: "G:غ±غ°/غ²:MATH" },
+        { role: "teacher", scope: "class_offering", offering: "G:۱۰/۱:MATH" },
+        { role: "teacher", scope: "class_offering", offering: "G:۱۰/۲:MATH" },
       ],
     },
-    { key: "mousavi", firstName: "ط²ظ‡ط±ط§", lastName: "ظ…ظˆط³ظˆغŒ", gender: "female", kind: "staff", label: "ظ…ط¹ط§ظˆظ† ط¯ط¨غŒط±ط³طھط§ظ† ظ¾ط³ط±ط§ظ†ظ‡", roles: [{ role: "vice_principal", scope: "school", school: "B" }] },
-    { key: "sara", firstName: "ط³ط§ط±ط§", lastName: "ظ…ط­ظ…ط¯غŒ", gender: "female", kind: "student", label: "ط¯ط§ظ†ط´â€Œط¢ظ…ظˆط²", studentNumber: "14050001", roles: [{ role: "student", scope: "student" }] },
+    { key: "mousavi", firstName: "زهرا", lastName: "موسوی", gender: "female", kind: "staff", label: "معاون دبیرستان پسرانه", roles: [{ role: "vice_principal", scope: "school", school: "B" }] },
+    { key: "sara", firstName: "سارا", lastName: "محمدی", gender: "female", kind: "student", label: "دانش‌آموز", studentNumber: "14050001", roles: [{ role: "student", scope: "student" }] },
     ...GIRLS.map<DemoPerson>(([firstName, lastName], i) => ({
       key: `student-${i + 2}`,
       firstName,
       lastName,
       gender: "female",
       kind: "student",
-      label: "ط¯ط§ظ†ط´â€Œط¢ظ…ظˆط²",
+      label: "دانش‌آموز",
       studentNumber: `140500${String(i + 2).padStart(2, "0")}`,
       roles: [{ role: "student", scope: "student" }],
     })),
@@ -247,22 +247,22 @@ const DANESH: DemoOrgSpec = {
 
 const NOOR: DemoOrgSpec = {
   key: "noor",
-  name: "ظ…ط¯ط±ط³ظ‡ظ´ ظ†ظˆط±",
+  name: "مدرسهٴ نور",
   slug: "noor-demo",
-  schools: [{ code: "N", name: "ظ…ط¯ط±ط³ظ‡ظ´ ظ†ظˆط±", gender: "mixed", isDefault: true, classes: [{ name: "غ±غ°/غ±", grade: "G10" }] }],
-  grades: [{ code: "G10", name: "ط¯ظ‡ظ…", seq: 1 }],
-  subjects: [{ code: "MATH", name: "ط±غŒط§ط¶غŒ" }],
+  schools: [{ code: "N", name: "مدرسهٴ نور", gender: "mixed", isDefault: true, classes: [{ name: "۱۰/۱", grade: "G10" }] }],
+  grades: [{ code: "G10", name: "دهم", seq: 1 }],
+  subjects: [{ code: "MATH", name: "ریاضی" }],
   offered: ["MATH"],
   persons: [
-    { key: "admin", firstName: "ط³ط¹غŒط¯", lastName: "ظ†ظˆط±غŒ", gender: "male", kind: "staff", label: "ظ…ط¯غŒط± ط³ط§ط²ظ…ط§ظ†", roles: [{ role: "org_admin", scope: "organization" }] },
-    { key: "teacher", firstName: "ظ„غŒظ„ط§", lastName: "ع©ط±غŒظ…غŒ", gender: "female", kind: "staff", label: "ظ…ط¹ظ„ظ… ط±غŒط§ط¶غŒ غ±غ°/غ±", roles: [{ role: "teacher", scope: "class_offering", offering: "N:غ±غ°/غ±:MATH" }] },
+    { key: "admin", firstName: "سعید", lastName: "نوری", gender: "male", kind: "staff", label: "مدیر سازمان", roles: [{ role: "org_admin", scope: "organization" }] },
+    { key: "teacher", firstName: "لیلا", lastName: "کریمی", gender: "female", kind: "staff", label: "معلم ریاضی ۱۰/۱", roles: [{ role: "teacher", scope: "class_offering", offering: "N:۱۰/۱:MATH" }] },
     ...NOOR_STUDENTS.map<DemoPerson>(([firstName, lastName, gender], i) => ({
       key: `student-${i + 1}`,
       firstName,
       lastName,
       gender,
       kind: "student",
-      label: "ط¯ط§ظ†ط´â€Œط¢ظ…ظˆط²",
+      label: "دانش‌آموز",
       studentNumber: `140510${String(i + 1).padStart(2, "0")}`,
       roles: [{ role: "student", scope: "student" }],
     })),
@@ -298,8 +298,8 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
     // ---- structure ----
     const [level] = await tx
       .insert(educationLevel)
-      .values({ id: demoId(k("level:SEC2")), organizationId: orgId, name: "ظ…طھظˆط³ط·ظ‡ظ´ ط¯ظˆظ…", code: "SEC2", sequence: 1 })
-      .onConflictDoUpdate({ target: [educationLevel.organizationId, educationLevel.code], set: { name: "ظ…طھظˆط³ط·ظ‡ظ´ ط¯ظˆظ…", sequence: 1 } })
+      .values({ id: demoId(k("level:SEC2")), organizationId: orgId, name: "متوسطهٴ دوم", code: "SEC2", sequence: 1 })
+      .onConflictDoUpdate({ target: [educationLevel.organizationId, educationLevel.code], set: { name: "متوسطهٴ دوم", sequence: 1 } })
       .returning({ id: educationLevel.id });
 
     const gradeIds: Record<string, string> = {};
@@ -334,8 +334,8 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
 
       const [br] = await tx
         .insert(branch)
-        .values({ id: demoId(k(`branch:${s.code}`)), organizationId: orgId, schoolId: sch.id, name: "ظ…ط±ع©ط²غŒ", isDefault: true })
-        .onConflictDoUpdate({ target: branch.id, set: { name: "ظ…ط±ع©ط²غŒ", isDefault: true, schoolId: sch.id } })
+        .values({ id: demoId(k(`branch:${s.code}`)), organizationId: orgId, schoolId: sch.id, name: "مرکزی", isDefault: true })
+        .onConflictDoUpdate({ target: branch.id, set: { name: "مرکزی", isDefault: true, schoolId: sch.id } })
         .returning({ id: branch.id });
 
       const [year] = await tx
@@ -344,18 +344,18 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
           id: demoId(k(`year:${s.code}:1405`)),
           organizationId: orgId,
           schoolId: sch.id,
-          name: "غ±غ´غ°غµ-غ±غ´غ°غ¶",
+          name: "۱۴۰۵-۱۴۰۶",
           startsOn: "2026-09-23",
           endsOn: "2027-06-21",
           isCurrent: true,
         })
-        .onConflictDoUpdate({ target: academicYear.id, set: { name: "غ±غ´غ°غµ-غ±غ´غ°غ¶", startsOn: "2026-09-23", endsOn: "2027-06-21", isCurrent: true } })
+        .onConflictDoUpdate({ target: academicYear.id, set: { name: "۱۴۰۵-۱۴۰۶", startsOn: "2026-09-23", endsOn: "2027-06-21", isCurrent: true } })
         .returning({ id: academicYear.id });
 
       const termIds: string[] = [];
       const terms = [
-        { seq: 1, name: "ظ†ظˆط¨طھ ط§ظˆظ„", startsOn: "2026-09-23", endsOn: "2027-01-20" },
-        { seq: 2, name: "ظ†ظˆط¨طھ ط¯ظˆظ…", startsOn: "2027-01-21", endsOn: "2027-06-21" },
+        { seq: 1, name: "نوبت اول", startsOn: "2026-09-23", endsOn: "2027-01-20" },
+        { seq: 2, name: "نوبت دوم", startsOn: "2027-01-21", endsOn: "2027-06-21" },
       ];
       for (const t of terms) {
         const [row] = await tx
@@ -430,7 +430,7 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
 
       for (const r of p.roles) {
         const roleId = opts.roleIds[r.role];
-        if (!roleId) throw new Error(`system role ${r.role} missing â€” run --catalog first`);
+        if (!roleId) throw new Error(`system role ${r.role} missing — run --catalog first`);
         let scope: { scopeType: ScopeType; schoolId?: string; classOfferingId?: string; studentProfileId?: string };
         let scopeId: string | undefined;
         if (r.scope === "organization") {
@@ -495,17 +495,17 @@ function loadDotEnv(): void {
   }
 }
 
-const faDigits = (s: string) => s.replace(/\d/g, (d) => "غ°غ±غ²غ³غ´غµغ¶غ·غ¸غ¹"[Number(d)]);
+const faDigits = (s: string) => s.replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]);
 
 function printLogins(logins: DemoLogin[], password: string, generated: boolean, forceChange: boolean): void {
   const width = Math.max(...logins.map((l) => l.name.length), 4) + 2;
   const labelWidth = Math.max(...logins.map((l) => l.label.length), 4) + 2;
-  console.log("\nط­ط³ط§ط¨â€Œظ‡ط§غŒ ط¯ظ…ظˆ (ظˆط±ظˆط¯ ط¨ط§ ط´ظ…ط§ط±ظ‡ظ´ ظ…ظˆط¨ط§غŒظ„):");
-  console.log(`${"ظ†ط§ظ…".padEnd(width)}${"ظ†ظ‚ط´".padEnd(labelWidth)}${"ظ…ظˆط¨ط§غŒظ„".padEnd(16)}ط³ط§ط²ظ…ط§ظ†`);
+  console.log("\nحساب‌های دمو (ورود با شمارهٴ موبایل):");
+  console.log(`${"نام".padEnd(width)}${"نقش".padEnd(labelWidth)}${"موبایل".padEnd(16)}سازمان`);
   console.log("-".repeat(width + labelWidth + 16 + 14));
   for (const l of logins) console.log(`${l.name.padEnd(width)}${l.label.padEnd(labelWidth)}${faDigits(l.phone).padEnd(16)}${l.org}`);
-  console.log(`\nط±ظ…ط² ظ‡ظ…ظ‡ظ´ ط­ط³ط§ط¨â€Œظ‡ط§غŒ ط¯ظ…ظˆ${generated ? " (طھطµط§ط¯ظپغŒط› ظپظ‚ط· ط§غŒظ†â€Œط¬ط§ ع†ط§ظ¾ ظ…غŒâ€Œط´ظˆط¯)" : " (ط§ط² SEED_DEMO_PASSWORD)"}: ${password}`);
-  console.log(forceChange ? "ط¯ط± ط§ظˆظ„غŒظ† ظˆط±ظˆط¯ طھط؛غŒغŒط± ط±ظ…ط² ط§ط¬ط¨ط§ط±غŒ ط§ط³طھ." : "SEED_DEMO_NO_FORCE=1 â€” طھط؛غŒغŒط± ط±ظ…ط² ط§ط¬ط¨ط§ط±غŒ ظ†غŒط³طھ.");
+  console.log(`\nرمز همهٴ حساب‌های دمو${generated ? " (تصادفی؛ فقط این‌جا چاپ می‌شود)" : " (از SEED_DEMO_PASSWORD)"}: ${password}`);
+  console.log(forceChange ? "در اولین ورود تغییر رمز اجباری است." : "SEED_DEMO_NO_FORCE=1 — تغییر رمز اجباری نیست.");
 }
 
 async function main(): Promise<void> {
