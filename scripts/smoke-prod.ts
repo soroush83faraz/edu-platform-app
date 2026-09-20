@@ -64,9 +64,10 @@ class StepError extends Error {
   }
 }
 
-const fail = (fa: string, en: string): never => {
+// A function *declaration* so TypeScript treats calls as control-flow terminating (`never` narrowing).
+function fail(fa: string, en: string): never {
   throw new StepError(fa, en);
-};
+}
 
 let stepNo = 0;
 async function step<T>(fa: string, en: string, fn: () => Promise<T>): Promise<T> {
