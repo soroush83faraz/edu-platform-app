@@ -4,10 +4,14 @@
 //   pnpm seed:demo       = tsx scripts/seed.ts --catalog --demo     (needs SEED_DEMO=1; demo organizations)
 //
 // --catalog: iam.permission from PERMISSIONS + the system role templates (organization_id NULL) and their
-//            role_permission rows (authoritative: extra rows of a system role are removed).
+//            role_permission rows (authoritative: extra rows of a system role are removed); the system
+//            workspace.work_item_type rows (organization_id NULL) with their work_item_status catalog; and
+//            notif.notification_type.
 // --demo:    two organizations with schools, years, terms, levels/grades, subjects, classes, offerings, persons,
-//            accounts and role assignments. Deterministic ids and phones → re-running updates in place and RESETS
-//            the demo passwords (SEED_DEMO_PASSWORD or a random one printed once).
+//            accounts and role assignments; the students are enrolled in their class (school_enrollment +
+//            class_enrollment) and the teachers get real academic.teacher_assignment rows through the academic
+//            service (which derives the `teacher` role_assignment). Deterministic ids and phones → re-running
+//            updates in place and RESETS the demo passwords (SEED_DEMO_PASSWORD or a random one printed once).
 // Refuses to run against production unless SEED_ALLOW=1. Tenant rows need `set_config('app.current_org_id')`
 // inside the transaction because app_owner is subject to FORCE ROW LEVEL SECURITY like everyone else.
 import fs from "node:fs";
@@ -18,6 +22,7 @@ import { and, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../src/db/schema";
+import { assignTeacher, enrollStudent, type ServiceCtx } from "../src/modules/academic/service";
 import { IMPLICIT_PERMISSIONS, PERMISSIONS, type Permission, type ScopeType } from "../src/modules/iam/permissions";
 import { generateInitialPassword, hashPassword } from "../src/modules/iam/password";
 
@@ -45,6 +50,11 @@ const {
   permission,
   rolePermission,
   roleAssignment,
+  workItemType,
+  workItemStatus,
+  notificationType,
+  classEnrollment,
+  teacherAssignment,
 } = schema;
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -102,8 +112,146 @@ export const SYSTEM_ROLES: SystemRole[] = [
   },
 ];
 
+type StatusCategory = "todo" | "doing" | "done" | "cancelled";
+interface SystemStatus {
+  code: string;
+  name: string;
+  category: StatusCategory;
+  sequence: number;
+  isTerminal?: boolean;
+}
+interface SystemWorkItemType {
+  code: string;
+  name: string;
+  requiresAssignee: boolean;
+  allowRecurrence?: boolean;
+  statuses: SystemStatus[];
+}
+
+const STANDARD_STATUSES: SystemStatus[] = [
+  { code: "open", name: "باز", category: "todo", sequence: 1 },
+  { code: "in_progress", name: "در حال انجام", category: "doing", sequence: 2 },
+  { code: "done", name: "انجام‌شده", category: "done", sequence: 3, isTerminal: true },
+  { code: "cancelled", name: "لغوشده", category: "cancelled", sequence: 4, isTerminal: true },
+];
+
+/** System work item types (organization_id NULL). Statuses are authoritative: stale codes of a type are removed. */
+export const SYSTEM_WORK_ITEM_TYPES: SystemWorkItemType[] = [
+  { code: "todo", name: "کار شخصی", requiresAssignee: false, statuses: STANDARD_STATUSES },
+  { code: "task", name: "تکلیف", requiresAssignee: true, statuses: STANDARD_STATUSES },
+  {
+    code: "admin_request",
+    name: "درخواست اداری",
+    requiresAssignee: true,
+    statuses: [
+      { code: "open", name: "باز", category: "todo", sequence: 1 },
+      { code: "in_review", name: "در حال بررسی", category: "doing", sequence: 2 },
+      { code: "answered", name: "پاسخ‌داده‌شده", category: "done", sequence: 3, isTerminal: true },
+      { code: "rejected", name: "ردشده", category: "cancelled", sequence: 4, isTerminal: true },
+    ],
+  },
+  // The spec lists no statuses for `reminder`; it behaves like a personal todo (recurrence allowed later).
+  { code: "reminder", name: "یادآوری", requiresAssignee: false, allowRecurrence: true, statuses: STANDARD_STATUSES },
+  {
+    code: "approval",
+    name: "تأیید",
+    requiresAssignee: true,
+    statuses: [
+      { code: "pending", name: "در انتظار", category: "todo", sequence: 1 },
+      { code: "approved", name: "تأییدشده", category: "done", sequence: 2, isTerminal: true },
+      { code: "rejected", name: "ردشده", category: "cancelled", sequence: 3, isTerminal: true },
+    ],
+  },
+];
+
+interface SystemNotificationType {
+  code: string;
+  module: string;
+  name: string;
+  urgency?: "low" | "normal" | "high";
+  userCanDisable?: boolean;
+}
+
+export const NOTIFICATION_TYPES: SystemNotificationType[] = [
+  { code: "work_item.assigned", module: "workspace", name: "کار جدید به شما سپرده شد" },
+  { code: "work_item.comment", module: "workspace", name: "نظر جدید روی کار" },
+  { code: "work_item.status_changed", module: "workspace", name: "وضعیت کار تغییر کرد" },
+  { code: "work_item.due_soon", module: "workspace", name: "مهلت کار نزدیک است", urgency: "high" },
+  { code: "account.password_reset", module: "iam", name: "رمز حساب بازنشانی شد", urgency: "high", userCanDisable: false },
+  { code: "system.announcement", module: "system", name: "اطلاعیهٴ سامانه", userCanDisable: false },
+];
+
+export interface CatalogCounts {
+  permissions: number;
+  roles: number;
+  workItemTypes: number;
+  workItemStatuses: number;
+  notificationTypes: number;
+}
+
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+async function seedWorkItemTypes(tx: Tx): Promise<void> {
+  for (const t of SYSTEM_WORK_ITEM_TYPES) {
+    const [row] = await tx
+      .insert(workItemType)
+      .values({ organizationId: null, code: t.code, name: t.name, requiresAssignee: t.requiresAssignee, allowRecurrence: t.allowRecurrence ?? false })
+      .onConflictDoUpdate({
+        target: [workItemType.organizationId, workItemType.code],
+        set: { name: t.name, requiresAssignee: t.requiresAssignee, allowRecurrence: t.allowRecurrence ?? false },
+      })
+      .returning({ id: workItemType.id });
+    await tx
+      .insert(workItemStatus)
+      .values(
+        t.statuses.map((st) => ({
+          workItemTypeId: row.id,
+          code: st.code,
+          name: st.name,
+          category: st.category,
+          sequence: st.sequence,
+          isTerminal: st.isTerminal ?? false,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [workItemStatus.workItemTypeId, workItemStatus.code],
+        set: { name: sql`excluded.name`, category: sql`excluded.category`, sequence: sql`excluded.sequence`, isTerminal: sql`excluded.is_terminal` },
+      });
+    await tx.delete(workItemStatus).where(
+      and(
+        eq(workItemStatus.workItemTypeId, row.id),
+        notInArray(
+          workItemStatus.code,
+          t.statuses.map((st) => st.code),
+        ),
+      ),
+    );
+  }
+}
+
+async function seedNotificationTypes(tx: Tx): Promise<void> {
+  await tx
+    .insert(notificationType)
+    .values(
+      NOTIFICATION_TYPES.map((n) => ({
+        code: n.code,
+        module: n.module,
+        name: n.name,
+        urgency: n.urgency ?? "normal",
+        userCanDisable: n.userCanDisable ?? true,
+      })),
+    )
+    .onConflictDoUpdate({
+      target: notificationType.code,
+      set: { module: sql`excluded.module`, name: sql`excluded.name`, urgency: sql`excluded.urgency`, userCanDisable: sql`excluded.user_can_disable` },
+    });
+}
+
 export async function seedCatalog(db: Db): Promise<Record<string, string>> {
   return db.transaction(async (tx) => {
+    await seedWorkItemTypes(tx);
+    await seedNotificationTypes(tx);
+
     await tx
       .insert(permission)
       .values(PERMISSIONS.map((p) => ({ code: p.code, module: p.module, name: p.name, isSensitive: p.isSensitive })))
@@ -135,6 +283,21 @@ export async function seedCatalog(db: Db): Promise<Record<string, string>> {
     }
     return roleIds;
   });
+}
+
+/** Row counts of the catalog tables (printed by the CLI; asserted by tests/int/seed.test.ts for idempotency). */
+export async function catalogCounts(db: Db): Promise<CatalogCounts> {
+  const count = async (table: string): Promise<number> => {
+    const res = await db.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table}`));
+    return res.rows[0].n;
+  };
+  return {
+    permissions: await count("iam.permission"),
+    roles: await count("iam.role"),
+    workItemTypes: await count("workspace.work_item_type"),
+    workItemStatuses: await count("workspace.work_item_status"),
+    notificationTypes: await count("notif.notification_type"),
+  };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -192,6 +355,8 @@ interface DemoOrgSpec {
   subjects: Array<{ code: string; name: string }>;
   /** subjects offered in every class (term 1) */
   offered: string[];
+  /** `<school code>:<class name>` every demo student is enrolled in */
+  studentClass: string;
   persons: DemoPerson[];
 }
 
@@ -215,6 +380,7 @@ const DANESH: DemoOrgSpec = {
     { code: "ENG", name: "زبان" },
   ],
   offered: ["MATH", "PHYS"],
+  studentClass: "G:۱۰/۲",
   persons: [
     { key: "admin", firstName: "محمد", lastName: "امینی", gender: "male", kind: "staff", label: "مدیر سازمان", roles: [{ role: "org_admin", scope: "organization" }] },
     { key: "rezaei", firstName: "مریم", lastName: "رضایی", gender: "female", kind: "staff", label: "مدیر دبیرستان دخترانه", roles: [{ role: "school_principal", scope: "school", school: "G" }] },
@@ -253,6 +419,7 @@ const NOOR: DemoOrgSpec = {
   grades: [{ code: "G10", name: "دهم", seq: 1 }],
   subjects: [{ code: "MATH", name: "ریاضی" }],
   offered: ["MATH"],
+  studentClass: "N:۱۰/۱",
   persons: [
     { key: "admin", firstName: "سعید", lastName: "نوری", gender: "male", kind: "staff", label: "مدیر سازمان", roles: [{ role: "org_admin", scope: "organization" }] },
     { key: "teacher", firstName: "لیلا", lastName: "کریمی", gender: "female", kind: "staff", label: "معلم ریاضی ۱۰/۱", roles: [{ role: "teacher", scope: "class_offering", offering: "N:۱۰/۱:MATH" }] },
@@ -283,7 +450,14 @@ interface DemoOptions {
   phoneOffset: number;
 }
 
-async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promise<DemoLogin[]> {
+export interface DemoCounts {
+  schoolEnrollments: number;
+  classEnrollments: number;
+  teacherAssignments: number;
+  derivedTeacherRoles: number;
+}
+
+async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promise<{ logins: DemoLogin[]; counts: DemoCounts }> {
   const orgId = demoId(`org:${spec.key}`);
   // Global row: no RLS.
   await db
@@ -324,6 +498,7 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
 
     const schoolIds: Record<string, string> = {};
     const offeringIds: Record<string, string> = {};
+    const classIds: Record<string, string> = {};
     for (const s of spec.schools) {
       const [sch] = await tx
         .insert(school)
@@ -372,6 +547,7 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
           .values({ id: demoId(k(`class:${s.code}:${c.name}`)), organizationId: orgId, branchId: br.id, academicYearId: year.id, gradeLevelId: gradeIds[c.grade], name: c.name, capacity: 30 })
           .onConflictDoUpdate({ target: [classGroup.academicYearId, classGroup.branchId, classGroup.name], set: { gradeLevelId: gradeIds[c.grade], status: "active" } })
           .returning({ id: classGroup.id });
+        classIds[`${s.code}:${c.name}`] = cg.id;
         for (const code of spec.offered) {
           const [off] = await tx
             .insert(classOffering)
@@ -385,6 +561,8 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
 
     // ---- people ----
     const logins: DemoLogin[] = [];
+    const studentProfileIds: string[] = [];
+    const teacherPlans: Array<{ staffProfileId: string; classOfferingId: string }> = [];
     for (const [i, p] of spec.persons.entries()) {
       const personId = demoId(k(`person:${p.key}`));
       const phone = demoPhone(opts.phoneOffset + i);
@@ -401,11 +579,19 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
           .onConflictDoUpdate({ target: [studentProfile.organizationId, studentProfile.studentNumber], set: { status: "active" } })
           .returning({ id: studentProfile.id });
         studentProfileId = sp.id;
+        studentProfileIds.push(sp.id);
       } else {
-        await tx
+        const [st] = await tx
           .insert(staffProfile)
           .values({ id: demoId(k(`staff:${p.key}`)), organizationId: orgId, personId, employmentType: "full_time", hiredOn: "2026-09-01" })
-          .onConflictDoUpdate({ target: staffProfile.personId, set: { employmentType: "full_time" } });
+          .onConflictDoUpdate({ target: staffProfile.personId, set: { employmentType: "full_time" } })
+          .returning({ id: staffProfile.id });
+        for (const r of p.roles) {
+          if (r.scope !== "class_offering") continue;
+          const classOfferingId = offeringIds[r.offering];
+          if (!classOfferingId) throw new Error(`unresolved offering for ${p.key}: ${r.offering}`);
+          teacherPlans.push({ staffProfileId: st.id, classOfferingId });
+        }
       }
 
       // Global rows: account + password identity (re-seeding resets the demo password).
@@ -429,9 +615,11 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
         .onConflictDoUpdate({ target: [organizationMembership.organizationId, organizationMembership.userAccountId], set: { status: "active", isDefaultOrg: true } });
 
       for (const r of p.roles) {
+        // Teacher roles are DERIVED from academic.teacher_assignment by the academic service (below), not inserted here.
+        if (r.scope === "class_offering") continue;
         const roleId = opts.roleIds[r.role];
         if (!roleId) throw new Error(`system role ${r.role} missing — run --catalog first`);
-        let scope: { scopeType: ScopeType; schoolId?: string; classOfferingId?: string; studentProfileId?: string };
+        let scope: { scopeType: ScopeType; schoolId?: string; studentProfileId?: string };
         let scopeId: string | undefined;
         if (r.scope === "organization") {
           scope = { scopeType: "organization" };
@@ -439,9 +627,6 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
         } else if (r.scope === "school") {
           scopeId = schoolIds[r.school];
           scope = { scopeType: "school", schoolId: scopeId };
-        } else if (r.scope === "class_offering") {
-          scopeId = offeringIds[r.offering];
-          scope = { scopeType: "class_offering", classOfferingId: scopeId };
         } else {
           scopeId = studentProfileId;
           scope = { scopeType: "student", studentProfileId: scopeId };
@@ -459,8 +644,7 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
             personId,
             roleId,
             ...scope,
-            // Karimi's teacher rows are what the teacher_assignment table (DB step 2) will derive; mark them so.
-            sourceType: r.scope === "class_offering" ? "teacher_assignment" : "manual",
+            sourceType: "manual",
             grantedByPersonId: demoId(k("person:admin")),
           });
         }
@@ -468,17 +652,65 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
 
       logins.push({ org: spec.name, name: `${p.firstName} ${p.lastName}`, label: p.label, phone });
     }
-    return logins;
+
+    // ---- enrollments + teacher assignments: through the academic service, so the derived rows come from the service ----
+    const svcCtx: ServiceCtx = { orgId, personId: demoId(k("person:admin")), userId: demoId(k("account:admin")), requestId: "seed" };
+
+    // Step 1's seed hand-inserted the teacher role_assignments with source_type = 'teacher_assignment' and no
+    // source_id; the real rows below carry source_id = teacher_assignment.id. Drop the legacy ones (no-op afterwards).
+    await tx.delete(roleAssignment).where(and(eq(roleAssignment.sourceType, "teacher_assignment"), isNull(roleAssignment.sourceId)));
+
+    const classGroupId = classIds[spec.studentClass];
+    if (!classGroupId) throw new Error(`unresolved student class ${spec.studentClass}`);
+    for (const studentProfileId of studentProfileIds) {
+      const active = await tx
+        .select({ id: classEnrollment.id })
+        .from(classEnrollment)
+        .where(and(eq(classEnrollment.studentProfileId, studentProfileId), eq(classEnrollment.status, "active")))
+        .limit(1);
+      if (active.length === 0) await enrollStudent(tx, svcCtx, { studentProfileId, classGroupId, startsOn: "2026-09-23" });
+    }
+
+    for (const plan of teacherPlans) {
+      const existing = await tx
+        .select({ id: teacherAssignment.id })
+        .from(teacherAssignment)
+        .where(
+          and(
+            eq(teacherAssignment.staffProfileId, plan.staffProfileId),
+            eq(teacherAssignment.classOfferingId, plan.classOfferingId),
+            eq(teacherAssignment.role, "main"),
+            isNull(teacherAssignment.validTo),
+          ),
+        )
+        .limit(1);
+      if (existing.length === 0) await assignTeacher(tx, svcCtx, { ...plan, role: "main", validFrom: "2026-09-23" });
+    }
+
+    const count = async (table: string, where = ""): Promise<number> => {
+      const res = await tx.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table} ${where}`));
+      return res.rows[0].n;
+    };
+    const counts: DemoCounts = {
+      schoolEnrollments: await count("academic.school_enrollment"),
+      classEnrollments: await count("academic.class_enrollment", "where status = 'active'"),
+      teacherAssignments: await count("academic.teacher_assignment", "where valid_to is null"),
+      derivedTeacherRoles: await count("iam.role_assignment", "where source_type = 'teacher_assignment' and revoked_at is null"),
+    };
+    return { logins, counts };
   });
 }
 
-export async function seedDemo(db: Db, roleIds: Record<string, string>): Promise<{ logins: DemoLogin[]; password: string; generated: boolean }> {
+export async function seedDemo(
+  db: Db,
+  roleIds: Record<string, string>,
+): Promise<{ logins: DemoLogin[]; password: string; generated: boolean; counts: Record<string, DemoCounts> }> {
   const envPassword = process.env.SEED_DEMO_PASSWORD;
   const password = envPassword && envPassword.length >= 8 ? envPassword : generateInitialPassword();
   const forceChange = process.env.SEED_DEMO_NO_FORCE !== "1";
   const a = await seedDemoOrg(db, DANESH, { password, forceChange, roleIds, phoneOffset: 1 });
   const b = await seedDemoOrg(db, NOOR, { password, forceChange, roleIds, phoneOffset: 101 });
-  return { logins: [...a, ...b], password, generated: !envPassword };
+  return { logins: [...a.logins, ...b.logins], password, generated: !envPassword, counts: { [DANESH.slug]: a.counts, [NOOR.slug]: b.counts } };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -534,10 +766,20 @@ async function main(): Promise<void> {
     const roleIds = doCatalog
       ? await seedCatalog(db)
       : Object.fromEntries((await db.select({ code: role.code, id: role.id }).from(role).where(and(isNull(role.organizationId), inArray(role.code, SYSTEM_ROLES.map((r) => r.code))))).map((r) => [r.code, r.id]));
-    if (doCatalog) console.log(`[seed] catalog: ${PERMISSIONS.length} permissions, ${SYSTEM_ROLES.length} system roles`);
+    if (doCatalog) {
+      const c = await catalogCounts(db);
+      console.log(
+        `[seed] catalog: ${c.permissions} permissions, ${c.roles} roles (${SYSTEM_ROLES.length} system), ${c.workItemTypes} work item types, ${c.workItemStatuses} statuses, ${c.notificationTypes} notification types`,
+      );
+    }
     if (doDemo) {
-      const { logins, password, generated } = await seedDemo(db, roleIds);
+      const { logins, password, generated, counts } = await seedDemo(db, roleIds);
       console.log(`[seed] demo: ${logins.length} accounts in 2 organizations`);
+      for (const [slug, c] of Object.entries(counts)) {
+        console.log(
+          `[seed] demo ${slug}: ${c.schoolEnrollments} school enrollments, ${c.classEnrollments} active class enrollments, ${c.teacherAssignments} teacher assignments, ${c.derivedTeacherRoles} derived teacher roles`,
+        );
+      }
       printLogins(logins, password, generated, process.env.SEED_DEMO_NO_FORCE !== "1");
     }
   } finally {

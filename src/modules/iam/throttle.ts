@@ -80,7 +80,25 @@ export async function countRecentFailures(tx: Tx, identifier: string, ip: string
   };
 }
 
+/** Mirrors `login_attempt_outcome_chk`. `succeeded` drives throttling; `outcome` is the audit explanation. */
+export const LOGIN_OUTCOMES = ["success", "bad_password", "locked", "unknown", "disabled"] as const;
+export type LoginOutcomeCode = (typeof LOGIN_OUTCOMES)[number];
+
+export interface AttemptRecord {
+  identifier: string;
+  ip: string;
+  succeeded: boolean;
+  outcome: LoginOutcomeCode;
+  userAgent: string | null;
+}
+
 /** Global transaction. Every attempt is recorded — throttled ones too. */
-export async function recordAttempt(tx: Tx, identifier: string, ip: string, succeeded: boolean): Promise<void> {
-  await tx.insert(loginAttempt).values({ identifier, ip, succeeded });
+export async function recordAttempt(tx: Tx, a: AttemptRecord): Promise<void> {
+  await tx.insert(loginAttempt).values({
+    identifier: a.identifier,
+    ip: a.ip,
+    succeeded: a.succeeded,
+    outcome: a.outcome,
+    userAgent: a.userAgent?.slice(0, 512) ?? null,
+  });
 }

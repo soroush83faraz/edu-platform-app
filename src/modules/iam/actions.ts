@@ -21,7 +21,7 @@ import {
   setPassword,
 } from "./repo";
 import { clearSessionCookie, createSession, revokeAllForUser, revokeSession, setSessionCookie } from "./session";
-import { THROTTLE, countRecentFailures, recordAttempt, throttleDecision } from "./throttle";
+import { THROTTLE, countRecentFailures, recordAttempt, throttleDecision, type LoginOutcomeCode } from "./throttle";
 
 /** One field «موبایل یا نام‌کاربری»: phone-looking input → E.164, otherwise a lower-cased username. */
 function normalizeIdentifier(raw: string): string {
@@ -58,9 +58,19 @@ const loginCore = definePublicAction({ schema: LoginInput }, async (input, { glo
     account.status === "active" &&
     (account.lockedUntil === null || account.lockedUntil.getTime() <= now.getTime());
   const success = !probe.decision.blocked && eligible && verified;
+  // Human-readable reason for iam.login_attempt.outcome (audit); the response stays identical for every failure.
+  const outcome: LoginOutcomeCode = success
+    ? "success"
+    : account === null || probe.hash === null
+      ? "unknown"
+      : account.status === "disabled"
+        ? "disabled"
+        : probe.decision.blocked || account.status === "locked" || (account.lockedUntil !== null && account.lockedUntil.getTime() > now.getTime())
+          ? "locked"
+          : "bad_password";
 
   return globalTx(async (tx): Promise<LoginOutcome> => {
-    await recordAttempt(tx, identifier, ip, success);
+    await recordAttempt(tx, { identifier, ip, succeeded: success, outcome, userAgent });
     if (!success || account === null) {
       if (account) {
         await recordLoginFailure(tx, account.id, {
@@ -125,8 +135,7 @@ export const changePasswordAction = defineAction(
     const secretHash = await hashPassword(input.newPassword);
     await setPassword(tx, ctx.userId, secretHash);
     const revoked = await revokeAllForUser(tx, ctx.userId, ctx.sessionId);
-    // TODO(audit): becomes a real row in DB step 2.
-    await audit(ctx, "iam.account.password_changed", { type: "user_account", id: ctx.userId }, null, { revokedSessions: revoked }, tx);
+    await audit(ctx, "iam.account.password_changed", { schema: "iam", table: "user_account", id: ctx.userId }, null, { revokedSessions: revoked }, tx);
     return { revokedSessions: revoked };
   },
 );
@@ -151,7 +160,11 @@ const revokeCurrentSession = defineAction(
 
 const revokeEverySession = defineAction(
   { schema: EmptyInput, permission: "iam.account.self", allowPasswordChangePending: true },
-  async (tx, _input, ctx) => revokeAllForUser(tx, ctx.userId),
+  async (tx, _input, ctx) => {
+    const revoked = await revokeAllForUser(tx, ctx.userId);
+    await audit(ctx, "iam.account.sessions_revoked_all", { schema: "iam", table: "user_account", id: ctx.userId }, null, { revokedSessions: revoked }, tx);
+    return revoked;
+  },
 );
 
 /**

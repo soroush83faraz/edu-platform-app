@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 import { randomUUID } from "node:crypto";
 import { withTenant, withoutTenant } from "@/db/client";
 import { unauthenticated } from "@/lib/errors";
+import { getClientIp, getUserAgent } from "@/lib/request";
 import type { Assignment } from "@/modules/iam/can";
 import {
   findAccountById,
@@ -30,6 +31,9 @@ export interface Ctx {
   lastName: string;
   orgName: string;
   schoolName: string | null;
+  /** Request facts for the audit trail (src/lib/audit.ts); never used for authorization. */
+  ip: string;
+  userAgent: string | null;
   /** Session bookkeeping for defineAction (cookie re-issue after a sliding extension). */
   session: { isPublicDevice: boolean; expiresAt: Date; extended: boolean };
 }
@@ -75,6 +79,8 @@ export const getRequestContext = cache(async (): Promise<Ctx | null> => {
 
   return {
     requestId,
+    ip: await getClientIp(),
+    userAgent: await getUserAgent(),
     userId: base.account.id,
     sessionId: base.session.id,
     orgId: base.orgId,
