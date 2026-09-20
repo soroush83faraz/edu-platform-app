@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "tsx scripts/build-sw.ts && next build",
+    "build:sw": "tsx scripts/build-sw.ts",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

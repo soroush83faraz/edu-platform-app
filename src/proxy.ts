@@ -6,7 +6,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
 
-const PUBLIC_PATHS = ["/login", "/help", "/privacy"];
+const PUBLIC_PATHS = ["/login", "/help", "/privacy", "/~offline"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
@@ -37,5 +37,5 @@ export function proxy(request: NextRequest): NextResponse {
 
 export const config = {
   // Everything except Next internals, the anonymous health probe, PWA files and any static asset with an extension.
-  matcher: ["/((?!_next|api/health|manifest|icons|sw\\.js|.*\\.[a-zA-Z0-9]+$).*)"],
+  matcher: ["/((?!_next|api/health|manifest|icons|icon|apple-icon|sw\\.js|.*\\.[a-zA-Z0-9]+$).*)"],
 };
