@@ -3,11 +3,18 @@ import { asAppRw } from "./helpers";
 
 const TENANT_SCHEMAS = ["tenancy", "iam", "academic", "workspace", "notif", "files", "audit", "config", "integ"];
 
-/** tenancy (10 - organization) + iam (13 - user_account, auth_identity, user_session, login_attempt, permission, role_permission). */
-const EXPECTED_TENANT_TABLES = 9 + 7;
+/**
+ * tenancy (10 - organization) + iam (13 - user_account, auth_identity, user_session, login_attempt, permission,
+ * role_permission) + academic 3 + workspace (9 - work_item_status) + notif (3 - notification_type) + files 1 + audit 1
+ * + config 2 + integ 3.
+ */
+const EXPECTED_TENANT_TABLES = 9 + 7 + 3 + 8 + 2 + 1 + 1 + 2 + 3;
 
 /** Tables whose organization_id is nullable: NULL rows are shared system templates (read-only for tenants). */
-const NULLABLE_ORG_TABLES = ["iam.role"];
+const NULLABLE_ORG_TABLES = ["iam.role", "workspace.work_item_type"];
+
+/** Global by design (no organization_id, hence no RLS): seed-managed catalogs, readable by every tenant. docs/db.md. */
+const GLOBAL_CATALOGS = ["workspace.work_item_status", "notif.notification_type"];
 
 describe("RLS meta-checks (catalog)", () => {
   it("every table with organization_id has RLS enabled + forced and at least one policy", async () => {
@@ -124,12 +131,42 @@ describe("RLS meta-checks (catalog)", () => {
       expect(owned.rows[0].n).toBe(0);
 
       const all = await c.query<{ schema: string; n: number }>(
-        "select schemaname as schema, count(*)::int as n from pg_tables where schemaname in ('tenancy','iam') group by 1 order by 1",
+        "select schemaname as schema, count(*)::int as n from pg_tables where schemaname = any($1) group by 1 order by 1",
+        [TENANT_SCHEMAS],
       );
       expect(all.rows).toEqual([
+        { schema: "academic", n: 3 },
+        { schema: "audit", n: 1 },
+        { schema: "config", n: 2 },
+        { schema: "files", n: 1 },
         { schema: "iam", n: 13 },
+        { schema: "integ", n: 3 },
+        { schema: "notif", n: 3 },
         { schema: "tenancy", n: 10 },
+        { schema: "workspace", n: 9 },
       ]);
+    });
+  });
+
+  it("the global catalogs have no organization_id and no RLS, and app_rw may only SELECT them", async () => {
+    await asAppRw(async (c) => {
+      for (const table of GLOBAL_CATALOGS) {
+        const [schema, name] = table.split(".");
+        const meta = await c.query<{ has_org: boolean; rls: boolean; policies: number }>(
+          `select exists (select 1 from pg_attribute a join pg_class cl on cl.oid = a.attrelid join pg_namespace n on n.oid = cl.relnamespace
+                          where n.nspname = $1 and cl.relname = $2 and a.attname = 'organization_id' and not a.attisdropped) as has_org,
+                  (select relrowsecurity from pg_class cl join pg_namespace n on n.oid = cl.relnamespace where n.nspname = $1 and cl.relname = $2) as rls,
+                  (select count(*)::int from pg_policies where schemaname = $1 and tablename = $2) as policies`,
+          [schema, name],
+        );
+        expect(meta.rows[0], table).toEqual({ has_org: false, rls: false, policies: 0 });
+        const privs = await c.query<{ privs: string }>(
+          `select string_agg(privilege_type, ',' order by privilege_type) as privs from information_schema.role_table_grants
+            where grantee = 'app_rw' and table_schema = $1 and table_name = $2`,
+          [schema, name],
+        );
+        expect(privs.rows[0].privs, table).toBe("SELECT");
+      }
     });
   });
 

@@ -285,16 +285,20 @@ export async function seedCatalog(db: Db): Promise<Record<string, string>> {
   });
 }
 
-/** Row counts of the catalog tables (printed by the CLI; asserted by tests/int/seed.test.ts for idempotency). */
+/**
+ * Row counts of the catalog tables (printed by the CLI; asserted by tests/int/seed.test.ts for idempotency).
+ * `roles` / `workItemTypes` count the system templates only (organization_id IS NULL) — tenant rows are invisible to
+ * app_owner without a tenant context anyway (FORCE RLS).
+ */
 export async function catalogCounts(db: Db): Promise<CatalogCounts> {
-  const count = async (table: string): Promise<number> => {
-    const res = await db.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table}`));
+  const count = async (table: string, where = ""): Promise<number> => {
+    const res = await db.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table} ${where}`));
     return res.rows[0].n;
   };
   return {
     permissions: await count("iam.permission"),
-    roles: await count("iam.role"),
-    workItemTypes: await count("workspace.work_item_type"),
+    roles: await count("iam.role", "where organization_id is null"),
+    workItemTypes: await count("workspace.work_item_type", "where organization_id is null"),
     workItemStatuses: await count("workspace.work_item_status"),
     notificationTypes: await count("notif.notification_type"),
   };
@@ -769,7 +773,7 @@ async function main(): Promise<void> {
     if (doCatalog) {
       const c = await catalogCounts(db);
       console.log(
-        `[seed] catalog: ${c.permissions} permissions, ${c.roles} roles (${SYSTEM_ROLES.length} system), ${c.workItemTypes} work item types, ${c.workItemStatuses} statuses, ${c.notificationTypes} notification types`,
+        `[seed] catalog: ${c.permissions} permissions, ${c.roles} system roles, ${c.workItemTypes} system work item types, ${c.workItemStatuses} statuses, ${c.notificationTypes} notification types`,
       );
     }
     if (doDemo) {

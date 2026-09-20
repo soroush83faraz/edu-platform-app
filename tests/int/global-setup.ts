@@ -45,6 +45,16 @@ export async function seed(): Promise<void> {
        VALUES ($1, NULL, 'teacher', 'معلم', true, ARRAY['class_offering','class_group'])`,
       [f.ROLE_TEMPLATE],
     );
+    // System work item type (organization_id IS NULL) — same template shape as iam.role.
+    await c.query(`INSERT INTO workspace.work_item_type (id, organization_id, code, name, requires_assignee) VALUES ($1, NULL, 'todo', 'کار شخصی', false)`, [
+      f.WIT_TEMPLATE,
+    ]);
+    // Global catalogs (no organization_id).
+    await c.query(`INSERT INTO workspace.work_item_status (id, work_item_type_id, code, name, category, sequence) VALUES ($1, $2, 'open', 'باز', 'todo', 1)`, [
+      f.WIS_OPEN,
+      f.WIT_TEMPLATE,
+    ]);
+    await c.query(`INSERT INTO notif.notification_type (code, module, name) VALUES ($1, 'system', 'اطلاعیه')`, [f.NT_CODE]);
     await c.query("COMMIT");
 
     await seedOrg(c, {
@@ -59,6 +69,13 @@ export async function seed(): Promise<void> {
         [f.PERSON_A1, "علی", "رضایی"],
         [f.PERSON_A2, "زهرا", "کریمی"],
       ],
+      subject: f.SUBJECT_A,
+      term: f.TERM_A,
+      classGroups: [f.CLASS_GROUP_A1, f.CLASS_GROUP_A2],
+      offering: f.OFFERING_A1,
+      student: [f.STUDENT_A1, f.PERSON_A1, "14050001"],
+      staff: [f.STAFF_A2, f.PERSON_A2],
+      workItemType: f.WIT_A,
     });
     await seedOrg(c, {
       org: f.ORG_B,
@@ -69,6 +86,11 @@ export async function seed(): Promise<void> {
       grade: f.GRADE_B,
       role: f.ROLE_B,
       persons: [[f.PERSON_B1, "مریم", "احمدی"]],
+      subject: f.SUBJECT_B,
+      term: f.TERM_B,
+      classGroups: [f.CLASS_GROUP_B1],
+      offering: f.OFFERING_B1,
+      student: [f.STUDENT_B1, f.PERSON_B1, "14050001"],
     });
   } finally {
     await c.end();
@@ -84,6 +106,14 @@ interface OrgFixture {
   grade: string;
   role: string;
   persons: [id: string, firstName: string, lastName: string][];
+  subject: string;
+  term: string;
+  /** First one gets the offering. */
+  classGroups: string[];
+  offering: string;
+  student: [profileId: string, personId: string, studentNumber: string];
+  staff?: [profileId: string, personId: string];
+  workItemType?: string;
 }
 
 async function seedOrg(c: Client, o: OrgFixture): Promise<void> {
@@ -122,6 +152,39 @@ async function seedOrg(c: Client, o: OrgFixture): Promise<void> {
         o.org,
         firstName,
         lastName,
+      ]);
+    }
+    // ---- academic graph (step 2) ----
+    await c.query(`INSERT INTO tenancy.subject (id, organization_id, name, code) VALUES ($1, $2, 'ریاضی', 'MATH')`, [o.subject, o.org]);
+    await c.query(
+      `INSERT INTO tenancy.term (id, organization_id, academic_year_id, name, sequence, starts_on, ends_on)
+       VALUES ($1, $2, $3, 'نوبت اول', 1, '2026-09-23', '2027-01-20')`,
+      [o.term, o.org, o.year],
+    );
+    for (const [i, id] of o.classGroups.entries()) {
+      await c.query(
+        `INSERT INTO tenancy.class_group (id, organization_id, branch_id, academic_year_id, grade_level_id, name)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [id, o.org, o.branch, o.year, o.grade, `اول ${i + 1}`],
+      );
+    }
+    await c.query(
+      `INSERT INTO tenancy.class_offering (id, organization_id, class_group_id, subject_id, term_id) VALUES ($1, $2, $3, $4, $5)`,
+      [o.offering, o.org, o.classGroups[0], o.subject, o.term],
+    );
+    await c.query(`INSERT INTO iam.student_profile (id, organization_id, person_id, student_number) VALUES ($1, $2, $3, $4)`, [
+      o.student[0],
+      o.org,
+      o.student[1],
+      o.student[2],
+    ]);
+    if (o.staff) {
+      await c.query(`INSERT INTO iam.staff_profile (id, organization_id, person_id) VALUES ($1, $2, $3)`, [o.staff[0], o.org, o.staff[1]]);
+    }
+    if (o.workItemType) {
+      await c.query(`INSERT INTO workspace.work_item_type (id, organization_id, code, name) VALUES ($1, $2, 'private', 'خصوصی')`, [
+        o.workItemType,
+        o.org,
       ]);
     }
     await c.query("COMMIT");

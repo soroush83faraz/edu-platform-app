@@ -114,7 +114,8 @@ export interface EndTeacherAssignmentInput {
 
 /** Sets `valid_to` on the assignment and `revoked_at` (+ `valid_to`) on its derived role_assignment(s). */
 export async function endTeacherAssignment(tx: Tx, ctx: ServiceCtx, input: EndTeacherAssignmentInput): Promise<{ revokedRoleAssignments: number }> {
-  const validTo = input.validTo ? sql`${input.validTo}::date` : sql`current_date`;
+  // Default "today", but never before valid_from (an assignment that starts in the future ends as an empty range).
+  const validTo = input.validTo ? sql`${input.validTo}::date` : sql`greatest(current_date, ${teacherAssignment.validFrom})`;
   const [ta] = await tx
     .update(teacherAssignment)
     .set({ validTo })
@@ -257,9 +258,10 @@ export async function moveEnrollment(tx: Tx, ctx: ServiceCtx, input: MoveEnrollm
     throw validation(undefined, "انتقال فقط بین کلاس‌های همان سال تحصیلی ممکن است.");
   }
 
+  // ends_on = today, but never before starts_on (a future-dated enrollment collapses to an empty range).
   await tx
     .update(classEnrollment)
-    .set({ status: "transferred", endsOn: sql`current_date`, changeReason: input.reason, changedByPersonId: ctx.personId })
+    .set({ status: "transferred", endsOn: sql`greatest(current_date, ${classEnrollment.startsOn})`, changeReason: input.reason, changedByPersonId: ctx.personId })
     .where(eq(classEnrollment.id, current.id));
 
   const [next] = await tx

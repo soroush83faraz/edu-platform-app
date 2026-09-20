@@ -6,8 +6,9 @@
 // `withTenant` sets `app.current_org_id` with set_config(..., is_local = true) as the FIRST statement of a
 // transaction, so the setting dies with the transaction and can never leak to another request through the
 // pool. `withoutTenant` runs a transaction with no organization context: usable ONLY for the global tables
-// (organization, user_account, auth_identity, user_session, login_attempt, permission, role_permission) plus the
-// read-only system role templates (iam.role rows with organization_id IS NULL).
+// (organization, user_account, auth_identity, user_session, login_attempt, permission, role_permission,
+// workspace.work_item_status, notif.notification_type) plus the read-only system templates (iam.role and
+// workspace.work_item_type rows with organization_id IS NULL).
 //
 // This file is the only place in application code allowed to call set_config(...) — `pnpm verify` greps for it
 // (scripts/check-forbidden.js). Session-level set_config (is_local = false) is never acceptable: a pooled connection

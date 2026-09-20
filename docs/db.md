@@ -1,4 +1,4 @@
-# دیتابیس — فاز ۱، گام ۱ (tenancy + iam)
+# دیتابیس — فاز ۱ (گام ۱: tenancy + iam · گام ۲: academic, workspace, notif, files, audit, config, integ)
 
 PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در `/drizzle`. منبع حقیقت اسکیما: `src/db/schema/*.ts`.
 
@@ -19,13 +19,15 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 - هر جدول در اسکیماهای مستأجری (`tenancy, iam, academic, workspace, notif, files, audit, config, integ`) که ستون `organization_id` دارد: `ENABLE` + `FORCE ROW LEVEL SECURITY` و سیاست `tenant_isolation`:
   `USING (organization_id = app.current_org_id()) WITH CHECK (organization_id = app.current_org_id())`.
 - `app.current_org_id()` مقدار `current_setting('app.current_org_id', true)` است؛ وقتی تنظیم نشده → `NULL` → هیچ سطری دیده/نوشته نمی‌شود (**fail-closed**).
-- استثنا: جدول‌هایی که `organization_id` آن‌ها nullable است (امروز فقط `iam.role`؛ ردیف NULL = الگوی سیستمی). این جدول‌ها به‌جای یک سیاست `FOR ALL`، **چهار سیاست به‌ازای هر دستور** می‌گیرند (مهاجرت `0004`):
+- استثنا: جدول‌هایی که `organization_id` آن‌ها nullable است (`iam.role` و `workspace.work_item_type`؛ ردیف NULL = الگوی سیستمی). این جدول‌ها به‌جای یک سیاست `FOR ALL`، **چهار سیاست به‌ازای هر دستور** می‌گیرند (مهاجرت `0004`):
   - `tenant_isolation_select` — `FOR SELECT USING (organization_id IS NULL OR organization_id = app.current_org_id())`: الگوها برای همهٴ مستأجرها (و تراکنش بدون context، یعنی `withoutTenant`) خواندنی‌اند.
   - `tenant_isolation_write` — `FOR INSERT WITH CHECK (organization_id = app.current_org_id())`.
   - `tenant_isolation_update` — `FOR UPDATE USING (… = current_org) WITH CHECK (… = current_org)` و `tenant_isolation_delete` — `FOR DELETE USING (… = current_org)`: **هیچ سیاستی برای `app_rw` ردیف NULL را هدف UPDATE/DELETE قرار نمی‌دهد** (سیاست قبلیِ `FOR ALL` با `USING (… IS NULL OR …)` اجازه می‌داد هر مستأجر الگوها را حذف یا با `SET organization_id = خودش` تصاحب کند — رفع‌شده در `0004`).
   - `system_templates` — `TO app_owner USING (organization_id IS NULL) WITH CHECK (organization_id IS NULL)`: فقط seed (`app_owner`) الگوها را می‌نویسد.
   تست‌ها: `tests/int/rls-templates.test.ts` و `rls-meta.test.ts` (نام و شکل سیاست‌ها را از کاتالوگ بررسی می‌کند).
-- جدول‌های سراسری (بدون RLS): `tenancy.organization`, `iam.user_account`, `iam.auth_identity`, `iam.user_session`, `iam.login_attempt`, `iam.permission`, `iam.role_permission`. دو تای آخر برای `app_rw` فقط‌خواندنی‌اند (seed آن‌ها را می‌نویسد).
+- جدول‌های سراسری (بدون RLS): `tenancy.organization`, `iam.user_account`, `iam.auth_identity`, `iam.user_session`, `iam.login_attempt`, `iam.permission`, `iam.role_permission`, `workspace.work_item_status`, `notif.notification_type`. چهار تای آخر **کاتالوگ‌های seed** هستند و برای `app_rw` فقط‌خواندنی‌اند (`REVOKE INSERT, UPDATE, DELETE` داخل `app.apply_grants()`، مهاجرت `0011`).
+  - **چرا `work_item_status` و `notification_type` سراسری‌اند:** هر دو کاتالوگِ ثابتِ محصول‌اند، نه دادهٴ مستأجر. وضعیت‌ها زیرِ `work_item_type` تعریف می‌شوند (تا وقتی نوعِ اختصاصیِ مستأجر نداریم، همهٴ نوع‌ها سیستمی‌اند و `organization_id` روی وضعیت هم بی‌معنا می‌شد) و کدهای اعلان (`work_item.assigned`, …) را کد برنامه تولید می‌کند. RLS نداشتن یعنی هر مستأجر همهٴ ردیف‌ها را می‌بیند — که همان مطلوب است — و نداشتنِ مجوز نوشتن یعنی هیچ مستأجری نمی‌تواند آن‌ها را تغییر دهد. اگر روزی نوعِ اختصاصی مستأجر اضافه شد، `work_item_status` باید `organization_id` (nullable مثل نوعش) بگیرد.
+  - **`audit.audit_log` فقط‌افزودنی است:** `app_rw` فقط `SELECT, INSERT` دارد (`REVOKE UPDATE, DELETE` داخل `apply_grants()`)؛ برنامه هیچ راهی برای بازنویسی تاریخچه ندارد. تست: `tests/int/audit.test.ts`.
 - چون `FORCE` روی مالک هم اعمال می‌شود، **seed هم باید قبل از نوشتن در جدول‌های مستأجری `set_config('app.current_org_id', …, true)` بزند** (نمونه: `tests/int/global-setup.ts`).
 - در کد فقط `withTenant(ctx, fn)` / `withoutTenant(fn)` از `src/db/client` (اولین دستورِ تراکنش `set_config(..., true)` است؛ با پایان تراکنش پاک می‌شود و از pool به درخواست دیگر نشت نمی‌کند). `withoutTenant` فقط برای جدول‌های سراسری **و الگوهای سیستمی `iam.role`** (ردیف‌های `organization_id IS NULL` بدون context هم خواندنی‌اند؛ هیچ ردیف مستأجری دیده نمی‌شود).
 - **`set_config` فقط در `src/db/client.ts`.** `set_config(..., false)` (session-level) هرگز: اتصالِ pool، context یک درخواست را به درخواست بعدی می‌برد؛ و `set_config('app.current_org_id', <ورودی>, true)` در کدِ ماژول‌ها یعنی انتخاب مستأجر توسط کلاینت. ESLint داخل `sql\`…\`` را نمی‌بیند، پس `pnpm verify` با `scripts/check-forbidden.js` هر `set_config(` خارج از `src/db/client.ts` (و `scripts/`, `tests/`, `drizzle/`) را رد می‌کند. تنها bind دیگر، `app.current_user_account_id` برای فهرست عضویت‌ها هنگام ورود، تابع `bindAccountContext(tx, id)` در همان فایل است که فقط از راه `definePublicAction` (`tools.bindAccount`) در دسترس است — با id از ردیفِ تأییدشدهٴ `user_account`، هرگز از ورودی.
@@ -44,6 +46,8 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 
 ## جدول‌ها و کلید طبیعی
 
+شمار جدول‌ها: **۴۵** (tenancy ۱۰ · iam ۱۳ · academic ۳ · workspace ۹ · notif ۳ · files ۱ · audit ۱ · config ۲ · integ ۳). جدول‌های مستأجری (زیر RLS): ۳۶.
+
 ### tenancy (۱۰)
 | جدول | کلید طبیعی / یکتایی | یادداشت |
 |---|---|---|
@@ -55,7 +59,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 | education_level | `(organization_id, code)` | |
 | grade_level | `(organization_id, code)` | FK ترکیبی به education_level |
 | subject | `(organization_id, code)` | `parent_subject_id` خودارجاع ترکیبی |
-| class_group | `(academic_year_id, branch_id, name)` | `homeroom_staff_id` بدون FK تا گام ۲؛ `status ∈ active,archived`؛ ایندکس‌های `(organization_id, academic_year_id)`, `(organization_id, grade_level_id)` |
+| class_group | `(academic_year_id, branch_id, name)` | FK ترکیبی `homeroom_staff_id → iam.staff_profile` **فقط در SQL** (`class_group_homeroom_staff_fk`، مهاجرت `0011`؛ در Drizzle تعریف نشده تا چرخهٴ import بین `tenancy.ts` و `iam.ts` نشود — دوباره در TS اضافه‌اش نکنید)؛ `status ∈ active,archived`؛ ایندکس‌های `(organization_id, academic_year_id)`, `(organization_id, grade_level_id)` |
 | class_offering | `(class_group_id, subject_id, term_id)` | `status ∈ planned,active,closed`؛ ایندکس‌های `(organization_id, subject_id)`, `(organization_id, term_id)` |
 
 ### iam (۱۳)
@@ -64,7 +68,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 | user_account (سراسری) | `login_identifier`؛ `phone_e164` (partial) | `status ∈ active,locked,disabled` |
 | auth_identity (سراسری) | `(user_account_id, provider)` | `provider ∈ password,sms_otp` |
 | user_session (سراسری) | `token_hash` | ایندکس `(user_account_id) WHERE revoked_at IS NULL` |
-| login_attempt (سراسری) | — | ایندکس `(identifier, at)`, `(ip, at)` |
+| login_attempt (سراسری) | — | ایندکس `(identifier, at)`, `(ip, at)`؛ `succeeded` برای محدودسازی، `outcome ∈ success,bad_password,locked,unknown,disabled` (nullable؛ گام ۲) + `user_agent` برای بازبینیِ انسانی — به‌جای جدول جدای `audit.login_event` (docs/decisions.md) |
 | organization_membership | `(organization_id, user_account_id)`؛ `person_id` | `status ∈ invited,active,suspended,left`؛ ایندکس `(user_account_id)` (جست‌وجوی عضویت‌ها هنگام ورود) |
 | person | `(organization_id, external_ref)` (partial) | `search_text` تولیدی (STORED) = `app.fa_norm(first_name ‖ ' ' ‖ last_name)` + ایندکس GIN trgm. `fa_norm` (از `0009`): حذف اعراب U+064B–U+0652 و کشیده U+0640 (`محمّد` → `محمد`)، ZWNJ → فاصله، ي/ك/ة/ى/أ/إ → فارسی، ارقام → ASCII، فشرده‌سازی فاصله، `lower`. **توجه:** `CREATE OR REPLACE` تابع، مقادیر STORED موجود را بازمحاسبه نمی‌کند؛ امروز ردیف واقعی نداریم. اگر بعداً تغییر کرد: PG16 حذف و افزودن دوبارهٴ ستون + ایندکس (PG17: `ALTER COLUMN … SET EXPRESSION AS (…)`) |
 | contact_point | — | `kind ∈ mobile,landline,email,address` |
@@ -74,6 +78,56 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 | permission (سراسری) | `code` (PK) | فقط‌خواندنی برای app_rw |
 | role_permission | `(role_id, permission_code)` (PK) | فقط‌خواندنی برای app_rw؛ ایندکس `(permission_code)` |
 | role_assignment | `(person_id, role_id, scope_type, scope_id) WHERE revoked_at IS NULL` | `scope_id` تولیدی = `coalesce(…, organization_id)`؛ CHECK قوس انحصاری (دقیقاً ستونِ متناظر با `scope_type` پر باشد)؛ CHECK `valid_to IS NULL OR valid_from <= valid_to`؛ `role_id` فقط الگو یا نقشِ همان سازمان (تریگر `role_assignment_role_tenant_trg`)؛ ایندکس‌های `(role_id)` و `(organization_id, <scope>_id) WHERE … IS NOT NULL` برای هر ستون scope |
+
+### academic (۳)
+| جدول | کلید طبیعی / یکتایی | یادداشت |
+|---|---|---|
+| school_enrollment | `(organization_id, student_profile_id, academic_year_id)` | `status ∈ registered,active,transferred_out,withdrawn,graduated`؛ `starts_on <= ends_on`؛ FK ترکیبی به student_profile, school, academic_year, grade_level |
+| class_enrollment | — (`(organization_id, id)`) | **Exclusion** `class_enrollment_active_excl` (btree_gist, `0011`): `(student_profile_id WITH =, daterange(starts_on, ends_on, '[)') WITH &&) WHERE status='active'` → هر دانش‌آموز در هر روز حداکثر یک کلاس فعال؛ `status ∈ active,ended,transferred`؛ `change_reason ∈ transfer,level_change,admin`؛ `previous_enrollment_id` خودارجاع ترکیبی؛ `changed_by_person_id` FK ترکیبی به person؛ ایندکس `(organization_id, class_group_id) WHERE status='active'`. سرویس `enrollStudent` / `moveEnrollment` (`src/modules/academic/service.ts`) |
+| teacher_assignment | `(class_offering_id, staff_profile_id, role) WHERE valid_to IS NULL` | `role ∈ main,assistant,substitute`؛ `valid_from <= valid_to`. **مبنای نقش معلم:** `assignTeacher` هم این ردیف و هم `iam.role_assignment(role=teacher الگو, scope_type=class_offering, source_type=teacher_assignment, source_id=id)` را در یک تراکنش می‌نویسد؛ `endTeacherAssignment` روی هر دو `valid_to` و روی ردیف مشتق `revoked_at` می‌گذارد. مجوزدهی فقط `role_assignment` را می‌خواند |
+
+### workspace (۹)
+| جدول | کلید طبیعی / یکتایی | یادداشت |
+|---|---|---|
+| work_item_type | `(organization_id, code)` **NULLS NOT DISTINCT** | `organization_id NULL` = نوع سیستمی (`todo, task, admin_request, reminder, approval` از seed)؛ همان سیاست‌های چهارگانهٴ `iam.role` را خودکار می‌گیرد |
+| work_item_status (سراسری) | `(work_item_type_id, code)` | `category ∈ todo,doing,done,cancelled`؛ کاتالوگ seed، فقط‌خواندنی برای app_rw |
+| work_item | — (`(organization_id, id)`) | `char_length(title) 1..200`؛ `priority ∈ low,normal,high,urgent`؛ `visibility ∈ assignees,watchers,scope`؛ `parent_work_item_id` خودارجاع ترکیبی؛ `type_id`/`status_id` FK ساده (نوع ممکن است سیستمی باشد)؛ ایندکس `(organization_id, due_at) WHERE completed_at IS NULL AND archived_at IS NULL`, `(organization_id, created_by_person_id)` |
+| work_item_assignee | PK `(work_item_id, person_id, role)` | `role ∈ owner,assignee,approver`؛ `state ∈ pending,accepted,done`؛ ایندکس `(organization_id, person_id)` |
+| work_item_watcher | PK `(work_item_id, person_id)` | `reason ∈ guardian,supervisor,manual,creator` |
+| work_item_comment | — | `char_length(body) 1..4000`؛ `visibility ∈ all,staff_only`؛ **تنها جدول با `deleted_at`** (حذفِ نرمِ نظر جایش را در رشته حفظ می‌کند — استثنای صریح spec)؛ ایندکس `(work_item_id, created_at)` |
+| work_item_attachment | — | FK ترکیبی به `files.file_object`؛ فقط جدول (آپلود در فاز ۱ نیست) |
+| work_item_transition | — | `from_status_id` / `to_status_id` FK ساده به status؛ ایندکس `(work_item_id, at)` |
+| inbox_entry | `(person_id, work_item_id)` | کارتابل: `relation ∈ assignee,watcher,approver,creator,mentioned`؛ `state ∈ unread,read,snoozed,archived`؛ ایندکس `(organization_id, person_id, state, is_pinned)` |
+
+### notif (۳)
+| جدول | کلید طبیعی / یکتایی | یادداشت |
+|---|---|---|
+| notification_type (سراسری) | `code` (PK) | `urgency ∈ low,normal,high`؛ کاتالوگ seed، فقط‌خواندنی برای app_rw |
+| notification | `(recipient_person_id, dedupe_key) WHERE dedupe_key IS NOT NULL` | `source_id` **بدون FK** (عمداً)؛ ایندکس `(organization_id, recipient_person_id, read_at, created_at DESC)` |
+| push_subscription | `endpoint` | `user_account_id` FK ساده به حساب سراسری؛ فقط جدول (Web Push در فاز ۱ نیست) |
+
+### files (۱)
+| جدول | کلید طبیعی / یکتایی | یادداشت |
+|---|---|---|
+| file_object | `storage_key`؛ `(organization_id, id)` | `size_bytes >= 0`؛ `visibility_hint ∈ private,org,public`؛ `scan_status ∈ skipped,pending,clean,infected` |
+
+### audit (۱)
+| جدول | کلید طبیعی / یکتایی | یادداشت |
+|---|---|---|
+| audit_log | — | **فقط‌افزودنی** برای app_rw؛ `entity_id`, `actor_*` بدون FK (عمداً — ردیف ممیزی باید از ردیفِ موضوع بیشتر عمر کند)؛ ایندکس `(organization_id, at DESC)`, `(organization_id, entity_table, entity_id)`. نوشتن فقط با `audit()` (`src/lib/audit.ts`) داخل تراکنشِ همان تغییر |
+
+### config (۲)
+| جدول | کلید طبیعی / یکتایی | یادداشت |
+|---|---|---|
+| feature_flag | `(organization_id, key)` | |
+| setting_value | `(organization_id, school_id, key)` **NULLS NOT DISTINCT** | `school_id NULL` = سطح سازمان؛ FK ترکیبی به school |
+
+### integ (۳)
+| جدول | کلید طبیعی / یکتایی | یادداشت |
+|---|---|---|
+| import_batch | — (`(organization_id, id)`) | `kind ∈ students,staff,classes,full`؛ `status ∈ draft,validated,committed,failed`؛ FK ترکیبی به school (nullable), file_object (nullable), person |
+| import_row | `(batch_id, sheet, row_number)` | `status ∈ pending,ok,warning,error,committed`؛ ایندکس `(organization_id, batch_id, status)` |
+| external_identity_map | `(organization_id, source, entity_table, external_ref)` | `source ∈ excel,legacy_system` |
 
 ### نگهبان‌های بین‌مستأجری (مهاجرت `0006`)
 
