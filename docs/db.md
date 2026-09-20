@@ -30,7 +30,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
   - **`audit.audit_log` فقط‌افزودنی است:** `app_rw` فقط `SELECT, INSERT` دارد (`REVOKE UPDATE, DELETE` داخل `apply_grants()`)؛ برنامه هیچ راهی برای بازنویسی تاریخچه ندارد. تست: `tests/int/audit.test.ts`.
 - چون `FORCE` روی مالک هم اعمال می‌شود، **seed هم باید قبل از نوشتن در جدول‌های مستأجری `set_config('app.current_org_id', …, true)` بزند** (نمونه: `tests/int/global-setup.ts`).
 - در کد فقط `withTenant(ctx, fn)` / `withoutTenant(fn)` از `src/db/client` (اولین دستورِ تراکنش `set_config(..., true)` است؛ با پایان تراکنش پاک می‌شود و از pool به درخواست دیگر نشت نمی‌کند). `withoutTenant` فقط برای جدول‌های سراسری **و الگوهای سیستمی `iam.role`** (ردیف‌های `organization_id IS NULL` بدون context هم خواندنی‌اند؛ هیچ ردیف مستأجری دیده نمی‌شود).
-- **`set_config` فقط در `src/db/client.ts`.** `set_config(..., false)` (session-level) هرگز: اتصالِ pool، context یک درخواست را به درخواست بعدی می‌برد؛ و `set_config('app.current_org_id', <ورودی>, true)` در کدِ ماژول‌ها یعنی انتخاب مستأجر توسط کلاینت. ESLint داخل `sql\`…\`` را نمی‌بیند، پس `pnpm verify` با `scripts/check-forbidden.js` هر `set_config(` خارج از `src/db/client.ts` (و `scripts/`, `tests/`, `drizzle/`) را رد می‌کند. تنها bind دیگر، `app.current_user_account_id` برای فهرست عضویت‌ها هنگام ورود، تابع `bindAccountContext(tx, id)` در همان فایل است که فقط از راه `definePublicAction` (`tools.bindAccount`) در دسترس است — با id از ردیفِ تأییدشدهٴ `user_account`، هرگز از ورودی.
+- **`set_config` فقط در `src/db/client.ts`** (استثنا: مهاجرت `0012` که برای backfill زیر FORCE RLS به‌ازای هر سازمان context را transaction-local می‌گذارد و در پایان پاک می‌کند — `drizzle/` از بررسی `check-forbidden` بیرون است). `set_config(..., false)` (session-level) هرگز: اتصالِ pool، context یک درخواست را به درخواست بعدی می‌برد؛ و `set_config('app.current_org_id', <ورودی>, true)` در کدِ ماژول‌ها یعنی انتخاب مستأجر توسط کلاینت. ESLint داخل `sql\`…\`` را نمی‌بیند، پس `pnpm verify` با `scripts/check-forbidden.js` هر `set_config(` خارج از `src/db/client.ts` (و `scripts/`, `tests/`, `drizzle/`) را رد می‌کند. تنها bind دیگر، `app.current_user_account_id` برای فهرست عضویت‌ها هنگام ورود، تابع `bindAccountContext(tx, id)` در همان فایل است که فقط از راه `definePublicAction` (`tools.bindAccount`) در دسترس است — با id از ردیفِ تأییدشدهٴ `user_account`، هرگز از ورودی.
 - توابع `app.apply_grants()`، `app.apply_rls()` و `app.apply_updated_at_triggers()` idempotent‌اند و **هر مهاجرتی که جدول/اسکیمای جدید می‌سازد باید در انتها `SELECT app.apply_grants();`، `SELECT app.apply_rls();` و `SELECT app.apply_updated_at_triggers();` را (هر یک به‌عنوان یک statement جدا) صدا بزند.** تست `tests/int/rls-meta.test.ts` جدولِ بدون RLS و `tests/int/guards.test.ts` جدولِ دارای `updated_at` بدون تریگر را رد می‌کند.
 - `updated_at` را سرور نگه می‌دارد: تریگر `set_updated_at` (`BEFORE UPDATE FOR EACH ROW` → `app.set_updated_at()`، مهاجرت `0009`) روی هر جدولی که این ستون را دارد؛ مقدارِ فرستادهٴ کلاینت نادیده گرفته می‌شود. `$onUpdate` در Drizzle هم می‌ماند (فقط برای type و خوانایی).
 
@@ -52,7 +52,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 | جدول | کلید طبیعی / یکتایی | یادداشت |
 |---|---|---|
 | organization (سراسری) | `slug` (`^[a-z0-9-]{3,40}$`) | `status ∈ active,suspended,trial` |
-| school | `(organization_id, code)` | `gender_policy ∈ girls,boys,mixed` |
+| school | `(organization_id, code)` + `(organization_id, lower(code))` (`school_org_code_ci_uq`، مهاجرت `0012`) | `gender_policy ∈ girls,boys,mixed`؛ کد پیشوند نام‌کاربری‌های تولیدی است، پس بدون توجه به حروف یکتاست |
 | branch | — (`(organization_id, id)`) | FK ترکیبی به school |
 | academic_year | `(school_id) WHERE is_current` | `starts_on < ends_on` |
 | term | `(academic_year_id, sequence)` | |
@@ -73,7 +73,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 | person | `(organization_id, external_ref)` (partial) | `search_text` تولیدی (STORED) = `app.fa_norm(first_name ‖ ' ' ‖ last_name)` + ایندکس GIN trgm. `fa_norm` (از `0009`): حذف اعراب U+064B–U+0652 و کشیده U+0640 (`محمّد` → `محمد`)، ZWNJ → فاصله، ي/ك/ة/ى/أ/إ → فارسی، ارقام → ASCII، فشرده‌سازی فاصله، `lower`. **توجه:** `CREATE OR REPLACE` تابع، مقادیر STORED موجود را بازمحاسبه نمی‌کند؛ امروز ردیف واقعی نداریم. اگر بعداً تغییر کرد: PG16 حذف و افزودن دوبارهٴ ستون + ایندکس (PG17: `ALTER COLUMN … SET EXPRESSION AS (…)`) |
 | contact_point | — | `kind ∈ mobile,landline,email,address` |
 | student_profile | `(organization_id, student_number)`؛ `person_id` | `status ∈ prospective,active,graduated,withdrawn` |
-| staff_profile | `person_id` | `employment_type ∈ full_time,part_time,contractor` |
+| staff_profile | `person_id` | `employment_type ∈ full_time,part_time,contractor`؛ `school_id` (nullable، مهاجرت `0012`) = مدرسهٴ اصلی و **لنگر دامنهٴ مدیران مدرسه‌ای** (docs/admin.md)؛ FK ترکیبی به school، ایندکس جزئی `(organization_id, school_id)` |
 | role | `(organization_id, code)` **NULLS NOT DISTINCT** | `organization_id NULL` = الگوی سیستمی؛ `cloned_from_role_id` فقط الگو یا نقشِ همان سازمان (تریگر `role_cloned_from_tenant_trg`) |
 | permission (سراسری) | `code` (PK) | فقط‌خواندنی برای app_rw |
 | role_permission | `(role_id, permission_code)` (PK) | فقط‌خواندنی برای app_rw؛ ایندکس `(permission_code)` |
@@ -82,7 +82,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 ### academic (۳)
 | جدول | کلید طبیعی / یکتایی | یادداشت |
 |---|---|---|
-| school_enrollment | `(organization_id, student_profile_id, academic_year_id)` | `status ∈ registered,active,transferred_out,withdrawn,graduated`؛ `starts_on <= ends_on`؛ FK ترکیبی به student_profile, school, academic_year, grade_level |
+| school_enrollment | `(organization_id, student_profile_id, academic_year_id)` | `status ∈ registered,active,transferred_out,withdrawn,graduated`؛ `starts_on <= ends_on`؛ FK ترکیبی به student_profile, school, academic_year, grade_level؛ `grade_level_id` از `0012` nullable است: دانش‌آموزِ بدون کلاس یک ردیف `registered` بدون پایه برای سال جاری مدرسه می‌گیرد (لنگر دامنه) و `enrollStudent` با اولین کلاس آن را پر و `active` می‌کند |
 | class_enrollment | — (`(organization_id, id)`) | **Exclusion** `class_enrollment_active_excl` (btree_gist, `0011`): `(student_profile_id WITH =, daterange(starts_on, ends_on, '[)') WITH &&) WHERE status='active'` → هر دانش‌آموز در هر روز حداکثر یک کلاس فعال؛ `status ∈ active,ended,transferred`؛ `change_reason ∈ transfer,level_change,admin`؛ `previous_enrollment_id` خودارجاع ترکیبی؛ `changed_by_person_id` FK ترکیبی به person؛ ایندکس `(organization_id, class_group_id) WHERE status='active'`. سرویس `enrollStudent` / `moveEnrollment` (`src/modules/academic/service.ts`) |
 | teacher_assignment | `(class_offering_id, staff_profile_id, role) WHERE valid_to IS NULL` | `role ∈ main,assistant,substitute`؛ `valid_from <= valid_to`. **مبنای نقش معلم:** `assignTeacher` هم این ردیف و هم `iam.role_assignment(role=teacher الگو, scope_type=class_offering, source_type=teacher_assignment, source_id=id)` را در یک تراکنش می‌نویسد؛ `endTeacherAssignment` روی هر دو `valid_to` و روی ردیف مشتق `revoked_at` می‌گذارد. مجوزدهی فقط `role_assignment` را می‌خواند |
 
