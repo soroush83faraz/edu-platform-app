@@ -209,6 +209,8 @@ export const classGroup = tenancy.table(
     unique("class_group_year_branch_name_uq").on(t.academicYearId, t.branchId, t.name),
     unique("class_group_org_id_uq").on(t.organizationId, t.id),
     index("class_group_org_branch_idx").on(t.organizationId, t.branchId),
+    index("class_group_org_year_idx").on(t.organizationId, t.academicYearId),
+    index("class_group_org_grade_idx").on(t.organizationId, t.gradeLevelId),
     check("class_group_status_chk", sql`${t.status} IN ('active', 'archived')`),
     foreignKey({
       name: "class_group_branch_fk",
@@ -244,6 +246,8 @@ export const classOffering = tenancy.table(
     unique("class_offering_group_subject_term_uq").on(t.classGroupId, t.subjectId, t.termId),
     unique("class_offering_org_id_uq").on(t.organizationId, t.id),
     index("class_offering_org_group_idx").on(t.organizationId, t.classGroupId),
+    index("class_offering_org_subject_idx").on(t.organizationId, t.subjectId),
+    index("class_offering_org_term_idx").on(t.organizationId, t.termId),
     check("class_offering_status_chk", sql`${t.status} IN ('planned', 'active', 'closed')`),
     foreignKey({
       name: "class_offering_class_group_fk",

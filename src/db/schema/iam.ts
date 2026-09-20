@@ -143,6 +143,8 @@ export const organizationMembership = iam.table(
   (t) => [
     unique("organization_membership_org_account_uq").on(t.organizationId, t.userAccountId),
     unique("organization_membership_org_id_uq").on(t.organizationId, t.id),
+    // Login lists an account's memberships across organizations (account_memberships policy) — no org prefix.
+    index("organization_membership_account_idx").on(t.userAccountId),
     check("organization_membership_status_chk", sql`${t.status} IN ('invited', 'active', 'suspended', 'left')`),
     foreignKey({
       name: "organization_membership_person_fk",
@@ -225,7 +227,9 @@ export const staffProfile = iam.table(
 
 /**
  * organization_id NULL = system template (seeded by app_owner, readable by every tenant).
- * RLS: USING (organization_id IS NULL OR organization_id = app.current_org_id()).
+ * RLS (per-command, migration 0004): SELECT sees NULL rows or the tenant's own; INSERT/UPDATE/DELETE only the own.
+ * `cloned_from_role_id` must point at a template or at a role of the same organization — enforced by the
+ * constraint trigger `role_cloned_from_tenant_trg` (migration 0006), not by the plain FK.
  */
 export const role = iam.table(
   "role",
@@ -267,7 +271,11 @@ export const rolePermission = iam.table(
       .notNull()
       .references(() => permission.code, { onDelete: "restrict" }),
   },
-  (t) => [primaryKey({ name: "role_permission_pk", columns: [t.roleId, t.permissionCode] })],
+  (t) => [
+    primaryKey({ name: "role_permission_pk", columns: [t.roleId, t.permissionCode] }),
+    // "which roles grant X" (permission catalog maintenance, FK checks from permission deletes).
+    index("role_permission_permission_idx").on(t.permissionCode),
+  ],
 );
 
 export const roleAssignment = iam.table(
@@ -305,6 +313,14 @@ export const roleAssignment = iam.table(
       .on(t.personId, t.roleId, t.scopeType, t.scopeId)
       .where(sql`${t.revokedAt} IS NULL`),
     index("role_assignment_org_person_scope_idx").on(t.organizationId, t.personId, t.scopeType),
+    // FK-side lookups: "who holds role X" and the RESTRICT check when a role is deleted.
+    index("role_assignment_role_idx").on(t.roleId),
+    // Scope lookups ("everyone assigned at school S"); partial because most rows leave these NULL.
+    index("role_assignment_org_school_idx").on(t.organizationId, t.schoolId).where(sql`${t.schoolId} IS NOT NULL`),
+    index("role_assignment_org_branch_idx").on(t.organizationId, t.branchId).where(sql`${t.branchId} IS NOT NULL`),
+    index("role_assignment_org_class_group_idx").on(t.organizationId, t.classGroupId).where(sql`${t.classGroupId} IS NOT NULL`),
+    index("role_assignment_org_class_offering_idx").on(t.organizationId, t.classOfferingId).where(sql`${t.classOfferingId} IS NOT NULL`),
+    index("role_assignment_org_student_profile_idx").on(t.organizationId, t.studentProfileId).where(sql`${t.studentProfileId} IS NOT NULL`),
     check(
       "role_assignment_scope_type_chk",
       sql`${t.scopeType} IN ('organization', 'school', 'branch', 'class_group', 'class_offering', 'student', 'family')`,

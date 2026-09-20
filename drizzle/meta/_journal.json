@@ -36,6 +36,20 @@
       "when": 1789912939505,
       "tag": "0004_rls_split_nullable_org_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789913351546,
+      "tag": "0005_tenant_lookup_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789913425983,
+      "tag": "0006_role_tenant_guards",
+      "breakpoints": true
     }
   ]
 }

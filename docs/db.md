@@ -51,8 +51,8 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 | education_level | `(organization_id, code)` | |
 | grade_level | `(organization_id, code)` | FK ترکیبی به education_level |
 | subject | `(organization_id, code)` | `parent_subject_id` خودارجاع ترکیبی |
-| class_group | `(academic_year_id, branch_id, name)` | `homeroom_staff_id` بدون FK تا گام ۲؛ `status ∈ active,archived` |
-| class_offering | `(class_group_id, subject_id, term_id)` | `status ∈ planned,active,closed` |
+| class_group | `(academic_year_id, branch_id, name)` | `homeroom_staff_id` بدون FK تا گام ۲؛ `status ∈ active,archived`؛ ایندکس‌های `(organization_id, academic_year_id)`, `(organization_id, grade_level_id)` |
+| class_offering | `(class_group_id, subject_id, term_id)` | `status ∈ planned,active,closed`؛ ایندکس‌های `(organization_id, subject_id)`, `(organization_id, term_id)` |
 
 ### iam (۱۳)
 | جدول | کلید طبیعی / یکتایی | یادداشت |
@@ -61,15 +61,19 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 | auth_identity (سراسری) | `(user_account_id, provider)` | `provider ∈ password,sms_otp` |
 | user_session (سراسری) | `token_hash` | ایندکس `(user_account_id) WHERE revoked_at IS NULL` |
 | login_attempt (سراسری) | — | ایندکس `(identifier, at)`, `(ip, at)` |
-| organization_membership | `(organization_id, user_account_id)`؛ `person_id` | `status ∈ invited,active,suspended,left` |
+| organization_membership | `(organization_id, user_account_id)`؛ `person_id` | `status ∈ invited,active,suspended,left`؛ ایندکس `(user_account_id)` (جست‌وجوی عضویت‌ها هنگام ورود) |
 | person | `(organization_id, external_ref)` (partial) | `search_text` تولیدی = `app.fa_norm(first_name ‖ ' ' ‖ last_name)` + ایندکس GIN trgm |
 | contact_point | — | `kind ∈ mobile,landline,email,address` |
 | student_profile | `(organization_id, student_number)`؛ `person_id` | `status ∈ prospective,active,graduated,withdrawn` |
 | staff_profile | `person_id` | `employment_type ∈ full_time,part_time,contractor` |
-| role | `(organization_id, code)` **NULLS NOT DISTINCT** | `organization_id NULL` = الگوی سیستمی |
+| role | `(organization_id, code)` **NULLS NOT DISTINCT** | `organization_id NULL` = الگوی سیستمی؛ `cloned_from_role_id` فقط الگو یا نقشِ همان سازمان (تریگر `role_cloned_from_tenant_trg`) |
 | permission (سراسری) | `code` (PK) | فقط‌خواندنی برای app_rw |
-| role_permission | `(role_id, permission_code)` (PK) | فقط‌خواندنی برای app_rw |
-| role_assignment | `(person_id, role_id, scope_type, scope_id) WHERE revoked_at IS NULL` | `scope_id` تولیدی = `coalesce(…, organization_id)`؛ CHECK قوس انحصاری (دقیقاً ستونِ متناظر با `scope_type` پر باشد) |
+| role_permission | `(role_id, permission_code)` (PK) | فقط‌خواندنی برای app_rw؛ ایندکس `(permission_code)` |
+| role_assignment | `(person_id, role_id, scope_type, scope_id) WHERE revoked_at IS NULL` | `scope_id` تولیدی = `coalesce(…, organization_id)`؛ CHECK قوس انحصاری (دقیقاً ستونِ متناظر با `scope_type` پر باشد)؛ `role_id` فقط الگو یا نقشِ همان سازمان (تریگر `role_assignment_role_tenant_trg`)؛ ایندکس‌های `(role_id)` و `(organization_id, <scope>_id) WHERE … IS NOT NULL` برای هر ستون scope |
+
+### نگهبان‌های بین‌مستأجری (مهاجرت `0006`)
+
+FK سادهٴ `role_assignment.role_id → role(id)` و `role.cloned_from_role_id → role(id)` نمی‌تواند ترکیبی `(organization_id, role_id)` باشد (الگوها `organization_id` NULL دارند) و بررسی FK در PostgreSQL RLS را نادیده می‌گیرد؛ پس سازمان الف می‌توانست نقش خصوصی سازمان ب را با id به کاربر خود وصل یا آن را clone کند. **Constraint trigger**های `app.check_role_assignment_role_tenant()` و `app.check_role_cloned_from_tenant()` (SECURITY DEFINER، مالک `app_owner`، `SET search_path = pg_catalog, app`، `NOT DEFERRABLE`) نقشِ ارجاع‌شده را می‌خوانند و فقط «الگو (NULL) یا همان سازمانِ ردیف» را می‌پذیرند؛ چون `app_owner` هم FORCE RLS دارد، نقشِ مستأجر دیگر برای تابع دیده نمی‌شود و NOT FOUND هم رد می‌شود (fail-closed). خطا با SQLSTATE `23503` و `constraint = <نام تریگر>` برمی‌گردد (اپ آن را مثل FK به `INVALID_REFERENCE` نگاشت می‌کند). تست: `tests/int/tenant-guards.test.ts`.
 
 ## دستورها
 
