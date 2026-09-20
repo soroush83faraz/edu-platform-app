@@ -5,6 +5,7 @@ export {
   defineAction,
   defineQuery,
   toResult,
+  toPlainInput,
   ok,
   fail,
   zFormBoolean,
@@ -17,3 +18,4 @@ export {
   type QueryOptions,
   type Ctx,
 } from "./defineAction";
+export { definePublicAction, type PublicTools } from "./definePublicAction";

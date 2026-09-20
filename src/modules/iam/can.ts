@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { branch, classGroup, classOffering, school } from "@/modules/tenancy/schema";
 import { studentProfile } from "./schema";
-import type { Permission, ScopeRef, ScopeType } from "./permissions";
+import { IMPLICIT_PERMISSIONS, type Permission, type ScopeRef, type ScopeType } from "./permissions";
 
 export interface Assignment {
   roleCode: string;
@@ -119,6 +119,7 @@ export interface CanContext {
 
 /** `ref` undefined = organization-level check. Runs inside the caller's `withTenant` transaction. */
 export async function can(tx: Tx, ctx: CanContext, permission: Permission, ref?: ScopeRef): Promise<boolean> {
+  if (IMPLICIT_PERMISSIONS.includes(permission)) return true;
   const chain = ref ? await resolveScopeChain(tx, ctx.orgId, ref) : organizationChain(ctx.orgId);
   if (!chain) return false;
   return canPure(ctx.assignments, chain, permission);

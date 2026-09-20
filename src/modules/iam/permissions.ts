@@ -4,6 +4,8 @@
  * Adding a permission = add a row here + re-run the catalog seed; nothing else.
  */
 export const PERMISSIONS = [
+  /** Implicit: every authenticated member holds it (own password, own sessions) — never stored in role_permission. */
+  { code: "iam.account.self", module: "iam", name: "مدیریت حساب خود", isSensitive: false },
   { code: "iam.admin.access", module: "iam", name: "دسترسی به بخش مدیریت کاربران", isSensitive: true },
   { code: "iam.person.read", module: "iam", name: "مشاهدهٴ افراد", isSensitive: false },
   { code: "iam.person.write", module: "iam", name: "ایجاد و ویرایش افراد", isSensitive: true },
@@ -25,6 +27,9 @@ export const PERMISSIONS = [
 export type Permission = (typeof PERMISSIONS)[number]["code"];
 
 export const PERMISSION_CODES: readonly Permission[] = PERMISSIONS.map((p) => p.code);
+
+/** Granted by being a member, not by a role. `can()` returns true for these without consulting assignments. */
+export const IMPLICIT_PERMISSIONS: readonly Permission[] = ["iam.account.self"];
 
 export function isPermission(code: string): code is Permission {
   return (PERMISSION_CODES as readonly string[]).includes(code);

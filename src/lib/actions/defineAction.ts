@@ -38,7 +38,7 @@ export interface ActionOptions<S extends z.ZodType> {
 export type ActionHandler<S extends z.ZodType, R> = (tx: Tx, input: z.output<S>, ctx: Ctx) => Promise<R>;
 
 /** Server Actions receive FormData from `<form action>` and plain objects from programmatic calls. */
-function toPlainInput(raw: unknown): unknown {
+export function toPlainInput(raw: unknown): unknown {
   if (!(raw instanceof FormData)) return raw;
   const out: Record<string, unknown> = {};
   for (const [key, value] of raw.entries()) {
