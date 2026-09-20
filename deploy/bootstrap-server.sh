@@ -16,7 +16,7 @@ log "apt update + base packages"
 apt-get update -y
 apt-get install -y --no-install-recommends \
   ca-certificates curl gnupg ufw fail2ban unattended-upgrades apt-listchanges chrony \
-  docker.io docker-compose-v2 git
+  docker.io docker-compose-v2 git age rclone
 
 log "user ${DEPLOY_USER} + SSH key"
 if ! id -u "$DEPLOY_USER" >/dev/null 2>&1; then
@@ -80,7 +80,7 @@ cat > /etc/systemd/system/reboot-window.service <<'SVC'
 Description=Allow unattended-upgrades reboot only in the Friday 04:00 window
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c 'if [ "$(date +%%u)" = "5" ]; then [ -f /var/run/reboot-required ] && /sbin/shutdown -r +5 "weekly maintenance reboot"; fi'
+ExecStart=/bin/sh -c 'if [ "$(date +%%u)" = "5" ] && [ -f /var/run/reboot-required ]; then /sbin/shutdown -r +5 "weekly maintenance reboot"; fi; exit 0'
 SVC
 cat > /etc/systemd/system/reboot-window.timer <<'TMR'
 [Unit]
@@ -129,6 +129,16 @@ systemctl restart docker
 
 log "app dir ${APP_DIR}"
 mkdir -p "${APP_DIR}/backups" "${APP_DIR}/db/initdb"
+
+log "cron for ${DEPLOY_USER}: nightly backup, weekly restore drill, 10-minute watchdog"
+# Scripts are copied from deploy/ afterwards (README); until then cron only logs "No such file". Host TZ = Asia/Tehran,
+# so 02:30 here is 23:00 UTC (the dump file names are UTC dates). Iran has had no DST since 1401.
+crontab -u "$DEPLOY_USER" - <<'CRON'
+# m  h  dom mon dow  command                                              (host TZ = Asia/Tehran)
+30   2  *   *   *    /srv/school/backup.sh       >> /srv/school/backups/backup.log 2>&1
+30   6  *   *   5    /srv/school/restore-test.sh >> /srv/school/backups/restore-test.log 2>&1
+*/10 *  *   *   *    /srv/school/watchdog.sh
+CRON
 chown -R "$DEPLOY_USER:$DEPLOY_USER" "$APP_DIR"
 chmod 750 "$APP_DIR"
 
@@ -136,5 +146,5 @@ log "pre-pull base images (should take < 2 min via mirror)"
 docker pull postgres:16 || true
 docker pull caddy:2 || true
 
-log "done. Next: copy deploy/{compose.yml,Caddyfile,deploy.sh,rollback.sh,db/initdb/*} and .env to ${APP_DIR} as ${DEPLOY_USER}, then run ship.ps1 from Windows."
+log "done. Next: copy deploy/{compose.yml,Caddyfile,deploy.sh,rollback.sh,watchdog.sh,backup/*.sh,db/initdb/*} and .env to ${APP_DIR} as ${DEPLOY_USER}, run 'rclone config' as ${DEPLOY_USER} (see deploy/README.md), then run ship.ps1 from Windows."
 ss -tlnp | awk 'NR==1 || /:22 |:80 |:443 /'

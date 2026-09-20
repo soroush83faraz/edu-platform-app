@@ -6,6 +6,9 @@ services:
   db:
     image: postgres:16
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "5" }
     command: ["postgres", "-c", "password_encryption=scram-sha-256", "-c", "timezone=UTC"]
     environment:
       POSTGRES_USER: postgres
@@ -42,6 +45,9 @@ services:
   app:
     image: ${APP_IMAGE:?set APP_IMAGE in .env}
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "5" }
     env_file: .env
     environment:
       TZ: UTC
@@ -62,6 +68,9 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "5" }
     ports:
       - "80:80"
       - "443:443"

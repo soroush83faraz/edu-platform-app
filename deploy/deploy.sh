@@ -78,6 +78,9 @@ for i in $(seq 1 30); do
       2>/dev/null; then
     log "healthy: $NEW_IMAGE"
     docker image prune -f >/dev/null 2>&1 || true
+    log "next: from the dev machine run the end-to-end smoke against the live site —" \
+        "BASE_URL=https://<PUBLIC_HOST> SMOKE_IDENTIFIER=<qa login> SMOKE_PASSWORD=<qa password> pnpm smoke:prod" \
+        "(docs/ops/runbook.md «استقرار»). Rollback: bash $DIR/rollback.sh"
     exit 0
   fi
   sleep 2
