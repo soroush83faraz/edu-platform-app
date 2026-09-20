@@ -17,3 +17,4 @@ tests
 README.md
 AGENTS.md
 CLAUDE.md
+docker-compose.dev.yml

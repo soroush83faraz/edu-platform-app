@@ -14,7 +14,7 @@ bash bootstrap-server.sh "ssh-ed25519 AAAA... you@laptop"   # کاربر deploy�
 
 ```bash
 scp deploy/compose.yml deploy/Caddyfile deploy/deploy.sh deploy/rollback.sh deploy@SERVER:/srv/school/
-scp deploy/db/initdb/*.sql deploy@SERVER:/srv/school/db/initdb/
+scp deploy/db/initdb/*.sh deploy@SERVER:/srv/school/db/initdb/
 scp deploy/.env.example deploy@SERVER:/srv/school/.env
 ssh deploy@SERVER 'chmod 600 /srv/school/.env && chmod +x /srv/school/*.sh && nano /srv/school/.env'   # همهٴ CHANGE_ME ها را پر کنید
 ```
@@ -50,5 +50,5 @@ docker compose up -d app
 ```
 
 ## یادداشت‌ها
-- `scripts/migrate.js` و `db/initdb/01-roles.sql` در بلوک دیتابیس نوشته می‌شوند؛ تا آن زمان سرویس `migrate` شکست می‌خورد (و deploy.sh rollback می‌کند) — برای صفحهٴ hello اول، `docker compose up -d db caddy` و `docker compose up -d --no-deps app`.
+- `scripts/migrate.js` (اجرای مهاجرت‌ها در سرویس `migrate`) و `db/initdb/01-roles.sh` (ساخت نقش‌ها و دیتابیس‌ها در اولین اجرای `db`) آماده‌اند؛ جزئیات در `docs/db.md`.
 - بکاپ شبانه/رمزگذاری/آپلود به آروان: روز ۳.

@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: postgres
       POSTGRES_INITDB_ARGS: "--locale=C.UTF-8 --encoding=UTF8"
-      # Consumed by db/initdb/01-roles.sql (DB block) to create app_owner / app_rw / app_backup.
+      # Consumed by db/initdb/01-roles.sh (first start only) to create app_owner / app_rw / app_backup.
       APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:?set APP_OWNER_PASSWORD in .env}
       APP_RW_PASSWORD: ${APP_RW_PASSWORD:?set APP_RW_PASSWORD in .env}
       APP_BACKUP_PASSWORD: ${APP_BACKUP_PASSWORD:?set APP_BACKUP_PASSWORD in .env}

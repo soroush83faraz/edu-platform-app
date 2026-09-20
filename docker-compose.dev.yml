@@ -1,0 +1,35 @@
+# Local development database only (production stack lives in deploy/compose.yml).
+#   pnpm db:up        -> docker compose -f docker-compose.dev.yml up -d --wait
+#   pnpm db:migrate   -> apply committed SQL in /drizzle as app_owner
+# Host port 5433 avoids clashing with a locally installed PostgreSQL on 5432.
+# deploy/db/initdb/01-roles.sh runs ONCE on first start (empty volume) and creates
+# app_owner / app_rw / app_backup plus the `app` and `app_test` databases.
+name: edu-platform-dev
+
+services:
+  db:
+    image: postgres:16
+    command: ["postgres", "-c", "password_encryption=scram-sha-256", "-c", "timezone=UTC"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--locale=C.UTF-8 --encoding=UTF8"
+      APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:-app_owner_dev}
+      APP_RW_PASSWORD: ${APP_RW_PASSWORD:-app_rw_dev}
+      APP_BACKUP_PASSWORD: ${APP_BACKUP_PASSWORD:-app_backup_dev}
+      TZ: UTC
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+      - ./deploy/db/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+    shm_size: 256mb
+
+volumes:
+  pgdata_dev:
