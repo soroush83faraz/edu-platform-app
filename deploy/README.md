@@ -1,0 +1,54 @@
+# استقرار (فاز ۱)
+
+مدل: **ایمیج روی ویندوز بیلد می‌شود و با `docker save | ssh docker load` به سرور می‌رود.** روی سرور هیچ `npm install` یا `docker build` اجرا نمی‌شود. فقط Caddy پورت ۸۰/۴۴۳ دارد؛ Postgres و اپ پورت عمومی ندارند.
+
+## اولین استقرار (یک‌بار)
+
+روی سرور (به‌عنوان root، اوبونتو ۲۴٫۰۴):
+
+```bash
+bash bootstrap-server.sh "ssh-ed25519 AAAA... you@laptop"   # کاربر deploy، sshd، ufw، fail2ban، swap، chrony، docker + میرور آروان
+```
+
+از ویندوز (Git Bash یا PowerShell)، با کاربر `deploy`:
+
+```bash
+scp deploy/compose.yml deploy/Caddyfile deploy/deploy.sh deploy/rollback.sh deploy@SERVER:/srv/school/
+scp deploy/db/initdb/*.sql deploy@SERVER:/srv/school/db/initdb/
+scp deploy/.env.example deploy@SERVER:/srv/school/.env
+ssh deploy@SERVER 'chmod 600 /srv/school/.env && chmod +x /srv/school/*.sh && nano /srv/school/.env'   # همهٴ CHANGE_ME ها را پر کنید
+```
+
+```powershell
+.\deploy\ship.ps1 -Server SERVER            # build → save|load → deploy.sh <sha>
+```
+
+بررسی: `ssh deploy@SERVER 'cd /srv/school && docker compose ps && docker compose logs --tail=50 caddy'` — باید «certificate obtained» دیده شود. `curl -I https://PUBLIC_HOST/api/health` باید 200 بدهد. `ss -tlnp` فقط 22/80/443.
+
+## استقرار مجدد
+
+```powershell
+.\deploy\ship.ps1 -Server SERVER
+```
+
+`deploy.sh` به ترتیب: تگ فعلی → `.last_tag`؛ `pg_dump -Fc` در `backups/pre-<ts>.dump`؛ به‌روزرسانی `APP_IMAGE` در `.env`؛ `compose run --rm migrate`؛ `compose up -d app caddy`؛ ۶۰ ثانیه poll روی `/api/health`؛ در شکست خودکار `rollback.sh`.
+
+## بازگشت دستی
+
+```bash
+ssh deploy@SERVER 'bash /srv/school/rollback.sh'
+```
+
+مهاجرت‌ها فقط افزودنی‌اند؛ ایمیج قبلی با اسکیمای جدید کار می‌کند، بازیابی دیتابیس لازم نیست.
+
+## بازیابی دیتابیس (اضطراری)
+
+```bash
+docker compose stop app
+docker compose exec -T db pg_restore -U postgres -d app --clean --if-exists < backups/pre-<ts>.dump
+docker compose up -d app
+```
+
+## یادداشت‌ها
+- `scripts/migrate.js` و `db/initdb/01-roles.sql` در بلوک دیتابیس نوشته می‌شوند؛ تا آن زمان سرویس `migrate` شکست می‌خورد (و deploy.sh rollback می‌کند) — برای صفحهٴ hello اول، `docker compose up -d db caddy` و `docker compose up -d --no-deps app`.
+- بکاپ شبانه/رمزگذاری/آپلود به آروان: روز ۳.

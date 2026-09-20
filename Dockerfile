@@ -1,0 +1,41 @@
+# Built on the developer machine (Windows) and shipped with `docker save | ssh docker load` (deploy/ship.ps1).
+# Nothing is installed or built on the VPS.
+
+# ---------- builder ----------
+FROM node:22-bookworm-slim AS builder
+WORKDIR /app
+ENV CI=true NEXT_TELEMETRY_DISABLED=1
+RUN corepack enable && corepack prepare pnpm@10.22.0 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+RUN pnpm install --frozen-lockfile
+COPY . .
+# Build-time only: env.ts is not imported by the build, but Next may evaluate route modules.
+ENV NODE_ENV=production
+RUN pnpm build
+
+# ---------- runner ----------
+FROM node:22-bookworm-slim AS runner
+WORKDIR /app
+ENV TZ=UTC NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000 NEXT_TELEMETRY_DISABLED=1
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
+RUN groupadd --system --gid 1001 nodejs \
+ && useradd --system --uid 1001 --gid nodejs --home /app --shell /usr/sbin/nologin nextjs \
+ && mkdir -p /data/files && chown -R nextjs:nodejs /data
+
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+# Migrations (committed SQL) and operational scripts run inside the same image (`migrate` service).
+COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
+COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
+
+USER nextjs
+EXPOSE 3000
+VOLUME ["/data/files"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD ["node","-e","fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+
+CMD ["node", "server.js"]

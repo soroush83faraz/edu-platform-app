@@ -1,0 +1,82 @@
+# Production stack on the VPS: /srv/school/compose.yml  (docker compose v2)
+# Only caddy publishes ports. Postgres and the app are reachable solely on the internal network.
+name: school
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    command: ["postgres", "-c", "password_encryption=scram-sha-256", "-c", "timezone=UTC"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--locale=C.UTF-8 --encoding=UTF8"
+      # Consumed by db/initdb/01-roles.sql (DB block) to create app_owner / app_rw / app_backup.
+      APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:?set APP_OWNER_PASSWORD in .env}
+      APP_RW_PASSWORD: ${APP_RW_PASSWORD:?set APP_RW_PASSWORD in .env}
+      APP_BACKUP_PASSWORD: ${APP_BACKUP_PASSWORD:?set APP_BACKUP_PASSWORD in .env}
+      TZ: UTC
+    expose: ["5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    shm_size: 256mb
+
+  migrate:
+    image: ${APP_IMAGE:?set APP_IMAGE in .env}
+    command: ["node", "scripts/migrate.js"]
+    restart: "no"
+    env_file: .env
+    environment:
+      TZ: UTC
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    image: ${APP_IMAGE:?set APP_IMAGE in .env}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: UTC
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      APP_VERSION: ${APP_VERSION:-${APP_IMAGE}}
+      FILES_DIR: /data/files
+    expose: ["3000"]
+    volumes:
+      - files:/data/files
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  files:
+  caddy_data:
+  caddy_config:
