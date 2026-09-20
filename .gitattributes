@@ -1,0 +1,7 @@
+# Keep LF everywhere (Docker/Linux scripts, lockfile); PowerShell may use CRLF.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.sh text eol=lf
+*.woff2 binary
+*.ico binary
+*.png binary

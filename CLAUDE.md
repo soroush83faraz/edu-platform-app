@@ -1,0 +1,38 @@
+# edu-platform-app — Phase 1 (multi-tenant Persian school PWA)
+@AGENTS.md
+
+## Stack (exact, `.npmrc save-exact`; never bump without updating docs/decisions.md)
+next 16.3.5 · react/react-dom 19.2.8 · typescript 5.9.3 · tailwindcss 4.3.3 · shadcn 4.21.0 (radix-nova, rtl:true, radix-ui 1.6.7) · drizzle-orm 0.45.2 · drizzle-kit 0.31.10 · zod 4.6.5 · pg 8.23.0 · @node-rs/argon2 2.2.1 · exceljs 4.4.0 · @serwist/next + serwist 9.5.12 · date-fns-jalali 4.4.0-0 · pino 10.3.1 · uuid 14.0.2 · @tanstack/react-table 9.2.4 · vazirmatn 33.0.3 · vitest 5.0.1 · tsx 4.23.15 · Node 22.14 · pnpm 10.22 · PostgreSQL 16.
+- Next 16 facts: the request hook file is **`src/proxy.ts`** exporting `proxy()` (`middleware.ts` is deprecated). **`cookies()`, `headers()`, `params`, `searchParams` are async — always `await`.** Read `node_modules/next/dist/docs/` before using an API.
+- Zod is v4: `z.url()`, `z.email()`, `error.issues`. Drizzle migrations are SQL files in `/drizzle`.
+
+## Layout
+`src/app` (routes only; thin) · `src/modules/<ctx>/{schema,dto,repo,service,actions,ui}` for tenancy, iam, config, files, audit, notif, workspace, academic, integ · `src/db/{client.ts,schema/_common.ts}` · `src/lib/{env,logger,normalize,errors,actions}` · `src/components/ui` (shadcn, generated — do not hand-edit) · `scripts/` (migrate, seed, import; tsx) · `drizzle/` (SQL) · `deploy/` (compose, Caddy, ship/deploy scripts) · `tests/{unit,int}`.
+Service signature: `(tx, ctx, input)`. Repos take `tx`. Explicit column selects, never `select *`.
+
+## DB rules (non-negotiable)
+- The ONLY DB access is `withTenant(ctx, fn)` / `withoutTenant(fn)` from `src/db/client` (ESLint blocks other imports). No raw `db.`; `withoutTenant` only for global tables (organization, user_account, user_session, login_attempt, permission).
+- Every tenant table has `organization_id` + RLS (ENABLE + FORCE, fail-closed). Composite FKs `(organization_id, x_id)`. Soft delete via `status/archived_at`; `text + CHECK` not pg ENUM; `timestamptz` UTC; UUID v7.
+- Migrations: `drizzle-kit generate` → read the SQL → commit → `migrate` service runs it. **Never `drizzle-kit push`; never edit an applied migration; production changes are additive-only** (nullable/DEFAULT columns, expand/contract renames).
+- App connects as `app_rw` (NOSUPERUSER NOBYPASSRLS); migrations as `app_owner` (MIGRATION_DATABASE_URL).
+
+## Action rules
+- Every Server Action and Route Handler goes through `defineAction({ schema, permission, scope }, handler)` in `src/lib/actions`. `permission` is REQUIRED (no anonymous actions except login/health). Order: session → must_change_password → Zod `.strict()` → `can()` → `withTenant` → audit in the same transaction.
+- `organization_id`, `person_id`, `created_by` come ONLY from the session — never from input. Never spread client input into `.set()` / `.values()`; map fields explicitly.
+- Errors leave the boundary only as `AppError` (`src/lib/errors`) with Persian messages. Proxy is a convenience redirect, NOT a security boundary.
+
+## Frontend rules
+- `<html lang="fa" dir="rtl">` is set ONLY in `src/app/layout.tsx`. Never set `dir` elsewhere except `<bdi dir="ltr">` around phone numbers, codes and URLs.
+- Tailwind logical utilities only: `ms- me- ps- pe- start- end- text-start text-end rounded-s rounded-e border-s border-e`. NEVER `ml- mr- pl- pr- left- right- text-left text-right`.
+- Fonts: `next/font/local` (Vazirmatn variable, `--font-vazir`) only; `next/font/google` is ESLint-blocked. No third-party hosts anywhere (fonts, analytics, CDNs, icons).
+- Persian digits via `Intl.NumberFormat("fa-IR")` / `toLocaleString("fa-IR")`; dates via `date-fns-jalali` rendered in `Asia/Tehran`; store UTC.
+- All UI text is Persian (نیم‌فاصله where needed); no English strings in UI. Touch targets ≥ 44px. No `dangerouslySetInnerHTML` (ESLint `react/no-danger`).
+- Tokens live in `src/app/globals.css` (`@theme`: primary 50–900 lapis, neutral, success/warning/danger, radius 8px). Use tokens, not raw hex, in components.
+
+## NOT in Phase 1 (do not add, do not scaffold)
+tRPC · GraphQL · Prisma · Redis · BullMQ/queues · Auth.js/NextAuth · microservices · CQRS/event sourcing · Web Push · SMS OTP · file attachments · dark mode · custom roles · staging env.
+
+## Workflow
+- `pnpm verify` (typecheck + lint + unit tests) must pass before every commit; `pnpm build` before every deploy. Int tests: `pnpm test:int` (needs Docker Postgres).
+- Deploy = `deploy/ship.ps1` (build on Windows → `docker save | ssh docker load` → `deploy.sh`). Never build on the VPS.
+- **45-minute rule:** a bug not fixed in 45 min → revert to the last green commit and ask for a simpler approach. Commit after every vertical slice.

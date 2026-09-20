@@ -1,0 +1,38 @@
+import { defineConfig, globalIgnores } from "eslint/config";
+import nextVitals from "eslint-config-next/core-web-vitals";
+import nextTs from "eslint-config-next/typescript";
+
+/** Only these paths may touch the DB access boundary (`src/db/client`). */
+const DB_CLIENT_ALLOWED = ["src/lib/actions/**", "src/db/**", "scripts/**", "tests/int/**"];
+
+const dbClientPatterns = [
+  {
+    group: ["@/db/client", "**/db/client", "**/db/client.*"],
+    message:
+      "Import the DB only through defineAction/withTenant (src/lib/actions) or inside src/db and scripts. No raw db access in modules or UI.",
+  },
+  {
+    group: ["next/font/google"],
+    message: "Google Fonts are blocked in Iran. Use next/font/local (Vazirmatn is self-hosted in the root layout).",
+  },
+];
+
+const eslintConfig = defineConfig([
+  ...nextVitals,
+  ...nextTs,
+  {
+    rules: {
+      "react/no-danger": "error",
+      "no-restricted-imports": ["error", { patterns: dbClientPatterns }],
+    },
+  },
+  {
+    files: DB_CLIENT_ALLOWED,
+    rules: {
+      "no-restricted-imports": ["error", { patterns: dbClientPatterns.filter((p) => !p.group.includes("@/db/client")) }],
+    },
+  },
+  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts", "drizzle/**", "deploy/**"]),
+]);
+
+export default eslintConfig;
