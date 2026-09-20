@@ -16,7 +16,7 @@ const path = require("node:path");
 const ROOT = path.resolve(__dirname, "..");
 
 /** Directories never scanned (relative to the repo root). */
-const SKIP_DIRS = new Set([".git", ".next", "node_modules", "out", "build", "coverage", "public", "scripts", "tests", "drizzle", "deploy", "docs"]);
+const SKIP_DIRS = new Set([".git", ".next", ".claude", "node_modules", "out", "build", "coverage", "public", "scripts", "tests", "drizzle", "deploy", "docs", "backups", "template"]);
 /** File extensions that count as application code. */
 const CODE_EXT = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"]);
 
