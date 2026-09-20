@@ -6,7 +6,12 @@ import { academicYear, classGroup, classOffering, gradeLevel, orgFk, school } fr
 
 export const academic = pgSchema("academic");
 
-/** One row per student per academic year: "is enrolled at school S in year Y at grade G". */
+/**
+ * One row per student per academic year: "is enrolled at school S in year Y at grade G". It is also the student's
+ * scope ANCHOR for school-scoped admins (docs/admin.md): `createStudent` with a school but no class writes a
+ * `registered` row for the school's current year with `grade_level_id` NULL (nullable since migration 0012);
+ * `enrollStudent` fills the grade and flips it to `active` when the first class is chosen.
+ */
 export const schoolEnrollment = academic.table(
   "school_enrollment",
   {
@@ -15,7 +20,7 @@ export const schoolEnrollment = academic.table(
     studentProfileId: uuid("student_profile_id").notNull(),
     schoolId: uuid("school_id").notNull(),
     academicYearId: uuid("academic_year_id").notNull(),
-    gradeLevelId: uuid("grade_level_id").notNull(),
+    gradeLevelId: uuid("grade_level_id"),
     status: text("status").notNull().default("active"),
     startsOn: date("starts_on").notNull().default(sql`current_date`),
     endsOn: date("ends_on"),

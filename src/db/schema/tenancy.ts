@@ -53,6 +53,8 @@ export const school = tenancy.table(
   },
   (t) => [
     unique("school_org_code_uq").on(t.organizationId, t.code),
+    // The code is the (lower-cased) prefix of generated usernames, so `G` and `g` must not coexist in one organization.
+    uniqueIndex("school_org_code_ci_uq").on(t.organizationId, sql`lower(${t.code})`),
     unique("school_org_id_uq").on(t.organizationId, t.id),
     check("school_gender_policy_chk", sql`${t.genderPolicy} IN ('girls', 'boys', 'mixed')`),
   ],

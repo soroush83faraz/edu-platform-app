@@ -10,8 +10,8 @@ import { formatNumberFa, isoDateToJalali, jalaliToIsoDate } from "@/lib/format";
 import { assignTeacher, endTeacherAssignment } from "@/modules/academic/service";
 import { classEnrollment, teacherAssignment } from "@/modules/academic/schema";
 import { person, staffProfile } from "@/modules/iam/schema";
-import { assertSchoolInScope, isInScope, type AdminScope } from "@/modules/iam/service";
-import { findClassGroup, listSchools, listTerms, schoolIdOfAcademicYear, schoolIdOfBranch, schoolIdOfClassOffering } from "@/modules/tenancy/repo";
+import { assertSchoolInScope, isInScope, requireStaffAssignable, staffAssignableSql, type AdminScope } from "@/modules/iam/service";
+import { findClassGroup, listSchools, listTerms, schoolIdOfAcademicYear, schoolIdOfBranch, schoolIdOfClassOffering, schoolIdOfTerm } from "@/modules/tenancy/repo";
 import { academicYear, branch, classGroup, classOffering, educationLevel, gradeLevel, school, subject, term } from "@/modules/tenancy/schema";
 import {
   createAcademicYear,
@@ -685,6 +685,8 @@ export const classResource = defineResource<ClassRow, z.output<typeof ClassInput
       throw validation({ fieldErrors: { [input.branchId ? "academicYearId" : "branchId"]: ["انتخاب کنید."] } }, "مدرسه/شعبه و سال تحصیلی را انتخاب کنید.");
     }
     assertSchoolInScope(scope, await schoolIdOfBranch(tx, input.branchId));
+    // The year is checked against the scope as well: an unknown id and another school's year look the same (NOT_FOUND).
+    assertSchoolInScope(scope, await schoolIdOfAcademicYear(tx, input.academicYearId));
     const res = await createClassGroup(tx, ctx, { branchId: input.branchId, academicYearId: input.academicYearId, gradeLevelId: input.gradeLevelId, name: input.name, capacity: input.capacity ?? null });
     return { id: res.classGroupId };
   },
@@ -777,12 +779,16 @@ const OfferingInput = z
 
 const OFFERING_STATUS: Record<string, string> = { active: "فعال", planned: "برنامه‌ریزی‌شده", closed: "پایان‌یافته" };
 
-export async function staffOptions(tx: Tx): Promise<SelectOption[]> {
+/**
+ * Staff a caller may pick as a teacher: everyone for an organization admin; for a school-scoped admin only staff
+ * anchored in (or already teaching at) their schools — `staffAssignableSql`, the same predicate the mutation checks.
+ */
+export async function staffOptions(tx: Tx, scope: AdminScope): Promise<SelectOption[]> {
   const rows = await tx
     .select({ id: staffProfile.id, firstName: person.firstName, lastName: person.lastName })
     .from(staffProfile)
     .innerJoin(person, eq(person.id, staffProfile.personId))
-    .where(and(eq(person.status, "active"), isNull(staffProfile.leftOn)))
+    .where(and(eq(person.status, "active"), isNull(staffProfile.leftOn), staffAssignableSql(scope, "iam.staff_profile.id", "iam.staff_profile.person_id")))
     .orderBy(asc(person.lastName), asc(person.firstName));
   return rows.map((r) => ({ value: r.id, label: `${r.firstName} ${r.lastName}` }));
 }
@@ -820,7 +826,7 @@ export const offeringResource = defineResource<OfferingRow, z.output<typeof Offe
     return {
       subjects: subjects.map((s) => ({ value: s.id, label: s.name })),
       terms: terms.map((t) => ({ value: t.id, label: t.name })),
-      staff: await staffOptions(tx),
+      staff: await staffOptions(tx, scope),
     };
   },
   list: (tx, _ctx, scope, opts) => listOfferingRows(tx, scope, opts.parent ?? ""),
@@ -828,6 +834,10 @@ export const offeringResource = defineResource<OfferingRow, z.output<typeof Offe
     const cg = await findClassGroup(tx, input.classGroupId);
     if (!cg) throw notFound();
     assertSchoolInScope(scope, cg.schoolId);
+    // Unknown term and another school's term are both NOT_FOUND (no existence oracle); the service then checks the year.
+    assertSchoolInScope(scope, await schoolIdOfTerm(tx, input.termId));
+    // A school admin may only hand a class to staff anchored in / already teaching at their schools (scope widening).
+    if (input.mainTeacherStaffProfileId) await requireStaffAssignable(tx, scope, input.mainTeacherStaffProfileId);
     const res = await createClassOffering(tx, ctx, {
       classGroupId: input.classGroupId,
       subjectId: input.subjectId,
@@ -848,6 +858,7 @@ export const offeringResource = defineResource<OfferingRow, z.output<typeof Offe
       .limit(1);
     const next = input.mainTeacherStaffProfileId ?? null;
     if ((current?.staffProfileId ?? null) === next) return;
+    if (next) await requireStaffAssignable(tx, scope, next);
     if (current) await endTeacherAssignment(tx, ctx, { teacherAssignmentId: current.id });
     if (next) await assignTeacher(tx, ctx, { staffProfileId: next, classOfferingId: id, role: "main" });
   },

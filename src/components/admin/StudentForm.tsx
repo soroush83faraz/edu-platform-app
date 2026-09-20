@@ -58,6 +58,7 @@ export function StudentForm({ classes, schools, detail }: Props) {
   const set = (name: string) => (val: FormValue) => setV((p) => ({ ...p, [name]: val }));
   const f = (name: string) => ({ id: `${ids}-${name}`, value: v[name], error: errors[name], onChange: set(name) });
   const classId = String(v.classGroupId ?? "");
+  const schoolFieldShown = !detail && !classId && schools.length > 1;
   const schoolOfClass = classes.find((c) => c.value === classId)?.schoolId;
   const schoolCode = schools.find((s) => s.value === (schoolOfClass ?? v.schoolId))?.code;
   const phone = String(v.contactPhone ?? "").trim();
@@ -137,7 +138,9 @@ export function StudentForm({ classes, schools, detail }: Props) {
           <fieldset className="flex flex-col gap-4 rounded-card bg-surface shadow-1 p-4">
             <legend className="px-1 text-sm font-semibold text-text-muted">کلاس</legend>
             <Field field={{ name: "classGroupId", labelFa: "کلاس", type: "select", optionsKey: "classes", hint: "می‌توانید بعداً از صفحهٴ دانش‌آموز تعیین کنید." }} options={classes} {...f("classGroupId")} />
-            {!classId && schools.length > 1 ? <Field field={{ name: "schoolId", labelFa: "مدرسه (بدون کلاس)", type: "select", options: schools, required: v.createAccount === true && !phone }} options={schools} {...f("schoolId")} /> : null}
+            {schoolFieldShown ? (
+              <Field field={{ name: "schoolId", labelFa: "مدرسه (بدون کلاس)", type: "select", options: schools, required: true, hint: "دانش‌آموز بدون کلاس هم به یک مدرسه تعلق دارد؛ مدیر همان مدرسه پروندهٴ او را می‌بیند." }} options={schools} {...f("schoolId")} />
+            ) : null}
           </fieldset>
           <fieldset className="flex flex-col gap-4 rounded-card bg-surface shadow-1 p-4">
             <legend className="px-1 text-sm font-semibold text-text-muted">حساب کاربری</legend>
@@ -147,7 +150,8 @@ export function StudentForm({ classes, schools, detail }: Props) {
         </>
       ) : null}
 
-      <FieldError id={`${ids}-form`} text={errors.form} />
+      {/* A school error with no visible school field (one school, or a class chosen) surfaces at the form level. */}
+      <FieldError id={`${ids}-form`} text={errors.form ?? (!schoolFieldShown ? errors.schoolId : undefined)} />
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button type="button" variant="outline" className="h-11" onClick={() => router.back()}>
           انصراف

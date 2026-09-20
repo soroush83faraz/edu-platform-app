@@ -212,12 +212,19 @@ export const studentProfile = iam.table(
   ],
 );
 
+/**
+ * `school_id` (migration 0012) is the staff member's PRIMARY school — the positive anchor the admin scope rule
+ * uses for staff (docs/admin.md «قانون دامنه»). Derived teacher roles never anchor a person; a school-scoped
+ * admin reaches staff only through this column or a manual school/branch-scoped role. NULL = anchored nowhere
+ * (organization admins only).
+ */
 export const staffProfile = iam.table(
   "staff_profile",
   {
     id: id(),
     organizationId: orgFk(),
     personId: uuid("person_id").notNull().unique("staff_profile_person_uq"),
+    schoolId: uuid("school_id"),
     employeeNumber: text("employee_number"),
     employmentType: text("employment_type").default("full_time"),
     hiredOn: date("hired_on"),
@@ -226,11 +233,17 @@ export const staffProfile = iam.table(
   },
   (t) => [
     unique("staff_profile_org_id_uq").on(t.organizationId, t.id),
+    index("staff_profile_org_school_idx").on(t.organizationId, t.schoolId).where(sql`${t.schoolId} IS NOT NULL`),
     check("staff_profile_employment_type_chk", sql`${t.employmentType} IN ('full_time', 'part_time', 'contractor')`),
     foreignKey({
       name: "staff_profile_person_fk",
       columns: [t.organizationId, t.personId],
       foreignColumns: [person.organizationId, person.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "staff_profile_school_fk",
+      columns: [t.organizationId, t.schoolId],
+      foreignColumns: [school.organizationId, school.id],
     }).onDelete("restrict"),
   ],
 );

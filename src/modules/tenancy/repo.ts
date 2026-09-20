@@ -1,6 +1,6 @@
 // tenancy queries. Every function takes a tenant-bound `tx` (RLS filters the organization); "school of X" lookups
 // are what the admin scope rule (`getAdminScope` in iam/service) checks against before any structure mutation.
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { academicYear, branch, classGroup, classOffering, educationLevel, gradeLevel, school, subject, term } from "./schema";
 
@@ -19,8 +19,9 @@ export async function findSchoolById(tx: Tx, id: string): Promise<SchoolRow | nu
   return rows[0] ?? null;
 }
 
+/** Case-insensitive (`school_org_code_ci_uq`): the code is the lower-cased prefix of generated usernames. */
 export async function findSchoolByCode(tx: Tx, code: string): Promise<SchoolRow | null> {
-  const rows = await tx.select(schoolColumns).from(school).where(eq(school.code, code)).limit(1);
+  const rows = await tx.select(schoolColumns).from(school).where(sql`lower(${school.code}) = lower(${code})`).limit(1);
   return rows[0] ?? null;
 }
 

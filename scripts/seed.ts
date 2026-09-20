@@ -332,6 +332,17 @@ export function demoId(key: string): string {
 /** +98912 3xx xxxx, unique per index. */
 export const demoPhone = (i: number) => `+98912${String(3000000 + i)}`;
 
+/** The demo staff member's primary school: first school-scoped role, else the school of the first taught offering. */
+export function demoStaffSchoolId(p: DemoPerson, schoolIds: Record<string, string>): string | null {
+  for (const r of p.roles) {
+    if (r.scope === "school") return schoolIds[r.school] ?? null;
+  }
+  for (const r of p.roles) {
+    if (r.scope === "class_offering") return schoolIds[r.offering.split(":")[0]] ?? null;
+  }
+  return null;
+}
+
 export interface DemoPerson {
   key: string;
   firstName: string;
@@ -614,9 +625,12 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
       let studentProfileId: string | undefined;
       let staffProfileId: string | undefined;
       let userAccountId: string | null;
+      // Primary school of staff (scope anchor, docs/admin.md): the school of the first school role, else of the
+      // first taught offering (`<school code>:<class>:<subject>`); organization admins stay unanchored.
+      const staffSchoolId = p.kind === "staff" ? demoStaffSchoolId(p, schoolIds) : null;
       if (existingPerson) {
         personId = existingPerson.id;
-        await updatePerson(tx, ctx, personId, { firstName: p.firstName, lastName: p.lastName, gender: p.gender, status: "active" });
+        await updatePerson(tx, ctx, personId, { firstName: p.firstName, lastName: p.lastName, gender: p.gender, status: "active", ...(p.kind === "staff" ? { schoolId: staffSchoolId } : {}) });
         if (p.kind === "student") {
           const [sp] = await tx.select({ id: studentProfile.id }).from(studentProfile).where(eq(studentProfile.personId, personId)).limit(1);
           studentProfileId = sp.id;
@@ -641,7 +655,7 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
         studentProfileId = res.studentProfileId;
         userAccountId = res.userAccountId;
       } else {
-        const res = await createStaff(tx, ctx, { id: demoId(k(`person:${p.key}`)), firstName: p.firstName, lastName: p.lastName, gender: p.gender, phone, externalRef });
+        const res = await createStaff(tx, ctx, { id: demoId(k(`person:${p.key}`)), firstName: p.firstName, lastName: p.lastName, gender: p.gender, phone, externalRef, schoolId: staffSchoolId });
         personId = res.personId;
         staffProfileId = res.staffProfileId;
         userAccountId = res.userAccountId;

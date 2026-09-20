@@ -85,6 +85,13 @@
       "when": 1789916197081,
       "tag": "0011_phase1_step2_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789934754740,
+      "tag": "0012_admin_scope_anchors",
+      "breakpoints": true
     }
   ]
 }

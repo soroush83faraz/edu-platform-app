@@ -11,7 +11,7 @@ import { audit } from "@/lib/audit";
 import { conflict, notFound } from "@/lib/errors";
 import { assignTeacher, enrollStudent, moveEnrollment } from "@/modules/academic/service";
 import { classEnrollment, teacherAssignment } from "@/modules/academic/schema";
-import { createStaff, createStudent, updatePerson, type IamCtx } from "@/modules/iam/service";
+import { createStaff, createStudent, getAdminScope, requireStaffAssignable, updatePerson, type AdminScope, type IamCtx } from "@/modules/iam/service";
 import { findClassGroupByName, findOffering } from "@/modules/tenancy/repo";
 import { createClassGroup, createClassOffering, createSubject, updateClassGroup } from "@/modules/tenancy/service";
 import { externalIdentityMap, importBatch, importRow } from "../schema";
@@ -154,7 +154,11 @@ export async function commitImport(tx: Tx, ctx: ImportCtx, ref: ImportReference,
   }
 
   // ---- staff ----
+  // Existing staff of OTHER schools may not be handed a class by a school-scoped admin (same rule as the admin UI,
+  // `staffAssignableSql`): the CLI runs as the real admin, so their scope applies to the file too.
+  const scope: AdminScope | null = ctx.assignments ? await getAdminScope(tx, { orgId: ctx.orgId, assignments: ctx.assignments }) : null;
   const staffProfileByPhone = new Map<string, string>();
+  const createdStaffProfiles = new Set<string>();
   for (const [phone, s] of ref.staffByPhone) staffProfileByPhone.set(phone, s.staffProfileId);
   for (const s of validation.plan.staff) {
     if (s.existing) {
@@ -162,8 +166,10 @@ export async function commitImport(tx: Tx, ctx: ImportCtx, ref: ImportReference,
       await markRows(tx, batchId, "staff", s.rowNumber, { personId: s.existing.personId, staffProfileId: s.existing.staffProfileId });
       continue;
     }
-    const res = await createStaff(tx, ctx, { firstName: s.firstName, lastName: s.lastName, phone: s.phone, employeeNumber: s.employeeNumber });
+    // The imported school is the staff member's primary school (scope anchor for the school's admins).
+    const res = await createStaff(tx, ctx, { firstName: s.firstName, lastName: s.lastName, phone: s.phone, employeeNumber: s.employeeNumber, schoolId: ref.school.id });
     staffProfileByPhone.set(s.phone, res.staffProfileId);
+    createdStaffProfiles.add(res.staffProfileId);
     await mapExternal(tx, ctx, "iam.person", res.personId, s.phone);
     await logInsert("iam.person", res.personId, { kind: "staff", staffProfileId: res.staffProfileId, hasAccount: res.userAccountId !== null });
     inc(counts.inserted, "staff");
@@ -188,6 +194,11 @@ export async function commitImport(tx: Tx, ctx: ImportCtx, ref: ImportReference,
     }
     const staffProfileId = staffProfileByPhone.get(t.teacherPhone);
     if (!staffProfileId) throw notFound(`دبیر ردیف ${t.rowNumber} پیدا نشد.`);
+    if (scope && scope.kind === "school" && !createdStaffProfiles.has(staffProfileId)) {
+      await requireStaffAssignable(tx, scope, staffProfileId).catch(() => {
+        throw notFound(`دبیر ردیف ${t.rowNumber} پیدا نشد.`);
+      });
+    }
     const [active] = await tx
       .select({ id: teacherAssignment.id })
       .from(teacherAssignment)

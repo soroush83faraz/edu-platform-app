@@ -6,14 +6,15 @@
 // Plaintext initial passwords exist only in the RETURN VALUE of createStudent/createStaff/resetInitialPassword
 // (and, AES-GCM encrypted, in auth_identity.initial_password_enc for the credentials sheet). They are never
 // logged and never written to the audit trail.
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
 import { conflict, forbidden, invalidReference, notFound, validation } from "@/lib/errors";
 import { encryptInitialPassword } from "@/lib/crypto";
 import { normalizeFa, normalizePhoneIR, toAsciiDigits } from "@/lib/normalize";
+import { schoolEnrollment } from "@/modules/academic/schema";
 import { enrollStudent } from "@/modules/academic/service";
-import { findClassGroup, findSchoolById } from "@/modules/tenancy/repo";
+import { findClassGroup, findCurrentAcademicYear, findSchoolById, schoolIdOfBranch } from "@/modules/tenancy/repo";
 import type { Assignment } from "./can";
 import { generateInitialPassword, hashPassword } from "./password";
 import { findAccountByIdentifier } from "./repo";
@@ -27,6 +28,8 @@ const fieldError = (field: string, message: string) => validation({ fieldErrors:
 export const STUDENT_NUMBER_RE = /^[0-9A-Za-z-]{1,20}$/;
 /** Lower-cased username: `<school code>-<student number>` by default; never phone-like (login treats digits as a phone). */
 const USERNAME_RE = /^[a-z][a-z0-9_-]{1,40}$/;
+/** `login_identifier` is global while school codes are per organization: a generated username gets `-01`…`-05` on collision. */
+const GENERATED_USERNAME_RETRIES = 5;
 
 export const MESSAGES = {
   phoneTaken: "این شماره قبلاً ثبت شده است.",
@@ -38,6 +41,12 @@ export const MESSAGES = {
   externalRefTaken: "این کد یکتا قبلاً برای فرد دیگری ثبت شده است.",
   nameRequired: "نام و نام خانوادگی را وارد کنید.",
   schoolRequired: "برای ساخت نام‌کاربری، مدرسهٴ دانش‌آموز مشخص نیست.",
+  studentSchoolRequired: "مدرسه یا کلاس دانش‌آموز را انتخاب کنید.",
+  staffSchoolRequired: "مدرسهٴ همکار را انتخاب کنید.",
+  noCurrentYear: "این مدرسه سال تحصیلی جاری ندارد؛ اول سال جاری را در بخش «سال‌ها» تعریف کنید.",
+  schoolNotFound: "مدرسه یافت نشد.",
+  roleNotManual: "این نقش به‌صورت دستی داده نمی‌شود.",
+  roleScopeNotAllowed: "این نقش در این دامنه قابل تخصیص نیست.",
   changed: "— تغییر داده شده",
 } as const;
 
@@ -78,6 +87,80 @@ export function assertSchoolInScope(scope: AdminScope, schoolId: string | null |
 export function isInScope(scope: AdminScope, schoolId: string | null | undefined): boolean {
   if (!schoolId) return false;
   return scope.kind === "organization" || scope.schoolIds.includes(schoolId);
+}
+
+/** Column references passed to the SQL predicates below are code constants, never input — still, keep them boring. */
+const COLUMN_REF_RE = /^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*){0,2}$/;
+
+function columnRef(column: string): SQL {
+  if (!COLUMN_REF_RE.test(column)) throw new Error(`invalid column reference: ${column}`);
+  return sql.raw(column);
+}
+
+/**
+ * SQL predicate «the person in `personColumn` is inside `scope`» — the ONE rule behind every admin people list,
+ * detail page and account operation (docs/admin.md «قانون دامنه»):
+ *   - organization scope → TRUE (organization admins reach everyone of the organization);
+ *   - a person holding ANY unrevoked organization-scoped role assignment is outside EVERY school scope (the
+ *     organization admin is managed by organization admins only);
+ *   - otherwise the person needs a POSITIVE anchor in one of the caller's schools: a `school_enrollment`
+ *     (students), `staff_profile.school_id` (staff) or an unrevoked school-/branch-scoped role (managers).
+ * Derived teacher roles (`class_offering` scope) never anchor: a school admin can create them himself, so they
+ * must not widen his reach over a person anchored elsewhere. Unanchored persons are NOT_FOUND for school admins.
+ */
+export function personInScopeSql(scope: AdminScope, personColumn: string): SQL {
+  if (scope.kind === "organization") return sql`true`;
+  const p = columnRef(personColumn);
+  const ids = sql`${sql.param(scope.schoolIds, undefined)}::uuid[]`;
+  return sql`(
+    not exists (select 1 from iam.role_assignment ra where ra.person_id = ${p} and ra.revoked_at is null and ra.scope_type = 'organization')
+    and (
+      exists (select 1 from academic.school_enrollment se join iam.student_profile sp on sp.id = se.student_profile_id where sp.person_id = ${p} and se.school_id = any(${ids}))
+      or exists (select 1 from iam.staff_profile st where st.person_id = ${p} and st.school_id = any(${ids}))
+      or exists (select 1 from iam.role_assignment ra where ra.person_id = ${p} and ra.revoked_at is null and ra.school_id = any(${ids}))
+      or exists (select 1 from iam.role_assignment ra join tenancy.branch b on b.id = ra.branch_id where ra.person_id = ${p} and ra.revoked_at is null and b.school_id = any(${ids}))
+    )
+  )`;
+}
+
+/** NOT_FOUND (never FORBIDDEN) unless the person exists in this organization and satisfies `personInScopeSql`. */
+export async function requirePersonInScope(tx: Tx, scope: AdminScope, personId: string): Promise<{ id: string; firstName: string; lastName: string }> {
+  const rows = await tx
+    .select({ id: person.id, firstName: person.firstName, lastName: person.lastName, inScope: sql<boolean>`${personInScopeSql(scope, "iam.person.id")}` })
+    .from(person)
+    .where(eq(person.id, personId))
+    .limit(1);
+  const p = rows[0];
+  if (!p || !p.inScope) throw notFound();
+  return { id: p.id, firstName: p.firstName, lastName: p.lastName };
+}
+
+/**
+ * SQL predicate «the staff member may be given a teaching assignment by an admin of `scope`»: anchored in the
+ * scope (`personInScopeSql`) OR already teaching there (placed by an organization admin). Re-using such a teacher
+ * for another class of the same school widens nothing, because teaching never grants account reach.
+ */
+export function staffAssignableSql(scope: AdminScope, staffProfileColumn: string, personColumn: string): SQL {
+  if (scope.kind === "organization") return sql`true`;
+  const ids = sql`${sql.param(scope.schoolIds, undefined)}::uuid[]`;
+  return sql`(${personInScopeSql(scope, personColumn)} or exists (
+    select 1 from academic.teacher_assignment ta
+    join tenancy.class_offering o on o.id = ta.class_offering_id
+    join tenancy.class_group cg on cg.id = o.class_group_id
+    join tenancy.branch b on b.id = cg.branch_id
+    where ta.staff_profile_id = ${columnRef(staffProfileColumn)} and ta.valid_to is null and b.school_id = any(${ids})))`;
+}
+
+/** NOT_FOUND unless the staff profile exists here and `staffAssignableSql` holds for the caller's scope. */
+export async function requireStaffAssignable(tx: Tx, scope: AdminScope, staffProfileId: string): Promise<{ staffProfileId: string; personId: string }> {
+  const rows = await tx
+    .select({ id: staffProfile.id, personId: staffProfile.personId, ok: sql<boolean>`${staffAssignableSql(scope, "iam.staff_profile.id", "iam.staff_profile.person_id")}` })
+    .from(staffProfile)
+    .where(eq(staffProfile.id, staffProfileId))
+    .limit(1);
+  const s = rows[0];
+  if (!s || !s.ok) throw notFound();
+  return { staffProfileId: s.id, personId: s.personId };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -238,6 +321,9 @@ export async function unlockAccount(tx: Tx, ctx: IamCtx, input: { userAccountId:
 export const ASSIGNABLE_ROLES = ["org_admin", "school_principal", "vice_principal"] as const;
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 
+/** The only role codes `assignRole` writes; `teacher` is derived by `assignTeacher`, guardian roles are phase 2. */
+const MANUAL_ROLE_CODES: ReadonlySet<string> = new Set<string>([...ASSIGNABLE_ROLES, "student"]);
+
 export interface AssignRoleInput {
   personId: string;
   roleCode: AssignableRole | "student";
@@ -245,18 +331,21 @@ export interface AssignRoleInput {
   studentProfileId?: string | null;
 }
 
-async function findSystemRole(tx: Tx, code: string): Promise<{ id: string }> {
-  const rows = await tx.select({ id: role.id }).from(role).where(and(isNull(role.organizationId), eq(role.code, code))).limit(1);
+async function findSystemRole(tx: Tx, code: string): Promise<{ id: string; allowedScopeTypes: string[] }> {
+  const rows = await tx.select({ id: role.id, allowedScopeTypes: role.allowedScopeTypes }).from(role).where(and(isNull(role.organizationId), eq(role.code, code))).limit(1);
   if (!rows[0]) throw invalidReference(`نقش سیستمی «${code}» یافت نشد.`);
   return rows[0];
 }
 
 /**
  * Manual role assignment (source_type 'manual', granted_by = ctx.personId). `org_admin` is organization-scoped;
- * `school_principal` / `vice_principal` need a school. A school-scoped admin (ctx.assignments) may only grant
- * school-scoped roles inside their own schools — organization-level roles are FORBIDDEN for them.
+ * `school_principal` / `vice_principal` need a school. Runtime guards (seed/CLI callers included): only
+ * `MANUAL_ROLE_CODES`, and the chosen scope type must be in the role's `allowed_scope_types`. A school-scoped
+ * admin (ctx.assignments) may only grant school-scoped roles inside their own schools, and only to persons
+ * already in their scope — organization-level roles are FORBIDDEN for them.
  */
 export async function assignRole(tx: Tx, ctx: IamCtx, input: AssignRoleInput): Promise<{ roleAssignmentId: string; created: boolean }> {
+  if (!MANUAL_ROLE_CODES.has(input.roleCode)) throw validation(undefined, MESSAGES.roleNotManual);
   const tpl = await findSystemRole(tx, input.roleCode);
   let scope: { scopeType: "organization" | "school" | "student"; schoolId?: string; studentProfileId?: string };
   let scopeId: string;
@@ -273,11 +362,13 @@ export async function assignRole(tx: Tx, ctx: IamCtx, input: AssignRoleInput): P
     scope = { scopeType: "school", schoolId: input.schoolId };
     scopeId = input.schoolId;
   }
+  if (!tpl.allowedScopeTypes.includes(scope.scopeType)) throw validation(undefined, MESSAGES.roleScopeNotAllowed);
   if (ctx.assignments && scope.scopeType !== "student") {
     const adminScope = await getAdminScope(tx, { orgId: ctx.orgId, assignments: ctx.assignments });
     if (adminScope.kind === "school") {
       if (scope.scopeType === "organization") throw forbidden("فقط مدیر سازمان می‌تواند نقش سطح سازمان بدهد.");
       assertSchoolInScope(adminScope, scope.schoolId);
+      await requirePersonInScope(tx, adminScope, input.personId);
     }
   }
   const [p] = await tx.select({ id: person.id }).from(person).where(eq(person.id, input.personId)).limit(1);
@@ -296,10 +387,23 @@ export async function assignRole(tx: Tx, ctx: IamCtx, input: AssignRoleInput): P
   return { roleAssignmentId: row.id, created: true };
 }
 
-/** Revokes a MANUAL assignment (derived teacher roles end with their teacher_assignment). */
+/**
+ * Revokes a MANUAL assignment (derived teacher roles end with their teacher_assignment). A school-scoped admin
+ * (ctx.assignments) may revoke only roles of persons in their scope whose scope they cover: `school` / `branch`
+ * inside their schools, `student` (the person check covers it); every other scope type is NOT_FOUND for them and
+ * organization-level roles stay FORBIDDEN.
+ */
 export async function revokeRoleAssignment(tx: Tx, ctx: IamCtx, input: { roleAssignmentId: string }): Promise<void> {
   const [ra] = await tx
-    .select({ id: roleAssignment.id, personId: roleAssignment.personId, roleId: roleAssignment.roleId, scopeType: roleAssignment.scopeType, schoolId: roleAssignment.schoolId, sourceType: roleAssignment.sourceType })
+    .select({
+      id: roleAssignment.id,
+      personId: roleAssignment.personId,
+      roleId: roleAssignment.roleId,
+      scopeType: roleAssignment.scopeType,
+      schoolId: roleAssignment.schoolId,
+      branchId: roleAssignment.branchId,
+      sourceType: roleAssignment.sourceType,
+    })
     .from(roleAssignment)
     .where(and(eq(roleAssignment.id, input.roleAssignmentId), isNull(roleAssignment.revokedAt)))
     .limit(1);
@@ -309,7 +413,10 @@ export async function revokeRoleAssignment(tx: Tx, ctx: IamCtx, input: { roleAss
     const adminScope = await getAdminScope(tx, { orgId: ctx.orgId, assignments: ctx.assignments });
     if (adminScope.kind === "school") {
       if (ra.scopeType === "organization") throw forbidden("فقط مدیر سازمان می‌تواند نقش سطح سازمان را لغو کند.");
+      await requirePersonInScope(tx, adminScope, ra.personId);
       if (ra.scopeType === "school") assertSchoolInScope(adminScope, ra.schoolId);
+      else if (ra.scopeType === "branch") assertSchoolInScope(adminScope, ra.branchId ? await schoolIdOfBranch(tx, ra.branchId) : null);
+      else if (ra.scopeType !== "student") throw notFound();
     }
   }
   if (ra.personId === ctx.personId && ra.scopeType === "organization") throw validation(undefined, "نمی‌توانید نقش سازمانی خودتان را لغو کنید.");
@@ -347,12 +454,25 @@ export interface CreateStudentInput extends PersonNameInput {
   externalRef?: string | null;
   contactPhone?: string | null;
   guardianPhone?: string | null;
-  /** The student's school (username prefix + scope). Defaults to the school of `enrollment.classGroupId`. */
+  /**
+   * The student's school (username prefix + scope anchor). Defaults to the school of `enrollment.classGroupId`.
+   * Without a class, a `registered` school_enrollment for the school's CURRENT academic year anchors the student
+   * (a school-scoped admin only ever sees anchored persons); no current year → field error.
+   */
   schoolId?: string;
   login?: { createAccount: boolean; identifier?: string | null };
   enrollment?: { classGroupId: string } | null;
   /** Assign the system `student` role (default true). */
   assignStudentRole?: boolean;
+}
+
+/** `<base>`, then `<base>-01` … `<base>-05`: the first generated username that is free in the GLOBAL account table. */
+async function freeGeneratedUsername(tx: Tx, base: string): Promise<ResolvedIdentifier> {
+  for (let i = 0; i <= GENERATED_USERNAME_RETRIES; i++) {
+    const candidate = i === 0 ? base : `${base}-${String(i).padStart(2, "0")}`;
+    if (!(await findAccountByIdentifier(tx, candidate))) return { loginIdentifier: candidate, phoneE164: null };
+  }
+  throw conflict(MESSAGES.usernameTaken);
 }
 
 export interface CreateStudentResult {
@@ -392,6 +512,11 @@ export async function createStudent(tx: Tx, ctx: IamCtx, input: CreateStudentInp
     schoolId = cg.schoolId;
     classGroupId = cg.id;
   }
+  const school = schoolId ? await findSchoolById(tx, schoolId) : null;
+  if (schoolId && !school) throw invalidReference(MESSAGES.schoolNotFound);
+  // Anchor without a class: the school's current year (the class path anchors through enrollStudent below).
+  const anchorYear = school && !classGroupId ? await findCurrentAcademicYear(tx, school.id) : null;
+  if (school && !classGroupId && !anchorYear) throw fieldError("schoolId", MESSAGES.noCurrentYear);
 
   const [p] = await tx
     .insert(person)
@@ -405,6 +530,21 @@ export async function createStudent(tx: Tx, ctx: IamCtx, input: CreateStudentInp
   if (guardianPhone) await tx.insert(contactPoint).values({ organizationId: ctx.orgId, personId: p.id, kind: "mobile", value: guardianPhone, label: "ولی", isPrimary: !contactPhone });
   await audit(ctx, "iam.person.created", { schema: "iam", table: "person", id: p.id }, null, { ...names, kind: "student", studentNumber, studentProfileId: sp.id, schoolId, classGroupId }, tx);
 
+  if (school && anchorYear) {
+    const [se] = await tx
+      .insert(schoolEnrollment)
+      .values({ organizationId: ctx.orgId, studentProfileId: sp.id, schoolId: school.id, academicYearId: anchorYear.id, gradeLevelId: null, status: "registered" })
+      .returning({ id: schoolEnrollment.id });
+    await audit(
+      ctx,
+      "academic.school_enrollment.registered",
+      { schema: "academic", table: "school_enrollment", id: se.id },
+      null,
+      { studentProfileId: sp.id, schoolId: school.id, academicYearId: anchorYear.id },
+      tx,
+    );
+  }
+
   let account: CreateAccountResult | null = null;
   if (input.login?.createAccount) {
     let identifier: ResolvedIdentifier;
@@ -413,10 +553,8 @@ export async function createStudent(tx: Tx, ctx: IamCtx, input: CreateStudentInp
     } else if (contactPhone) {
       identifier = { loginIdentifier: contactPhone, phoneE164: contactPhone };
     } else {
-      if (!schoolId) throw fieldError("identifier", MESSAGES.schoolRequired);
-      const sch = await findSchoolById(tx, schoolId);
-      if (!sch) throw notFound();
-      identifier = { loginIdentifier: `${sch.code.toLowerCase()}-${studentNumber.toLowerCase()}`, phoneE164: null };
+      if (!school) throw fieldError("identifier", MESSAGES.schoolRequired);
+      identifier = await freeGeneratedUsername(tx, `${school.code.toLowerCase()}-${studentNumber.toLowerCase()}`);
     }
     account = await createAccountForPerson(tx, ctx, { personId: p.id, identifier, field: "identifier" });
   }
@@ -442,6 +580,11 @@ export interface CreateStaffInput extends PersonNameInput {
   /** Required: the login identifier of staff is always their phone. */
   phone: string;
   externalRef?: string | null;
+  /**
+   * Primary school (`staff_profile.school_id`) — the scope anchor of staff without a manager role. Defaults to the
+   * school of the first school-scoped role; null = anchored nowhere (reachable by organization admins only).
+   */
+  schoolId?: string | null;
   roles?: Array<{ roleCode: AssignableRole; schoolId?: string | null }>;
   /** false → person + profile only (the importer creates the account separately); default true. */
   createAccount?: boolean;
@@ -472,6 +615,8 @@ export async function createStaff(tx: Tx, ctx: IamCtx, input: CreateStaffInput):
     const dupRef = await tx.select({ id: person.id }).from(person).where(eq(person.externalRef, externalRef)).limit(1);
     if (dupRef[0]) throw fieldError("externalRef", MESSAGES.externalRefTaken);
   }
+  const schoolId = input.schoolId ?? input.roles?.find((r) => r.schoolId)?.schoolId ?? null;
+  if (schoolId && !(await findSchoolById(tx, schoolId))) throw invalidReference(MESSAGES.schoolNotFound);
   const [p] = await tx
     .insert(person)
     .values({ ...(input.id ? { id: input.id } : {}), organizationId: ctx.orgId, ...names, gender: input.gender ?? null, externalRef, status: "active" })
@@ -481,13 +626,14 @@ export async function createStaff(tx: Tx, ctx: IamCtx, input: CreateStaffInput):
     .values({
       organizationId: ctx.orgId,
       personId: p.id,
+      schoolId,
       employeeNumber: input.employeeNumber?.trim() ? toAsciiDigits(input.employeeNumber.trim()) : null,
       employmentType: input.employmentType ?? "full_time",
       hiredOn: sql`current_date`,
     })
     .returning({ id: staffProfile.id });
   await tx.insert(contactPoint).values({ organizationId: ctx.orgId, personId: p.id, kind: "mobile", value: phone, isPrimary: true });
-  await audit(ctx, "iam.person.created", { schema: "iam", table: "person", id: p.id }, null, { ...names, kind: "staff", staffProfileId: st.id }, tx);
+  await audit(ctx, "iam.person.created", { schema: "iam", table: "person", id: p.id }, null, { ...names, kind: "staff", staffProfileId: st.id, schoolId }, tx);
 
   let account: CreateAccountResult | null = null;
   if (input.createAccount ?? true) {
@@ -506,9 +652,10 @@ export interface UpdatePersonInput {
   status?: "active" | "archived";
   /** student_profile.student_number (students only). */
   studentNumber?: string;
-  /** staff_profile fields (staff only). */
+  /** staff_profile fields (staff only). `schoolId` = primary school / scope anchor (null = none). */
   employeeNumber?: string | null;
   employmentType?: "full_time" | "part_time" | "contractor";
+  schoolId?: string | null;
 }
 
 export async function updatePerson(tx: Tx, ctx: IamCtx, personId: string, input: UpdatePersonInput): Promise<void> {
@@ -524,15 +671,13 @@ export async function updatePerson(tx: Tx, ctx: IamCtx, personId: string, input:
     const dupRef = await tx.select({ id: person.id }).from(person).where(eq(person.externalRef, externalRef)).limit(1);
     if (dupRef[0] && dupRef[0].id !== personId) throw fieldError("externalRef", MESSAGES.externalRefTaken);
   }
-  await tx
-    .update(person)
-    .set({
-      ...(names ?? {}),
-      ...(input.gender !== undefined ? { gender: input.gender } : {}),
-      ...(externalRef !== undefined ? { externalRef } : {}),
-      ...(input.status !== undefined ? { status: input.status } : {}),
-    })
-    .where(eq(person.id, personId));
+  const personSet = {
+    ...(names ?? {}),
+    ...(input.gender !== undefined ? { gender: input.gender } : {}),
+    ...(externalRef !== undefined ? { externalRef } : {}),
+    ...(input.status !== undefined ? { status: input.status } : {}),
+  };
+  if (Object.keys(personSet).length > 0) await tx.update(person).set(personSet).where(eq(person.id, personId));
   if (input.studentNumber !== undefined) {
     const studentNumber = toAsciiDigits(input.studentNumber.trim());
     if (!STUDENT_NUMBER_RE.test(studentNumber)) throw fieldError("studentNumber", MESSAGES.studentNumberInvalid);
@@ -540,12 +685,14 @@ export async function updatePerson(tx: Tx, ctx: IamCtx, personId: string, input:
     if (dup[0] && dup[0].personId !== personId) throw fieldError("studentNumber", MESSAGES.studentNumberTaken);
     await tx.update(studentProfile).set({ studentNumber }).where(eq(studentProfile.personId, personId));
   }
-  if (input.employeeNumber !== undefined || input.employmentType !== undefined) {
+  if (input.employeeNumber !== undefined || input.employmentType !== undefined || input.schoolId !== undefined) {
+    if (input.schoolId && !(await findSchoolById(tx, input.schoolId))) throw invalidReference(MESSAGES.schoolNotFound);
     await tx
       .update(staffProfile)
       .set({
         ...(input.employeeNumber !== undefined ? { employeeNumber: input.employeeNumber?.trim() ? toAsciiDigits(input.employeeNumber.trim()) : null } : {}),
         ...(input.employmentType !== undefined ? { employmentType: input.employmentType } : {}),
+        ...(input.schoolId !== undefined ? { schoolId: input.schoolId } : {}),
       })
       .where(eq(staffProfile.personId, personId));
   }

@@ -3,7 +3,7 @@
 import { sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { defineQuery } from "@/lib/actions";
-import { getAdminScope, type AdminScope } from "@/modules/iam/service";
+import { getAdminScope, personInScopeSql, type AdminScope } from "@/modules/iam/service";
 
 export interface AdminCounts {
   schools: number;
@@ -32,22 +32,11 @@ function schoolFilter(scope: AdminScope, column: string) {
   return sql`${sql.raw(column)} = any(${sql.param(scope.schoolIds, undefined)}::uuid[])`;
 }
 
-/** Persons "in scope": students by school enrollment, staff by school-scoped roles or teaching; unanchored persons count everywhere. */
-function personInScope(scope: AdminScope, personColumn: string) {
-  if (scope.kind === "organization") return sql`true`;
-  const p = sql.raw(personColumn);
-  const ids = sql`${sql.param(scope.schoolIds, undefined)}::uuid[]`;
-  return sql`(
-    exists (select 1 from academic.school_enrollment se join iam.student_profile sp on sp.id = se.student_profile_id where sp.person_id = ${p} and se.school_id = any(${ids}))
-    or exists (select 1 from iam.role_assignment ra where ra.person_id = ${p} and ra.revoked_at is null and ra.school_id = any(${ids}))
-    or exists (select 1 from iam.role_assignment ra join tenancy.class_offering o on o.id = ra.class_offering_id join tenancy.class_group cg on cg.id = o.class_group_id join tenancy.branch b on b.id = cg.branch_id
-               where ra.person_id = ${p} and ra.revoked_at is null and b.school_id = any(${ids}))
-    or (
-      not exists (select 1 from academic.school_enrollment se join iam.student_profile sp on sp.id = se.student_profile_id where sp.person_id = ${p})
-      and not exists (select 1 from iam.role_assignment ra where ra.person_id = ${p} and ra.revoked_at is null and (ra.school_id is not null or ra.class_offering_id is not null or ra.branch_id is not null))
-    )
-  )`;
-}
+/**
+ * Persons "in scope" — the single rule of `iam/service` (`personInScopeSql`): a positive anchor (school enrollment,
+ * staff primary school, school/branch-scoped role) in one of the caller's schools and no organization-scoped role.
+ */
+const personInScope = personInScopeSql;
 
 export { personInScope, schoolFilter };
 

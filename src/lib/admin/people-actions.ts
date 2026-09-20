@@ -73,6 +73,7 @@ export const updateStaffAction = defineAction({ schema: UpdateStaffInput, permis
     gender: input.gender ?? null,
     employeeNumber: input.employeeNumber ?? null,
     employmentType: input.employmentType,
+    ...(input.schoolId !== undefined ? { schoolId: input.schoolId } : {}),
   });
   return { personId: input.personId };
 });
@@ -117,6 +118,7 @@ export const assignRoleAction = defineAction({ schema: AssignRoleInput, permissi
   return assignRole(tx, ctx, { personId: input.personId, roleCode: input.roleCode, schoolId: input.schoolId ?? null });
 });
 
+/** The service applies the scope rule itself (ctx.assignments): person in scope + covered scope type, org roles FORBIDDEN. */
 export const revokeRoleAction = defineAction({ schema: RevokeRoleInput, permission: "iam.role_assignment.write", scope: "any" }, async (tx, input, ctx) => {
   await revokeRoleAssignment(tx, ctx, { roleAssignmentId: input.roleAssignmentId });
   return { roleAssignmentId: input.roleAssignmentId };

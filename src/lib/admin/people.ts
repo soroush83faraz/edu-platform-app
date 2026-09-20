@@ -181,14 +181,14 @@ export interface PersonDetail {
   status: string;
   kind: "student" | "staff" | "person";
   student: { studentProfileId: string; studentNumber: string; status: string } | null;
-  staff: { staffProfileId: string; employeeNumber: string | null; employmentType: string | null } | null;
+  staff: { staffProfileId: string; employeeNumber: string | null; employmentType: string | null; schoolId: string | null } | null;
   contactPhone: string | null;
   guardianPhone: string | null;
   account: AccountFacts | null;
   enrollment: { classEnrollmentId: string; classGroupId: string; className: string; schoolId: string; schoolName: string; gradeName: string; yearName: string } | null;
   roles: Array<{ roleAssignmentId: string; roleCode: string; roleName: string; scopeType: string; schoolId: string | null; schoolName: string | null; sourceType: string }>;
   teaching: Array<{ teacherAssignmentId: string; classOfferingId: string; className: string; subjectName: string }>;
-  /** Schools the person is anchored to (scope); used to pick the credential sheet's school name. */
+  /** Schools the person is anchored to (class, primary school, manual roles, school enrollments); picks the credential sheet's school name. */
   schoolIds: string[];
 }
 
@@ -210,7 +210,11 @@ export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: strin
   if (!p || !p.inScope) throw notFound();
 
   const [sp] = await tx.select({ id: studentProfile.id, studentNumber: studentProfile.studentNumber, status: studentProfile.status }).from(studentProfile).where(eq(studentProfile.personId, personId)).limit(1);
-  const [st] = await tx.select({ id: staffProfile.id, employeeNumber: staffProfile.employeeNumber, employmentType: staffProfile.employmentType }).from(staffProfile).where(eq(staffProfile.personId, personId)).limit(1);
+  const [st] = await tx
+    .select({ id: staffProfile.id, employeeNumber: staffProfile.employeeNumber, employmentType: staffProfile.employmentType, schoolId: staffProfile.schoolId })
+    .from(staffProfile)
+    .where(eq(staffProfile.personId, personId))
+    .limit(1);
   const phones = await tx.select({ value: contactPoint.value, label: contactPoint.label }).from(contactPoint).where(and(eq(contactPoint.personId, personId), eq(contactPoint.kind, "mobile")));
   const [acct] = await tx
     .select(accountSelect)
@@ -272,6 +276,7 @@ export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: strin
 
   const schoolIds = new Set<string>();
   if (enrollment) schoolIds.add(enrollment.schoolId);
+  if (st?.schoolId) schoolIds.add(st.schoolId);
   for (const r of roles) if (r.schoolId) schoolIds.add(r.schoolId);
   const se = sp ? await tx.select({ schoolId: schoolEnrollment.schoolId }).from(schoolEnrollment).where(eq(schoolEnrollment.studentProfileId, sp.id)) : [];
   for (const r of se) schoolIds.add(r.schoolId);
@@ -285,7 +290,7 @@ export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: strin
     status: p.status,
     kind: sp ? "student" : st ? "staff" : "person",
     student: sp ? { studentProfileId: sp.id, studentNumber: sp.studentNumber, status: sp.status } : null,
-    staff: st ? { staffProfileId: st.id, employeeNumber: st.employeeNumber, employmentType: st.employmentType } : null,
+    staff: st ? { staffProfileId: st.id, employeeNumber: st.employeeNumber, employmentType: st.employmentType, schoolId: st.schoolId } : null,
     contactPhone: phones.find((x) => !x.label)?.value ?? null,
     guardianPhone: phones.find((x) => x.label === "ولی")?.value ?? null,
     account: acct ?? null,

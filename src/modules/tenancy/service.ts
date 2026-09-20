@@ -32,6 +32,14 @@ const fieldError = (field: string, message: string) => validation({ fieldErrors:
 /** `^[A-Za-z][A-Za-z0-9_-]{0,11}$` — the school code is also the prefix of generated usernames (`<code>-<number>`). */
 export const SCHOOL_CODE_RE = /^[A-Za-z][A-Za-z0-9_-]{0,11}$/;
 
+export const MESSAGES = {
+  /** Same text whether the id is unknown or belongs to another school — no cross-school existence oracle. */
+  yearNotForBranch: "سال تحصیلی انتخاب‌شده برای این شعبه معتبر نیست.",
+  termNotForClass: "نوبت انتخاب‌شده برای این کلاس معتبر نیست.",
+  /** Case-insensitive: `G` and `g` would generate the same usernames. */
+  schoolCodeTaken: "مدرسه‌ای با این کد (بدون توجه به بزرگی/کوچکی حروف) وجود دارد.",
+} as const;
+
 // ---------------------------------------------------------------------------------------------------------------
 // school + branch
 // ---------------------------------------------------------------------------------------------------------------
@@ -49,7 +57,7 @@ export interface CreateSchoolInput {
 export async function createSchool(tx: Tx, ctx: ServiceCtx, input: CreateSchoolInput): Promise<{ schoolId: string; branchId: string }> {
   const code = toAsciiDigits(input.code.trim());
   if (!SCHOOL_CODE_RE.test(code)) throw fieldError("code", "کد مدرسه باید با حرف انگلیسی شروع شود و حداکثر ۱۲ نویسهٴ انگلیسی/رقم باشد.");
-  if (await findSchoolByCode(tx, code)) throw fieldError("code", "مدرسه‌ای با این کد وجود دارد.");
+  if (await findSchoolByCode(tx, code)) throw fieldError("code", MESSAGES.schoolCodeTaken);
   const [row] = await tx
     .insert(school)
     .values({
@@ -364,9 +372,9 @@ export async function createClassGroup(tx: Tx, ctx: ServiceCtx, input: CreateCla
   const name = normalizeFa(input.name);
   const [br] = await tx.select({ schoolId: branch.schoolId }).from(branch).where(eq(branch.id, input.branchId)).limit(1);
   if (!br) throw invalidReference("شعبه یافت نشد.");
+  // One message for "unknown year" and "year of another school": the id must not act as an existence oracle.
   const [yr] = await tx.select({ schoolId: academicYear.schoolId }).from(academicYear).where(eq(academicYear.id, input.academicYearId)).limit(1);
-  if (!yr) throw invalidReference("سال تحصیلی یافت نشد.");
-  if (br.schoolId !== yr.schoolId) throw fieldError("academicYearId", "سال تحصیلی به مدرسهٴ این شعبه تعلق ندارد.");
+  if (!yr || br.schoolId !== yr.schoolId) throw fieldError("academicYearId", MESSAGES.yearNotForBranch);
   const [gr] = await tx.select({ id: gradeLevel.id }).from(gradeLevel).where(eq(gradeLevel.id, input.gradeLevelId)).limit(1);
   if (!gr) throw invalidReference("پایه یافت نشد.");
   if (await findClassGroupByName(tx, input.academicYearId, input.branchId, name)) throw fieldError("name", "کلاسی با این نام در این سال و شعبه وجود دارد.");
@@ -435,9 +443,9 @@ export interface CreateClassOfferingResult {
 export async function createClassOffering(tx: Tx, ctx: ServiceCtx, input: CreateClassOfferingInput): Promise<CreateClassOfferingResult> {
   const cg = await findClassGroup(tx, input.classGroupId);
   if (!cg) throw invalidReference("کلاس یافت نشد.");
+  // One message for "unknown term" and "term of another year/school" (no existence oracle).
   const [t] = await tx.select({ academicYearId: term.academicYearId }).from(term).where(eq(term.id, input.termId)).limit(1);
-  if (!t) throw invalidReference("نوبت یافت نشد.");
-  if (t.academicYearId !== cg.academicYearId) throw fieldError("termId", "نوبت به سال تحصیلی این کلاس تعلق ندارد.");
+  if (!t || t.academicYearId !== cg.academicYearId) throw fieldError("termId", MESSAGES.termNotForClass);
   const [s] = await tx.select({ id: subject.id }).from(subject).where(eq(subject.id, input.subjectId)).limit(1);
   if (!s) throw invalidReference("درس یافت نشد.");
   if (await findOffering(tx, input.classGroupId, input.subjectId, input.termId)) throw fieldError("subjectId", "این درس در این نوبت برای این کلاس ثبت شده است.");

@@ -182,12 +182,13 @@ export async function enrollStudent(tx: Tx, ctx: ServiceCtx, input: EnrollStuden
   const startsOn = input.startsOn ? { startsOn: input.startsOn } : {};
 
   let schoolEnrollmentCreated = false;
-  let [se] = await tx
-    .select({ id: schoolEnrollment.id })
+  const [existing] = await tx
+    .select({ id: schoolEnrollment.id, gradeLevelId: schoolEnrollment.gradeLevelId, status: schoolEnrollment.status })
     .from(schoolEnrollment)
     .where(and(eq(schoolEnrollment.studentProfileId, input.studentProfileId), eq(schoolEnrollment.academicYearId, cg.academicYearId)))
     .limit(1);
-  if (!se) {
+  let se: { id: string };
+  if (!existing) {
     [se] = await tx
       .insert(schoolEnrollment)
       .values({
@@ -201,6 +202,15 @@ export async function enrollStudent(tx: Tx, ctx: ServiceCtx, input: EnrollStuden
       })
       .returning({ id: schoolEnrollment.id });
     schoolEnrollmentCreated = true;
+  } else {
+    se = existing;
+    // A `registered` anchor row (student created with a school but no class) gets its grade from the first class.
+    if (existing.status === "registered" || existing.gradeLevelId === null) {
+      await tx
+        .update(schoolEnrollment)
+        .set({ gradeLevelId: existing.gradeLevelId ?? cg.gradeLevelId, ...(existing.status === "registered" ? { status: "active" } : {}) })
+        .where(eq(schoolEnrollment.id, existing.id));
+    }
   }
 
   const [ce] = await tx

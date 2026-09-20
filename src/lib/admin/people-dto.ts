@@ -66,6 +66,8 @@ export const UpdateStaffInput = z
     gender,
     employeeNumber: optionalText(30),
     employmentType: z.enum(["full_time", "part_time", "contractor"]),
+    /** Primary school (scope anchor); omitted = unchanged, null = detach (organization admins only). */
+    schoolId: uuid.nullable().optional(),
   })
   .strict();
 export type UpdateStaffInput = z.output<typeof UpdateStaffInput>;

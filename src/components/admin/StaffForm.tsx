@@ -45,7 +45,7 @@ export function StaffForm({ schools, detail, canGrantOrgRoles }: { schools: Scho
     phone: detail?.account?.loginIdentifier ?? detail?.contactPhone ?? "",
     employeeNumber: detail?.staff?.employeeNumber ?? "",
     employmentType: detail?.staff?.employmentType ?? "full_time",
-    schoolId: schools.length === 1 ? schools[0].value : "",
+    schoolId: detail ? (detail.staff?.schoolId ?? "") : schools.length === 1 ? schools[0].value : "",
   });
   const set = (name: string) => (val: FormValue) => setV((p) => ({ ...p, [name]: val }));
   const f = (name: string) => ({ id: `${ids}-${name}`, value: v[name], error: errors[name], onChange: set(name) });
@@ -82,6 +82,7 @@ export function StaffForm({ schools, detail, canGrantOrgRoles }: { schools: Scho
           gender: (opt("gender") as "female" | "male" | null) ?? null,
           employeeNumber: opt("employeeNumber"),
           employmentType: s("employmentType") as "full_time" | "part_time" | "contractor",
+          ...(schools.length > 0 ? { schoolId: opt("schoolId") } : {}),
         });
         if (r.ok) {
           toast.success("تغییرات ذخیره شد.");
@@ -120,7 +121,13 @@ export function StaffForm({ schools, detail, canGrantOrgRoles }: { schools: Scho
         <Field field={{ name: "gender", labelFa: "جنسیت", type: "select", options: GENDER }} options={GENDER} {...f("gender")} />
         <Field field={{ name: "employeeNumber", labelFa: "شمارهٴ کارمندی", type: "text", ltr: true, numeric: true }} options={[]} {...f("employeeNumber")} />
         <Field field={{ name: "employmentType", labelFa: "نوع همکاری", type: "select", options: EMPLOYMENT, required: true }} options={EMPLOYMENT} {...f("employmentType")} />
-        {!detail && schools.length > 1 ? <Field field={{ name: "schoolId", labelFa: "مدرسه", type: "select", options: schools, hint: "برای دبیران بدون نقش مدیریتی؛ با تخصیص درس هم مشخص می‌شود." }} options={schools} {...f("schoolId")} /> : null}
+        {(detail && schools.length > 0) || (!detail && schools.length > 1) ? (
+          <Field
+            field={{ name: "schoolId", labelFa: "مدرسهٴ اصلی", type: "select", options: schools, hint: "مدیر و معاون همین مدرسه پرونده و حساب این همکار را می‌بینند؛ نقش «معلم» به‌تنهایی این دسترسی را نمی‌دهد." }}
+            options={schools}
+            {...f("schoolId")}
+          />
+        ) : null}
       </div>
 
       {!detail ? (

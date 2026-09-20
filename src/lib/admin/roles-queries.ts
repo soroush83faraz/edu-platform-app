@@ -40,7 +40,11 @@ export const rolesPageQuery = defineQuery({ permission: "iam.person.read", scope
         isNull(roleAssignment.revokedAt),
         eq(roleAssignment.sourceType, "manual"),
         sql`${roleAssignment.scopeType} in ('organization', 'school', 'branch')`,
-        scope.kind === "organization" ? undefined : sql`${roleAssignment.schoolId} = any(${sql.param(scope.schoolIds, undefined)}::uuid[])`,
+        // School scope: only school-/branch-scoped assignments inside the caller's schools (organization roles never).
+        scope.kind === "organization"
+          ? undefined
+          : sql`(${roleAssignment.schoolId} = any(${sql.param(scope.schoolIds, undefined)}::uuid[])
+              or exists (select 1 from tenancy.branch b where b.id = ${roleAssignment.branchId} and b.school_id = any(${sql.param(scope.schoolIds, undefined)}::uuid[])))`,
       ),
     )
     .orderBy(asc(role.code), asc(person.lastName));
