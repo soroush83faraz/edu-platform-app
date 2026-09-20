@@ -20,6 +20,8 @@ const EnvSchema = z.object({
   INITIAL_PASSWORD_KEY: z.string().regex(/^[0-9a-fA-F]{64}$/, "must be 32 bytes as 64 hex characters"),
   /** Public origin, e.g. https://school.example.ir (no trailing slash). */
   PUBLIC_ORIGIN: z.url(),
+  /** Shown in the manifest, the title and /roadmap; defaults to «سامانهٴ مدرسه» (src/lib/product.ts). */
+  PRODUCT_NAME: z.string().trim().min(1).max(60).optional(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   FILES_DIR: z.string().min(1).default("/data/files"),
   /** Set to "1" to allow running seed against a production database. */

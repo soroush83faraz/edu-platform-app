@@ -50,3 +50,12 @@ export const newWorkItemOptionsQuery = defineQuery({ permission: "workspace.work
 });
 
 export const EmptySchema = z.object({}).strict();
+
+const HomeListInput = z.object({ createdByMe: z.boolean().default(false), limit: z.number().int().min(1).max(10).default(5) }).strict();
+
+/** Home lists: the next open items by due date — mine to do, or (`createdByMe`) the ones I gave with their progress. */
+export const homeOpenItemsQuery = defineQuery({ schema: HomeListInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) => {
+  const staff = await isStaff(tx, ctx.personId);
+  const page = await listInbox(tx, ctx.personId, { tab: "all", openOnly: true, createdByMe: input.createdByMe, limit: input.limit, viewerIsStaff: staff });
+  return page.rows;
+});

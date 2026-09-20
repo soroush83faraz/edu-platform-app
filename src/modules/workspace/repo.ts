@@ -205,6 +205,8 @@ export interface ListInboxOptions {
   bucket?: Bucket;
   createdByMe?: boolean;
   unreadOnly?: boolean;
+  /** Only items still open for the caller (effective category todo/doing) — the Home «کارهای نزدیک» list. */
+  openOnly?: boolean;
   cursor?: string | null;
   limit?: number;
   now?: Date;
@@ -246,6 +248,7 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
   if (opts.bucket) filters.push(sql`r.bucket = ${opts.bucket}`);
   if (opts.createdByMe) filters.push(sql`r.created_by_me`);
   if (opts.unreadOnly) filters.push(sql`r.unread`);
+  if (opts.openOnly) filters.push(sql`r.category in ('todo', 'doing')`);
   if (after) {
     filters.push(
       after.dueAt

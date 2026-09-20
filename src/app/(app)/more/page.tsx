@@ -1,7 +1,7 @@
 import { ChevronLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { LogoutButton } from "@/components/shell/LogoutButton";
 import { requireContext } from "@/lib/ctx";
 import { formatNumberFa } from "@/lib/format";
 import { logoutAction, logoutAllAction } from "@/modules/iam/actions";
@@ -27,7 +27,7 @@ export default async function MorePage() {
 
   return (
     <div className="flex flex-col gap-6 px-4 pt-5 pb-6 md:pt-8">
-      <section className="rounded-card border border-line bg-surface p-4">
+      <section className="rounded-card bg-surface p-4 shadow-1">
         <p className="text-xl font-bold text-text">
           <bdi>
             {ctx.firstName} {ctx.lastName}
@@ -45,7 +45,7 @@ export default async function MorePage() {
 
       {isAdmin ? (
         <nav aria-label="مدیریت">
-          <ul className="divide-y divide-line rounded-card border border-line bg-surface">
+          <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
             <MoreLink href="/admin" label="مدیریت مدرسه" hint="ساختار، افراد، حساب‌ها" />
             <MoreLink href="/admin/onboarding" label="راه‌اندازی مدرسه" />
           </ul>
@@ -53,25 +53,17 @@ export default async function MorePage() {
       ) : null}
 
       <nav aria-label="حساب">
-        <ul className="divide-y divide-line rounded-card border border-line bg-surface">
+        <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
           <MoreLink href="/change-password" label="تغییر رمز" />
           <MoreLink href="/help" label="راهنما" hint="به‌زودی" />
           <MoreLink href="/privacy" label="حریم خصوصی" hint="به‌زودی" />
-          <MoreLink href="/roadmap" label="آنچه در راه است" hint="به‌زودی" />
+          <MoreLink href="/roadmap" label="نقشهٴ راه" hint="فازهای بعدی" />
         </ul>
       </nav>
 
       <div className="flex flex-col gap-2">
-        <form action={logoutAction}>
-          <Button type="submit" variant="outline" className="h-11 w-full">
-            خروج
-          </Button>
-        </form>
-        <form action={logoutAllAction}>
-          <Button type="submit" variant="ghost" className="h-11 w-full text-text-muted">
-            خروج از همهٴ دستگاه‌ها
-          </Button>
-        </form>
+        <LogoutButton action={logoutAction} label="خروج" />
+        <LogoutButton action={logoutAllAction} label="خروج از همهٴ دستگاه‌ها" variant="ghost" className="text-text-muted" />
       </div>
     </div>
   );
@@ -80,7 +72,7 @@ export default async function MorePage() {
 function MoreLink({ href, label, hint }: { href: string; label: string; hint?: string }) {
   return (
     <li>
-      <Link href={href} className="flex min-h-12 items-center justify-between gap-3 px-4 text-base text-text hover:bg-surface-sunken">
+      <Link href={href} className="flex min-h-12 items-center justify-between gap-3 px-4 text-base text-text transition-colors duration-150 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
         <span>{label}</span>
         <span className="flex items-center gap-2 text-sm text-text-faint">
           {hint}
