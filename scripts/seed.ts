@@ -324,15 +324,15 @@ export async function catalogCounts(db: Db): Promise<CatalogCounts> {
 // ---------------------------------------------------------------------------------------------------------------
 
 /** Deterministic UUID (v7-shaped, not time-ordered) from a stable key: re-runs hit the same rows. */
-function demoId(key: string): string {
+export function demoId(key: string): string {
   const h = createHash("sha256").update(`edu-demo:${key}`).digest("hex");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-7${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
 /** +98912 3xx xxxx, unique per index. */
-const demoPhone = (i: number) => `+98912${String(3000000 + i)}`;
+export const demoPhone = (i: number) => `+98912${String(3000000 + i)}`;
 
-interface DemoPerson {
+export interface DemoPerson {
   key: string;
   firstName: string;
   lastName: string;
@@ -365,7 +365,7 @@ const NOOR_STUDENTS = [
   ["مهدی", "سلطانی", "male"],
 ] as const;
 
-interface DemoOrgSpec {
+export interface DemoOrgSpec {
   key: string;
   name: string;
   slug: string;
@@ -379,7 +379,7 @@ interface DemoOrgSpec {
   persons: DemoPerson[];
 }
 
-const DANESH: DemoOrgSpec = {
+export const DANESH: DemoOrgSpec = {
   key: "danesh",
   name: "مجتمع دانش",
   slug: "danesh-demo",
