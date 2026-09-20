@@ -33,6 +33,40 @@
     --color-warning-soft: #FBF1DC;
     --color-danger: #C0392B;
     --color-danger-soft: #FBE5E2;
+
+    /* Semantic surfaces and text (light only — dark mode is out of phase 1). */
+    --color-surface: #FFFFFF;
+    --color-surface-raised: #FFFFFF;
+    --color-surface-sunken: #F3F5F9;
+    --color-text: #171A23;
+    --color-text-muted: #6F788D;
+    --color-text-faint: #99A1B3;
+    --color-line: #DDE1EA;
+    --color-line-strong: #C3C9D6;
+
+    /* Work item priority: low = quiet neutral, normal = primary, high = warning, urgent = danger. */
+    --color-priority-low: #C3C9D6;
+    --color-priority-normal: #3E52B5;
+    --color-priority-high: #B7791F;
+    --color-priority-urgent: #C0392B;
+
+    /* Type scale 12/14/16/18/22/28 with line-heights tuned for Vazirmatn (tall ascenders, generous leading). */
+    --text-xs: 0.75rem;
+    --text-xs--line-height: 1.25rem;
+    --text-sm: 0.875rem;
+    --text-sm--line-height: 1.5rem;
+    --text-base: 1rem;
+    --text-base--line-height: 1.75rem;
+    --text-lg: 1.125rem;
+    --text-lg--line-height: 1.75rem;
+    --text-xl: 1.375rem;
+    --text-xl--line-height: 2rem;
+    --text-2xl: 1.75rem;
+    --text-2xl--line-height: 2.25rem;
+
+    /* Radius: 8px controls (--radius), 12px cards. One subtle shadow. */
+    --radius-card: 0.75rem;
+    --shadow-1: 0 1px 2px rgb(23 26 35 / 0.06), 0 1px 1px rgb(23 26 35 / 0.04);
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -162,4 +196,22 @@
     font-family: var(--font-vazir), system-ui, sans-serif;
     line-height: 1.75;
   }
+  /* Keyboard focus is always visible; pointer focus stays quiet (shadcn controls add their own ring). */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-primary-400);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Numbers in lists line up (Vazirmatn ships tnum). */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
 }
