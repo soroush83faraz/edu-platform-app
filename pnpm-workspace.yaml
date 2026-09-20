@@ -1,0 +1,6 @@
+# pnpm 10: build scripts are opt-in. Only esbuild (tsx/vitest) may run its postinstall check.
+onlyBuiltDependencies:
+  - esbuild
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
