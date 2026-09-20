@@ -11,7 +11,7 @@ import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
 import { assignRoleAction, createAccountAction, endTeachingAction, placeStudentAction, resetPasswordAction, revokeRoleAction, unlockAccountAction } from "@/lib/admin/people-actions";
 import type { PersonDetail } from "@/lib/admin/people";
 import { roleLabel } from "@/lib/admin/labels";
-import type { AssignableRole } from "@/modules/iam/service";
+import type { AssignableRole, RoleGrantOptions } from "@/modules/iam/service";
 import { CredentialsDialog, type Credentials } from "./CredentialsDialog";
 import { ResponsiveModal } from "./ResponsiveModal";
 import type { ClassOption, SchoolOption } from "./StudentForm";
@@ -23,7 +23,6 @@ interface Caps {
   canEnroll: boolean;
   canRoles: boolean;
   canTeaching: boolean;
-  orgScope: boolean;
 }
 
 /** Account state + «تعیین رمز موقت» / «رفع قفل» / «ساخت حساب» / «چاپ اعتبارنامه». */
@@ -206,10 +205,11 @@ export function EnrollmentCard({ detail, classes, canEnroll }: { detail: PersonD
 }
 
 /** Manual roles (grant/revoke) and teaching assignments (end). */
-export function RolesCard({ detail, schools, caps }: { detail: PersonDetail; schools: SchoolOption[]; caps: Caps }) {
+/** Roles + teaching of a staff member. `roleGrant` (server-computed) limits the picker to roles/schools the caller may grant. */
+export function RolesCard({ detail, caps, roleGrant }: { detail: PersonDetail; caps: Caps; roleGrant: RoleGrantOptions<SchoolOption> }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [draft, setDraft] = useState<{ roleCode: string; schoolId: string }>({ roleCode: "", schoolId: schools[0]?.value ?? "" });
+  const [draft, setDraft] = useState<{ roleCode: string; schoolId: string }>({ roleCode: "", schoolId: roleGrant.schools[0]?.value ?? "" });
   const grant = () =>
     start(async () => {
       if (!draft.roleCode) return;
@@ -237,11 +237,7 @@ export function RolesCard({ detail, schools, caps }: { detail: PersonDetail; sch
         router.refresh();
       } else toast.error(r.message);
     });
-  const roleOptions = [
-    { value: "school_principal", label: "مدیر مدرسه" },
-    { value: "vice_principal", label: "معاون" },
-    ...(caps.orgScope ? [{ value: "org_admin", label: "مدیر سازمان" }] : []),
-  ];
+  const roleOptions = roleGrant.roles.map((code) => ({ value: code, label: roleLabel(code) }));
   return (
     <section aria-labelledby="roles-heading" className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-4">
       <h3 id="roles-heading" className="text-sm font-semibold text-text-muted">
@@ -281,7 +277,7 @@ export function RolesCard({ detail, schools, caps }: { detail: PersonDetail; sch
           ))}
         </ul>
       ) : null}
-      {caps.canRoles && detail.staff ? (
+      {caps.canRoles && detail.staff && roleOptions.length > 0 ? (
         <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
           <select aria-label="نقش جدید" value={draft.roleCode} onChange={(e) => setDraft((p) => ({ ...p, roleCode: e.target.value }))} className="h-11 rounded-lg border border-line bg-surface px-3 text-base">
             <option value="">افزودن نقش…</option>
@@ -292,7 +288,7 @@ export function RolesCard({ detail, schools, caps }: { detail: PersonDetail; sch
             ))}
           </select>
           <select aria-label="مدرسهٴ نقش" value={draft.schoolId} onChange={(e) => setDraft((p) => ({ ...p, schoolId: e.target.value }))} disabled={draft.roleCode === "org_admin" || !draft.roleCode} className="h-11 rounded-lg border border-line bg-surface px-3 text-base disabled:opacity-50">
-            {schools.map((s) => (
+            {roleGrant.schools.map((s) => (
               <option key={s.value} value={s.value}>
                 {s.label}
               </option>

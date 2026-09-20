@@ -23,7 +23,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     notFound();
   }
-  const { detail, scope, classes, schools } = result.data;
+  const { detail, classes, schools, roleGrant } = result.data;
   const has = (p: Parameters<typeof canAtAnyScope>[1]) => canAtAnyScope(ctx.assignments, p);
   const caps = {
     canReset: has("iam.account.reset_password"),
@@ -32,7 +32,6 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     canEnroll: has("academic.enrollment.write"),
     canRoles: has("iam.role_assignment.write"),
     canTeaching: has("academic.teacher_assignment.write"),
-    orgScope: scope.kind === "organization",
   };
   const isStudent = detail.kind === "student";
   return (
@@ -60,7 +59,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               <h3 id="edit-heading" className="mb-3 text-sm font-semibold text-text-muted">
                 مشخصات
               </h3>
-              {isStudent ? <StudentForm classes={classes} schools={schools} detail={detail} /> : <StaffForm schools={schools} detail={detail} canGrantOrgRoles={caps.orgScope} />}
+              {isStudent ? <StudentForm classes={classes} schools={schools} detail={detail} /> : <StaffForm schools={schools} detail={detail} roleGrant={roleGrant} />}
             </section>
           ) : (
             <section className="rounded-card bg-surface shadow-1 p-4 text-sm text-text">
@@ -86,7 +85,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         <div className="flex flex-col gap-4">
           <AccountCard detail={detail} caps={caps} />
           {isStudent ? <EnrollmentCard detail={detail} classes={classes} canEnroll={caps.canEnroll} /> : null}
-          {detail.kind === "staff" ? <RolesCard detail={detail} schools={schools} caps={caps} /> : null}
+          {detail.kind === "staff" ? <RolesCard detail={detail} caps={caps} roleGrant={roleGrant} /> : null}
         </div>
       </div>
     </div>

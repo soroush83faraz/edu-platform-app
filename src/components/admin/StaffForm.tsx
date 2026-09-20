@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { createStaffAction, updateStaffAction } from "@/lib/admin/people-actions";
 import type { PersonDetail } from "@/lib/admin/people";
 import { roleLabel } from "@/lib/admin/labels";
-import type { AssignableRole } from "@/modules/iam/service";
+import type { AssignableRole, RoleGrantOptions } from "@/modules/iam/service";
 import { CredentialsDialog, type Credentials } from "./CredentialsDialog";
 import { Field, FieldError, flatten, type FormValue } from "./ResourceForm";
 import type { SchoolOption } from "./StudentForm";
@@ -28,8 +28,12 @@ interface RoleGrant {
   schoolId: string | null;
 }
 
-/** Staff form: person + phone account (+ optional manager roles). Teachers get their role from class offerings. */
-export function StaffForm({ schools, detail, canGrantOrgRoles }: { schools: SchoolOption[]; detail?: PersonDetail; canGrantOrgRoles: boolean }) {
+/**
+ * Staff form: person + phone account (+ optional manager roles). Teachers get their role from class offerings.
+ * `roleGrant` (server-computed from the caller's assignments, `roleGrantOptions`) lists the roles the caller may
+ * grant and the schools where; empty → no role picker (a vice principal registers staff but grants nothing).
+ */
+export function StaffForm({ schools, detail, roleGrant }: { schools: SchoolOption[]; detail?: PersonDetail; roleGrant: RoleGrantOptions<SchoolOption> }) {
   const router = useRouter();
   const ids = useId();
   const [pending, start] = useTransition();
@@ -37,7 +41,7 @@ export function StaffForm({ schools, detail, canGrantOrgRoles }: { schools: Scho
   const [creds, setCreds] = useState<Credentials | null>(null);
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [roles, setRoles] = useState<RoleGrant[]>([]);
-  const [roleDraft, setRoleDraft] = useState<{ roleCode: string; schoolId: string }>({ roleCode: "", schoolId: schools[0]?.value ?? "" });
+  const [roleDraft, setRoleDraft] = useState<{ roleCode: string; schoolId: string }>({ roleCode: "", schoolId: roleGrant.schools[0]?.value ?? "" });
   const [v, setV] = useState<Record<string, FormValue>>({
     firstName: detail?.firstName ?? "",
     lastName: detail?.lastName ?? "",
@@ -49,12 +53,7 @@ export function StaffForm({ schools, detail, canGrantOrgRoles }: { schools: Scho
   });
   const set = (name: string) => (val: FormValue) => setV((p) => ({ ...p, [name]: val }));
   const f = (name: string) => ({ id: `${ids}-${name}`, value: v[name], error: errors[name], onChange: set(name) });
-  const roleOptions = [
-    { value: "", label: "بدون نقش مدیریتی (دبیر عادی)" },
-    { value: "school_principal", label: "مدیر مدرسه" },
-    { value: "vice_principal", label: "معاون" },
-    ...(canGrantOrgRoles ? [{ value: "org_admin", label: "مدیر سازمان" }] : []),
-  ];
+  const roleOptions = [{ value: "", label: "بدون نقش مدیریتی (دبیر عادی)" }, ...roleGrant.roles.map((code) => ({ value: code, label: roleLabel(code) }))];
 
   const addRole = () => {
     if (!roleDraft.roleCode) return;
@@ -130,7 +129,7 @@ export function StaffForm({ schools, detail, canGrantOrgRoles }: { schools: Scho
         ) : null}
       </div>
 
-      {!detail ? (
+      {!detail && roleGrant.roles.length > 0 ? (
         <fieldset className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-4">
           <legend className="px-1 text-sm font-semibold text-text-muted">نقش مدیریتی (اختیاری)</legend>
           <p className="text-xs text-text-muted">نقش «معلم» این‌جا داده نمی‌شود؛ با تخصیص دبیر به ارائهٴ درس در صفحهٴ کلاس ساخته می‌شود.</p>
@@ -156,7 +155,7 @@ export function StaffForm({ schools, detail, canGrantOrgRoles }: { schools: Scho
               ))}
             </select>
             <select aria-label="مدرسهٴ نقش" value={roleDraft.schoolId} onChange={(e) => setRoleDraft((p) => ({ ...p, schoolId: e.target.value }))} disabled={roleDraft.roleCode === "org_admin" || !roleDraft.roleCode} className="h-11 rounded-lg border border-line bg-surface px-3 text-base disabled:opacity-50">
-              {schools.map((s) => (
+              {roleGrant.schools.map((s) => (
                 <option key={s.value} value={s.value}>
                   {s.label}
                 </option>

@@ -11,7 +11,7 @@ import { audit } from "@/lib/audit";
 import { conflict, notFound } from "@/lib/errors";
 import { assignTeacher, enrollStudent, moveEnrollment } from "@/modules/academic/service";
 import { classEnrollment, teacherAssignment } from "@/modules/academic/schema";
-import { createStaff, createStudent, getAdminScope, requireStaffAssignable, updatePerson, type AdminScope, type IamCtx } from "@/modules/iam/service";
+import { createStaff, createStudent, getAdminScope, requirePersonInScope, requireStaffAssignable, updatePerson, type IamCtx } from "@/modules/iam/service";
 import { findClassGroupByName, findOffering } from "@/modules/tenancy/repo";
 import { createClassGroup, createClassOffering, createSubject, updateClassGroup } from "@/modules/tenancy/service";
 import { externalIdentityMap, importBatch, importRow } from "../schema";
@@ -156,7 +156,7 @@ export async function commitImport(tx: Tx, ctx: ImportCtx, ref: ImportReference,
   // ---- staff ----
   // Existing staff of OTHER schools may not be handed a class by a school-scoped admin (same rule as the admin UI,
   // `staffAssignableSql`): the CLI runs as the real admin, so their scope applies to the file too.
-  const scope: AdminScope | null = ctx.assignments ? await getAdminScope(tx, { orgId: ctx.orgId, assignments: ctx.assignments }) : null;
+  const scope = await getAdminScope(tx, ctx);
   const staffProfileByPhone = new Map<string, string>();
   const createdStaffProfiles = new Set<string>();
   for (const [phone, s] of ref.staffByPhone) staffProfileByPhone.set(phone, s.staffProfileId);
@@ -194,7 +194,7 @@ export async function commitImport(tx: Tx, ctx: ImportCtx, ref: ImportReference,
     }
     const staffProfileId = staffProfileByPhone.get(t.teacherPhone);
     if (!staffProfileId) throw notFound(`دبیر ردیف ${t.rowNumber} پیدا نشد.`);
-    if (scope && scope.kind === "school" && !createdStaffProfiles.has(staffProfileId)) {
+    if (scope.kind === "school" && !createdStaffProfiles.has(staffProfileId)) {
       await requireStaffAssignable(tx, scope, staffProfileId).catch(() => {
         throw notFound(`دبیر ردیف ${t.rowNumber} پیدا نشد.`);
       });
@@ -219,6 +219,13 @@ export async function commitImport(tx: Tx, ctx: ImportCtx, ref: ImportReference,
   for (const s of validation.plan.students) {
     const classGroupId = resolveClass(s.branchId, s.className);
     if (s.existing) {
+      // The validator only plans in-scope students; re-assert it here so a school-scoped commit can never rename or
+      // enroll another school's student (same predicate as every admin operation).
+      if (scope.kind === "school") {
+        await requirePersonInScope(tx, scope, s.existing.personId).catch(() => {
+          throw notFound(`دانش‌آموز ردیف ${s.rowNumber} پیدا نشد.`);
+        });
+      }
       const renamed = s.existing.firstName !== s.firstName || s.existing.lastName !== s.lastName;
       if (renamed) {
         await updatePerson(tx, ctx, s.existing.personId, { firstName: s.firstName, lastName: s.lastName });

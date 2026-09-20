@@ -6,7 +6,7 @@ import type { Tx } from "@/lib/actions";
 import { notFound } from "@/lib/errors";
 import { classEnrollment, schoolEnrollment, teacherAssignment } from "@/modules/academic/schema";
 import { authIdentity, contactPoint, organizationMembership, person, role, roleAssignment, staffProfile, studentProfile, userAccount } from "@/modules/iam/schema";
-import { assertSchoolInScope, type AdminScope } from "@/modules/iam/service";
+import { assertSchoolInScope, liveSchoolEnrollmentSql, type AdminScope } from "@/modules/iam/service";
 import { findClassGroup } from "@/modules/tenancy/repo";
 import { academicYear, branch, classGroup, classOffering, gradeLevel, school, subject } from "@/modules/tenancy/schema";
 import { roleLabel } from "./labels";
@@ -188,7 +188,7 @@ export interface PersonDetail {
   enrollment: { classEnrollmentId: string; classGroupId: string; className: string; schoolId: string; schoolName: string; gradeName: string; yearName: string } | null;
   roles: Array<{ roleAssignmentId: string; roleCode: string; roleName: string; scopeType: string; schoolId: string | null; schoolName: string | null; sourceType: string }>;
   teaching: Array<{ teacherAssignmentId: string; classOfferingId: string; className: string; subjectName: string }>;
-  /** Schools the person is anchored to (class, primary school, manual roles, school enrollments); picks the credential sheet's school name. */
+  /** Schools the person is anchored to (class, primary school, manual roles, live school enrollments); picks the credential sheet's school name. */
   schoolIds: string[];
 }
 
@@ -278,7 +278,8 @@ export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: strin
   if (enrollment) schoolIds.add(enrollment.schoolId);
   if (st?.schoolId) schoolIds.add(st.schoolId);
   for (const r of roles) if (r.schoolId) schoolIds.add(r.schoolId);
-  const se = sp ? await tx.select({ schoolId: schoolEnrollment.schoolId }).from(schoolEnrollment).where(eq(schoolEnrollment.studentProfileId, sp.id)) : [];
+  // Live enrollments only — the same anchors `personInScopeSql` counts (a school the student left is not printed on their sheet).
+  const se = sp ? await tx.select({ schoolId: schoolEnrollment.schoolId }).from(schoolEnrollment).where(and(eq(schoolEnrollment.studentProfileId, sp.id), liveSchoolEnrollmentSql("academic.school_enrollment"))) : [];
   for (const r of se) schoolIds.add(r.schoolId);
 
   return {

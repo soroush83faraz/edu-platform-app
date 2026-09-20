@@ -6,7 +6,7 @@ import { sql } from "drizzle-orm";
 import { defineAction } from "@/lib/actions";
 import { notFound } from "@/lib/errors";
 import { endTeacherAssignment } from "@/modules/academic/service";
-import { adminCreateStaff, adminCreateStudent, adminPlaceStudent, adminResetInitialPassword, adminUnlockAccount, adminUpdatePerson, requirePersonInScope } from "@/modules/iam/admin";
+import { adminCreateStaff, adminCreateStudent, adminPlaceStudent, adminResetInitialPassword, adminUnlockAccount, adminUpdatePerson } from "@/modules/iam/admin";
 import { assignRole, createAccountForPerson, getAdminScope, resolveIdentifier, revokeRoleAssignment, MESSAGES } from "@/modules/iam/service";
 import { findSchoolById } from "@/modules/tenancy/repo";
 import { getPersonDetail } from "./people";
@@ -112,13 +112,12 @@ export const placeStudentAction = defineAction({ schema: PlaceStudentInput, perm
   adminPlaceStudent(tx, ctx, { personId: input.personId, classGroupId: input.classGroupId }),
 );
 
-export const assignRoleAction = defineAction({ schema: AssignRoleInput, permission: "iam.role_assignment.write", scope: "any" }, async (tx, input, ctx) => {
-  const scope = await getAdminScope(tx, ctx);
-  await requirePersonInScope(tx, scope, input.personId);
-  return assignRole(tx, ctx, { personId: input.personId, roleCode: input.roleCode, schoolId: input.schoolId ?? null });
-});
+/** The service applies the whole rule (docs/admin.md «ماتریس اعطای نقش»): person and school in scope (NOT_FOUND), `iam.role_assignment.write` at the role's scope (FORBIDDEN). */
+export const assignRoleAction = defineAction({ schema: AssignRoleInput, permission: "iam.role_assignment.write", scope: "any" }, async (tx, input, ctx) =>
+  assignRole(tx, ctx, { personId: input.personId, roleCode: input.roleCode, schoolId: input.schoolId ?? null }),
+);
 
-/** The service applies the scope rule itself (ctx.assignments): person in scope + covered scope type, org roles FORBIDDEN. */
+/** The service applies the scope rule itself: person in scope + covered scope type (NOT_FOUND), permission at the role's scope (FORBIDDEN), org roles FORBIDDEN for school admins. */
 export const revokeRoleAction = defineAction({ schema: RevokeRoleInput, permission: "iam.role_assignment.write", scope: "any" }, async (tx, input, ctx) => {
   await revokeRoleAssignment(tx, ctx, { roleAssignmentId: input.roleAssignmentId });
   return { roleAssignmentId: input.roleAssignmentId };

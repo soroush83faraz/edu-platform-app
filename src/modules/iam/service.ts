@@ -15,13 +15,18 @@ import { normalizeFa, normalizePhoneIR, toAsciiDigits } from "@/lib/normalize";
 import { schoolEnrollment } from "@/modules/academic/schema";
 import { enrollStudent } from "@/modules/academic/service";
 import { findClassGroup, findCurrentAcademicYear, findSchoolById, schoolIdOfBranch } from "@/modules/tenancy/repo";
-import type { Assignment } from "./can";
+import { can, canAtAnyScope, resolveScopeChain, type Assignment } from "./can";
 import { generateInitialPassword, hashPassword } from "./password";
 import { findAccountByIdentifier } from "./repo";
 import { authIdentity, contactPoint, organizationMembership, person, role, roleAssignment, staffProfile, studentProfile, userAccount, userSession } from "./schema";
 
-/** What the service needs from the request context. `assignments` (when present) drives the admin scope rule. */
-export type IamCtx = AuditCtx & { orgId: string; personId: string; assignments?: readonly Assignment[] };
+/**
+ * What the service needs from the request context. `assignments` are REQUIRED: they drive the admin scope rule and
+ * the permission checks of the role services (`can()`), so every caller path — actions, the importer running as
+ * the real admin, the seed acting as the demo organization admin — is checked the same way. There is no
+ * "trusted" ctx without assignments.
+ */
+export type IamCtx = AuditCtx & { orgId: string; personId: string; assignments: readonly Assignment[] };
 
 const fieldError = (field: string, message: string) => validation({ fieldErrors: { [field]: [message] } }, message);
 
@@ -47,6 +52,13 @@ export const MESSAGES = {
   schoolNotFound: "مدرسه یافت نشد.",
   roleNotManual: "این نقش به‌صورت دستی داده نمی‌شود.",
   roleScopeNotAllowed: "این نقش در این دامنه قابل تخصیص نیست.",
+  roleSchoolRequired: "برای این نقش، مدرسه را انتخاب کنید.",
+  orgRoleForbidden: "فقط مدیر سازمان می‌تواند نقش سطح سازمان بدهد.",
+  orgRoleRevokeForbidden: "فقط مدیر سازمان می‌تواند نقش سطح سازمان را لغو کند.",
+  roleGrantForbidden: "شما اجازهٴ دادن نقش مدیریتی در این مدرسه را ندارید.",
+  roleRevokeForbidden: "شما اجازهٴ لغو این نقش را ندارید.",
+  derivedRoleNotRevocable: "این نقش از تخصیص درس مشتق شده و از این‌جا لغو نمی‌شود.",
+  studentProfileMismatch: "پروفایل دانش‌آموز به این فرد تعلق ندارد.",
   changed: "— تغییر داده شده",
 } as const;
 
@@ -89,6 +101,15 @@ export function isInScope(scope: AdminScope, schoolId: string | null | undefined
   return scope.kind === "organization" || scope.schoolIds.includes(schoolId);
 }
 
+/** `school_enrollment` statuses that anchor a student to a school (CHECK `school_enrollment_status_chk` lists the rest). */
+export const LIVE_SCHOOL_ENROLLMENT_STATUSES: readonly string[] = ["registered", "active"];
+
+/** SQL predicate «the school_enrollment row aliased `alias` still anchors the student»: live status and not ended. */
+export function liveSchoolEnrollmentSql(alias: string): SQL {
+  const a = columnRef(alias);
+  return sql`(${a}.status = any(${sql.param([...LIVE_SCHOOL_ENROLLMENT_STATUSES], undefined)}::text[]) and (${a}.ends_on is null or ${a}.ends_on >= current_date))`;
+}
+
 /** Column references passed to the SQL predicates below are code constants, never input — still, keep them boring. */
 const COLUMN_REF_RE = /^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*){0,2}$/;
 
@@ -103,8 +124,10 @@ function columnRef(column: string): SQL {
  *   - organization scope → TRUE (organization admins reach everyone of the organization);
  *   - a person holding ANY unrevoked organization-scoped role assignment is outside EVERY school scope (the
  *     organization admin is managed by organization admins only);
- *   - otherwise the person needs a POSITIVE anchor in one of the caller's schools: a `school_enrollment`
- *     (students), `staff_profile.school_id` (staff) or an unrevoked school-/branch-scoped role (managers).
+ *   - otherwise the person needs a POSITIVE anchor in one of the caller's schools: a LIVE `school_enrollment`
+ *     (students — `status IN ('registered','active')` and not ended: a student transferred out, withdrawn or
+ *     graduated is no longer the old school's to manage), `staff_profile.school_id` (staff) or an unrevoked
+ *     school-/branch-scoped role (managers).
  * Derived teacher roles (`class_offering` scope) never anchor: a school admin can create them himself, so they
  * must not widen his reach over a person anchored elsewhere. Unanchored persons are NOT_FOUND for school admins.
  */
@@ -115,7 +138,8 @@ export function personInScopeSql(scope: AdminScope, personColumn: string): SQL {
   return sql`(
     not exists (select 1 from iam.role_assignment ra where ra.person_id = ${p} and ra.revoked_at is null and ra.scope_type = 'organization')
     and (
-      exists (select 1 from academic.school_enrollment se join iam.student_profile sp on sp.id = se.student_profile_id where sp.person_id = ${p} and se.school_id = any(${ids}))
+      exists (select 1 from academic.school_enrollment se join iam.student_profile sp on sp.id = se.student_profile_id
+              where sp.person_id = ${p} and se.school_id = any(${ids}) and ${liveSchoolEnrollmentSql("se")})
       or exists (select 1 from iam.staff_profile st where st.person_id = ${p} and st.school_id = any(${ids}))
       or exists (select 1 from iam.role_assignment ra where ra.person_id = ${p} and ra.revoked_at is null and ra.school_id = any(${ids}))
       or exists (select 1 from iam.role_assignment ra join tenancy.branch b on b.id = ra.branch_id where ra.person_id = ${p} and ra.revoked_at is null and b.school_id = any(${ids}))
@@ -320,6 +344,8 @@ export async function unlockAccount(tx: Tx, ctx: IamCtx, input: { userAccountId:
 
 export const ASSIGNABLE_ROLES = ["org_admin", "school_principal", "vice_principal"] as const;
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
+/** Manager roles a school-scoped grantor may hand out (inside their schools), in picker order. */
+export const SCHOOL_ROLES: readonly AssignableRole[] = ["school_principal", "vice_principal"];
 
 /** The only role codes `assignRole` writes; `teacher` is derived by `assignTeacher`, guardian roles are phase 2. */
 const MANUAL_ROLE_CODES: ReadonlySet<string> = new Set<string>([...ASSIGNABLE_ROLES, "student"]);
@@ -331,67 +357,146 @@ export interface AssignRoleInput {
   studentProfileId?: string | null;
 }
 
+export interface RoleGrantOptions<S> {
+  /** Manager roles the caller may grant, in picker order; empty = no role picker at all. */
+  roles: AssignableRole[];
+  /** Schools (of the caller's scope) where the school roles may be granted. */
+  schools: S[];
+}
+
+/**
+ * Which manager roles the caller may grant and where — the picker-side mirror of the `can(iam.role_assignment.write)`
+ * check `assignRole` enforces (docs/admin.md «ماتریس اعطای نقش»): an organization-scoped holder grants every role
+ * at every school; a school-scoped holder grants `school_principal` / `vice_principal` at the schools of the
+ * assignments that carry the permission; anyone else (vice principals) grants nothing. `schools` are the scope's
+ * schools, so an option here is never a school the caller cannot see.
+ */
+export function roleGrantOptions<S extends { value: string }>(assignments: readonly Assignment[], schools: readonly S[]): RoleGrantOptions<S> {
+  const holders = assignments.filter((a) => a.permissions.includes("iam.role_assignment.write"));
+  if (holders.some((a) => a.scopeType === "organization")) return { roles: [...SCHOOL_ROLES, "org_admin"], schools: [...schools] };
+  const schoolIds = new Set(holders.filter((a) => a.scopeType === "school" && a.scopeId !== null).map((a) => a.scopeId as string));
+  const grantable = schools.filter((s) => schoolIds.has(s.value));
+  if (grantable.length === 0) return { roles: [], schools: [] };
+  return { roles: [...SCHOOL_ROLES], schools: grantable };
+}
+
 async function findSystemRole(tx: Tx, code: string): Promise<{ id: string; allowedScopeTypes: string[] }> {
   const rows = await tx.select({ id: role.id, allowedScopeTypes: role.allowedScopeTypes }).from(role).where(and(isNull(role.organizationId), eq(role.code, code))).limit(1);
   if (!rows[0]) throw invalidReference(`نقش سیستمی «${code}» یافت نشد.`);
   return rows[0];
 }
 
+type RoleTarget =
+  | { scopeType: "organization"; scopeId: string }
+  | { scopeType: "school"; scopeId: string; schoolId: string }
+  | { scopeType: "student"; scopeId: string; studentProfileId: string };
+
+interface ResolvedRoleGrant {
+  roleId: string;
+  target: RoleTarget;
+  adminScope: AdminScope;
+}
+
 /**
- * Manual role assignment (source_type 'manual', granted_by = ctx.personId). `org_admin` is organization-scoped;
- * `school_principal` / `vice_principal` need a school. Runtime guards (seed/CLI callers included): only
- * `MANUAL_ROLE_CODES`, and the chosen scope type must be in the role's `allowed_scope_types`. A school-scoped
- * admin (ctx.assignments) may only grant school-scoped roles inside their own schools, and only to persons
- * already in their scope — organization-level roles are FORBIDDEN for them.
+ * Everything a manual role grant must satisfy BEFORE the person is looked at — shared by `assignRole` and the
+ * up-front check of `createStaff` (so nothing is written for a grant the caller may not make):
+ *   1. the caller is an admin at all (`getAdminScope`, FORBIDDEN otherwise — checked first so a non-admin learns
+ *      nothing about school ids);
+ *   2. the code is manual and the role's `allowed_scope_types` accept the target scope;
+ *   3. a school role's school exists here (NOT_FOUND) and, for a school-scoped caller, is one of theirs
+ *      (NOT_FOUND — another school's id must look nonexistent, whether or not it exists);
+ *   4. the caller holds the permission the grant needs (FORBIDDEN — the caller is known and the permission is a
+ *      declared capability): `iam.role_assignment.write` at the organization for `org_admin`, at the school for
+ *      `school_principal` / `vice_principal`; for the `student` role `iam.person.write` at any scope (the role is
+ *      the marker of a registered student, not an admin capability — the person must additionally be in scope,
+ *      which `assignRole` checks once the person exists). docs/admin.md «ماتریس اعطای نقش».
  */
-export async function assignRole(tx: Tx, ctx: IamCtx, input: AssignRoleInput): Promise<{ roleAssignmentId: string; created: boolean }> {
+async function resolveRoleGrant(tx: Tx, ctx: IamCtx, input: Omit<AssignRoleInput, "personId">): Promise<ResolvedRoleGrant> {
+  const adminScope = await getAdminScope(tx, ctx);
   if (!MANUAL_ROLE_CODES.has(input.roleCode)) throw validation(undefined, MESSAGES.roleNotManual);
   const tpl = await findSystemRole(tx, input.roleCode);
-  let scope: { scopeType: "organization" | "school" | "student"; schoolId?: string; studentProfileId?: string };
-  let scopeId: string;
+  let target: RoleTarget;
   if (input.roleCode === "org_admin") {
-    scope = { scopeType: "organization" };
-    scopeId = ctx.orgId;
+    target = { scopeType: "organization", scopeId: ctx.orgId };
   } else if (input.roleCode === "student") {
     if (!input.studentProfileId) throw invalidReference("پروفایل دانش‌آموز مشخص نیست.");
-    scope = { scopeType: "student", studentProfileId: input.studentProfileId };
-    scopeId = input.studentProfileId;
+    target = { scopeType: "student", scopeId: input.studentProfileId, studentProfileId: input.studentProfileId };
   } else {
-    if (!input.schoolId) throw fieldError("schoolId", "برای این نقش، مدرسه را انتخاب کنید.");
+    if (!input.schoolId) throw fieldError("schoolId", MESSAGES.roleSchoolRequired);
     if (!(await findSchoolById(tx, input.schoolId))) throw notFound();
-    scope = { scopeType: "school", schoolId: input.schoolId };
-    scopeId = input.schoolId;
+    assertSchoolInScope(adminScope, input.schoolId);
+    target = { scopeType: "school", scopeId: input.schoolId, schoolId: input.schoolId };
   }
-  if (!tpl.allowedScopeTypes.includes(scope.scopeType)) throw validation(undefined, MESSAGES.roleScopeNotAllowed);
-  if (ctx.assignments && scope.scopeType !== "student") {
-    const adminScope = await getAdminScope(tx, { orgId: ctx.orgId, assignments: ctx.assignments });
-    if (adminScope.kind === "school") {
-      if (scope.scopeType === "organization") throw forbidden("فقط مدیر سازمان می‌تواند نقش سطح سازمان بدهد.");
-      assertSchoolInScope(adminScope, scope.schoolId);
-      await requirePersonInScope(tx, adminScope, input.personId);
-    }
+  if (!tpl.allowedScopeTypes.includes(target.scopeType)) throw validation(undefined, MESSAGES.roleScopeNotAllowed);
+  if (target.scopeType === "student") {
+    if (!canAtAnyScope(ctx.assignments, "iam.person.write")) throw forbidden(MESSAGES.roleGrantForbidden);
+  } else {
+    const ref = target.scopeType === "school" ? ({ scopeType: "school", id: target.schoolId } as const) : undefined;
+    if (!(await can(tx, ctx, "iam.role_assignment.write", ref))) throw forbidden(target.scopeType === "organization" ? MESSAGES.orgRoleForbidden : MESSAGES.roleGrantForbidden);
   }
-  const [p] = await tx.select({ id: person.id }).from(person).where(eq(person.id, input.personId)).limit(1);
-  if (!p) throw notFound();
+  return { roleId: tpl.id, target, adminScope };
+}
+
+/**
+ * Manual role assignment (source_type 'manual', granted_by = ctx.personId). Runtime guards for EVERY caller (actions,
+ * importer, seed): `resolveRoleGrant` (manual code, allowed scope type, school in scope, `iam.role_assignment.write`
+ * at the role's scope — FORBIDDEN otherwise), then the person must exist and, for a school-scoped caller, be inside
+ * their scope (NOT_FOUND) — for the `student` role too, whose profile must belong to that very person.
+ */
+export async function assignRole(tx: Tx, ctx: IamCtx, input: AssignRoleInput): Promise<{ roleAssignmentId: string; created: boolean }> {
+  const { roleId, target, adminScope } = await resolveRoleGrant(tx, ctx, input);
+  await requirePersonInScope(tx, adminScope, input.personId);
+  if (target.scopeType === "student") {
+    // A profile of another person would hand `personId` the reach over that student's items.
+    const [sp] = await tx.select({ personId: studentProfile.personId }).from(studentProfile).where(eq(studentProfile.id, target.studentProfileId)).limit(1);
+    if (!sp || sp.personId !== input.personId) throw invalidReference(MESSAGES.studentProfileMismatch);
+  }
+  const { scopeId, ...scope } = target;
   const existing = await tx
     .select({ id: roleAssignment.id })
     .from(roleAssignment)
-    .where(and(eq(roleAssignment.personId, input.personId), eq(roleAssignment.roleId, tpl.id), eq(roleAssignment.scopeType, scope.scopeType), eq(roleAssignment.scopeId, scopeId), isNull(roleAssignment.revokedAt)))
+    .where(and(eq(roleAssignment.personId, input.personId), eq(roleAssignment.roleId, roleId), eq(roleAssignment.scopeType, scope.scopeType), eq(roleAssignment.scopeId, scopeId), isNull(roleAssignment.revokedAt)))
     .limit(1);
   if (existing[0]) return { roleAssignmentId: existing[0].id, created: false };
   const [row] = await tx
     .insert(roleAssignment)
-    .values({ organizationId: ctx.orgId, personId: input.personId, roleId: tpl.id, ...scope, sourceType: "manual", grantedByPersonId: ctx.personId })
+    .values({ organizationId: ctx.orgId, personId: input.personId, roleId, ...scope, sourceType: "manual", grantedByPersonId: ctx.personId })
     .returning({ id: roleAssignment.id });
   await audit(ctx, "iam.role_assignment.created", { schema: "iam", table: "role_assignment", id: row.id }, null, { personId: input.personId, roleCode: input.roleCode, ...scope }, tx);
   return { roleAssignmentId: row.id, created: true };
 }
 
+/** The school an existing role assignment lives under (null for organization/student scopes; NOT_FOUND for scopes phase 1 does not cover). */
+async function roleAssignmentSchoolId(
+  tx: Tx,
+  orgId: string,
+  ra: { scopeType: string; schoolId: string | null; branchId: string | null; classGroupId: string | null; classOfferingId: string | null },
+): Promise<string | null> {
+  switch (ra.scopeType) {
+    case "organization":
+    case "student":
+      return null;
+    case "school":
+      return ra.schoolId;
+    case "branch":
+      return ra.branchId ? await schoolIdOfBranch(tx, ra.branchId) : null;
+    case "class_group":
+    case "class_offering": {
+      const id = ra.scopeType === "class_group" ? ra.classGroupId : ra.classOfferingId;
+      const chain = id ? await resolveScopeChain(tx, orgId, { scopeType: ra.scopeType, id }) : null;
+      return chain?.find((n) => n.scopeType === "school")?.id ?? null;
+    }
+    default:
+      throw notFound();
+  }
+}
+
 /**
- * Revokes a MANUAL assignment (derived teacher roles end with their teacher_assignment). A school-scoped admin
- * (ctx.assignments) may revoke only roles of persons in their scope whose scope they cover: `school` / `branch`
- * inside their schools, `student` (the person check covers it); every other scope type is NOT_FOUND for them and
- * organization-level roles stay FORBIDDEN.
+ * Revokes a MANUAL assignment. Order matters (no existence oracle): a school-scoped caller must have the person in
+ * scope AND the assignment's school inside their schools (`school` / `branch` / derived `class_*` scopes; `student`
+ * is covered by the person check) — anything else is NOT_FOUND before the row's nature is mentioned; organization
+ * roles stay FORBIDDEN for them. Every caller needs `iam.role_assignment.write` at the assignment's scope
+ * (FORBIDDEN). Only then a derived teacher role is refused with its explanation (it ends with the teaching).
  */
 export async function revokeRoleAssignment(tx: Tx, ctx: IamCtx, input: { roleAssignmentId: string }): Promise<void> {
   const [ra] = await tx
@@ -402,23 +507,25 @@ export async function revokeRoleAssignment(tx: Tx, ctx: IamCtx, input: { roleAss
       scopeType: roleAssignment.scopeType,
       schoolId: roleAssignment.schoolId,
       branchId: roleAssignment.branchId,
+      classGroupId: roleAssignment.classGroupId,
+      classOfferingId: roleAssignment.classOfferingId,
       sourceType: roleAssignment.sourceType,
     })
     .from(roleAssignment)
     .where(and(eq(roleAssignment.id, input.roleAssignmentId), isNull(roleAssignment.revokedAt)))
     .limit(1);
   if (!ra) throw notFound();
-  if (ra.sourceType !== "manual") throw validation(undefined, "این نقش از تخصیص درس مشتق شده و از این‌جا لغو نمی‌شود.");
-  if (ctx.assignments) {
-    const adminScope = await getAdminScope(tx, { orgId: ctx.orgId, assignments: ctx.assignments });
-    if (adminScope.kind === "school") {
-      if (ra.scopeType === "organization") throw forbidden("فقط مدیر سازمان می‌تواند نقش سطح سازمان را لغو کند.");
-      await requirePersonInScope(tx, adminScope, ra.personId);
-      if (ra.scopeType === "school") assertSchoolInScope(adminScope, ra.schoolId);
-      else if (ra.scopeType === "branch") assertSchoolInScope(adminScope, ra.branchId ? await schoolIdOfBranch(tx, ra.branchId) : null);
-      else if (ra.scopeType !== "student") throw notFound();
-    }
-  }
+  const adminScope = await getAdminScope(tx, ctx);
+  if (adminScope.kind === "school" && ra.scopeType === "organization") throw forbidden(MESSAGES.orgRoleRevokeForbidden);
+  await requirePersonInScope(tx, adminScope, ra.personId);
+  const schoolId = await roleAssignmentSchoolId(tx, ctx.orgId, ra);
+  if (adminScope.kind === "school" && ra.scopeType !== "student") assertSchoolInScope(adminScope, schoolId);
+  const permitted =
+    ra.scopeType === "student"
+      ? canAtAnyScope(ctx.assignments, "iam.role_assignment.write")
+      : await can(tx, ctx, "iam.role_assignment.write", schoolId ? { scopeType: "school", id: schoolId } : undefined);
+  if (!permitted) throw forbidden(ra.scopeType === "organization" ? MESSAGES.orgRoleRevokeForbidden : MESSAGES.roleRevokeForbidden);
+  if (ra.sourceType !== "manual") throw validation(undefined, MESSAGES.derivedRoleNotRevocable);
   if (ra.personId === ctx.personId && ra.scopeType === "organization") throw validation(undefined, "نمی‌توانید نقش سازمانی خودتان را لغو کنید.");
   await tx.update(roleAssignment).set({ revokedAt: sql`now()` }).where(eq(roleAssignment.id, ra.id));
   await audit(ctx, "iam.role_assignment.revoked", { schema: "iam", table: "role_assignment", id: ra.id }, ra, { revokedAt: "now" }, tx);
@@ -558,10 +665,11 @@ export async function createStudent(tx: Tx, ctx: IamCtx, input: CreateStudentInp
     }
     account = await createAccountForPerson(tx, ctx, { personId: p.id, identifier, field: "identifier" });
   }
-  if (input.assignStudentRole ?? true) await assignRole(tx, ctx, { personId: p.id, roleCode: "student", studentProfileId: sp.id });
-
+  // Enroll BEFORE the role: the class enrollment is the student's scope anchor, and `assignRole` requires a
+  // school-scoped caller to have the person in scope (the no-class path anchored them above).
   let classEnrollmentId: string | null = null;
   if (classGroupId) classEnrollmentId = (await enrollStudent(tx, ctx, { studentProfileId: sp.id, classGroupId })).classEnrollmentId;
+  if (input.assignStudentRole ?? true) await assignRole(tx, ctx, { personId: p.id, roleCode: "student", studentProfileId: sp.id });
 
   return {
     personId: p.id,
@@ -601,7 +709,8 @@ export interface CreateStaffResult {
 
 /**
  * person + staff_profile + user_account (phone) + membership + manual role assignments. The `teacher` role is
- * NEVER granted here — it is derived from class offerings by `assignTeacher`.
+ * NEVER granted here — it is derived from class offerings by `assignTeacher`. Roles need `iam.role_assignment.write`
+ * at their scope (`resolveRoleGrant`): a vice principal, who may register staff, cannot mint a principal.
  */
 export async function createStaff(tx: Tx, ctx: IamCtx, input: CreateStaffInput): Promise<CreateStaffResult> {
   const names = cleanNames(input);
@@ -617,6 +726,9 @@ export async function createStaff(tx: Tx, ctx: IamCtx, input: CreateStaffInput):
   }
   const schoolId = input.schoolId ?? input.roles?.find((r) => r.schoolId)?.schoolId ?? null;
   if (schoolId && !(await findSchoolById(tx, schoolId))) throw invalidReference(MESSAGES.schoolNotFound);
+  // A grant the caller may not make (school outside their scope → NOT_FOUND, missing `iam.role_assignment.write`
+  // → FORBIDDEN) is refused BEFORE anything is written; assignRole re-checks per role once the person exists.
+  for (const r of input.roles ?? []) await resolveRoleGrant(tx, ctx, { roleCode: r.roleCode, schoolId: r.schoolId ?? null });
   const [p] = await tx
     .insert(person)
     .values({ ...(input.id ? { id: input.id } : {}), organizationId: ctx.orgId, ...names, gender: input.gender ?? null, externalRef, status: "active" })

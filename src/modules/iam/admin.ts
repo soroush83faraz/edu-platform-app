@@ -1,7 +1,8 @@
 // Admin-facing wrappers around iam/service that enforce the phase-1 scope rule (docs/admin.md «قانون دامنه»): a
 // school-scoped admin only reaches people POSITIVELY anchored in their own schools (`personInScopeSql` in
-// iam/service) — anything else is NOT_FOUND. The actions in src/lib/admin call these; the services themselves stay
-// scope-agnostic so the seed and the importer can reuse them.
+// iam/service) — anything else is NOT_FOUND. The actions in src/lib/admin call these. The people services take the
+// caller's assignments too (the role services check scope and permission themselves), so the seed and the importer
+// reuse them with a real ctx.
 import { and, eq, inArray } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { forbidden, notFound, validation } from "@/lib/errors";
@@ -56,16 +57,19 @@ export async function adminCreateStudent(tx: Tx, ctx: AdminCtx, input: CreateStu
 /**
  * New staff carry a primary school (`staff_profile.school_id`): explicit, else the school of the first school-scoped
  * role. A school-scoped admin must anchor the person inside their scope (otherwise they could never see them
- * again); an organization admin may leave it empty (reachable by organization admins only).
+ * again); an organization admin may leave it empty (reachable by organization admins only). Role schools outside
+ * the scope are NOT_FOUND here; whether the caller may grant the roles at all (`iam.role_assignment.write`) is the
+ * service's check (`createStaff` → `resolveRoleGrant`, FORBIDDEN before anything is written).
  */
 export async function adminCreateStaff(tx: Tx, ctx: AdminCtx, input: CreateStaffInput): Promise<CreateStaffResult> {
   const scope = await getAdminScope(tx, ctx);
   const schoolId = input.schoolId ?? input.roles?.find((r) => r.schoolId)?.schoolId ?? null;
   for (const r of input.roles ?? []) {
-    if (!r.schoolId) {
-      if (scope.kind === "school") throw forbidden("فقط مدیر سازمان می‌تواند نقش سطح سازمان بدهد.");
+    if (r.roleCode === "org_admin") {
+      if (scope.kind === "school") throw forbidden(MESSAGES.orgRoleForbidden);
       continue;
     }
+    if (!r.schoolId) throw fieldError("roles", MESSAGES.roleSchoolRequired);
     assertSchoolInScope(scope, r.schoolId);
   }
   if (scope.kind === "school" && !schoolId) throw fieldError("schoolId", MESSAGES.staffSchoolRequired);

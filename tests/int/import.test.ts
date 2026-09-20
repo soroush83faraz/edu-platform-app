@@ -1,9 +1,10 @@
 // Excel importer against the database: dry-run flags an unknown class and a duplicate student number; a clean
 // workbook commits (accounts, usernames for phone-less students, offerings, teacher assignments,
 // external_identity_map, import_batch/rows, audit) and a second commit of the same file inserts nothing; the
-// committed demo workbook (template/demo-danesh.xlsx, built from the seed) is idempotent too. The catalog roles and
-// the demo organizations are seeded as app_owner in beforeAll and removed again in afterAll (fixture database is
-// re-created); every import runs inside a withTenant transaction that ends with Rollback.
+// committed demo workbook (template/demo-danesh.xlsx, built from the seed) is idempotent too; a school-scoped
+// importer cannot pull another school's student into their class (N2 — the row is an error, nothing is touched).
+// The catalog roles and the demo organizations are seeded as app_owner in beforeAll and removed again in afterAll
+// (fixture database is re-created); every import runs inside a withTenant transaction that ends with Rollback.
 import fs from "node:fs";
 import path from "node:path";
 import { eq, sql } from "drizzle-orm";
@@ -12,13 +13,15 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { withTenant, type Tx } from "@/db/client";
 import * as schema from "@/db/schema";
-import { auditLog, externalIdentityMap, importBatch, userAccount } from "@/db/schema";
+import { auditLog, classEnrollment, externalIdentityMap, importBatch, person, userAccount } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import type { Assignment } from "@/modules/iam/can";
 import { PERMISSIONS } from "@/modules/iam/permissions";
+import { createStudent, getAdminScope, type AdminScope } from "@/modules/iam/service";
 import { type ImportCtx, commitImport, recordBatch, sha256Hex } from "@/modules/integ/importers/commit";
 import { parseWorkbook } from "@/modules/integ/importers/parse";
-import { loadReference, validateImport } from "@/modules/integ/importers/validate";
+import { IMPORT_MESSAGES, loadReference, validateImport } from "@/modules/integ/importers/validate";
+import { createAcademicYear, createClassGroup, createSchool } from "@/modules/tenancy/service";
 import { buildTemplateWorkbook, type ExampleRows } from "../../scripts/build-template";
 import { demoWorkbookRows } from "../../scripts/build-demo-workbook";
 import { runMigrations } from "../../scripts/migrate";
@@ -36,6 +39,9 @@ const orgAdminA: ImportCtx & { assignments: Assignment[] } = {
   requestId: "int-import",
   assignments: [{ roleCode: "org_admin", roleId: "r", scopeType: "organization", scopeId: f.ORG_A, permissions: ALL }],
 };
+/** `getAdminScope(orgAdminA)` — an organization admin matches existing students organization-wide. */
+const ORG_SCOPE: AdminScope = { kind: "organization" };
+const isError = (code: string) => (e: unknown) => AppError.is(e) && e.code === code;
 
 async function workbook(rows: ExampleRows): Promise<Buffer> {
   return Buffer.from(await buildTemplateWorkbook(rows).xlsx.writeBuffer());
@@ -94,7 +100,7 @@ describe("excel import", () => {
     await expect(
       withTenant({ orgId: f.ORG_A, personId: f.PERSON_A2 }, async (tx) => {
         const parsed = await parseWorkbook(buf);
-        const ref = await loadReference(tx, "S1", parsed);
+        const ref = await loadReference(tx, ORG_SCOPE, "S1", parsed);
         expect(ref.classes.map((c) => c.name).sort()).toEqual(["اول 1", "اول 2"]);
         const v = validateImport(parsed, ref, { createSubjects: false });
         expect(v.ok).toBe(false);
@@ -130,7 +136,7 @@ describe("excel import", () => {
           memberships: await count(tx, "iam.organization_membership"),
         };
         const parsed = await parseWorkbook(buf);
-        const ref = await loadReference(tx, "S1", parsed);
+        const ref = await loadReference(tx, ORG_SCOPE, "S1", parsed);
         const v = validateImport(parsed, ref, { createSubjects: false });
         expect(v.ok).toBe(true);
         const res = await commitImport(tx, orgAdminA, ref, v, { fileSha256: sha256Hex(buf), kind: "full" });
@@ -162,7 +168,7 @@ describe("excel import", () => {
 
         // Same file again, same transaction: nothing new.
         const parsed2 = await parseWorkbook(buf);
-        const ref2 = await loadReference(tx, "S1", parsed2);
+        const ref2 = await loadReference(tx, ORG_SCOPE, "S1", parsed2);
         const v2 = validateImport(parsed2, ref2, { createSubjects: false });
         expect(v2.ok).toBe(true);
         const res2 = await commitImport(tx, orgAdminA, ref2, v2, { fileSha256: sha256Hex(buf), kind: "full" });
@@ -181,7 +187,7 @@ describe("excel import", () => {
         // A changed name and a moved class are updates, still no inserts.
         const moved = await workbook({ ...cleanRows, students: [{ ...cleanRows.students[0], last_name: "حسینی‌نژاد", class_name: "اول ۳" }, cleanRows.students[1]] });
         const parsed3 = await parseWorkbook(moved);
-        const ref3 = await loadReference(tx, "S1", parsed3);
+        const ref3 = await loadReference(tx, ORG_SCOPE, "S1", parsed3);
         const res3 = await commitImport(tx, orgAdminA, ref3, validateImport(parsed3, ref3, { createSubjects: false }), { fileSha256: sha256Hex(moved), kind: "full" });
         expect(res3.totalInserted).toBe(0);
         expect(res3.counts.updated).toEqual({ students: 1 });
@@ -215,8 +221,11 @@ describe("excel import", () => {
       withTenant({ orgId, personId: rezaei }, async (tx) => {
         const [acct] = await tx.select({ id: userAccount.id }).from(userAccount).where(eq(userAccount.loginIdentifier, demoPhone(1 + rezaeiIndex)));
         expect(acct).toBeDefined();
-        const ref = await loadReference(tx, "G", parsedFile);
+        const scope = await getAdminScope(tx, ctx);
+        expect(scope).toEqual({ kind: "school", schoolIds: [schoolG] });
+        const ref = await loadReference(tx, scope, "G", parsedFile);
         expect(ref.studentsByNumber.size).toBe(13);
+        expect(ref.foreignStudentNumbers.size).toBe(0);
         const v = validateImport(parsedFile, ref, { createSubjects: false });
         expect(v.ok).toBe(true);
         expect(v.summary).toEqual({
@@ -239,7 +248,7 @@ describe("excel import", () => {
         });
         const s1 = await snapshot();
         const parsed2 = await parseWorkbook(buf);
-        const ref2 = await loadReference(tx, "G", parsed2);
+        const ref2 = await loadReference(tx, scope, "G", parsed2);
         const res2 = await commitImport(tx, ctx, ref2, validateImport(parsed2, ref2, { createSubjects: false }), { fileSha256: sha256Hex(buf), kind: "full" });
         expect(res2.totalInserted).toBe(0);
         expect(res2.counts.skipped).toEqual({ classes: 3, staff: 2, teaching: 4, students: 13 });
@@ -247,6 +256,70 @@ describe("excel import", () => {
         expect({ ...s2, rows: 0 }).toEqual({ ...s1, rows: 0 });
         expect(s2.rows).toBe(s1.rows + 22); // the second batch records its own 22 rows
         expect(await count(tx, "integ.import_batch", "where status = 'committed'")).toBe(2);
+        throw new Rollback();
+      }),
+    ).rejects.toBeInstanceOf(Rollback);
+  });
+
+  it("N2: a school-scoped importer cannot pull another school's student in — matched by number or unique code the row is an error, nothing about the student leaks or changes; an organization admin keeps organization-wide matching", async () => {
+    await expect(
+      withTenant({ orgId: f.ORG_A, personId: f.PERSON_A2 }, async (tx) => {
+        // School S2 next to the fixture S1, with a current year, a class and one enrolled student (created by the org admin).
+        const s2 = await createSchool(tx, orgAdminA, { name: "دبیرستان دوم", code: "S2", genderPolicy: "boys" });
+        const year = await createAcademicYear(tx, orgAdminA, {
+          schoolId: s2.schoolId,
+          name: "۱۴۰۵-۱۴۰۶",
+          startsOn: "2026-09-23",
+          endsOn: "2027-06-21",
+          isCurrent: true,
+          terms: [{ name: "نوبت اول", sequence: 1, startsOn: "2026-09-23", endsOn: "2027-01-20" }],
+        });
+        const cg = await createClassGroup(tx, orgAdminA, { branchId: s2.branchId, academicYearId: year.academicYearId, gradeLevelId: f.GRADE_A, name: "اول 9" });
+        const other = await createStudent(tx, orgAdminA, { firstName: "پگاه", lastName: "نادری", studentNumber: "7001", externalRef: "ext-7001", schoolId: s2.schoolId, login: { createAccount: true }, enrollment: { classGroupId: cg.classGroupId } });
+
+        // The S1 principal's file claims that student twice: once by number (renamed), once by unique code under a new number.
+        const buf = await workbook({
+          ...cleanRows,
+          students: [
+            { first_name: "پگاه", last_name: "تغییریافته", student_number: "7001", phone: "", guardian_phone: "", grade: "اول", class_name: "اول 1", external_ref: "" },
+            { first_name: "کسی", last_name: "دیگر", student_number: "7002", phone: "", guardian_phone: "", grade: "اول", class_name: "اول 1", external_ref: "ext-7001" },
+          ],
+        });
+        const parsed = await parseWorkbook(buf);
+        const s1Principal: ImportCtx = { ...orgAdminA, assignments: [{ roleCode: "school_principal", roleId: "r", scopeType: "school", scopeId: f.SCHOOL_A, permissions: ALL }] };
+        const scope = await getAdminScope(tx, s1Principal);
+        const ref = await loadReference(tx, scope, "S1", parsed);
+        expect(ref.studentsByNumber.has("7001")).toBe(false);
+        expect(ref.studentsByExternalRef.has("ext-7001")).toBe(false);
+        expect(ref.foreignStudentNumbers).toEqual(new Set(["7001"]));
+        expect(ref.foreignExternalRefs).toEqual(new Set(["ext-7001"]));
+        const v = validateImport(parsed, ref, { createSubjects: false });
+        expect(v.ok).toBe(false);
+        const errs = v.rows.filter((r) => r.sheet === "students").map((r) => ({ row: r.rowNumber, status: r.status, issues: r.issues.map((i) => `${i.column}:${i.message}`) }));
+        expect(errs).toEqual([
+          { row: 3, status: "error", issues: [`student_number:${IMPORT_MESSAGES.studentOfOtherSchool}`] },
+          { row: 4, status: "error", issues: [`external_ref:${IMPORT_MESSAGES.externalRefOfOtherSchool}`] },
+        ]);
+        expect(v.plan.students).toEqual([]);
+        // Nothing of the other school's student is in the report or the recorded rows (no name, no ids).
+        const dump = JSON.stringify(v.rows);
+        expect(dump).not.toContain("نادری");
+        expect(dump).not.toContain(other.personId);
+        expect(dump).not.toContain(other.studentProfileId);
+        await expect(commitImport(tx, s1Principal, ref, v, { fileSha256: sha256Hex(buf), kind: "full" })).rejects.toSatisfy(isError("CONFLICT"));
+        const [p] = await tx.select({ lastName: person.lastName }).from(person).where(eq(person.id, other.personId));
+        expect(p.lastName).toBe("نادری");
+        const active = await tx.select({ classGroupId: classEnrollment.classGroupId }).from(classEnrollment).where(eq(classEnrollment.studentProfileId, other.studentProfileId));
+        expect(active).toEqual([{ classGroupId: cg.classGroupId }]);
+        // A school code outside the scope is NOT_FOUND with the unknown-code message (no oracle on other schools' codes).
+        await expect(tx.transaction((sp) => loadReference(sp, scope, "S2", parsed))).rejects.toSatisfy((e: unknown) => isError("NOT_FOUND")(e) && (e as AppError).message === "مدرسه‌ای با کد «S2» در این سازمان نیست.");
+
+        // The organization admin matches organization-wide: the same rows are updates (warnings), not errors.
+        const orgRef = await loadReference(tx, ORG_SCOPE, "S1", parsed);
+        expect(orgRef.studentsByNumber.has("7001")).toBe(true);
+        expect(orgRef.foreignStudentNumbers.size).toBe(0);
+        const ov = validateImport(parsed, orgRef, { createSubjects: false });
+        expect(ov.rows.filter((r) => r.sheet === "students").map((r) => r.status)).toEqual(["warning", "warning"]);
         throw new Rollback();
       }),
     ).rejects.toBeInstanceOf(Rollback);

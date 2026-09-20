@@ -25,7 +25,7 @@ import * as schema from "../src/db/schema";
 import { assignTeacher, enrollStudent, type ServiceCtx } from "../src/modules/academic/service";
 import { IMPLICIT_PERMISSIONS, PERMISSIONS, type Permission, type ScopeType } from "../src/modules/iam/permissions";
 import { generateInitialPassword } from "../src/modules/iam/password";
-import { assignRole, createStaff, createStudent, findAccountOfPerson, setAccountPassword, updatePerson } from "../src/modules/iam/service";
+import { assignRole, createStaff, createStudent, findAccountOfPerson, setAccountPassword, updatePerson, type IamCtx } from "../src/modules/iam/service";
 import {
   findAcademicYearByName,
   findClassGroupByName,
@@ -499,8 +499,16 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
     await tx.execute(sql`select set_config('app.current_org_id', ${orgId}, true)`);
     const k = (s: string) => `${spec.key}:${s}`;
     // The demo org admin is the actor of every seeded change (audit rows, granted_by). Their person row is created
-    // below through createStaff with this deterministic id.
-    const ctx: ServiceCtx = { orgId, personId: demoId(k("person:admin")), userId: null, requestId: "seed" };
+    // below through createStaff with this deterministic id. The seed ACTS AS that organization admin: the services'
+    // permission checks (`assignRole` → can(iam.role_assignment.write), the admin scope rule) see the same
+    // organization-scoped org_admin assignment a real login of theirs would carry — there is no unchecked ctx.
+    const ctx: IamCtx = {
+      orgId,
+      personId: demoId(k("person:admin")),
+      userId: null,
+      requestId: "seed",
+      assignments: [{ roleCode: "org_admin", roleId: opts.roleIds.org_admin, scopeType: "organization", scopeId: orgId, permissions: ALL_ROLE_PERMS }],
+    };
 
     // ---- structure (find by natural key → update in place, else create with the deterministic id) ----
     const levelRow = await findEducationLevelByCode(tx, "SEC2");

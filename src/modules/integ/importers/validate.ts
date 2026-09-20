@@ -1,14 +1,16 @@
 // Validation of a parsed workbook against the school it is imported into. `loadReference` reads what the file may
 // refer to (grades, subjects, current year/term, existing classes, staff by phone, students by number, taken
-// login identifiers) under RLS; `validateImport` is pure and produces per-row Persian errors with sheet/row/column
-// plus the commit plan. Cross-row duplicates and cross-sheet references are checked here, before any write.
+// login identifiers) under RLS and the caller's admin scope; `validateImport` is pure and produces per-row Persian
+// errors with sheet/row/column plus the commit plan. Cross-row duplicates and cross-sheet references are checked
+// here, before any write. Existing students matched by number / unique code must be inside the caller's scope —
+// a school-scoped importer cannot pull another school's student into their class (docs/admin.md «ورود از اکسل»).
 import { createHash } from "node:crypto";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { notFound } from "@/lib/errors";
 import { normalizeFa, toAsciiDigits } from "@/lib/normalize";
 import { organizationMembership, person, staffProfile, studentProfile, userAccount } from "@/modules/iam/schema";
-import { STUDENT_NUMBER_RE } from "@/modules/iam/service";
+import { assertSchoolInScope, personInScopeSql, STUDENT_NUMBER_RE, type AdminScope } from "@/modules/iam/service";
 import { findCurrentAcademicYear, findCurrentTerm, findSchoolByCode, listGradeLevels, listSubjects } from "@/modules/tenancy/repo";
 import { branch, classGroup } from "@/modules/tenancy/schema";
 import type { ParsedWorkbook, Row, RowError } from "./parse";
@@ -48,20 +50,41 @@ export interface ImportReference {
   /** Active classes of the current year of this school. */
   classes: RefClass[];
   staffByPhone: Map<string, RefStaff>;
+  /** Existing students IN the caller's scope, by number / unique code (organization-wide for organization admins). */
   studentsByNumber: Map<string, RefStudent>;
   studentsByExternalRef: Map<string, RefStudent>;
+  /**
+   * Student numbers / unique codes of the file that belong to students OUTSIDE the caller's scope (another school's).
+   * Such a row is an error — never renamed, never enrolled here — and nothing about that student is loaded.
+   */
+  foreignStudentNumbers: Set<string>;
+  foreignExternalRefs: Set<string>;
   /** Login identifiers (phones/usernames) of the file that already exist anywhere (global table). */
   takenIdentifiers: Set<string>;
 }
+
+export const IMPORT_MESSAGES = {
+  studentOfOtherSchool: "این شمارهٴ دانش‌آموزی به مدرسهٴ دیگری تعلق دارد.",
+  externalRefOfOtherSchool: "این کد یکتا به دانش‌آموزی در مدرسهٴ دیگری تعلق دارد.",
+} as const;
 
 /** Matching key for names/codes: Persian letters, ASCII digits, ZWNJ → space, case-insensitive. */
 export const normKey = (s: string) => normalizeFa(toAsciiDigits(s)).replace(/‌/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
 const norm = normKey;
 
-/** Everything the validator needs, read once. NOT_FOUND when the school code is unknown or has no current year. */
-export async function loadReference(tx: Tx, schoolCode: string, parsed: ParsedWorkbook): Promise<ImportReference> {
+/**
+ * Everything the validator needs, read once, as seen by an admin of `scope` (`getAdminScope` of the importing
+ * admin). NOT_FOUND when the school code is unknown — or outside the caller's scope, with the same message — or
+ * when the school has no current year.
+ */
+export async function loadReference(tx: Tx, scope: AdminScope, schoolCode: string, parsed: ParsedWorkbook): Promise<ImportReference> {
   const school = await findSchoolByCode(tx, schoolCode);
   if (!school) throw notFound(`مدرسه‌ای با کد «${schoolCode}» در این سازمان نیست.`);
+  try {
+    assertSchoolInScope(scope, school.id);
+  } catch {
+    throw notFound(`مدرسه‌ای با کد «${schoolCode}» در این سازمان نیست.`);
+  }
   const year = await findCurrentAcademicYear(tx, school.id);
   if (!year) throw notFound(`مدرسهٴ «${school.name}» سال تحصیلی جاری ندارد؛ اول آن را در بخش مدیریت تعریف کنید.`);
   const term = await findCurrentTerm(tx, year.id);
@@ -97,7 +120,11 @@ export async function loadReference(tx: Tx, schoolCode: string, parsed: ParsedWo
   const refs = parsed.sheets.students.map((r) => r.values.external_ref).filter(Boolean);
   const studentsByNumber = new Map<string, RefStudent>();
   const studentsByExternalRef = new Map<string, RefStudent>();
+  const foreignStudentNumbers = new Set<string>();
+  const foreignExternalRefs = new Set<string>();
   if (numbers.length > 0 || refs.length > 0) {
+    // `inScope` is the admin scope rule (`personInScopeSql`): TRUE for organization admins, else a live anchor in
+    // the caller's schools. Out-of-scope matches only leave their key behind — no name, no ids.
     const rows = await tx
       .select({
         personId: person.id,
@@ -106,6 +133,7 @@ export async function loadReference(tx: Tx, schoolCode: string, parsed: ParsedWo
         lastName: person.lastName,
         externalRef: person.externalRef,
         studentNumber: studentProfile.studentNumber,
+        inScope: sql<boolean>`${personInScopeSql(scope, "iam.person.id")}`,
         hasAccount: sql<boolean>`exists (select 1 from iam.organization_membership m where m.person_id = ${person.id})`,
         currentClassGroupId: sql<string | null>`(select ce.class_group_id from academic.class_enrollment ce where ce.student_profile_id = ${studentProfile.id} and ce.status = 'active' limit 1)`,
       })
@@ -113,6 +141,11 @@ export async function loadReference(tx: Tx, schoolCode: string, parsed: ParsedWo
       .innerJoin(person, eq(person.id, studentProfile.personId))
       .where(or(numbers.length > 0 ? inArray(studentProfile.studentNumber, numbers) : undefined, refs.length > 0 ? inArray(person.externalRef, refs) : undefined));
     for (const r of rows) {
+      if (!r.inScope) {
+        foreignStudentNumbers.add(r.studentNumber);
+        if (r.externalRef) foreignExternalRefs.add(r.externalRef);
+        continue;
+      }
       const s: RefStudent = { personId: r.personId, studentProfileId: r.studentProfileId, firstName: r.firstName, lastName: r.lastName, externalRef: r.externalRef, hasAccount: r.hasAccount, currentClassGroupId: r.currentClassGroupId };
       studentsByNumber.set(r.studentNumber, s);
       if (r.externalRef) studentsByExternalRef.set(r.externalRef, s);
@@ -127,7 +160,21 @@ export async function loadReference(tx: Tx, schoolCode: string, parsed: ParsedWo
     const rows = await tx.select({ id: userAccount.loginIdentifier }).from(userAccount).where(inArray(userAccount.loginIdentifier, [...candidates]));
     for (const r of rows) takenIdentifiers.add(r.id);
   }
-  return { school: { id: school.id, code: school.code, name: school.name }, branches, academicYear: year, term, grades, subjects, classes, staffByPhone, studentsByNumber, studentsByExternalRef, takenIdentifiers };
+  return {
+    school: { id: school.id, code: school.code, name: school.name },
+    branches,
+    academicYear: year,
+    term,
+    grades,
+    subjects,
+    classes,
+    staffByPhone,
+    studentsByNumber,
+    studentsByExternalRef,
+    foreignStudentNumbers,
+    foreignExternalRefs,
+    takenIdentifiers,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -391,12 +438,17 @@ export function validateImport(parsed: ParsedWorkbook, ref: ImportReference, opt
     if (classMatches.length > 1) issues.push({ column: "class_name", message: `کلاس «${v.class_name}» در چند شعبه هست.`, level: "error" });
     const cls = classMatches.length === 1 ? classMatches[0][1] : null;
     if (cls && grade && cls.gradeLevelId !== grade.id) issues.push({ column: "grade", message: `پایهٴ دانش‌آموز با پایهٴ کلاس «${cls.name}» یکی نیست.`, level: "error" });
-    const existing = ref.studentsByNumber.get(number) ?? (externalRef ? ref.studentsByExternalRef.get(externalRef) ?? null : null);
+    // Another school's student (school-scoped importer): an error, and the row is never planned — no rename, no
+    // enrollment, no password reset through a "known" number.
+    const foreign = (number && ref.foreignStudentNumbers.has(number)) || (externalRef !== null && ref.foreignExternalRefs.has(externalRef));
+    if (number && ref.foreignStudentNumbers.has(number)) issues.push({ column: "student_number", message: IMPORT_MESSAGES.studentOfOtherSchool, level: "error" });
+    else if (externalRef && ref.foreignExternalRefs.has(externalRef)) issues.push({ column: "external_ref", message: IMPORT_MESSAGES.externalRefOfOtherSchool, level: "error" });
+    const existing = foreign ? null : ref.studentsByNumber.get(number) ?? (externalRef ? ref.studentsByExternalRef.get(externalRef) ?? null : null);
     if (existing && externalRef && existing.externalRef && existing.externalRef !== externalRef) {
       issues.push({ column: "external_ref", message: "کد یکتا با کد ثبت‌شدهٴ این دانش‌آموز فرق دارد؛ کد سامانه نگه داشته می‌شود.", level: "warning" });
     }
     if (existing) issues.push({ column: null, message: `دانش‌آموز با این شماره از قبل هست (${existing.firstName} ${existing.lastName})؛ نام و کلاس به‌روز می‌شود، حساب دوباره ساخته نمی‌شود.`, level: "warning" });
-    if (!existing) {
+    if (!existing && !foreign) {
       const identifier = phone ?? `${ref.school.code.toLowerCase()}-${number.toLowerCase()}`;
       if (ref.takenIdentifiers.has(identifier) || (phone && staffPhones.has(phone))) issues.push({ column: phone ? "phone" : "student_number", message: "این شماره قبلاً ثبت شده است.", level: "error" });
     }

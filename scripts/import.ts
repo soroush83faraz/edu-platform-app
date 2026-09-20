@@ -89,6 +89,7 @@ async function main(): Promise<void> {
   const { commitImport, recordBatch, sha256Hex } = await import("../src/modules/integ/importers/commit");
   const { SHEET_BY_KEY } = await import("../src/modules/integ/importers/template");
   const { findSchoolByCode } = await import("../src/modules/tenancy/repo");
+  const { getAdminScope } = await import("../src/modules/iam/service");
 
   // ---- who ----
   const phone = normalizePhoneIR(args.as);
@@ -133,7 +134,8 @@ async function main(): Promise<void> {
     if (!sch) throw new Error(`school «${args.school}» not found in «${args.org}» (or not visible to ${phone})`);
     if (!(await can(tx, ctx, "integ.import.write", { scopeType: "school", id: sch.id }))) throw new Error(`${phone} lacks integ.import.write for school «${args.school}»`);
     if (args.createSubjects && !(await can(tx, ctx, "tenancy.structure.write"))) throw new Error("--create-subjects needs an organization-scoped admin (tenancy.structure.write at organization level)");
-    const ref = await loadReference(tx, args.school, parsed);
+    // The reference is read as this admin: existing students matched by number / unique code must be in their scope.
+    const ref = await loadReference(tx, await getAdminScope(tx, ctx), args.school, parsed);
     return { ref, validation: validateImport(parsed, ref, { createSubjects: args.createSubjects }) };
   });
 

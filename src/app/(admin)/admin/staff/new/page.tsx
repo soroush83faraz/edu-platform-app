@@ -16,12 +16,11 @@ export default async function NewStaffPage() {
     if (opts.code === "UNAUTHENTICATED") redirect("/login");
     notFound();
   }
-  const canGrantOrgRoles = opts.data.scope.kind === "organization" && canAtAnyScope(ctx.assignments, "iam.role_assignment.write");
   return (
     <div className="flex flex-col gap-4">
       <AdminHeader title="همکار جدید" back={{ href: "/admin/staff", label: "کارکنان" }} description="حساب کاربری با شمارهٴ موبایل ساخته می‌شود و رمز اولیه یک‌بار نمایش داده می‌شود." />
       <div className="rounded-card bg-surface shadow-1 p-4">
-        <StaffForm schools={opts.data.schools} canGrantOrgRoles={canGrantOrgRoles} />
+        <StaffForm schools={opts.data.schools} roleGrant={opts.data.roleGrant} />
       </div>
     </div>
   );
