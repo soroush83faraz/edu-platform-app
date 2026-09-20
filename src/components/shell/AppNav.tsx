@@ -29,13 +29,22 @@ export function AppNav({ initial, schoolName, showAdmin = false }: { initial: In
   const pathname = usePathname();
   const summary = useInboxSummary(initial);
   const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  // The bottom bar has ONE pill that slides between the four cells; off-tab routes (/admin, /change-password) hide it.
+  const activeIndex = ITEMS.findIndex((item) => isCurrent(item.href));
   // «مدیریت» only on the desktop rail (the bottom bar keeps its four fixed items; phones reach it via «بیشتر»).
   const sideItems: Item[] = showAdmin ? [...ITEMS.slice(0, 3), { href: "/admin", label: "مدیریت", icon: Settings2 }, ITEMS[3]] : ITEMS;
 
   return (
     <>
       <nav aria-label="پیمایش اصلی" className="fixed inset-x-0 bottom-0 z-20 border-t border-line/70 bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm md:hidden">
-        <ul className="grid grid-cols-4">
+        <ul className="relative grid grid-cols-4">
+          <li
+            aria-hidden
+            className="pointer-events-none absolute top-1.5 flex h-7 w-1/4 justify-center transition-[inset-inline-start,opacity] duration-(--duration-base) ease-(--ease-in-out)"
+            style={{ insetInlineStart: `${Math.max(activeIndex, 0) * 25}%`, opacity: activeIndex < 0 ? 0 : 1 }}
+          >
+            <span className="h-7 w-12 rounded-full bg-info-soft" />
+          </li>
           {ITEMS.map((item) => (
             <NavLink key={item.href} item={item} current={isCurrent(item.href)} count={item.badge?.(summary) ?? 0} layout="bottom" />
           ))}
@@ -81,11 +90,14 @@ function NavLink({ item, current, count, layout }: { item: Item; current: boolea
         <Link
           href={item.href}
           aria-current={current ? "page" : undefined}
-          className={cn("group flex min-h-14 flex-col items-center justify-center gap-0.5 pt-1.5 pb-1 text-xs", current ? "font-semibold text-primary-700" : "text-text-muted")}
+          className={cn(
+            "group pressable relative flex min-h-14 flex-col items-center justify-center gap-0.5 pt-1.5 pb-1 text-xs",
+            current ? "font-semibold text-primary-700" : "text-text-muted hover:text-text",
+          )}
         >
-          {/* The floating pill indicator: icy-blue behind the active icon, transparent otherwise. */}
-          <span className={cn("relative flex h-7 w-12 items-center justify-center rounded-full transition-colors duration-200", current ? "bg-info-soft" : "group-active:bg-surface-sunken")}>
-            <Icon className={cn("size-5", current && "text-primary-700")} aria-hidden />
+          {/* The sliding pill lives on the <ul>; this span only positions the icon and badge, and darkens on press. */}
+          <span className={cn("relative flex h-7 w-12 items-center justify-center rounded-full transition-base", !current && "group-active:bg-surface-sunken")}>
+            <Icon className={cn("size-5 transition-base", current && "text-primary-700")} aria-hidden />
             {badge}
           </span>
           {item.label}
@@ -99,7 +111,7 @@ function NavLink({ item, current, count, layout }: { item: Item; current: boolea
         href={item.href}
         aria-current={current ? "page" : undefined}
         className={cn(
-          "flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm transition-colors duration-150",
+          "pressable flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm",
           current ? "bg-info-soft font-semibold text-primary-800" : "text-text-muted hover:bg-surface-sunken hover:text-text",
         )}
       >

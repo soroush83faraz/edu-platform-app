@@ -91,6 +91,15 @@
     --shadow-fab: 0 6px 18px rgb(255 198 0 / 0.45);
     /* The hero gradient — the only gradient in the product. Ends at sky-strong, not sky: white 12px text must stay ≥ 4.5:1 on every pixel. */
     --background-image-hero: linear-gradient(135deg, #072AC8 0%, #0B6FD1 100%);
+
+    /* Motion: one ease-out for everything that enters or reacts, ease-in-out for things that move between two
+       resting places (the nav indicator). 120 ms for colour/press feedback, 180 ms for surfaces that appear,
+       240 ms for the page-load choreography. Nothing bounces; nothing runs longer than 300 ms. */
+    --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --duration-fast: 120ms;
+    --duration-base: 180ms;
+    --duration-slow: 240ms;
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -235,6 +244,7 @@
     outline: 2px solid var(--color-primary-500);
     outline-offset: 2px;
     border-radius: var(--radius-sm);
+    animation: focus-in var(--duration-fast) var(--ease-out);
   }
   /* On the blue hero the ring flips to lemon so it stays visible. */
   .on-hero :where(a, button):focus-visible {
@@ -251,11 +261,157 @@
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
       animation-duration: 0.01ms !important;
+      animation-delay: 0ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
     }
   }
+}
+
+/* ---- Motion system. Every rule that moves something lives under `no-preference`; with reduced motion the
+   elements simply sit in their final state (the base layer above also clamps any remaining duration). ---- */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    scale: 0.92;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    translate: 0 16px;
+  }
+}
+@keyframes focus-in {
+  from {
+    outline-offset: 0px;
+    outline-color: transparent;
+  }
+}
+
+/* Transitions for the properties an interactive surface changes on hover/press — never `all`. */
+@utility transition-base {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform, translate, scale;
+  transition-duration: var(--duration-base);
+  transition-timing-function: var(--ease-out);
+}
+/* `transition-base` plus the one press gesture of the product: the whole surface shrinks to 98%. */
+@utility pressable {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform, translate, scale;
+  transition-duration: var(--duration-base);
+  transition-timing-function: var(--ease-out);
+  @media (prefers-reduced-motion: no-preference) {
+    &:active {
+      scale: 0.98;
+    }
+  }
+}
+/* Entrances. `reveal` = fade + 8 px rise (240 ms); `reveal-stagger` gives direct children 0/60/120/180/240 ms delays. */
+@utility reveal {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: rise-in var(--duration-slow) var(--ease-out) both;
+  }
+}
+@utility reveal-stagger {
+  @media (prefers-reduced-motion: no-preference) {
+    & > * {
+      animation: rise-in var(--duration-slow) var(--ease-out) both;
+    }
+    & > :nth-child(2) {
+      animation-delay: 60ms;
+    }
+    & > :nth-child(3) {
+      animation-delay: 120ms;
+    }
+    & > :nth-child(4) {
+      animation-delay: 180ms;
+    }
+    & > :nth-child(n + 5) {
+      animation-delay: 240ms;
+    }
+  }
+}
+/* List rows: 40 ms steps, capped at the eighth row so long lists never wait. */
+@utility reveal-rows {
+  @media (prefers-reduced-motion: no-preference) {
+    & > * {
+      animation: rise-in var(--duration-slow) var(--ease-out) both;
+    }
+    & > :nth-child(2) {
+      animation-delay: 40ms;
+    }
+    & > :nth-child(3) {
+      animation-delay: 80ms;
+    }
+    & > :nth-child(4) {
+      animation-delay: 120ms;
+    }
+    & > :nth-child(5) {
+      animation-delay: 160ms;
+    }
+    & > :nth-child(6) {
+      animation-delay: 200ms;
+    }
+    & > :nth-child(7) {
+      animation-delay: 240ms;
+    }
+    & > :nth-child(n + 8) {
+      animation-delay: 280ms;
+    }
+  }
+}
+/* Hero numbers: a small scale + opacity entrance after the hero itself has landed. No counting. */
+@utility reveal-pop {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: pop-in var(--duration-slow) var(--ease-out) both;
+    animation-delay: 120ms;
+  }
+}
+/* Banners (InstallPrompt) and sheets: 180 ms. `sheet-in` is the panel, `overlay-in` the scrim behind it. */
+@utility banner-in {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: rise-in var(--duration-base) var(--ease-out) both;
+  }
+}
+@utility sheet-in {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: slide-up var(--duration-base) var(--ease-out) both;
+  }
+}
+@utility overlay-in {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: fade-in var(--duration-base) var(--ease-out) both;
+  }
+}
+
+/* shadcn pieces are generated (never hand-edited), so their motion is retuned here, unlayered on purpose so these
+   rules win over the components' own utilities: buttons get the product's press gesture instead of
+   `active:translate-y-px`; dialogs and sheets (tw-animate-css `animate-in`) open in 180 ms on the house ease
+   instead of 100 ms linear. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-slot="button"]:not(:disabled):active {
+    scale: 0.98;
+    translate: 0 0;
+  }
+}
+[data-slot="dialog-overlay"],
+[data-slot="dialog-content"],
+[data-slot="sheet-overlay"],
+[data-slot="sheet-content"] {
+  --tw-animation-duration: var(--duration-base);
+  --tw-ease: var(--ease-out);
 }
 
 /* Numbers in lists line up (Vazirmatn ships tnum). */

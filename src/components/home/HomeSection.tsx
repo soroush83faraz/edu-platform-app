@@ -23,7 +23,7 @@ export function HomeSection({
           {title}
         </h3>
         {more ? (
-          <Link href={more.href} className="inline-flex min-h-11 items-center gap-0.5 rounded-lg px-1 text-sm font-medium text-sky-strong hover:text-primary-700">
+          <Link href={more.href} className="pressable inline-flex min-h-11 items-center gap-0.5 rounded-lg px-1 text-sm font-medium text-sky-strong hover:text-primary-700">
             {more.label}
             <ChevronLeft className="size-4" aria-hidden />
           </Link>

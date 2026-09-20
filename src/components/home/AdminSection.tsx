@@ -29,7 +29,7 @@ export async function AdminSection() {
         <ul className="grid grid-cols-2 sm:grid-cols-4">
           {counters.map((t, i) => (
             <li key={t.href} className={cn("border-line/70", i % 2 === 1 && "border-s", i >= 2 && "border-t sm:border-t-0", "sm:border-s sm:first:border-s-0")}>
-              <Link href={t.href} className="flex min-h-20 flex-col justify-center gap-0.5 px-4 py-3 transition-colors duration-150 hover:bg-surface-sunken">
+              <Link href={t.href} className="pressable flex min-h-20 flex-col justify-center gap-0.5 px-4 py-3 hover:bg-surface-sunken">
                 <span className={cn("tabular text-2xl font-semibold leading-none", t.value === 0 ? "text-text-faint" : "text-text")}>{formatNumberFa(t.value)}</span>
                 <span className="flex items-center gap-1.5 text-xs text-text-muted">
                   {t.warn ? <span aria-hidden className="size-2 rounded-full bg-warning" /> : null}
@@ -40,7 +40,7 @@ export async function AdminSection() {
           ))}
         </ul>
 
-        <Link href="/admin/onboarding" className="flex items-center gap-3 border-t border-line/70 px-4 py-3 transition-colors duration-150 hover:bg-surface-sunken">
+        <Link href="/admin/onboarding" className="pressable flex items-center gap-3 border-t border-line/70 px-4 py-3 hover:bg-surface-sunken">
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-sm font-medium text-text">راه‌اندازی مدرسه</span>
@@ -68,7 +68,7 @@ export async function AdminSection() {
 function Quick({ href, label, icon: Icon }: { href: string; label: string; icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }> }) {
   return (
     <li>
-      <Link href={href} className="flex min-h-[4.5rem] flex-col items-center justify-center gap-1.5 rounded-card bg-info-soft px-2 text-center text-xs font-medium text-primary-900 transition-colors duration-150 hover:bg-info/60">
+      <Link href={href} className="pressable flex min-h-[4.5rem] flex-col items-center justify-center gap-1.5 rounded-card bg-info-soft px-2 text-center text-xs font-medium text-primary-900 hover:bg-info/60">
         <Icon className="size-5 text-primary-700" aria-hidden />
         {label}
       </Link>

@@ -19,7 +19,7 @@ export async function TeacherSection({ offerings }: { offerings: TeachingOfferin
             <li key={o.offeringId} className="w-[11.5rem] shrink-0 snap-start md:w-auto">
               <Link
                 href="/inbox?mine=1"
-                className="flex h-full flex-col gap-3 rounded-card bg-surface p-4 shadow-1 transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 active:translate-y-0"
+                className="pressable flex h-full flex-col gap-3 rounded-card bg-surface p-4 shadow-1 hover:-translate-y-0.5 active:translate-y-0"
               >
                 <div className="flex flex-col">
                   <span className="truncate text-base font-semibold text-text">{o.subjectName}</span>

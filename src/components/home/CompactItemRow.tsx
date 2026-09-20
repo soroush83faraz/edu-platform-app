@@ -15,7 +15,7 @@ export function CompactItemRow({ row }: { row: InboxRow }) {
   return (
     <li className="relative">
       <PriorityStripe priority={row.priority} className="inset-y-3 w-0.75" />
-      <Link href={`/inbox/${row.id}`} className="flex min-h-14 items-center gap-3 ps-4 pe-3 py-2 transition-colors duration-150 hover:bg-surface-sunken active:bg-surface-sunken">
+      <Link href={`/inbox/${row.id}`} className="pressable flex min-h-14 items-center gap-3 ps-4 pe-3 py-2 hover:bg-surface-sunken active:bg-surface-sunken">
         <div className="flex min-w-0 flex-1 flex-col">
           <p className={cn("truncate text-sm leading-6 text-text", row.unread ? "font-semibold" : "font-medium")}>
             <bdi>{row.title}</bdi>

@@ -2,8 +2,8 @@ import type { Permission } from "@/modules/iam/permissions";
 
 /**
  * The product map: what is live now and what each later phase brings, with the client's own vocabulary
- * (`competitorTerm`) in parentheses so principals recognise it. Drives the «بخش‌ها» row on Home and /roadmap.
- * Phase 1 entries are links; later phases render as «به‌زودی» chips that open /roadmap.
+ * (`competitorTerm`) in parentheses so principals recognise it. Drives /roadmap and the «به‌زودی» hint on /more
+ * (Home no longer lists modules — the bottom nav and «بیشتر» are the way in). Phase 1 entries are links.
  */
 export interface ModuleEntry {
   code: string;

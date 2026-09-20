@@ -20,9 +20,9 @@ export async function TodayHero() {
         {headline(overdue, dueToday, unread)}
       </h3>
       <ul className="mt-5 grid grid-cols-3 gap-2">
-        <Tile href="/inbox?bucket=overdue" label="سررسیده" value={overdue} alert={overdue > 0} />
-        <Tile href="/inbox?bucket=today" label="امروز" value={dueToday} />
-        <Tile href="/inbox?unread=1" label="خوانده‌نشده" value={unread} />
+        <Tile href="/inbox?bucket=overdue" label="سررسیده" value={overdue} alert={overdue > 0} order={0} />
+        <Tile href="/inbox?bucket=today" label="امروز" value={dueToday} order={1} />
+        <Tile href="/inbox?unread=1" label="خوانده‌نشده" value={unread} order={2} />
       </ul>
     </section>
   );
@@ -35,16 +35,20 @@ function headline(overdue: number, dueToday: number, unread: number): string {
   return "کاری برای امروز نمانده.";
 }
 
-function Tile({ href, label, value, alert = false }: { href: string; label: string; value: number; alert?: boolean }) {
+/** `order` staggers the number's entrance by 40 ms per tile (after the hero's own 120 ms). */
+function Tile({ href, label, value, alert = false, order }: { href: string; label: string; value: number; alert?: boolean; order: number }) {
   return (
     <li>
       <Link
         href={href}
-        className={cn(
-          "flex min-h-[4.75rem] flex-col justify-between rounded-2xl bg-primary-900/25 px-3 py-2.5 transition-colors duration-150 hover:bg-primary-900/35 active:bg-primary-900/45",
-        )}
+        className="pressable flex min-h-[4.75rem] flex-col justify-between rounded-2xl bg-primary-900/25 px-3 py-2.5 hover:bg-primary-900/35 active:bg-primary-900/45"
       >
-        <span className={cn("tabular text-3xl font-semibold leading-none", value === 0 && "text-white/60")}>{formatNumberFa(value)}</span>
+        <span
+          className={cn("reveal-pop tabular block origin-[center_start] text-3xl font-semibold leading-none", value === 0 && "text-white/60")}
+          style={{ animationDelay: `${120 + order * 40}ms` }}
+        >
+          {formatNumberFa(value)}
+        </span>
         <span className="flex items-center gap-1.5 text-xs text-white/90">
           {alert ? <span aria-hidden className="size-2 rounded-full bg-danger ring-2 ring-white/70" /> : null}
           {label}

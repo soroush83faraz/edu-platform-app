@@ -3,7 +3,6 @@ import { Suspense } from "react";
 import { Fab } from "@/components/Fab";
 import { AdminSection } from "@/components/home/AdminSection";
 import { SectionSkeleton } from "@/components/home/HomeSkeletons";
-import { ModulesRow } from "@/components/home/ModulesRow";
 import { StudentSection } from "@/components/home/StudentSection";
 import { TeacherSection } from "@/components/home/TeacherSection";
 import { HeroSkeleton, TodayHero } from "@/components/home/TodayHero";
@@ -18,15 +17,16 @@ export const metadata: Metadata = { title: "خانه | سامانهٴ مدرسه
 
 /**
  * Home is summary-first: the greeting and the hero («امروز چه کنم؟») fill the first phone viewport; then one section
- * per hat the person wears (student, teacher, admin — stacked, never a switcher); «بخش‌ها» sits below the fold.
- * Every section streams in its own <Suspense> with a skeleton of the same shape.
+ * per hat the person wears (student, teacher, admin — stacked, never a switcher) and Home ends there — the product
+ * map lives on /roadmap, reached from «بیشتر». Every section streams in its own <Suspense> with a skeleton of the
+ * same shape; `reveal-stagger` lets each block rise in as it lands (greeting, hero, then the sections).
  */
 export default async function HomePage() {
   const ctx = await requireContext(); // the (app) layout already redirected anonymous visitors
   const has = (p: Permission) => canAtAnyScope(ctx.assignments, p);
 
   return (
-    <div className="flex flex-col gap-7 px-4 pt-5 pb-8 md:pt-8">
+    <div className="reveal-stagger flex flex-col gap-7 px-4 pt-5 pb-8 md:pt-8">
       <section className="flex flex-col px-1">
         <h2 className="text-xl font-bold text-text">
           سلام، <bdi>{ctx.firstName}</bdi>
@@ -48,8 +48,6 @@ export default async function HomePage() {
       </Suspense>
 
       <InstallPrompt />
-
-      <ModulesRow has={has} />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { LogoutButton } from "@/components/shell/LogoutButton";
 import { requireContext } from "@/lib/ctx";
 import { formatNumberFa } from "@/lib/format";
+import { UPCOMING_MODULES } from "@/lib/modules-registry";
 import { logoutAction, logoutAllAction } from "@/modules/iam/actions";
 import { canAtAnyScope } from "@/modules/iam/can";
 
@@ -19,6 +20,11 @@ const ROLE_NAMES: Record<string, string> = {
   principal: "مدیر",
 };
 
+/** «به‌زودی: تکالیف، دفتر کلاسی» — the next phase's first two modules as the roadmap link's hint (fits a 390 px row). */
+const UPCOMING_HINT = `به‌زودی: ${UPCOMING_MODULES.slice(0, 2)
+  .map((m) => m.labelFa)
+  .join("، ")}`;
+
 export default async function MorePage() {
   const ctx = await requireContext();
   const roles = [...new Set(ctx.assignments.map((a) => ROLE_NAMES[a.roleCode] ?? a.roleCode))];
@@ -26,7 +32,7 @@ export default async function MorePage() {
   const isAdmin = canAtAnyScope(ctx.assignments, "iam.admin.access");
 
   return (
-    <div className="flex flex-col gap-6 px-4 pt-5 pb-6 md:pt-8">
+    <div className="reveal-stagger flex flex-col gap-6 px-4 pt-5 pb-6 md:pt-8">
       <section className="rounded-card bg-surface p-4 shadow-1">
         <p className="text-xl font-bold text-text">
           <bdi>
@@ -57,7 +63,7 @@ export default async function MorePage() {
           <MoreLink href="/change-password" label="تغییر رمز" />
           <MoreLink href="/help" label="راهنما" hint="به‌زودی" />
           <MoreLink href="/privacy" label="حریم خصوصی" hint="به‌زودی" />
-          <MoreLink href="/roadmap" label="نقشهٴ راه" hint="فازهای بعدی" />
+          <MoreLink href="/roadmap" label="نقشهٴ راه" hint={UPCOMING_HINT} />
         </ul>
       </nav>
 
@@ -72,11 +78,11 @@ export default async function MorePage() {
 function MoreLink({ href, label, hint }: { href: string; label: string; hint?: string }) {
   return (
     <li>
-      <Link href={href} className="flex min-h-12 items-center justify-between gap-3 px-4 text-base text-text transition-colors duration-150 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
-        <span>{label}</span>
-        <span className="flex items-center gap-2 text-sm text-text-faint">
-          {hint}
-          <ChevronLeft className="size-4" aria-hidden />
+      <Link href={href} className="pressable flex min-h-12 items-center justify-between gap-3 px-4 text-base text-text first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
+        <span className="shrink-0">{label}</span>
+        <span className="flex min-w-0 items-center gap-2 text-sm text-text-faint">
+          <span className="truncate">{hint}</span>
+          <ChevronLeft className="size-4 shrink-0" aria-hidden />
         </span>
       </Link>
     </li>

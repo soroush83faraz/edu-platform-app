@@ -83,7 +83,7 @@ export function InstallPrompt() {
 
   return (
     <>
-      <section aria-labelledby="install-heading" className="flex items-center gap-3 rounded-card bg-info-soft p-3 pe-2">
+      <section aria-labelledby="install-heading" className="banner-in flex items-center gap-3 rounded-card bg-info-soft p-3 pe-2">
         <PhoneInstallClay size={56} className="shrink-0" />
         <div className="flex min-w-0 flex-1 flex-col">
           <h3 id="install-heading" className="text-sm font-semibold text-primary-900">
@@ -99,7 +99,7 @@ export function InstallPrompt() {
             </Button>
           </div>
         </div>
-        <button type="button" onClick={dismiss} aria-label="بستن" className="grid size-11 shrink-0 place-items-center self-start rounded-full text-primary-800 hover:bg-info/60">
+        <button type="button" onClick={dismiss} aria-label="بستن" className="pressable grid size-11 shrink-0 place-items-center self-start rounded-full text-primary-800 hover:bg-info/60">
           <X className="size-4" aria-hidden />
         </button>
       </section>
@@ -109,13 +109,13 @@ export function InstallPrompt() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="ios-heading"
-          className="fixed inset-0 z-40 flex items-end justify-center bg-primary-900/50 p-3 md:items-center"
+          className="overlay-in fixed inset-0 z-40 flex items-end justify-center bg-primary-900/50 p-3 md:items-center"
           onClick={() => setSheet(false)}
           onKeyDown={(e) => {
             if (e.key === "Escape") setSheet(false);
           }}
         >
-          <div className="w-full max-w-sm rounded-hero bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-1" onClick={(e) => e.stopPropagation()}>
+          <div className="sheet-in w-full max-w-sm rounded-hero bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-1" onClick={(e) => e.stopPropagation()}>
             <h3 id="ios-heading" className="text-base font-semibold text-text">
               نصب در آیفون و آی‌پد
             </h3>

@@ -89,7 +89,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   href={href({ ...f, tab, cursor: undefined })}
                   aria-current={current ? "page" : undefined}
                   className={cn(
-                    "flex h-10 items-center justify-center rounded-lg text-sm transition-colors duration-150",
+                    "pressable flex h-10 items-center justify-center rounded-lg text-sm",
                     current ? "bg-surface font-semibold text-primary-800 shadow-1" : "text-text-muted hover:text-text",
                   )}
                 >
@@ -120,7 +120,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
               ) : (
                 <div className="pt-3" />
               )}
-              <ul className="mx-4 divide-y divide-line/70 rounded-card bg-surface shadow-1">{items.map((row) => <InboxRow key={row.id} row={row} />)}</ul>
+              <ul className="reveal-rows mx-4 divide-y divide-line/70 rounded-card bg-surface shadow-1">{items.map((row) => <InboxRow key={row.id} row={row} />)}</ul>
             </section>
           ))}
           {nextCursor || f.cursor ? (
@@ -158,7 +158,7 @@ function FilterChip({ href, active, label, removable }: { href: string; active: 
       href={href}
       aria-pressed={active}
       className={cn(
-        "inline-flex h-9 items-center gap-1 rounded-full border px-3 text-sm transition-colors duration-150",
+        "pressable inline-flex h-9 items-center gap-1 rounded-full border px-3 text-sm",
         active ? "border-info bg-info-soft text-primary-800" : "border-line bg-surface text-text-muted hover:border-line-strong",
       )}
     >

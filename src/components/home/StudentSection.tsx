@@ -27,7 +27,7 @@ export async function StudentSection({ classGroupName }: { classGroupName: strin
                 <CompactItemRow key={row.id} row={row} />
               ))}
             </ul>
-            <Link href="/inbox" className="flex min-h-11 items-center justify-center rounded-b-card text-sm font-medium text-sky-strong hover:bg-surface-sunken">
+            <Link href="/inbox" className="pressable flex min-h-11 items-center justify-center rounded-b-card text-sm font-medium text-sky-strong hover:bg-surface-sunken">
               همهٴ کارها
             </Link>
           </>
