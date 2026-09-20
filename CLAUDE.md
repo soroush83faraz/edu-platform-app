@@ -11,9 +11,9 @@ next 16.3.5 · react/react-dom 19.2.8 · typescript 5.9.3 · tailwindcss 4.3.3 �
 Service signature: `(tx, ctx, input)`. Repos take `tx`. Explicit column selects, never `select *`.
 
 ## DB rules (non-negotiable)
-- The ONLY DB access is `withTenant(ctx, fn)` / `withoutTenant(fn)` from `src/db/client` (ESLint blocks other imports). No raw `db.`; `withoutTenant` only for global tables (organization, user_account, user_session, login_attempt, permission).
+- The ONLY DB access is `withTenant(ctx, fn)` / `withoutTenant(fn)` from `src/db/client` (ESLint blocks other imports). No raw `db.`; `withoutTenant` only for global tables (organization, user_account, user_session, login_attempt, permission) and the read-only `iam.role` templates. **Never call `set_config(` outside `src/db/client.ts`** (`pnpm verify` greps for it); the login membership lookup uses `tools.bindAccount` from `definePublicAction`.
 - Every tenant table has `organization_id` + RLS (ENABLE + FORCE, fail-closed). Composite FKs `(organization_id, x_id)`. Soft delete via `status/archived_at`; `text + CHECK` not pg ENUM; `timestamptz` UTC; UUID v7.
-- Migrations: `drizzle-kit generate` → read the SQL → commit → `migrate` service runs it. **Never `drizzle-kit push`; never edit an applied migration; production changes are additive-only** (nullable/DEFAULT columns, expand/contract renames).
+- Migrations: `drizzle-kit generate` → read the SQL → commit → `migrate` service runs it. **Never `drizzle-kit push`; never edit an applied migration; production changes are additive-only** (nullable/DEFAULT columns, expand/contract renames). Every migration ends with `SELECT app.apply_grants();` / `SELECT app.apply_rls();` / `SELECT app.apply_updated_at_triggers();` as separate statements (docs/db.md).
 - App connects as `app_rw` (NOSUPERUSER NOBYPASSRLS); migrations as `app_owner` (MIGRATION_DATABASE_URL).
 
 ## Action rules

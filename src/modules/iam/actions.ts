@@ -37,7 +37,7 @@ type LoginOutcome = { kind: "failed" } | { kind: "no_membership" } | { kind: "ok
  * (real hash or DUMMY_HASH), then the attempt record / lock escalation / session creation in a second one.
  * Every failure path returns the same `{ kind: "failed" }`; the caller turns it into the one generic message.
  */
-const loginCore = definePublicAction({ schema: LoginInput }, async (input, { globalTx }): Promise<LoginOutcome> => {
+const loginCore = definePublicAction({ schema: LoginInput }, async (input, { globalTx, bindAccount }): Promise<LoginOutcome> => {
   const identifier = normalizeIdentifier(input.identifier);
   const ip = await getClientIp();
   const userAgent = await getUserAgent();
@@ -71,6 +71,7 @@ const loginCore = definePublicAction({ schema: LoginInput }, async (input, { glo
       return { kind: "failed" };
     }
     await recordLoginSuccess(tx, account.id);
+    await bindAccount(tx, account.id); // verified account row -> account_memberships policy for this tx only
     const memberships = await listActiveMembershipsForAccount(tx, account.id);
     if (memberships.length === 0) return { kind: "no_membership" };
     const { token, session } = await createSession(

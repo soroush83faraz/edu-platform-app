@@ -88,12 +88,12 @@ export interface MembershipRow {
 }
 
 /**
- * Global transaction, login only: binds `app.current_user_account_id` (transaction-local) so the additive
- * `account_memberships` RLS policy exposes this account's memberships across organizations, then lists the
- * active ones — default organization first, then oldest membership first.
+ * Global transaction, login only. The caller must first bind the verified account with `tools.bindAccount(tx, id)`
+ * (definePublicAction) so the additive `account_memberships` RLS policy exposes this account's memberships across
+ * organizations; without it the query legitimately returns nothing. Lists the active ones — default organization
+ * first, then oldest membership first.
  */
 export async function listActiveMembershipsForAccount(tx: Tx, userAccountId: string): Promise<MembershipRow[]> {
-  await tx.execute(sql`select set_config('app.current_user_account_id', ${userAccountId}, true)`);
   return tx
     .select({
       organizationId: organizationMembership.organizationId,

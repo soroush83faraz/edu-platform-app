@@ -1,12 +1,17 @@
-// The ONLY database access boundary. Exports exactly `withTenant`, `withoutTenant` and the `Tx` type.
-// The pg Pool and the Drizzle instance never leave this module (ESLint restricts who may import it).
+// The ONLY database access boundary. Exports exactly `withTenant`, `withoutTenant`, `bindAccountContext` and the
+// `Tx` type. The pg Pool and the Drizzle instance never leave this module (ESLint restricts who may import it).
 //
 // RLS contract: every tenant table is FORCE ROW LEVEL SECURITY with
 //   USING (organization_id = app.current_org_id()) — NULL when unset -> nothing matches (fail closed).
 // `withTenant` sets `app.current_org_id` with set_config(..., is_local = true) as the FIRST statement of a
 // transaction, so the setting dies with the transaction and can never leak to another request through the
 // pool. `withoutTenant` runs a transaction with no organization context: usable ONLY for the global tables
-// (organization, user_account, auth_identity, user_session, login_attempt, permission, role_permission).
+// (organization, user_account, auth_identity, user_session, login_attempt, permission, role_permission) plus the
+// read-only system role templates (iam.role rows with organization_id IS NULL).
+//
+// This file is the only place in application code allowed to call set_config(...) — `pnpm verify` greps for it
+// (scripts/check-forbidden.js). Session-level set_config (is_local = false) is never acceptable: a pooled connection
+// would carry the context into the next request.
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { PgTransaction } from "drizzle-orm/pg-core";
@@ -63,4 +68,15 @@ export async function withTenant<T>(ctx: TenantContext, fn: (tx: Tx) => Promise<
 /** Transaction with NO tenant context. Global tables only; tenant tables return/accept nothing here. */
 export async function withoutTenant<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
   return db.transaction(async (tx) => fn(tx));
+}
+
+/**
+ * Login only. Binds `app.current_user_account_id` for the rest of THIS transaction (is_local = true) so the additive
+ * SELECT-only policy `account_memberships` exposes that account's memberships across organizations inside a
+ * `withoutTenant` transaction (the organization is not known before the membership is resolved). The id must come
+ * from the verified `user_account` row, never from client input. Reachable only through `definePublicAction`'s tools.
+ */
+export async function bindAccountContext(tx: Tx, userAccountId: string): Promise<void> {
+  if (!UUID_RE.test(userAccountId)) throw new Error("bindAccountContext: userAccountId must be a UUID");
+  await tx.execute(sql`select set_config('app.current_user_account_id', ${userAccountId}, true)`);
 }
