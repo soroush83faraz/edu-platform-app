@@ -6,9 +6,11 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 
 | نقش | مجوز | استفاده |
 |---|---|---|
-| `app_owner` | مالک همهٴ اسکیماها و جدول‌ها. **بدون BYPASSRLS** | فقط `scripts/migrate` و seed (`MIGRATION_DATABASE_URL`) |
+| `app_owner` | مالک همهٴ اسکیماها و جدول‌ها. **بدون BYPASSRLS** (FORCE RLS روی خودش هم اعمال می‌شود) | فقط `scripts/migrate` و seed (`MIGRATION_DATABASE_URL`) |
 | `app_rw` | `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`؛ فقط DML؛ `statement_timeout=10s` | برنامه (`DATABASE_URL`) |
-| `app_backup` | فقط SELECT، `NOBYPASSRLS` | `pg_dump` (`BACKUP_DATABASE_URL`) |
+| `app_backup` | فقط SELECT روی همهٴ اسکیماها (از جمله `drizzle`)، **`BYPASSRLS`** | `pg_dump` (`BACKUP_DATABASE_URL`) |
+
+**تصمیم بکاپ:** `pg_dump` همهٴ جدول‌ها را قفل و می‌خواند؛ نقشی بدون BYPASSRLS روی جدول‌های FORCE RLS خطا می‌دهد (یا خالی می‌خواند) و `app_owner` هم BYPASSRLS ندارد. پس نقشِ dump، `app_backup`، BYPASSRLS دارد اما هیچ مجوز نوشتنی ندارد (تست `tests/int/backup-role.test.ts`: بدون context همهٴ ردیف‌های `iam.person` را می‌بیند، INSERT → `42501`). `BACKUP_DATABASE_URL` یک اعتبارنامهٴ «خواندن همهٴ مستأجرها» است. Restore با `postgres`. **روی سرورِ موجود** این attribute باید یک‌بار دستی داده شود (`deploy/README.md`، «گام‌های یک‌بارهٴ اپراتور»)؛ محلی: `docker compose -f docker-compose.dev.yml exec -T db psql -U postgres -c "ALTER ROLE app_backup BYPASSRLS"`.
 
 دیتابیس‌ها: `app` و `app_test` (هر دو `C.UTF-8`، افزونه‌های `btree_gist` و `pg_trgm`). محلی: `pnpm db:up` (پورت ۵۴۳۳).
 

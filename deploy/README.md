@@ -31,7 +31,21 @@ ssh deploy@SERVER 'chmod 600 /srv/school/.env && chmod +x /srv/school/*.sh && na
 .\deploy\ship.ps1 -Server SERVER
 ```
 
-`deploy.sh` به ترتیب: تگ فعلی → `.last_tag`؛ `pg_dump -Fc` در `backups/pre-<ts>.dump`؛ به‌روزرسانی `APP_IMAGE` در `.env`؛ `compose run --rm migrate`؛ `compose up -d app caddy`؛ ۶۰ ثانیه poll روی `/api/health`؛ در شکست خودکار `rollback.sh`.
+`deploy.sh` به ترتیب: تگ فعلی → `.last_tag`؛ `pg_dump -Fc -U app_backup` در `backups/pre-<ts>.dump` (اگر دیتابیس قبلاً migrate شده و dump شکست بخورد، استقرار **قبل از migrate متوقف می‌شود**)؛ به‌روزرسانی `APP_IMAGE` در `.env`؛ `compose run --rm migrate`؛ `compose up -d app caddy`؛ ۶۰ ثانیه poll روی `/api/health`؛ در شکست خودکار `rollback.sh`.
+
+## گام‌های یک‌بارهٴ اپراتور روی سرور موجود (نقش‌های Postgres)
+
+`db/initdb/01-roles.sh` فقط در اولین اجرای کانتینر `db` (volume خالی) اجرا می‌شود؛ تغییرات بعدیِ آن روی سرورِ موجود باید یک‌بار، به‌عنوان `postgres`، دستی اعمال شوند (نقش‌ها cluster-wide هستند؛ روی `app` و `app_test` هر دو اثر می‌کند):
+
+```bash
+docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 \
+  -c "ALTER ROLE app_backup BYPASSRLS;"
+```
+
+- `app_backup BYPASSRLS` (۱۴۰۵/۰۶/۲۹): بدون آن `pg_dump -U app_backup` روی همهٴ جدول‌های FORCE RLS خطا می‌دهد یا خالی می‌خواند. این نقش فقط `SELECT` دارد، پس BYPASSRLS فقط خواندن را گسترده می‌کند؛ `BACKUP_DATABASE_URL` را مثل یک اعتبارنامهٴ «خواندن همهٴ مستأجرها» نگه دارید (فقط در `.env` سرور، `chmod 600`).
+- مجوزهای schema `drizzle` برای `app_backup` را خودِ مهاجرت (`app.apply_grants()` در `0007`) می‌دهد؛ گام دستی ندارد.
+
+بررسی: `docker compose exec -T db psql -U postgres -c "select rolname, rolbypassrls from pg_roles where rolname like 'app_%'"` → فقط `app_backup` باید `t` باشد. سپس `docker compose exec -T db pg_dump -Fc -U app_backup app > /dev/null && echo ok`.
 
 ## بازگشت دستی
 
@@ -41,9 +55,15 @@ ssh deploy@SERVER 'bash /srv/school/rollback.sh'
 
 مهاجرت‌ها فقط افزودنی‌اند؛ ایمیج قبلی با اسکیمای جدید کار می‌کند، بازیابی دیتابیس لازم نیست.
 
-## بازیابی دیتابیس (اضطراری)
+## بکاپ و بازیابی دیتابیس
+
+نقش‌ها ثابت‌اند: **dump با `app_backup`** (همان `BACKUP_DATABASE_URL`؛ فقط‌خواندنی + BYPASSRLS)، **restore با `postgres`** (بازسازی اشیای متعلق به `app_owner` نیازمند superuser است). `deploy.sh` و بکاپ شبانه (روز ۳) هر دو از `app_backup` استفاده می‌کنند؛ در صورت شکست dump با این نقش، ابتدا «گام‌های یک‌بارهٴ اپراتور» بالا را بررسی کنید.
 
 ```bash
+# بکاپ دستی
+docker compose exec -T db pg_dump -Fc -U app_backup app > backups/manual-$(date -u +%Y%m%dT%H%M%SZ).dump
+
+# بازیابی (اضطراری)
 docker compose stop app
 docker compose exec -T db pg_restore -U postgres -d app --clean --if-exists < backups/pre-<ts>.dump
 docker compose up -d app

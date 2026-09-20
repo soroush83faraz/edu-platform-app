@@ -1,5 +1,5 @@
 import { Client } from "pg";
-import { OWNER_URL, RW_URL } from "./env";
+import { BACKUP_URL, OWNER_URL, RW_URL } from "./env";
 
 /** Opens a raw pg connection as the application role (app_rw) — proves role-level behaviour, not just the wrapper. */
 export async function asAppRw<T>(fn: (c: Client) => Promise<T>): Promise<T> {
@@ -9,6 +9,11 @@ export async function asAppRw<T>(fn: (c: Client) => Promise<T>): Promise<T> {
 /** Opens a raw pg connection as the schema owner (app_owner). Read-only inspection in tests. */
 export async function asAppOwner<T>(fn: (c: Client) => Promise<T>): Promise<T> {
   return withClient(OWNER_URL, fn);
+}
+
+/** Opens a raw pg connection as the dump role (app_backup: SELECT-only grants, BYPASSRLS). */
+export async function asAppBackup<T>(fn: (c: Client) => Promise<T>): Promise<T> {
+  return withClient(BACKUP_URL, fn);
 }
 
 async function withClient<T>(connectionString: string, fn: (c: Client) => Promise<T>): Promise<T> {

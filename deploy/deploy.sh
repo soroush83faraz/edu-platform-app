@@ -25,13 +25,24 @@ if [[ -n "$CURRENT" && "$CURRENT" != "$NEW_IMAGE" ]]; then
   log "previous image: $CURRENT (saved to .last_tag)"
 fi
 
-# 2) pre-migration backup (skipped gracefully when db is not up yet — first deploy)
+# 2) pre-migration backup as the dump role. app_backup (SELECT-only grants + BYPASSRLS, see db/initdb/01-roles.sh)
+#    is the same role the nightly backup uses through BACKUP_DATABASE_URL, so a missing grant on a new schema fails
+#    HERE, at deploy time. Skipped only when the database has never been migrated (first deploy); once a ledger
+#    exists, a failed dump aborts the deploy before `migrate` touches anything.
 mkdir -p backups
 if docker compose ps --status running db 2>/dev/null | grep -q db; then
-  log "pg_dump -> backups/pre-${TS}.dump"
-  if ! docker compose exec -T db pg_dump -Fc -U postgres app > "backups/pre-${TS}.dump"; then
-    log "pg_dump failed (database 'app' may not exist yet) — continuing"
-    rm -f "backups/pre-${TS}.dump"
+  HAS_LEDGER="$(docker compose exec -T db psql -U app_backup -d app -tAc \
+    "select to_regclass('drizzle.__drizzle_migrations') is not null" 2>/dev/null || echo f)"
+  if [[ "$HAS_LEDGER" == "t" ]]; then
+    log "pg_dump (app_backup) -> backups/pre-${TS}.dump"
+    if ! docker compose exec -T db pg_dump -Fc -U app_backup app > "backups/pre-${TS}.dump"; then
+      rm -f "backups/pre-${TS}.dump"
+      log "pre-migration pg_dump FAILED — aborting before migrate (nothing changed). On a server initialized before" \
+          "BYPASSRLS was added to 01-roles.sh run once: docker compose exec -T db psql -U postgres -c 'ALTER ROLE app_backup BYPASSRLS'"
+      exit 1
+    fi
+  else
+    log "database 'app' has no migration ledger yet (first deploy) — skipping pre-migration dump"
   fi
 else
   log "db not running yet — starting it and skipping pre-migration dump"
