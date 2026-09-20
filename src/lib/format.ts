@@ -165,3 +165,28 @@ export function parseJalaliToInstant(input: string, time?: string | null): Date 
   const utcMidnight = Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), hh, mm, 0);
   return new Date(utcMidnight - TEHRAN_OFFSET_MS);
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Plain dates (DB `date` columns, ISO `YYYY-MM-DD`) ⇄ Jalali `۱۴۰۵/۰۷/۰۱`
+// ---------------------------------------------------------------------------------------------------------------
+
+/** `۱۴۰۵/۰۷/۰۱` (any digits, `/` or `-`) → ISO `2026-09-23`; null when not a valid Jalali date. */
+export function jalaliToIsoDate(input: string): string | null {
+  const s = toAsciiDigits(input.trim()).replace(/-/g, "/");
+  if (!/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(s)) return null;
+  const parsed = parse(s, "yyyy/M/d", new Date(2000, 0, 1));
+  if (Number.isNaN(parsed.getTime())) return null;
+  if (format(parsed, "yyyy/M/d") !== s.replace(/\/0+(\d)/g, "/$1")) return null;
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, "0");
+  const d = String(parsed.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** ISO `2026-09-23` → `۱۴۰۵/۰۷/۰۱`; the input is returned unchanged when it is not an ISO date. */
+export function isoDateToJalali(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return iso;
+  return toFaDigits(format(new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])), "yyyy/MM/dd"));
+}

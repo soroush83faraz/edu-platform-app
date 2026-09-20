@@ -215,3 +215,30 @@
 @utility tabular {
   font-variant-numeric: tabular-nums;
 }
+/* Credentials sheets (/admin/…/credentials): A4, RTL, 3×4 cut-out slips per page; the app frame disappears. */
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+  body {
+    background: #fff !important;
+  }
+  .no-print,
+  nav,
+  aside,
+  header {
+    display: none !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  .print-page {
+    break-after: page;
+  }
+  .print-slip {
+    break-inside: avoid;
+    border: 1px dashed #99a1b3 !important;
+  }
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Ellipsis, House, Inbox } from "lucide-react";
+import { Bell, Ellipsis, House, Inbox, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "cn";
@@ -25,10 +25,12 @@ const ITEMS: Item[] = [
  * The one navigation component: bottom bar on phones, start-side rail from `md:`. Holds the single summary
  * poller so both renderings share the same badge numbers.
  */
-export function AppNav({ initial, schoolName }: { initial: InboxSummaryState; schoolName: string }) {
+export function AppNav({ initial, schoolName, showAdmin = false }: { initial: InboxSummaryState; schoolName: string; showAdmin?: boolean }) {
   const pathname = usePathname();
   const summary = useInboxSummary(initial);
   const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  // «مدیریت» only on the desktop rail (the bottom bar keeps its four fixed items; phones reach it via «بیشتر»).
+  const sideItems: Item[] = showAdmin ? [...ITEMS.slice(0, 3), { href: "/admin", label: "مدیریت", icon: Settings2 }, ITEMS[3]] : ITEMS;
 
   return (
     <>
@@ -45,7 +47,7 @@ export function AppNav({ initial, schoolName }: { initial: InboxSummaryState; sc
         </div>
         <nav aria-label="پیمایش اصلی" className="flex-1 px-3 py-2">
           <ul className="flex flex-col gap-1">
-            {ITEMS.map((item) => (
+            {sideItems.map((item) => (
               <NavLink key={item.href} item={item} current={isCurrent(item.href)} count={item.badge?.(summary) ?? 0} layout="side" />
             ))}
           </ul>

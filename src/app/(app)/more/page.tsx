@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { requireContext } from "@/lib/ctx";
 import { formatNumberFa } from "@/lib/format";
 import { logoutAction, logoutAllAction } from "@/modules/iam/actions";
+import { canAtAnyScope } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "بیشتر | سامانهٴ مدرسه" };
 
@@ -22,6 +23,7 @@ export default async function MorePage() {
   const ctx = await requireContext();
   const roles = [...new Set(ctx.assignments.map((a) => ROLE_NAMES[a.roleCode] ?? a.roleCode))];
   const teaching = ctx.assignments.filter((a) => a.roleCode === "teacher").length;
+  const isAdmin = canAtAnyScope(ctx.assignments, "iam.admin.access");
 
   return (
     <div className="flex flex-col gap-6 px-4 pt-5 pb-6 md:pt-8">
@@ -40,6 +42,15 @@ export default async function MorePage() {
           {ctx.schoolName ? ` · ${ctx.schoolName}` : ""}
         </p>
       </section>
+
+      {isAdmin ? (
+        <nav aria-label="مدیریت">
+          <ul className="divide-y divide-line rounded-card border border-line bg-surface">
+            <MoreLink href="/admin" label="مدیریت مدرسه" hint="ساختار، افراد، حساب‌ها" />
+            <MoreLink href="/admin/onboarding" label="راه‌اندازی مدرسه" />
+          </ul>
+        </nav>
+      ) : null}
 
       <nav aria-label="حساب">
         <ul className="divide-y divide-line rounded-card border border-line bg-surface">

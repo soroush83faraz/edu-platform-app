@@ -1,0 +1,103 @@
+import { Plus } from "lucide-react";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { cn } from "cn";
+import { AdminHeader, Pagination, SearchForm } from "@/components/admin/AdminPage";
+import { one, type SearchParams } from "@/components/admin/ResourceListPage";
+import { Chip } from "@/components/Chip";
+import { EmptyState } from "@/components/EmptyState";
+import { Button } from "@/components/ui/button";
+import { requireContext } from "@/lib/ctx";
+import { formatNumberFa } from "@/lib/format";
+import { studentsListQuery } from "@/lib/admin/people-queries";
+import { canAtAnyScope } from "@/modules/iam/can";
+
+export const metadata: Metadata = { title: "دانش‌آموزان | مدیریت" };
+
+export default async function StudentsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const sp = await searchParams;
+  const q = one(sp.q).slice(0, 80);
+  const page = Math.max(1, Number.parseInt(one(sp.page) || "1", 10) || 1);
+  const pending = one(sp.pending) === "1";
+  const noClass = one(sp.noclass) === "1";
+  const ctx = await requireContext();
+  const result = await studentsListQuery({ q, page, pending, noClass });
+  if (!result.ok) {
+    if (result.code === "UNAUTHENTICATED") redirect("/login");
+    notFound();
+  }
+  const { rows, total, pageSize } = result.data;
+  const canWrite = canAtAnyScope(ctx.assignments, "iam.person.write");
+  const href = (over: Record<string, string | undefined>) => {
+    const p = new URLSearchParams();
+    const merged = { q, pending: pending ? "1" : undefined, noclass: noClass ? "1" : undefined, ...over };
+    for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v);
+    const s = p.toString();
+    return `/admin/students${s ? `?${s}` : ""}`;
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <AdminHeader
+        title="دانش‌آموزان"
+        description="ثبت دانش‌آموز با حساب کاربری و کلاس در یک فرم؛ رمز اولیه فقط یک‌بار نمایش داده می‌شود و بعداً از صفحهٴ کلاس چاپ می‌شود."
+        actions={
+          canWrite ? (
+            <Button asChild className="h-11 gap-1.5 px-4">
+              <Link href="/admin/students/new">
+                <Plus className="size-4" aria-hidden />
+                دانش‌آموز جدید
+              </Link>
+            </Button>
+          ) : null
+        }
+      />
+      <SearchForm q={q} hidden={{ pending: pending ? "1" : undefined, noclass: noClass ? "1" : undefined }} placeholder="نام یا شمارهٴ دانش‌آموزی" />
+      <div className="flex flex-wrap gap-2 text-sm">
+        <FilterChip href={href({ pending: undefined, noclass: undefined, page: undefined })} active={!pending && !noClass} label="همه" />
+        <FilterChip href={href({ pending: "1", noclass: undefined, page: undefined })} active={pending} label="حساب فعال‌نشده" />
+        <FilterChip href={href({ noclass: "1", pending: undefined, page: undefined })} active={noClass} label="بدون کلاس" />
+        <span className="tabular self-center text-xs text-text-muted">{formatNumberFa(total)} نفر</span>
+      </div>
+      {rows.length === 0 ? (
+        <EmptyState title="دانش‌آموزی پیدا نشد" description={canWrite ? "با «دانش‌آموز جدید» یا ورود از اکسل شروع کنید." : undefined} className="rounded-card border border-line bg-surface py-10" />
+      ) : (
+        <ul className="divide-y divide-line rounded-card border border-line bg-surface">
+          {rows.map((r) => (
+            <li key={r.personId}>
+              <Link href={`/admin/people/${r.personId}`} className="flex min-h-14 items-center justify-between gap-3 px-4 py-2 hover:bg-surface-sunken">
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate text-base font-medium text-text">
+                    <bdi>
+                      {r.firstName} {r.lastName}
+                    </bdi>
+                  </span>
+                  <span className="flex flex-wrap items-center gap-x-2 text-xs text-text-muted">
+                    <bdi dir="ltr" className="tabular">
+                      {r.studentNumber}
+                    </bdi>
+                    {r.className ? <bdi>{r.className}</bdi> : <span className="text-warning">بدون کلاس</span>}
+                    {r.schoolName ? <span className="hidden sm:inline">{r.schoolName}</span> : null}
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1">
+                  {r.loginIdentifier === null ? <Chip tone="neutral">بدون حساب</Chip> : r.accountStatus === "locked" ? <Chip tone="danger">قفل</Chip> : r.mustChangePassword ? <Chip tone="warning">رمز اولیه</Chip> : <Chip tone="success">فعال</Chip>}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Pagination page={page} pageSize={pageSize} total={total} href={(p) => href({ page: String(p) })} />
+    </div>
+  );
+}
+
+function FilterChip({ href, active, label }: { href: string; active: boolean; label: string }) {
+  return (
+    <Link href={href} aria-pressed={active} className={cn("inline-flex h-9 items-center rounded-full border px-3 transition-colors", active ? "border-primary-600 bg-primary-50 font-semibold text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong")}>
+      {label}
+    </Link>
+  );
+}

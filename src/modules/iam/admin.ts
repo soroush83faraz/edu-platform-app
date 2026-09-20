@@ -58,15 +58,16 @@ export async function schoolIdsOfPerson(tx: Tx, personId: string): Promise<strin
 }
 
 /**
- * NOT_FOUND unless the person exists and is inside the caller's scope. A person with no school at all (a staff
- * member created by an org admin without roles) is visible only to organization-scoped admins.
+ * NOT_FOUND unless the person exists and is inside the caller's scope. A person anchored to no school at all (a
+ * student not yet enrolled, a staff member without roles or teaching) is visible to every admin of the
+ * organization — otherwise the school admin who just created them could not see them (docs/admin.md).
  */
 export async function requirePersonInScope(tx: Tx, scope: AdminScope, personId: string): Promise<{ id: string; firstName: string; lastName: string }> {
   const rows = await tx.select({ id: person.id, firstName: person.firstName, lastName: person.lastName }).from(person).where(eq(person.id, personId)).limit(1);
   if (!rows[0]) throw notFound();
   if (scope.kind === "organization") return rows[0];
   const schools = await schoolIdsOfPerson(tx, personId);
-  if (!schools.some((s) => scope.schoolIds.includes(s))) throw notFound();
+  if (schools.length > 0 && !schools.some((s) => scope.schoolIds.includes(s))) throw notFound();
   return rows[0];
 }
 

@@ -1,14 +1,20 @@
 import Link from "next/link";
 import { cn } from "cn";
+import { ChevronLeft } from "lucide-react";
+import { AdminCounters } from "@/components/admin/AdminOverview";
 import { Card, CardContent } from "@/components/ui/card";
 import { requireContext } from "@/lib/ctx";
 import { formatJalaliLong, formatNumberFa } from "@/lib/format";
+import { adminOverviewQuery } from "@/lib/admin/overview";
+import { canAtAnyScope } from "@/modules/iam/can";
 import { countPersonsInOrg } from "@/modules/iam/queries";
 import { inboxSummaryQuery } from "@/modules/workspace/queries";
 
 export default async function HomePage() {
   const ctx = await requireContext(); // the (app) layout already redirected anonymous visitors
-  const persons = await countPersonsInOrg(); // FORBIDDEN for roles without org-level person.read → simply hidden
+  const isAdmin = canAtAnyScope(ctx.assignments, "iam.admin.access");
+  const admin = isAdmin ? await adminOverviewQuery() : null;
+  const persons = isAdmin ? null : await countPersonsInOrg(); // FORBIDDEN for roles without org-level person.read → simply hidden
   const summary = await inboxSummaryQuery(); // roles without workspace access simply get no strip
 
   return (
@@ -38,7 +44,22 @@ export default async function HomePage() {
         </section>
       ) : null}
 
-      {persons.ok ? (
+      {admin?.ok ? (
+        <section aria-labelledby="admin-heading" className="flex flex-col gap-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 id="admin-heading" className="text-sm font-semibold text-text-muted">
+              مدیریت
+            </h3>
+            <Link href="/admin/onboarding" className="inline-flex min-h-9 items-center gap-1 text-sm text-primary-700 hover:underline">
+              راه‌اندازی مدرسه
+              <ChevronLeft className="size-4" aria-hidden />
+            </Link>
+          </div>
+          <AdminCounters counts={admin.data.counts} compact />
+        </section>
+      ) : null}
+
+      {persons?.ok ? (
         <Card>
           <CardContent className="flex items-baseline justify-between">
             <span className="text-sm text-text-muted">افراد ثبت‌شده در سازمان</span>
