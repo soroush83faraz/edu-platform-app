@@ -49,6 +49,17 @@ docker compose exec -T db pg_restore -U postgres -d app --clean --if-exists < ba
 docker compose up -d app
 ```
 
+## سید کاتالوگ (بعد از هر migrate)
+
+کاتالوگ مجوزها و نقش‌های سیستمی (`iam.permission`, `iam.role`, `iam.role_permission`) با `scripts/seed.ts --catalog` ساخته می‌شود و باید بعد از `migrate` و قبل از بالا آمدن `app` اجرا شود. **TODO:** ایمیج standalone `tsx` ندارد و کاتالوگ در TypeScript است (`src/modules/iam/permissions.ts`)، پس هنوز `scripts/seed.js` (pg-only مثل `migrate.js`) وجود ندارد. تا آن زمان روی سرور:
+
+```bash
+# از ماشین توسعه، با اتصال مالک اسکیما به دیتابیس سرور (تونل ssh به پورت 5432 کانتینر db):
+MIGRATION_DATABASE_URL=postgres://app_owner:...@localhost:5433/app NODE_ENV=production SEED_ALLOW=1 pnpm seed
+```
+
+وقتی `scripts/seed.js` ساخته شد، دستور استقرار می‌شود: `docker compose run --rm app node scripts/seed.js --catalog` (بعد از `compose run --rm migrate`). سازمان‌های دمو (`--demo`) هرگز روی production اجرا نمی‌شوند.
+
 ## یادداشت‌ها
 - `scripts/migrate.js` (اجرای مهاجرت‌ها در سرویس `migrate`) و `db/initdb/01-roles.sh` (ساخت نقش‌ها و دیتابیس‌ها در اولین اجرای `db`) آماده‌اند؛ جزئیات در `docs/db.md`.
 - بکاپ شبانه/رمزگذاری/آپلود به آروان: روز ۳.

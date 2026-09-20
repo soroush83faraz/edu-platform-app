@@ -21,7 +21,9 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:migrate:test": "tsx scripts/migrate.ts --test",
     "db:reset:test": "tsx scripts/reset-test-db.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "seed": "tsx scripts/seed.ts --catalog",
+    "seed:demo": "tsx scripts/seed.ts --catalog --demo"
   },
   "dependencies": {
     "@node-rs/argon2": "2.2.1",
