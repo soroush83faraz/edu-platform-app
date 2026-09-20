@@ -1,3 +1,3 @@
-// Integration test setup (DB block): load .env.test, run migrations against app_test, truncate between files.
-// Intentionally a no-op in the scaffold.
-export {};
+// Runs in every int worker before the test file: points DATABASE_URL / MIGRATION_DATABASE_URL at app_test
+// so `src/lib/env.ts` (imported by `@/db/client`) never sees the development database.
+import "./env";
