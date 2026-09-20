@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Ellipsis, House, Inbox, Settings2 } from "lucide-react";
+import { Bell, BookOpen, Ellipsis, House, Inbox, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "cn";
@@ -34,7 +34,7 @@ export function AppNav({ initial, schoolName, showAdmin = false }: { initial: In
 
   return (
     <>
-      <nav aria-label="پیمایش اصلی" className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
+      <nav aria-label="پیمایش اصلی" className="fixed inset-x-0 bottom-0 z-20 border-t border-line/70 bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm md:hidden">
         <ul className="grid grid-cols-4">
           {ITEMS.map((item) => (
             <NavLink key={item.href} item={item} current={isCurrent(item.href)} count={item.badge?.(summary) ?? 0} layout="bottom" />
@@ -42,7 +42,10 @@ export function AppNav({ initial, schoolName, showAdmin = false }: { initial: In
         </ul>
       </nav>
       <aside className="hidden w-60 shrink-0 flex-col border-e border-line bg-surface md:sticky md:top-0 md:flex md:h-screen">
-        <div className="flex h-14 items-center px-5">
+        <div className="flex h-16 items-center gap-3 px-5">
+          <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-xl bg-hero text-white shadow-1">
+            <BookOpen className="size-4" />
+          </span>
           <span className="truncate text-base font-semibold text-text">{schoolName}</span>
         </div>
         <nav aria-label="پیمایش اصلی" className="flex-1 px-3 py-2">
@@ -63,8 +66,8 @@ function NavLink({ item, current, count, layout }: { item: Item; current: boolea
     count > 0 ? (
       <span
         className={cn(
-          "tabular inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1.5 text-xs font-semibold leading-none text-white",
-          layout === "bottom" && "absolute -top-1 -end-2.5",
+          "tabular inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-xs font-semibold leading-none text-primary-900",
+          layout === "bottom" && "absolute -top-1.5 -end-2.5 ring-2 ring-surface",
         )}
         aria-label={`${formatNumberFa(count)} مورد خوانده‌نشده`}
       >
@@ -78,10 +81,11 @@ function NavLink({ item, current, count, layout }: { item: Item; current: boolea
         <Link
           href={item.href}
           aria-current={current ? "page" : undefined}
-          className={cn("flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs", current ? "font-semibold text-primary-600" : "text-text-muted")}
+          className={cn("group flex min-h-14 flex-col items-center justify-center gap-0.5 pt-1.5 pb-1 text-xs", current ? "font-semibold text-primary-700" : "text-text-muted")}
         >
-          <span className="relative">
-            <Icon className="size-5" aria-hidden />
+          {/* The floating pill indicator: icy-blue behind the active icon, transparent otherwise. */}
+          <span className={cn("relative flex h-7 w-12 items-center justify-center rounded-full transition-colors duration-200", current ? "bg-info-soft" : "group-active:bg-surface-sunken")}>
+            <Icon className={cn("size-5", current && "text-primary-700")} aria-hidden />
             {badge}
           </span>
           {item.label}
@@ -95,11 +99,11 @@ function NavLink({ item, current, count, layout }: { item: Item; current: boolea
         href={item.href}
         aria-current={current ? "page" : undefined}
         className={cn(
-          "flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm",
-          current ? "bg-primary-50 font-semibold text-primary-700" : "text-text-muted hover:bg-surface-sunken hover:text-text",
+          "flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm transition-colors duration-150",
+          current ? "bg-info-soft font-semibold text-primary-800" : "text-text-muted hover:bg-surface-sunken hover:text-text",
         )}
       >
-        <Icon className="size-5" aria-hidden />
+        <Icon className={cn("size-5", current ? "text-primary-700" : "text-text-faint")} aria-hidden />
         <span className="flex-1">{item.label}</span>
         {badge}
       </Link>

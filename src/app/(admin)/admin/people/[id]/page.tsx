@@ -56,14 +56,14 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
       <div className="grid gap-4 lg:grid-cols-[1fr_minmax(0,22rem)]">
         <div className="flex flex-col gap-4">
           {caps.canWritePerson ? (
-            <section aria-labelledby="edit-heading" className="rounded-card border border-line bg-surface p-4">
+            <section aria-labelledby="edit-heading" className="rounded-card bg-surface shadow-1 p-4">
               <h3 id="edit-heading" className="mb-3 text-sm font-semibold text-text-muted">
                 مشخصات
               </h3>
               {isStudent ? <StudentForm classes={classes} schools={schools} detail={detail} /> : <StaffForm schools={schools} detail={detail} canGrantOrgRoles={caps.orgScope} />}
             </section>
           ) : (
-            <section className="rounded-card border border-line bg-surface p-4 text-sm text-text">
+            <section className="rounded-card bg-surface shadow-1 p-4 text-sm text-text">
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
                 <dt className="text-text-muted">نام</dt>
                 <dd>

@@ -1,3 +1,4 @@
+import { BookOpen } from "lucide-react";
 import { AppNav } from "@/components/shell/AppNav";
 import type { Ctx } from "@/lib/ctx";
 import { canAtAnyScope } from "@/modules/iam/can";
@@ -15,12 +16,24 @@ export async function AppShell({ ctx, children, wide = false }: { ctx: Ctx; chil
 
   return (
     <div className="flex min-h-full flex-1 bg-surface-sunken">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:start-2 focus:z-50 focus:rounded-lg focus:bg-primary-600 focus:px-3 focus:py-2 focus:text-sm focus:text-white"
+      >
+        پرش به محتوا
+      </a>
+      <h1 className="sr-only">{title}</h1>
       <AppNav initial={initial} schoolName={title} showAdmin={showAdmin} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex h-14 items-center border-b border-line bg-surface px-4 md:hidden">
-          <h1 className="truncate text-base font-semibold text-text">{title}</h1>
+        <header className="sticky top-0 z-10 flex h-14 items-center gap-3 bg-surface-sunken/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm md:hidden">
+          <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-xl bg-hero text-white shadow-1">
+            <BookOpen className="size-4" />
+          </span>
+          <p className="truncate text-base font-semibold text-text">{title}</p>
         </header>
-        <main className={`mx-auto w-full flex-1 pb-24 md:pb-8 ${wide ? "max-w-5xl" : "max-w-3xl"}`}>{children}</main>
+        <main id="main" tabIndex={-1} className={`mx-auto w-full flex-1 pb-24 outline-none md:pb-8 ${wide ? "max-w-5xl" : "max-w-3xl"}`}>
+          {children}
+        </main>
       </div>
     </div>
   );

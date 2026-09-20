@@ -1,4 +1,17 @@
-/** Centered single-card layout for the pre-app pages (login, forced password change). */
+import { productName } from "@/lib/product";
+
+/**
+ * The pre-app pages (login, forced password change): a calm sunken ground, the product mark on top, one centred card.
+ * A faint icy-blue glow behind the card is the only decoration.
+ */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
-  return <main className="flex flex-1 flex-col items-center justify-center bg-neutral-50 p-4">{children}</main>;
+  return (
+    <main className="relative flex flex-1 flex-col items-center justify-center overflow-hidden bg-surface-sunken px-4 py-8">
+      <div aria-hidden className="pointer-events-none absolute -top-24 start-1/2 h-72 w-[28rem] -translate-x-1/2 rounded-full bg-info/40 blur-3xl rtl:translate-x-1/2" />
+      <div className="relative flex w-full max-w-sm flex-col gap-6">
+        <p className="text-center text-sm font-medium text-text-muted">{productName()}</p>
+        {children}
+      </div>
+    </main>
+  );
 }

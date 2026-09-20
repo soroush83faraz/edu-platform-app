@@ -22,7 +22,7 @@ export function AdminOverview({ data }: { data: AdminOverviewData }) {
     <div className="flex flex-col gap-5">
       <AdminHeader title="مدیریت مدرسه" description={data.scope.kind === "organization" ? "دامنهٴ شما: همهٴ مدرسه‌های سازمان." : `دامنهٴ شما: ${formatNumberFa(data.scope.schoolIds.length)} مدرسه.`} />
       <AdminCounters counts={c} />
-      <ul className="divide-y divide-line rounded-card border border-line bg-surface">
+      <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
         {sections.map((s) => (
           <li key={s.href}>
             <Link href={s.href} className="flex min-h-14 items-center justify-between gap-3 px-4 py-2 hover:bg-surface-sunken">
@@ -55,7 +55,7 @@ export function AdminCounters({ counts, compact = false }: { counts: AdminCounts
       {tiles.map((t) => (
         <li key={t.href}>
           <Link href={t.href} className={cn("flex min-h-20 flex-col justify-between rounded-card border bg-surface p-3 transition-colors hover:bg-surface-sunken", t.warn ? "border-warning/50" : "border-line")}>
-            <span className={cn("tabular text-2xl font-bold leading-none", t.value === 0 ? "text-text-faint" : t.warn ? "text-warning" : "text-text")}>{formatNumberFa(t.value)}</span>
+            <span className={cn("tabular text-2xl font-bold leading-none", t.value === 0 ? "text-text-faint" : t.warn ? "text-warning-text" : "text-text")}>{formatNumberFa(t.value)}</span>
             <span className="text-sm text-text-muted">{t.label}</span>
           </Link>
         </li>

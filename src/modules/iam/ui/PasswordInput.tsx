@@ -29,7 +29,7 @@ export function PasswordInput({ name, label, autoComplete, error, describedBy }:
           autoComplete={autoComplete}
           required
           maxLength={128}
-          className="h-11 pe-12 text-base"
+          className="h-12 rounded-xl bg-surface-sunken ps-3 pe-12 text-base"
           aria-invalid={error ? true : undefined}
           aria-describedby={[error ? errorId : null, describedBy].filter(Boolean).join(" ") || undefined}
         />
@@ -38,7 +38,7 @@ export function PasswordInput({ name, label, autoComplete, error, describedBy }:
           onClick={() => setVisible((v) => !v)}
           aria-label={visible ? "پنهان‌کردن رمز" : "نمایش رمز"}
           aria-pressed={visible}
-          className="absolute inset-y-0 end-0 flex w-11 items-center justify-center rounded-e-lg text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          className="absolute inset-y-0 end-0 flex w-11 items-center justify-center rounded-e-xl text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
         >
           {visible ? <EyeOff className="size-5" aria-hidden /> : <Eye className="size-5" aria-hidden />}
         </button>

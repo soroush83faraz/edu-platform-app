@@ -32,9 +32,9 @@ export default async function RolesPage() {
           تخصیص‌های مدیریتی <span className="tabular">({formatNumberFa(assignments.length)})</span>
         </h3>
         {assignments.length === 0 ? (
-          <p className="rounded-card border border-line bg-surface px-4 py-6 text-center text-sm text-text-muted">هنوز نقشی داده نشده.</p>
+          <p className="rounded-card bg-surface shadow-1 px-4 py-6 text-center text-sm text-text-muted">هنوز نقشی داده نشده.</p>
         ) : (
-          <ul className="divide-y divide-line rounded-card border border-line bg-surface">
+          <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
             {assignments.map((a) => (
               <li key={a.roleAssignmentId} className="flex min-h-12 items-center justify-between gap-3 px-4 py-1.5">
                 <span className="flex min-w-0 flex-col">
@@ -60,7 +60,7 @@ export default async function RolesPage() {
         <h3 id="templates-heading" className="text-sm font-semibold text-text-muted">
           نقش‌های سیستمی
         </h3>
-        <ul className="divide-y divide-line rounded-card border border-line bg-surface">
+        <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
           {templates.map((t) => (
             <li key={t.code} className="flex flex-col gap-1 px-4 py-3">
               <span className="flex flex-wrap items-center gap-2">

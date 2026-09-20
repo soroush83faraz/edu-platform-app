@@ -20,7 +20,7 @@ export default async function NewStaffPage() {
   return (
     <div className="flex flex-col gap-4">
       <AdminHeader title="همکار جدید" back={{ href: "/admin/staff", label: "کارکنان" }} description="حساب کاربری با شمارهٴ موبایل ساخته می‌شود و رمز اولیه یک‌بار نمایش داده می‌شود." />
-      <div className="rounded-card border border-line bg-surface p-4">
+      <div className="rounded-card bg-surface shadow-1 p-4">
         <StaffForm schools={opts.data.schools} canGrantOrgRoles={canGrantOrgRoles} />
       </div>
     </div>

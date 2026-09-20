@@ -91,7 +91,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
       </header>
 
       {item.description ? (
-        <section className="rounded-card border border-line bg-surface p-4">
+        <section className="rounded-card bg-surface p-4 shadow-1">
           <p className="whitespace-pre-wrap text-base leading-7 text-text">
             <bdi>{item.description}</bdi>
           </p>
@@ -99,7 +99,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
       ) : null}
 
       {showProgress ? (
-        <section aria-labelledby="progress-heading" className="rounded-card border border-line bg-surface">
+        <section aria-labelledby="progress-heading" className="rounded-card bg-surface shadow-1">
           <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
             <h3 id="progress-heading" className="text-sm font-semibold text-text-muted">
               گیرندگان
@@ -109,7 +109,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
             </span>
           </div>
           <div className="mx-4 h-1.5 overflow-hidden rounded-full bg-neutral-200" role="progressbar" aria-valuemin={0} aria-valuemax={assignees.length} aria-valuenow={done}>
-            <div className="h-full rounded-full bg-success" style={{ width: `${assignees.length ? Math.round((done / assignees.length) * 100) : 0}%` }} />
+            <div className={cn("h-full rounded-full", assignees.length > 0 && done === assignees.length ? "bg-success" : "bg-sky")} style={{ width: `${assignees.length ? Math.round((done / assignees.length) * 100) : 0}%` }} />
           </div>
           <ul className="mt-2 divide-y divide-line">
             {assignees.map((a) => (
@@ -132,7 +132,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
         {comments.length === 0 ? <p className="text-sm text-text-faint">هنوز نظری ثبت نشده.</p> : null}
         <ul className="flex flex-col gap-2">
           {comments.map((c) => (
-            <li key={c.id} className={cn("rounded-card border bg-surface px-4 py-3", c.visibility === "staff_only" ? "border-warning/40 bg-warning-soft/40" : "border-line")}>
+            <li key={c.id} className={cn("rounded-card bg-surface px-4 py-3 shadow-1", c.visibility === "staff_only" && "bg-warning-soft/50 ring-1 ring-warning/50")}>
               <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-text-muted">
                 <span className="font-medium text-text">
                   <bdi>{c.authorName}</bdi>
@@ -163,9 +163,9 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
       ) : null}
 
       {transitions.length > 1 ? (
-        <details className="rounded-card border border-line bg-surface">
+        <details className="rounded-card bg-surface shadow-1">
           <summary className="flex min-h-11 cursor-pointer items-center px-4 text-sm font-medium text-text-muted">تاریخچهٴ وضعیت</summary>
-          <ol className="divide-y divide-line border-t border-line">
+          <ol className="divide-y divide-line/70 border-t border-line/70">
             {transitions.map((t) => (
               <li key={t.id} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2 text-sm">
                 <span className="text-text">

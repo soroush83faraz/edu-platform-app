@@ -64,7 +64,7 @@ export function AccountCard({ detail, caps }: { detail: PersonDetail; caps: Caps
     });
 
   return (
-    <section aria-labelledby="account-heading" className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4">
+    <section aria-labelledby="account-heading" className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-4">
       <h3 id="account-heading" className="text-sm font-semibold text-text-muted">
         حساب کاربری
       </h3>
@@ -154,7 +154,7 @@ export function EnrollmentCard({ detail, classes, canEnroll }: { detail: PersonD
   const groups = [...new Set(classes.map((c) => c.group).filter((g): g is string => !!g))];
   const options = classes.filter((c) => c.value !== detail.enrollment?.classGroupId);
   return (
-    <section aria-labelledby="enroll-heading" className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4">
+    <section aria-labelledby="enroll-heading" className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-4">
       <h3 id="enroll-heading" className="text-sm font-semibold text-text-muted">
         کلاس
       </h3>
@@ -169,7 +169,7 @@ export function EnrollmentCard({ detail, classes, canEnroll }: { detail: PersonD
           </span>
         </p>
       ) : (
-        <p className="text-sm text-warning">در هیچ کلاسی ثبت‌نام نشده.</p>
+        <p className="text-sm text-warning-text">در هیچ کلاسی ثبت‌نام نشده.</p>
       )}
       {canEnroll && options.length > 0 ? (
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -243,7 +243,7 @@ export function RolesCard({ detail, schools, caps }: { detail: PersonDetail; sch
     ...(caps.orgScope ? [{ value: "org_admin", label: "مدیر سازمان" }] : []),
   ];
   return (
-    <section aria-labelledby="roles-heading" className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4">
+    <section aria-labelledby="roles-heading" className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-4">
       <h3 id="roles-heading" className="text-sm font-semibold text-text-muted">
         نقش‌ها و تدریس
       </h3>

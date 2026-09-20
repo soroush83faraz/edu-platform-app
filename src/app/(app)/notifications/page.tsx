@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/EmptyState";
+import { BellClay } from "@/components/illustrations";
 import { Button } from "@/components/ui/button";
 import { listNotificationsQuery } from "@/modules/notif/queries";
 import { MarkAllReadButton, NotificationList } from "@/modules/notif/ui/NotificationList";
@@ -26,7 +27,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
         {rows.length > 0 ? <MarkAllReadButton disabled={!hasUnread} /> : null}
       </div>
       {rows.length === 0 ? (
-        <EmptyState title="اعلانی ندارید" description="کار جدید، نظر تازه و تغییر وضعیت کارها این‌جا خبر داده می‌شود." />
+        <EmptyState illustration={<BellClay size={128} />} title="اعلانی ندارید" description="کار جدید، نظر تازه و تغییر وضعیت کارها این‌جا خبر داده می‌شود." />
       ) : (
         <>
           <NotificationList rows={rows} />

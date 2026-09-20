@@ -61,9 +61,9 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
         <span className="tabular self-center text-xs text-text-muted">{formatNumberFa(total)} نفر</span>
       </div>
       {rows.length === 0 ? (
-        <EmptyState title="دانش‌آموزی پیدا نشد" description={canWrite ? "با «دانش‌آموز جدید» یا ورود از اکسل شروع کنید." : undefined} className="rounded-card border border-line bg-surface py-10" />
+        <EmptyState title="دانش‌آموزی پیدا نشد" description={canWrite ? "با «دانش‌آموز جدید» یا ورود از اکسل شروع کنید." : undefined} className="rounded-card bg-surface shadow-1 py-10" />
       ) : (
-        <ul className="divide-y divide-line rounded-card border border-line bg-surface">
+        <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
           {rows.map((r) => (
             <li key={r.personId}>
               <Link href={`/admin/people/${r.personId}`} className="flex min-h-14 items-center justify-between gap-3 px-4 py-2 hover:bg-surface-sunken">
@@ -77,7 +77,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
                     <bdi dir="ltr" className="tabular">
                       {r.studentNumber}
                     </bdi>
-                    {r.className ? <bdi>{r.className}</bdi> : <span className="text-warning">بدون کلاس</span>}
+                    {r.className ? <bdi>{r.className}</bdi> : <span className="text-warning-text">بدون کلاس</span>}
                     {r.schoolName ? <span className="hidden sm:inline">{r.schoolName}</span> : null}
                   </span>
                 </span>

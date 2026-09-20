@@ -45,9 +45,9 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
       <SearchForm q={q} placeholder="نام همکار" />
       <p className="tabular text-xs text-text-muted">{formatNumberFa(total)} نفر</p>
       {rows.length === 0 ? (
-        <EmptyState title="کسی پیدا نشد" className="rounded-card border border-line bg-surface py-10" />
+        <EmptyState title="کسی پیدا نشد" className="rounded-card bg-surface shadow-1 py-10" />
       ) : (
-        <ul className="divide-y divide-line rounded-card border border-line bg-surface">
+        <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
           {rows.map((r) => (
             <li key={r.personId}>
               <Link href={`/admin/people/${r.personId}`} className="flex min-h-14 items-center justify-between gap-3 px-4 py-2 hover:bg-surface-sunken">

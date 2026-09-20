@@ -797,7 +797,7 @@ export const offeringResource = defineResource<OfferingRow, z.output<typeof Offe
   columns: [
     { key: "subjectName", labelFa: "درس" },
     { key: "termName", labelFa: "نوبت", secondary: true },
-    { key: "teacherName", labelFa: "دبیر", render: (r) => r.teacherName ?? <span className="text-warning">بدون دبیر</span> },
+    { key: "teacherName", labelFa: "دبیر", render: (r) => r.teacherName ?? <span className="text-warning-text">بدون دبیر</span> },
     { key: "weeklyHours", labelFa: "ساعت/هفته", render: (r) => (r.weeklyHours ? formatNumberFa(Number(r.weeklyHours)) : "—"), secondary: true },
     { key: "status", labelFa: "وضعیت", render: (r) => OFFERING_STATUS[r.status] ?? r.status, secondary: true },
   ],

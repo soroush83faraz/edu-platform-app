@@ -6,7 +6,7 @@ const TONES: Record<ChipTone, string> = {
   neutral: "bg-surface-sunken text-text-muted",
   primary: "bg-primary-50 text-primary-700",
   success: "bg-success-soft text-success",
-  warning: "bg-warning-soft text-warning",
+  warning: "bg-warning-soft text-warning-text",
   danger: "bg-danger-soft text-danger",
 };
 

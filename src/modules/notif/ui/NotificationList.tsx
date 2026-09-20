@@ -49,11 +49,11 @@ export function NotificationList({ rows }: { rows: NotificationRow[] }) {
     });
 
   return (
-    <ul className="divide-y divide-line border-y border-line bg-surface md:rounded-card md:border">
+    <ul className="mx-4 divide-y divide-line/70 rounded-card bg-surface shadow-1">
       {rows.map((n) => (
         <li key={n.id}>
-          <button type="button" onClick={() => open(n)} className="flex min-h-[4.5rem] w-full items-start gap-3 px-4 py-3 text-start transition-colors hover:bg-surface-sunken">
-            <span className={cn("mt-2.5 size-2.5 shrink-0 rounded-full", n.readAt ? "bg-transparent" : "bg-primary-500")} aria-label={n.readAt ? undefined : "خوانده‌نشده"} />
+          <button type="button" onClick={() => open(n)} className="flex min-h-[4.5rem] w-full items-start gap-3 px-4 py-3 text-start transition-colors duration-150 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
+            <span className={cn("mt-2.5 size-2.5 shrink-0 rounded-full", n.readAt ? "bg-transparent" : "bg-sky")} aria-label={n.readAt ? undefined : "خوانده‌نشده"} />
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className={cn("line-clamp-2 text-base leading-6 text-text", n.readAt ? "font-medium" : "font-semibold")}>
                 <bdi>{n.title}</bdi>

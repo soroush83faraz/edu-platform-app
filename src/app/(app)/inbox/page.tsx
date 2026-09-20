@@ -4,6 +4,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { cn } from "cn";
 import { EmptyState } from "@/components/EmptyState";
+import { Fab } from "@/components/Fab";
+import { EmptyClay } from "@/components/illustrations";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Button } from "@/components/ui/button";
 import { BUCKET_LABELS, type Bucket } from "@/lib/format";
@@ -68,7 +70,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       <div className="flex items-center justify-between gap-3 px-4 pt-5 pb-3 md:pt-8">
         <h2 className="text-xl font-bold text-text">کارتابل</h2>
         {canCreate ? (
-          <Button asChild className="hidden h-11 px-4 md:inline-flex">
+          <Button asChild className="hidden h-11 rounded-xl px-4 md:inline-flex">
             <Link href="/inbox/new">
               <Plus aria-hidden />
               کار جدید
@@ -78,7 +80,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       </div>
 
       <nav aria-label="وضعیت کارها" className="px-4">
-        <ul className="grid grid-cols-3 rounded-lg bg-neutral-100 p-1">
+        <ul className="grid grid-cols-3 rounded-xl bg-neutral-200/60 p-1">
           {VISIBLE_TABS.map((tab) => {
             const current = f.tab === tab;
             return (
@@ -87,8 +89,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   href={href({ ...f, tab, cursor: undefined })}
                   aria-current={current ? "page" : undefined}
                   className={cn(
-                    "flex h-10 items-center justify-center rounded-md text-sm transition-colors",
-                    current ? "bg-surface font-semibold text-text shadow-1" : "text-text-muted hover:text-text",
+                    "flex h-10 items-center justify-center rounded-lg text-sm transition-colors duration-150",
+                    current ? "bg-surface font-semibold text-primary-800 shadow-1" : "text-text-muted hover:text-text",
                   )}
                 >
                   {TAB_LABELS[tab]}
@@ -118,7 +120,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
               ) : (
                 <div className="pt-3" />
               )}
-              <ul className="divide-y divide-line border-y border-line bg-surface md:rounded-card md:border">{items.map((row) => <InboxRow key={row.id} row={row} />)}</ul>
+              <ul className="mx-4 divide-y divide-line/70 rounded-card bg-surface shadow-1">{items.map((row) => <InboxRow key={row.id} row={row} />)}</ul>
             </section>
           ))}
           {nextCursor || f.cursor ? (
@@ -138,15 +140,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         </div>
       )}
 
-      {canCreate ? (
-        <Link
-          href="/inbox/new"
-          className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] end-4 z-20 inline-flex h-12 items-center gap-2 rounded-full bg-primary-600 ps-4 pe-5 text-sm font-semibold text-white shadow-lg transition-colors hover:bg-primary-700 md:hidden"
-        >
-          <Plus className="size-5" aria-hidden />
-          کار جدید
-        </Link>
-      ) : null}
+      {canCreate ? <Fab /> : null}
     </div>
   );
 }
@@ -164,8 +158,8 @@ function FilterChip({ href, active, label, removable }: { href: string; active: 
       href={href}
       aria-pressed={active}
       className={cn(
-        "inline-flex h-9 items-center gap-1 rounded-full border px-3 text-sm transition-colors",
-        active ? "border-primary-600 bg-primary-50 text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong",
+        "inline-flex h-9 items-center gap-1 rounded-full border px-3 text-sm transition-colors duration-150",
+        active ? "border-info bg-info-soft text-primary-800" : "border-line bg-surface text-text-muted hover:border-line-strong",
       )}
     >
       {label}
@@ -178,6 +172,7 @@ function Empty({ tab, filtered, canCreate, clearHref }: { tab: InboxTab; filtere
   if (filtered) {
     return (
       <EmptyState
+        illustration={<EmptyClay size={96} />}
         title="با این فیلتر کاری پیدا نشد"
         action={
           <Button asChild variant="outline" className="h-11">
@@ -190,6 +185,7 @@ function Empty({ tab, filtered, canCreate, clearHref }: { tab: InboxTab; filtere
   if (tab === "todo") {
     return (
       <EmptyState
+        illustration={<EmptyClay size={128} />}
         title="کاری در انتظار شما نیست"
         description={canCreate ? "وقتی کاری به شما سپرده شود یا خودتان کاری بسازید، همین‌جا می‌آید." : "وقتی کاری به شما سپرده شود، همین‌جا می‌آید."}
         action={

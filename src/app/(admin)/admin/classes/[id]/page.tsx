@@ -65,7 +65,7 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
       />
 
       {offerings.length > 0 ? (
-        <section aria-labelledby="offerings-heading" className="rounded-card border border-line bg-surface p-4">
+        <section aria-labelledby="offerings-heading" className="rounded-card bg-surface shadow-1 p-4">
           <h3 id="offerings-heading" className="mb-2 text-sm font-semibold text-text-muted">
             درس‌ها و دبیران
           </h3>
@@ -73,7 +73,7 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
             {offerings.map((o) => (
               <li key={o.id} className="rounded-full border border-line px-3 py-1 text-text">
                 {o.subjectName}
-                <span className="text-text-muted"> — {o.teacherName ?? <span className="text-warning">بدون دبیر</span>}</span>
+                <span className="text-text-muted"> — {o.teacherName ?? <span className="text-warning-text">بدون دبیر</span>}</span>
               </li>
             ))}
           </ul>
@@ -96,9 +96,9 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
           </span>
         </div>
         {roster.length === 0 ? (
-          <EmptyState title="این کلاس هنوز دانش‌آموزی ندارد" description="از «دانش‌آموز جدید» یا صفحهٴ هر دانش‌آموز (انتقال) اضافه کنید." className="rounded-card border border-line bg-surface py-10" />
+          <EmptyState title="این کلاس هنوز دانش‌آموزی ندارد" description="از «دانش‌آموز جدید» یا صفحهٴ هر دانش‌آموز (انتقال) اضافه کنید." className="rounded-card bg-surface shadow-1 py-10" />
         ) : (
-          <ol className="divide-y divide-line rounded-card border border-line bg-surface">
+          <ol className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
             {roster.map((r, i) => (
               <li key={r.personId}>
                 <Link href={`/admin/people/${r.personId}`} className="flex min-h-12 items-center gap-3 px-4 py-1.5 hover:bg-surface-sunken">

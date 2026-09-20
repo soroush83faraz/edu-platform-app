@@ -221,7 +221,7 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
         </div>
 
         {mode === "class" ? (
-          <div className="flex flex-col gap-3 rounded-card border border-line bg-surface p-3">
+          <div className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-3">
             <select
               aria-label="درس و کلاس"
               value={offeringId}
@@ -296,7 +296,7 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
         ) : null}
 
         {mode === "persons" ? (
-          <div className="flex flex-col gap-3 rounded-card border border-line bg-surface p-3">
+          <div className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-3">
             {chosen.length > 0 ? (
               <ul className="flex flex-wrap gap-2">
                 {chosen.map((c) => (

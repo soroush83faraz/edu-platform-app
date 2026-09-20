@@ -16,10 +16,10 @@ export function InboxRow({ row }: { row: Row }) {
   const closed = row.category === "done" || row.category === "cancelled";
   return (
     <li className="relative">
-      <PriorityStripe priority={row.priority} />
+      <PriorityStripe priority={row.priority} className="inset-y-3 w-0.75" />
       <Link
         href={`/inbox/${row.id}`}
-        className={cn("flex min-h-[4.5rem] items-center gap-3 ps-5 pe-4 py-3 transition-colors hover:bg-surface-sunken active:bg-surface-sunken", closed && "opacity-70")}
+        className={cn("flex min-h-[4.5rem] items-center gap-3 ps-5 pe-4 py-3 transition-colors duration-150 hover:bg-surface-sunken active:bg-surface-sunken", closed && "opacity-70")}
       >
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <p className={cn("line-clamp-2 text-base leading-6 text-text", row.unread ? "font-semibold" : "font-medium")}>
@@ -43,14 +43,14 @@ export function InboxRow({ row }: { row: Row }) {
                 <span className="tabular">{formatNumberFa(row.commentsCount)}</span>
               </span>
             ) : null}
-            {row.isPinned ? <Pin className="size-3.5 text-primary-600" aria-label="سنجاق‌شده" /> : null}
+            {row.isPinned ? <Pin className="size-3.5 text-sky-strong" aria-label="سنجاق‌شده" /> : null}
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           {row.createdByMe && row.assigneesTotal > 0 && !(row.assigneesTotal === 1 && row.myAssigneeState) ? (
             <Progress done={row.assigneesDone} total={row.assigneesTotal} />
           ) : null}
-          {row.unread ? <span className="size-2.5 rounded-full bg-primary-500" aria-label="خوانده‌نشده" /> : null}
+          {row.unread ? <span className="size-2.5 rounded-full bg-sky" aria-label="خوانده‌نشده" /> : null}
           {row.category === "done" ? <Chip tone="success">انجام‌شده</Chip> : row.category === "cancelled" ? <Chip tone="neutral">لغوشده</Chip> : null}
         </div>
       </Link>
@@ -66,7 +66,7 @@ function Progress({ done, total }: { done: number; total: number }) {
         {formatNumberFa(done)}/{formatNumberFa(total)} انجام شد
       </span>
       <span className="block h-1 w-16 overflow-hidden rounded-full bg-neutral-200" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done}>
-        <span className="block h-full rounded-full bg-success" style={{ width: `${pct}%` }} />
+        <span className={cn("block h-full rounded-full", pct === 100 ? "bg-success" : "bg-sky")} style={{ width: `${pct}%` }} />
       </span>
     </div>
   );

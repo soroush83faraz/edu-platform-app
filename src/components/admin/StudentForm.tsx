@@ -134,12 +134,12 @@ export function StudentForm({ classes, schools, detail }: Props) {
 
       {!detail ? (
         <>
-          <fieldset className="flex flex-col gap-4 rounded-card border border-line bg-surface p-4">
+          <fieldset className="flex flex-col gap-4 rounded-card bg-surface shadow-1 p-4">
             <legend className="px-1 text-sm font-semibold text-text-muted">کلاس</legend>
             <Field field={{ name: "classGroupId", labelFa: "کلاس", type: "select", optionsKey: "classes", hint: "می‌توانید بعداً از صفحهٴ دانش‌آموز تعیین کنید." }} options={classes} {...f("classGroupId")} />
             {!classId && schools.length > 1 ? <Field field={{ name: "schoolId", labelFa: "مدرسه (بدون کلاس)", type: "select", options: schools, required: v.createAccount === true && !phone }} options={schools} {...f("schoolId")} /> : null}
           </fieldset>
-          <fieldset className="flex flex-col gap-4 rounded-card border border-line bg-surface p-4">
+          <fieldset className="flex flex-col gap-4 rounded-card bg-surface shadow-1 p-4">
             <legend className="px-1 text-sm font-semibold text-text-muted">حساب کاربری</legend>
             <Field field={{ name: "createAccount", labelFa: "حساب کاربری بساز (رمز اولیه یک‌بار نمایش داده می‌شود)", type: "toggle" }} options={[]} {...f("createAccount")} />
             {v.createAccount === true ? <Field field={{ name: "identifier", labelFa: "شناسهٴ ورود", type: "text", ltr: true, hint }} options={[]} {...f("identifier")} /> : null}

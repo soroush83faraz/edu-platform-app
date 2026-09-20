@@ -25,10 +25,11 @@ export function LoginForm() {
           dir="ltr"
           inputMode="tel"
           autoComplete="username"
+          spellCheck={false}
           autoFocus
           required
           maxLength={64}
-          className="h-11 text-base"
+          className="h-12 rounded-xl bg-surface-sunken px-3 text-base"
           aria-invalid={identifierError ? true : undefined}
           aria-describedby={identifierError ? "identifier-error" : undefined}
         />
@@ -41,16 +42,19 @@ export function LoginForm() {
 
       <PasswordInput name="password" label="رمز" autoComplete="current-password" error={passwordError} />
 
-      <label className="flex min-h-11 items-center gap-2 text-sm">
-        <input type="checkbox" name="publicDevice" className="size-5 accent-primary" />
-        این دستگاه عمومی است
+      <label className="flex min-h-11 items-center gap-2.5 text-sm text-text">
+        <input type="checkbox" name="publicDevice" className="size-5 rounded accent-primary" />
+        <span>
+          این دستگاه عمومی است
+          <span className="block text-xs text-text-muted">ورود پس از ۸ ساعت خودبه‌خود پایان می‌گیرد.</span>
+        </span>
       </label>
 
       <p role="alert" aria-live="polite" className="min-h-5 text-sm text-danger">
         {formError}
       </p>
 
-      <Button type="submit" size="lg" className="h-11 text-base" disabled={pending}>
+      <Button type="submit" size="lg" className="h-12 rounded-xl text-base font-semibold" disabled={pending}>
         {pending ? "در حال ورود…" : "ورود"}
       </Button>
     </form>

@@ -19,7 +19,7 @@ export default async function NewStudentPage() {
   return (
     <div className="flex flex-col gap-4">
       <AdminHeader title="دانش‌آموز جدید" back={{ href: "/admin/students", label: "دانش‌آموزان" }} description="نام، شمارهٴ دانش‌آموزی و (اختیاری) موبایل؛ اگر موبایل ندارد، نام‌کاربری از کد مدرسه ساخته می‌شود." />
-      <div className="rounded-card border border-line bg-surface p-4">
+      <div className="rounded-card bg-surface shadow-1 p-4">
         <StudentForm classes={opts.data.classes} schools={opts.data.schools} />
       </div>
     </div>

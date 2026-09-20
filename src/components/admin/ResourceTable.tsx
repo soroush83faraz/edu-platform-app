@@ -24,10 +24,10 @@ export function ResourceTable({
   fixed?: Record<string, string>;
 }) {
   if (rows.length === 0) {
-    return <EmptyState title={`هنوز ${def.labelFa}ی ثبت نشده`} description={canWrite ? `با «${def.labelFa} جدید» شروع کنید.` : undefined} className="rounded-card border border-line bg-surface py-10" />;
+    return <EmptyState title={`هنوز ${def.labelFa}ی ثبت نشده`} description={canWrite ? `با «${def.labelFa} جدید» شروع کنید.` : undefined} className="rounded-card bg-surface shadow-1 py-10" />;
   }
   return (
-    <div className="overflow-x-auto rounded-card border border-line bg-surface">
+    <div className="overflow-x-auto rounded-card bg-surface shadow-1">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-line text-xs text-text-muted">

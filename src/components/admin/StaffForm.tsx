@@ -124,7 +124,7 @@ export function StaffForm({ schools, detail, canGrantOrgRoles }: { schools: Scho
       </div>
 
       {!detail ? (
-        <fieldset className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4">
+        <fieldset className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-4">
           <legend className="px-1 text-sm font-semibold text-text-muted">نقش مدیریتی (اختیاری)</legend>
           <p className="text-xs text-text-muted">نقش «معلم» این‌جا داده نمی‌شود؛ با تخصیص دبیر به ارائهٴ درس در صفحهٴ کلاس ساخته می‌شود.</p>
           {roles.length > 0 ? (
