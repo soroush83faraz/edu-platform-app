@@ -664,6 +664,14 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
     // source_id; the real rows below carry source_id = teacher_assignment.id. Drop the legacy ones (no-op afterwards).
     await tx.delete(roleAssignment).where(and(eq(roleAssignment.sourceType, "teacher_assignment"), isNull(roleAssignment.sourceId)));
 
+    // Demo roles and enrollments must be valid on the day the demo runs, even before the academic year starts
+    // (۱ مهر ۱۴۰۵ = 2026-09-23): start them at min(today, year start). Also backfill rows written by an earlier run.
+    const demoStart = new Date().toISOString().slice(0, 10) < "2026-09-23" ? new Date().toISOString().slice(0, 10) : "2026-09-23";
+    await tx.execute(sql`update academic.teacher_assignment set valid_from = least(valid_from, ${demoStart}::date) where valid_to is null`);
+    await tx.execute(sql`update iam.role_assignment set valid_from = least(valid_from, ${demoStart}::date) where source_type = 'teacher_assignment' and revoked_at is null`);
+    await tx.execute(sql`update academic.class_enrollment set starts_on = least(starts_on, ${demoStart}::date) where status = 'active' and ends_on is null`);
+    await tx.execute(sql`update academic.school_enrollment set starts_on = least(starts_on, ${demoStart}::date) where status = 'active' and ends_on is null`);
+
     const classGroupId = classIds[spec.studentClass];
     if (!classGroupId) throw new Error(`unresolved student class ${spec.studentClass}`);
     for (const studentProfileId of studentProfileIds) {
@@ -672,7 +680,7 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
         .from(classEnrollment)
         .where(and(eq(classEnrollment.studentProfileId, studentProfileId), eq(classEnrollment.status, "active")))
         .limit(1);
-      if (active.length === 0) await enrollStudent(tx, svcCtx, { studentProfileId, classGroupId, startsOn: "2026-09-23" });
+      if (active.length === 0) await enrollStudent(tx, svcCtx, { studentProfileId, classGroupId, startsOn: demoStart });
     }
 
     for (const plan of teacherPlans) {
@@ -688,7 +696,7 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
           ),
         )
         .limit(1);
-      if (existing.length === 0) await assignTeacher(tx, svcCtx, { ...plan, role: "main", validFrom: "2026-09-23" });
+      if (existing.length === 0) await assignTeacher(tx, svcCtx, { ...plan, role: "main", validFrom: demoStart });
     }
 
     const count = async (table: string, where = ""): Promise<number> => {

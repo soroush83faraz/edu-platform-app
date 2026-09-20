@@ -1,0 +1,219 @@
+import { Plus, X } from "lucide-react";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { cn } from "cn";
+import { EmptyState } from "@/components/EmptyState";
+import { SectionHeader } from "@/components/SectionHeader";
+import { Button } from "@/components/ui/button";
+import { BUCKET_LABELS, type Bucket } from "@/lib/format";
+import { BUCKETS, INBOX_TABS, type InboxTab } from "@/modules/workspace/dto";
+import { listInboxQuery } from "@/modules/workspace/queries";
+import type { InboxRow as Row } from "@/modules/workspace/repo";
+import { InboxRow } from "@/modules/workspace/ui/InboxRow";
+
+export const metadata: Metadata = { title: "کارتابل | سامانهٴ مدرسه" };
+
+const TAB_LABELS: Record<InboxTab, string> = { todo: "انجام‌نشده", doing: "در جریان", done: "انجام‌شده", all: "همه" };
+const VISIBLE_TABS: InboxTab[] = ["todo", "doing", "done"];
+const BUCKET_ORDER: Bucket[] = ["overdue", "today", "week", "later", "none"];
+
+type Search = Record<string, string | string[] | undefined>;
+
+interface Filters {
+  tab: InboxTab;
+  bucket?: Bucket;
+  mine: boolean;
+  unread: boolean;
+  cursor?: string;
+}
+
+function readFilters(sp: Search): Filters {
+  const one = (k: string) => (Array.isArray(sp[k]) ? sp[k]?.[0] : sp[k]);
+  const tab = one("tab");
+  const bucket = one("bucket");
+  return {
+    tab: (INBOX_TABS as readonly string[]).includes(tab ?? "") ? (tab as InboxTab) : "todo",
+    bucket: (BUCKETS as readonly string[]).includes(bucket ?? "") ? (bucket as Bucket) : undefined,
+    mine: one("mine") === "1",
+    unread: one("unread") === "1",
+    cursor: one("cursor") || undefined,
+  };
+}
+
+function href(f: Partial<Filters> & { tab: InboxTab }): string {
+  const p = new URLSearchParams();
+  if (f.tab !== "todo") p.set("tab", f.tab);
+  if (f.bucket) p.set("bucket", f.bucket);
+  if (f.mine) p.set("mine", "1");
+  if (f.unread) p.set("unread", "1");
+  if (f.cursor) p.set("cursor", f.cursor);
+  const q = p.toString();
+  return q ? `/inbox?${q}` : "/inbox";
+}
+
+export default async function InboxPage({ searchParams }: { searchParams: Promise<Search> }) {
+  const f = readFilters(await searchParams);
+  const result = await listInboxQuery({ tab: f.tab, bucket: f.bucket, createdByMe: f.mine, unreadOnly: f.unread, cursor: f.cursor });
+  if (!result.ok) {
+    if (result.code === "UNAUTHENTICATED") redirect("/login");
+    return <EmptyState title="کارتابل در دسترس نیست" description={result.message} />;
+  }
+  const { rows, nextCursor, isStaff, canCreate } = result.data;
+  const filtered = Boolean(f.bucket || f.unread || f.mine);
+  const grouped = groupByBucket(rows, f.tab);
+
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-center justify-between gap-3 px-4 pt-5 pb-3 md:pt-8">
+        <h2 className="text-xl font-bold text-text">کارتابل</h2>
+        {canCreate ? (
+          <Button asChild className="hidden h-11 px-4 md:inline-flex">
+            <Link href="/inbox/new">
+              <Plus aria-hidden />
+              کار جدید
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+
+      <nav aria-label="وضعیت کارها" className="px-4">
+        <ul className="grid grid-cols-3 rounded-lg bg-neutral-100 p-1">
+          {VISIBLE_TABS.map((tab) => {
+            const current = f.tab === tab;
+            return (
+              <li key={tab}>
+                <Link
+                  href={href({ ...f, tab, cursor: undefined })}
+                  aria-current={current ? "page" : undefined}
+                  className={cn(
+                    "flex h-10 items-center justify-center rounded-md text-sm transition-colors",
+                    current ? "bg-surface font-semibold text-text shadow-1" : "text-text-muted hover:text-text",
+                  )}
+                >
+                  {TAB_LABELS[tab]}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
+      {isStaff || filtered ? (
+        <div className="flex flex-wrap items-center gap-2 px-4 pt-3" aria-label="فیلترها">
+          {isStaff ? <FilterChip href={href({ ...f, mine: !f.mine, cursor: undefined })} active={f.mine} label="فقط کارهایی که دادم" /> : null}
+          {f.bucket ? <FilterChip href={href({ ...f, bucket: undefined, cursor: undefined })} active removable label={BUCKET_LABELS[f.bucket]} /> : null}
+          {f.unread ? <FilterChip href={href({ ...f, unread: false, cursor: undefined })} active removable label="خوانده‌نشده" /> : null}
+        </div>
+      ) : null}
+
+      {rows.length === 0 ? (
+        <Empty tab={f.tab} filtered={filtered} canCreate={canCreate} clearHref={href({ tab: f.tab })} />
+      ) : (
+        <div className="mt-2 flex flex-col">
+          {grouped.map(([bucket, items]) => (
+            <section key={bucket} aria-labelledby={`bucket-${bucket}`}>
+              {bucket !== "all" ? (
+                <SectionHeader title={BUCKET_LABELS[bucket]} count={items.length} tone={bucket === "overdue" ? "danger" : "neutral"} />
+              ) : (
+                <div className="pt-3" />
+              )}
+              <ul className="divide-y divide-line border-y border-line bg-surface md:rounded-card md:border">{items.map((row) => <InboxRow key={row.id} row={row} />)}</ul>
+            </section>
+          ))}
+          {nextCursor || f.cursor ? (
+            <div className="flex items-center justify-center gap-3 px-4 py-5">
+              {f.cursor ? (
+                <Button asChild variant="ghost" className="h-11">
+                  <Link href={href({ ...f, cursor: undefined })}>بازگشت به ابتدا</Link>
+                </Button>
+              ) : null}
+              {nextCursor ? (
+                <Button asChild variant="outline" className="h-11 px-5">
+                  <Link href={href({ ...f, cursor: nextCursor })}>نمایش بیشتر</Link>
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {canCreate ? (
+        <Link
+          href="/inbox/new"
+          className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] end-4 z-20 inline-flex h-12 items-center gap-2 rounded-full bg-primary-600 ps-4 pe-5 text-sm font-semibold text-white shadow-lg transition-colors hover:bg-primary-700 md:hidden"
+        >
+          <Plus className="size-5" aria-hidden />
+          کار جدید
+        </Link>
+      ) : null}
+    </div>
+  );
+}
+
+function groupByBucket(rows: Row[], tab: InboxTab): [Bucket | "all", Row[]][] {
+  if (tab === "done") return rows.length ? [["all", rows]] : [];
+  const map = new Map<Bucket, Row[]>();
+  for (const r of rows) map.set(r.bucket, [...(map.get(r.bucket) ?? []), r]);
+  return BUCKET_ORDER.filter((b) => map.has(b)).map((b) => [b, map.get(b)!]);
+}
+
+function FilterChip({ href, active, label, removable }: { href: string; active: boolean; label: string; removable?: boolean }) {
+  return (
+    <Link
+      href={href}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex h-9 items-center gap-1 rounded-full border px-3 text-sm transition-colors",
+        active ? "border-primary-600 bg-primary-50 text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong",
+      )}
+    >
+      {label}
+      {removable ? <X className="size-3.5" aria-label="حذف فیلتر" /> : null}
+    </Link>
+  );
+}
+
+function Empty({ tab, filtered, canCreate, clearHref }: { tab: InboxTab; filtered: boolean; canCreate: boolean; clearHref: string }) {
+  if (filtered) {
+    return (
+      <EmptyState
+        title="با این فیلتر کاری پیدا نشد"
+        action={
+          <Button asChild variant="outline" className="h-11">
+            <Link href={clearHref}>حذف فیلتر</Link>
+          </Button>
+        }
+      />
+    );
+  }
+  if (tab === "todo") {
+    return (
+      <EmptyState
+        title="کاری در انتظار شما نیست"
+        description={canCreate ? "وقتی کاری به شما سپرده شود یا خودتان کاری بسازید، همین‌جا می‌آید." : "وقتی کاری به شما سپرده شود، همین‌جا می‌آید."}
+        action={
+          canCreate ? (
+            <Button asChild className="h-11 px-5">
+              <Link href="/inbox/new">کار جدید</Link>
+            </Button>
+          ) : undefined
+        }
+      />
+    );
+  }
+  if (tab === "doing") {
+    return (
+      <EmptyState
+        title="هیچ کاری در جریان نیست"
+        description="کاری را با «شروع کردم» به این فهرست بیاورید."
+        action={
+          <Button asChild variant="outline" className="h-11">
+            <Link href="/inbox">کارهای انجام‌نشده</Link>
+          </Button>
+        }
+      />
+    );
+  }
+  return <EmptyState title="هنوز کاری انجام‌شده علامت نخورده" description="کارهای تمام‌شده این‌جا نگه داشته می‌شوند." />;
+}

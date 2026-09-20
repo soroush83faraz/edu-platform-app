@@ -1,8 +1,9 @@
 // The single gate every Server Action / Route Handler passes through:
 //   session (requireContext) → must_change_password gate → Zod `.strict()` parse → can() → withTenant → handler.
-// Anything thrown is mapped by `toResult` to a Persian, stack-free `Result`; Next's redirect() errors are
-// re-thrown untouched (redirect works by throwing — a try/catch that swallows them breaks navigation).
-import { isRedirectError } from "next/dist/client/components/redirect-error";
+// Anything thrown is mapped by `toResult` to a Persian, stack-free `Result`; Next's own control-flow errors
+// (redirect(), notFound(), "dynamic server usage" during prerender) are re-thrown untouched via unstable_rethrow —
+// a try/catch that swallows them breaks navigation or logs a bogus INTERNAL at build time.
+import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 import { withTenant, type Tx } from "@/db/client";
 import { getRequestContext, requireContext, type Ctx } from "@/lib/ctx";
@@ -68,7 +69,7 @@ function pgCode(err: unknown, depth = 0): string | undefined {
 
 /** Error → Result. Never leaks a stack or an SQL message; INTERNAL is logged with the request id. */
 export function toResult(err: unknown, requestId: string): Result<never> {
-  if (isRedirectError(err)) throw err;
+  unstable_rethrow(err);
   if (AppError.is(err)) {
     const details = err.details as { fieldErrors?: FieldErrors } | undefined;
     return fail(err.code, err.message, details?.fieldErrors);
