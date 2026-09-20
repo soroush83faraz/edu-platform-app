@@ -88,7 +88,11 @@ export const userSession = iam.table(
   (t) => [index("user_session_account_active_idx").on(t.userAccountId).where(sql`${t.revokedAt} IS NULL`)],
 );
 
-/** GLOBAL: rate limiting / lockout evidence. */
+/**
+ * GLOBAL: rate limiting / lockout evidence AND the human-readable login audit (step 2 added `outcome` +
+ * `user_agent` instead of a separate audit.login_event table — see docs/decisions.md). `succeeded` stays the
+ * throttling column; `outcome` explains a failure (NULL only on rows written before step 2).
+ */
 export const loginAttempt = iam.table(
   "login_attempt",
   {
@@ -96,9 +100,15 @@ export const loginAttempt = iam.table(
     identifier: text("identifier").notNull(),
     ip: inet("ip"),
     succeeded: boolean("succeeded").notNull(),
+    outcome: text("outcome"),
+    userAgent: text("user_agent"),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("login_attempt_identifier_at_idx").on(t.identifier, t.at), index("login_attempt_ip_at_idx").on(t.ip, t.at)],
+  (t) => [
+    index("login_attempt_identifier_at_idx").on(t.identifier, t.at),
+    index("login_attempt_ip_at_idx").on(t.ip, t.at),
+    check("login_attempt_outcome_chk", sql`${t.outcome} IN ('success', 'bad_password', 'locked', 'unknown', 'disabled')`),
+  ],
 );
 
 export const person = iam.table(

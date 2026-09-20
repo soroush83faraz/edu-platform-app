@@ -200,7 +200,11 @@ export const classGroup = tenancy.table(
     gradeLevelId: uuid("grade_level_id").notNull(),
     name: text("name").notNull(),
     capacity: integer("capacity"),
-    /** FK to iam.staff_profile is added in step 2 (avoids the tenancy <-> iam cycle today). */
+    /**
+     * Composite FK `class_group_homeroom_staff_fk (organization_id, homeroom_staff_id) → iam.staff_profile
+     * (organization_id, id)` lives in custom migration 0011, not here: iam.ts imports this file, so declaring it in
+     * Drizzle would create a module cycle. Do NOT add it here later (drizzle-kit would emit a duplicate constraint).
+     */
     homeroomStaffId: uuid("homeroom_staff_id"),
     status: text("status").notNull().default("active"),
     ...timestamps(),
