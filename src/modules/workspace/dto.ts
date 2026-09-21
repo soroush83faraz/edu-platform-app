@@ -3,7 +3,8 @@
 import { z } from "zod";
 
 export const PRIORITIES = ["low", "normal", "high", "urgent"] as const;
-export const INBOX_TABS = ["todo", "doing", "done", "all"] as const;
+/** UI tabs. «در جریان» is folded into `todo` (owner decision): an item whose effective category is `doing` is still not done. */
+export const INBOX_TABS = ["todo", "done", "all"] as const;
 export const BUCKETS = ["overdue", "today", "week", "later", "none"] as const;
 
 export type InboxTab = (typeof INBOX_TABS)[number];

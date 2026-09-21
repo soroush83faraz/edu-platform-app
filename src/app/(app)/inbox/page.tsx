@@ -1,4 +1,4 @@
-import { AlarmClock, CalendarDays, CalendarOff, CalendarRange, CircleCheck, ListTodo, type LucideIcon, Play, Plus, Sun, X } from "lucide-react";
+import { AlarmClock, CalendarDays, CalendarOff, CalendarRange, CircleCheck, ListTodo, type LucideIcon, Plus, Sun, X } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -15,9 +15,9 @@ import { InboxRow } from "@/modules/workspace/ui/InboxRow";
 
 export const metadata: Metadata = { title: "پنل من | سامانهٴ مدرسه" };
 
-const TAB_LABELS: Record<InboxTab, string> = { todo: "انجام‌نشده", doing: "در جریان", done: "انجام‌شده", all: "همه" };
-const TAB_ICONS: Record<Exclude<InboxTab, "all">, LucideIcon> = { todo: ListTodo, doing: Play, done: CircleCheck };
-const VISIBLE_TABS: Exclude<InboxTab, "all">[] = ["todo", "doing", "done"];
+const TAB_LABELS: Record<InboxTab, string> = { todo: "انجام‌نشده", done: "انجام‌شده", all: "همه" };
+const TAB_ICONS: Record<Exclude<InboxTab, "all">, LucideIcon> = { todo: ListTodo, done: CircleCheck };
+const VISIBLE_TABS: Exclude<InboxTab, "all">[] = ["todo", "done"];
 const BUCKET_ORDER: Bucket[] = ["overdue", "today", "week", "later", "none"];
 const BUCKET_ICONS: Record<Bucket, LucideIcon> = { overdue: AlarmClock, today: Sun, week: CalendarDays, later: CalendarRange, none: CalendarOff };
 
@@ -81,7 +81,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       </div>
 
       <nav aria-label="وضعیت کارها" className="px-4">
-        <ul className="grid grid-cols-3 gap-1 rounded-2xl bg-neutral-200/60 p-1">
+        <ul className="grid grid-cols-2 gap-1 rounded-2xl bg-neutral-200/60 p-1">
           {VISIBLE_TABS.map((tab) => {
             const current = f.tab === tab;
             const Icon = TAB_ICONS[tab];
@@ -208,20 +208,6 @@ function Empty({ tab, filtered, canCreate, clearHref }: { tab: InboxTab; filtere
               <Link href="/inbox/new">کار جدید</Link>
             </Button>
           ) : undefined
-        }
-      />
-    );
-  }
-  if (tab === "doing") {
-    return (
-      <EmptyState
-        illustration={<EmptyClay size={96} />}
-        title="هیچ کاری در جریان نیست"
-        description="کاری را با «شروع کردم» به این فهرست بیاورید."
-        action={
-          <Button asChild variant="outline" className="h-11">
-            <Link href="/inbox">کارهای انجام‌نشده</Link>
-          </Button>
         }
       />
     );

@@ -227,9 +227,9 @@ export function decodeInboxCursor(cursor: string | null | undefined): { dueAt: D
   return Number.isFinite(t) ? { dueAt: new Date(t), id } : null;
 }
 
+// «انجام‌نشده» = everything still open for me (todo + doing); «انجام‌شده» = done + cancelled.
 const TAB_CATEGORIES: Record<InboxTab, StatusCategory[] | null> = {
-  todo: ["todo"],
-  doing: ["doing"],
+  todo: ["todo", "doing"],
   done: ["done", "cancelled"],
   all: null,
 };
@@ -383,19 +383,17 @@ export async function inboxCounts(tx: Tx, personId: string, bounds: DayBounds = 
 
 export interface InboxTabCounts {
   todo: number;
-  doing: number;
   done: number;
 }
 
 /**
  * Rows per کارتابل tab for the segmented control — the same effective category as `listInbox` (own assignee state
- * wins), so the numbers match the lists. `done` includes cancelled, like the tab.
+ * wins), so the numbers match the lists. `todo` includes `doing`, `done` includes cancelled — like the two tabs.
  */
 export async function inboxTabCounts(tx: Tx, personId: string): Promise<InboxTabCounts> {
-  const res = await tx.execute<{ todo: number; doing: number; done: number }>(sql`
+  const res = await tx.execute<{ todo: number; done: number }>(sql`
     select
-      (count(*) filter (where eff.category = 'todo'))::int as todo,
-      (count(*) filter (where eff.category = 'doing'))::int as doing,
+      (count(*) filter (where eff.category in ('todo', 'doing')))::int as todo,
       (count(*) filter (where eff.category in ('done', 'cancelled')))::int as done
     from ${inboxEntry} ie
     join ${workItem} wi on wi.id = ie.work_item_id
@@ -411,7 +409,7 @@ export async function inboxTabCounts(tx: Tx, personId: string): Promise<InboxTab
     where ie.person_id = ${personId}::uuid and ie.state <> 'archived' and wi.archived_at is null
   `);
   const r = res.rows[0];
-  return { todo: r?.todo ?? 0, doing: r?.doing ?? 0, done: r?.done ?? 0 };
+  return { todo: r?.todo ?? 0, done: r?.done ?? 0 };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

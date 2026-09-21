@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Ban, Check, Ellipsis, Pin, PinOff, Play, RotateCcw } from "lucide-react";
+import { Archive, Ban, Check, Ellipsis, Pin, PinOff, RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -44,18 +44,12 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
   const isAssignee = myAssigneeState !== null;
   const buttons: React.ReactNode[] = [];
 
+  // «شروع کردم» (in_progress) is hidden with the «در جریان» tab (owner decision); the status machine and the
+  // `changeStatus` transition stay intact — only «انجام شد» is offered to an assignee.
   if (canUpdate && isAssignee && !closed) {
-    if (myAssigneeState === "pending") {
-      buttons.push(
-        <Button key="start" variant="outline" className="h-12 w-full rounded-xl px-4 text-base" disabled={pending} onClick={() => run("شروع شد", () => changeStatusAction({ workItemId, toStatusCode: "in_progress" }))}>
-          <Play aria-hidden />
-          شروع کردم
-        </Button>,
-      );
-    }
     if (myAssigneeState !== "done") {
       buttons.push(
-        <Button key="done" className="h-12 w-full rounded-xl px-4 text-base" disabled={pending} onClick={() => run("انجام شد", () => changeStatusAction({ workItemId, toStatusCode: "done" }))}>
+        <Button key="done" size="lg" className="w-full" disabled={pending} onClick={() => run("انجام شد", () => changeStatusAction({ workItemId, toStatusCode: "done" }))}>
           <Check aria-hidden />
           انجام شد
         </Button>,
