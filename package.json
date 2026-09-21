@@ -26,6 +26,7 @@
     "db:studio": "drizzle-kit studio",
     "seed": "tsx scripts/seed.ts --catalog",
     "seed:demo": "tsx scripts/seed.ts --catalog --demo",
+    "seed:pilot": "tsx scripts/seed-pilot.ts",
     "smoke:prod": "tsx scripts/smoke-prod.ts",
     "sessions:revoke": "tsx scripts/revoke-sessions.ts"
   },
