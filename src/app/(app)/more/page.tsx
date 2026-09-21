@@ -4,8 +4,9 @@ import Link from "next/link";
 import { ClayIcon } from "@/components/ClayIcon";
 import { LogoutButton } from "@/components/shell/LogoutButton";
 import { requireContext } from "@/lib/ctx";
-import { formatNumberFa } from "@/lib/format";
+import { formatLoginIdentifierFa, formatNumberFa } from "@/lib/format";
 import { UPCOMING_MODULES } from "@/lib/modules-registry";
+import { myLoginIdentifierQuery } from "@/lib/profile-queries";
 import { logoutAction, logoutAllAction } from "@/modules/iam/actions";
 import { canAtAnyScope } from "@/modules/iam/can";
 
@@ -17,9 +18,10 @@ const ROLE_NAMES: Record<string, string> = {
   vice_principal: "معاون",
   teacher: "معلم",
   student: "دانش‌آموز",
-  guardian_full: "ولی",
   principal: "مدیر",
 };
+/** Phase-2 roles nobody holds yet; never shown as a name. */
+const HIDDEN_ROLES = new Set(["guardian_full"]);
 
 /** «به‌زودی: تکالیف، دفتر کلاسی» — the next phase's first two modules as the roadmap link's hint (fits a 390 px row). */
 const UPCOMING_HINT = `به‌زودی: ${UPCOMING_MODULES.slice(0, 2)
@@ -28,7 +30,9 @@ const UPCOMING_HINT = `به‌زودی: ${UPCOMING_MODULES.slice(0, 2)
 
 export default async function MorePage() {
   const ctx = await requireContext();
-  const roles = [...new Set(ctx.assignments.map((a) => ROLE_NAMES[a.roleCode] ?? a.roleCode))];
+  const roles = [...new Set(ctx.assignments.filter((a) => !HIDDEN_ROLES.has(a.roleCode)).map((a) => ROLE_NAMES[a.roleCode] ?? a.roleCode))];
+  const login = await myLoginIdentifierQuery();
+  const loginIdentifier = login.ok ? login.data : null;
   const teaching = ctx.assignments.filter((a) => a.roleCode === "teacher").length;
   const isAdmin = canAtAnyScope(ctx.assignments, "iam.admin.access");
 
@@ -50,6 +54,14 @@ export default async function MorePage() {
             {ctx.orgName}
             {ctx.schoolName ? ` · ${ctx.schoolName}` : ""}
           </p>
+          {loginIdentifier ? (
+            <p className="text-sm text-text-muted">
+              شناسهٴ ورود:{" "}
+              <bdi dir="ltr" className="tabular text-text">
+                {formatLoginIdentifierFa(loginIdentifier)}
+              </bdi>
+            </p>
+          ) : null}
         </div>
       </section>
 
@@ -65,8 +77,8 @@ export default async function MorePage() {
       <nav aria-label="حساب">
         <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
           <MoreLink href="/change-password" icon={LockKeyhole} label="تغییر رمز" />
-          <MoreLink href="/help" icon={LifeBuoy} label="راهنما" hint="به‌زودی" />
-          <MoreLink href="/privacy" icon={ShieldCheck} label="حریم خصوصی" hint="به‌زودی" />
+          <MoreLink href="/help" icon={LifeBuoy} label="راهنما" hint="ورود، پنل من، مدیریت" />
+          <MoreLink href="/privacy" icon={ShieldCheck} label="حریم خصوصی" hint="چه داده‌ای، چرا، کجا" />
           <MoreLink href="/roadmap" icon={Map} label="نقشهٴ راه" hint={UPCOMING_HINT} />
         </ul>
       </nav>
