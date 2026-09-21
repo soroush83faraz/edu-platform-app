@@ -1,7 +1,8 @@
-import { Check, Printer } from "lucide-react";
+import { Printer } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { cn } from "cn";
+import { IconChip } from "@/components/IconChip";
 import { RocketClay } from "@/components/illustrations";
 import { PrintButton } from "@/components/admin/PrintButton";
 import { MODULES, PHASES, type ModuleEntry } from "@/lib/modules-registry";
@@ -39,10 +40,8 @@ export default function RoadmapPage() {
               <p className="px-4 pt-3 text-sm text-text-muted">{info.summary}</p>
               <ul className="flex flex-col divide-y divide-line/70 px-4 pt-2">
                 {items.map((m) => (
-                  <li key={m.code} className="flex items-start gap-3 py-3">
-                    <span className={cn("mt-1 grid size-5 shrink-0 place-items-center rounded-full", live ? "bg-success-soft text-success" : "bg-info-soft text-primary-700")} aria-hidden>
-                      {live ? <Check className="size-3.5" /> : <span className="size-1.5 rounded-full bg-current" />}
-                    </span>
+                  <li key={m.code} id={m.code} className="flex scroll-mt-24 items-start gap-3 py-3 target:-mx-2 target:rounded-xl target:bg-info-soft/60 target:px-2">
+                    <IconChip icon={m.icon} tone={live ? "success" : "primary"} size="sm" className="mt-0.5" />
                     <div className="flex min-w-0 flex-1 flex-col">
                       <p className="text-sm font-medium text-text">
                         {live ? <Link href={m.href} className="hover:underline">{m.labelFa}</Link> : m.labelFa}

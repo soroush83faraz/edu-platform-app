@@ -89,7 +89,9 @@
     --shadow-1: 0 1px 2px rgb(7 42 200 / 0.06), 0 8px 24px rgb(7 42 200 / 0.08);
     --shadow-hero: 0 12px 32px rgb(7 42 200 / 0.28);
     --shadow-fab: 0 6px 18px rgb(255 198 0 / 0.45);
-    /* The hero gradient — the only gradient in the product. Ends at sky-strong, not sky: white 12px text must stay ≥ 4.5:1 on every pixel. */
+    /* The icon chip: a 1 px white inset highlight (the "clay" top light) plus one offset, blurred shadow tinted by the chip's ink. */
+    --shadow-chip: inset 0 1px 0 rgb(255 255 255 / 0.9), 0 1px 2px rgb(7 42 200 / 0.05), 0 5px 12px var(--chip-glow, rgb(7 42 200 / 0.12));
+    /* The hero gradient — one of the product's two gradients (the other is the icon chip's top light, below). Ends at sky-strong, not sky: white 12px text must stay ≥ 4.5:1 on every pixel. */
     --background-image-hero: linear-gradient(135deg, #072AC8 0%, #0B6FD1 100%);
 
     /* Motion: one ease-out for everything that enters or reacts, ease-in-out for things that move between two
@@ -372,6 +374,24 @@
     }
   }
 }
+/* The Home tile grid: 30 ms steps, capped at 300 ms from the eleventh tile so a long grid never waits. */
+@utility reveal-grid {
+  @media (prefers-reduced-motion: no-preference) {
+    & > * {
+      animation: rise-in var(--duration-slow) var(--ease-out) both;
+    }
+    & > :nth-child(2) { animation-delay: 30ms; }
+    & > :nth-child(3) { animation-delay: 60ms; }
+    & > :nth-child(4) { animation-delay: 90ms; }
+    & > :nth-child(5) { animation-delay: 120ms; }
+    & > :nth-child(6) { animation-delay: 150ms; }
+    & > :nth-child(7) { animation-delay: 180ms; }
+    & > :nth-child(8) { animation-delay: 210ms; }
+    & > :nth-child(9) { animation-delay: 240ms; }
+    & > :nth-child(10) { animation-delay: 270ms; }
+    & > :nth-child(n + 11) { animation-delay: 300ms; }
+  }
+}
 /* Hero numbers: a small scale + opacity entrance after the hero itself has landed. No counting. */
 @utility reveal-pop {
   @media (prefers-reduced-motion: no-preference) {
@@ -412,6 +432,49 @@
 [data-slot="sheet-content"] {
   --tw-animation-duration: var(--duration-base);
   --tw-ease: var(--ease-out);
+}
+
+/* ---- Icon chip: the one icon material of the product (Home tiles, inbox rows, /more, /admin). A rounded square
+   with a top-light vertical gradient from the tone's soft surface to white — the only gradient besides `bg-hero`,
+   parametrised by `--chip-from` so every tone is the same material — and `shadow-chip`. Tones set the soft
+   surface, the icon ink and the glow; `muted` is the «به‌زودی» chip. ---- */
+@layer components {
+  .icon-chip {
+    --chip-from: var(--color-info-soft);
+    --chip-glow: rgb(7 42 200 / 0.12);
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    border-radius: 1rem;
+    color: var(--color-primary-600);
+    background: linear-gradient(180deg, var(--chip-from) 0%, var(--color-surface) 100%);
+    box-shadow: var(--shadow-chip);
+  }
+  .icon-chip[data-tone="sky"] {
+    --chip-from: var(--color-sky-soft);
+    --chip-glow: rgb(30 150 252 / 0.16);
+    color: var(--color-sky-strong);
+  }
+  .icon-chip[data-tone="warning"] {
+    --chip-from: var(--color-warning-soft);
+    --chip-glow: rgb(255 198 0 / 0.22);
+    color: var(--color-warning-text);
+  }
+  .icon-chip[data-tone="danger"] {
+    --chip-from: var(--color-danger-soft);
+    --chip-glow: rgb(192 57 43 / 0.16);
+    color: var(--color-danger);
+  }
+  .icon-chip[data-tone="success"] {
+    --chip-from: var(--color-success-soft);
+    --chip-glow: rgb(19 114 71 / 0.16);
+    color: var(--color-success);
+  }
+  .icon-chip[data-tone="muted"] {
+    --chip-from: var(--color-neutral-100);
+    --chip-glow: rgb(11 20 64 / 0.06);
+    color: var(--color-neutral-500);
+  }
 }
 
 /* Numbers in lists line up (Vazirmatn ships tnum). */

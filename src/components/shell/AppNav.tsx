@@ -4,8 +4,10 @@ import { Bell, BookOpen, Ellipsis, House, Inbox, Settings2 } from "lucide-react"
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "cn";
+import { CountBadge } from "@/components/CountBadge";
 import { formatNumberFa } from "@/lib/format";
-import { type InboxSummaryState, useInboxSummary } from "./useInboxSummary";
+import { useInboxSummaryContext } from "./InboxSummaryProvider";
+import type { InboxSummaryState } from "./useInboxSummary";
 
 interface Item {
   href: string;
@@ -16,18 +18,18 @@ interface Item {
 
 const ITEMS: Item[] = [
   { href: "/home", label: "خانه", icon: House },
-  { href: "/inbox", label: "کارتابل", icon: Inbox, badge: (s) => s.unread },
+  { href: "/inbox", label: "پنل من", icon: Inbox, badge: (s) => s.unread },
   { href: "/notifications", label: "اعلان‌ها", icon: Bell, badge: (s) => s.unreadNotifications },
   { href: "/more", label: "بیشتر", icon: Ellipsis },
 ];
 
 /**
- * The one navigation component: bottom bar on phones, start-side rail from `md:`. Holds the single summary
- * poller so both renderings share the same badge numbers.
+ * The one navigation component: bottom bar on phones, start-side rail from `md:`. Both renderings read the shell's
+ * single summary poller (`InboxSummaryProvider`), as do the Home strip and tile badges.
  */
-export function AppNav({ initial, schoolName, showAdmin = false }: { initial: InboxSummaryState; schoolName: string; showAdmin?: boolean }) {
+export function AppNav({ schoolName, showAdmin = false }: { schoolName: string; showAdmin?: boolean }) {
   const pathname = usePathname();
-  const summary = useInboxSummary(initial);
+  const summary = useInboxSummaryContext();
   const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
   // The bottom bar has ONE pill that slides between the four cells; off-tab routes (/admin, /change-password) hide it.
   const activeIndex = ITEMS.findIndex((item) => isCurrent(item.href));
@@ -71,18 +73,7 @@ export function AppNav({ initial, schoolName, showAdmin = false }: { initial: In
 
 function NavLink({ item, current, count, layout }: { item: Item; current: boolean; count: number; layout: "bottom" | "side" }) {
   const Icon = item.icon;
-  const badge =
-    count > 0 ? (
-      <span
-        className={cn(
-          "tabular inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-xs font-semibold leading-none text-primary-900",
-          layout === "bottom" && "absolute -top-1.5 -end-2.5 ring-2 ring-surface",
-        )}
-        aria-label={`${formatNumberFa(count)} مورد خوانده‌نشده`}
-      >
-        {formatNumberFa(count > 99 ? 99 : count)}
-      </span>
-    ) : null;
+  const badge = <CountBadge count={count} label={`${formatNumberFa(count)} مورد خوانده‌نشده`} floating={layout === "bottom"} />;
 
   if (layout === "bottom") {
     return (

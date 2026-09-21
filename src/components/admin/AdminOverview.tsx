@@ -1,22 +1,23 @@
-import { ChevronLeft } from "lucide-react";
+import { BookOpen, CalendarDays, ChevronLeft, GraduationCap, Layers, type LucideIcon, School, ShieldCheck, Users } from "lucide-react";
 import Link from "next/link";
-import { cn } from "cn";
+import { AdminCounters } from "@/components/admin/AdminCounters";
 import { AdminHeader } from "@/components/admin/AdminPage";
+import { IconChip } from "@/components/IconChip";
 import { formatNumberFa } from "@/lib/format";
-import type { AdminCounts, AdminOverviewData } from "@/lib/admin/overview";
+import type { AdminOverviewData } from "@/lib/admin/overview";
 
 /** /admin index: four counters that are also links, then every section with a one-line description. */
 export function AdminOverview({ data }: { data: AdminOverviewData }) {
   const c = data.counts;
-  const sections: Array<{ href: string; title: string; hint: string; count?: number }> = [
-    { href: "/admin/schools", title: "مدرسه‌ها و شعبه‌ها", hint: "نام، کد، جنسیت", count: c.schools },
-    { href: "/admin/years", title: "سال‌های تحصیلی و نوبت‌ها", hint: "سال جاری هر مدرسه و ترم‌ها", count: c.years },
-    { href: "/admin/grades", title: "مقطع‌ها و پایه‌ها", hint: "کاتالوگ سازمان", count: c.grades },
-    { href: "/admin/subjects", title: "درس‌ها", hint: "کاتالوگ سازمان", count: c.subjects },
-    { href: "/admin/classes", title: "کلاس‌ها", hint: "دانش‌آموزان کلاس، ارائهٴ درس‌ها، چاپ اعتبارنامه", count: c.classes },
-    { href: "/admin/students", title: "دانش‌آموزان", hint: "ثبت، حساب کاربری، انتقال کلاس", count: c.students },
-    { href: "/admin/staff", title: "کارکنان", hint: "دبیران و کادر؛ نقش مدیر/معاون", count: c.staff },
-    { href: "/admin/roles", title: "نقش‌ها", hint: "چه کسی مدیر یا معاون کدام مدرسه است" },
+  const sections: Array<{ href: string; icon: LucideIcon; title: string; hint: string; count?: number }> = [
+    { href: "/admin/schools", icon: School, title: "مدرسه‌ها و شعبه‌ها", hint: "نام، کد، جنسیت", count: c.schools },
+    { href: "/admin/years", icon: CalendarDays, title: "سال‌های تحصیلی و نوبت‌ها", hint: "سال جاری هر مدرسه و ترم‌ها", count: c.years },
+    { href: "/admin/grades", icon: Layers, title: "مقطع‌ها و پایه‌ها", hint: "کاتالوگ سازمان", count: c.grades },
+    { href: "/admin/subjects", icon: BookOpen, title: "درس‌ها", hint: "کاتالوگ سازمان", count: c.subjects },
+    { href: "/admin/classes", icon: Users, title: "کلاس‌ها", hint: "دانش‌آموزان کلاس، ارائهٴ درس‌ها، چاپ اعتبارنامه", count: c.classes },
+    { href: "/admin/students", icon: GraduationCap, title: "دانش‌آموزان", hint: "ثبت، حساب کاربری، انتقال کلاس", count: c.students },
+    { href: "/admin/staff", icon: Users, title: "کارکنان", hint: "دبیران و کادر؛ نقش مدیر/معاون", count: c.staff },
+    { href: "/admin/roles", icon: ShieldCheck, title: "نقش‌ها", hint: "چه کسی مدیر یا معاون کدام مدرسه است" },
   ];
   return (
     <div className="flex flex-col gap-5">
@@ -25,8 +26,9 @@ export function AdminOverview({ data }: { data: AdminOverviewData }) {
       <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
         {sections.map((s) => (
           <li key={s.href}>
-            <Link href={s.href} className="flex min-h-14 items-center justify-between gap-3 px-4 py-2 hover:bg-surface-sunken">
-              <span className="flex min-w-0 flex-col">
+            <Link href={s.href} className="pressable flex min-h-16 items-center gap-3 px-3 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
+              <IconChip icon={s.icon} />
+              <span className="flex min-w-0 flex-1 flex-col">
                 <span className="text-base text-text">{s.title}</span>
                 <span className="text-xs text-text-muted">{s.hint}</span>
               </span>
@@ -39,27 +41,5 @@ export function AdminOverview({ data }: { data: AdminOverviewData }) {
         ))}
       </ul>
     </div>
-  );
-}
-
-/** The four numbers an admin looks at every day. Reused on /home. */
-export function AdminCounters({ counts, compact = false }: { counts: AdminCounts; compact?: boolean }) {
-  const tiles: Array<{ href: string; label: string; value: number; warn?: boolean }> = [
-    { href: "/admin/students", label: "دانش‌آموزان", value: counts.students },
-    { href: "/admin/staff", label: "کارکنان", value: counts.staff },
-    { href: "/admin/classes", label: "کلاس‌ها", value: counts.classes },
-    { href: "/admin/students?pending=1", label: "حساب‌های فعال‌نشده", value: counts.accountsPending, warn: counts.accountsPending > 0 },
-  ];
-  return (
-    <ul className={cn("grid gap-2", compact ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2 md:grid-cols-4")}>
-      {tiles.map((t) => (
-        <li key={t.href}>
-          <Link href={t.href} className={cn("flex min-h-20 flex-col justify-between rounded-card border bg-surface p-3 transition-colors hover:bg-surface-sunken", t.warn ? "border-warning/50" : "border-line")}>
-            <span className={cn("tabular text-2xl font-bold leading-none", t.value === 0 ? "text-text-faint" : t.warn ? "text-warning-text" : "text-text")}>{formatNumberFa(t.value)}</span>
-            <span className="text-sm text-text-muted">{t.label}</span>
-          </Link>
-        </li>
-      ))}
-    </ul>
   );
 }

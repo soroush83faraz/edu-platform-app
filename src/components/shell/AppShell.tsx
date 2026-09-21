@@ -1,12 +1,14 @@
 import { BookOpen } from "lucide-react";
 import { AppNav } from "@/components/shell/AppNav";
+import { InboxSummaryProvider } from "@/components/shell/InboxSummaryProvider";
 import type { Ctx } from "@/lib/ctx";
 import { canAtAnyScope } from "@/modules/iam/can";
 import { inboxSummaryQuery } from "@/modules/workspace/queries";
 
 /**
- * The signed-in frame shared by the (app) and (admin) route groups: nav (bottom bar / start rail) with the
- * initial badge counts, the mobile header, and the content column. `wide` widens the column for admin tables.
+ * The signed-in frame shared by the (app) and (admin) route groups: the summary provider (server-rendered initial
+ * counts, one client poller), nav (bottom bar / start rail), the mobile header, and the content column. `wide`
+ * widens the column for admin tables.
  */
 export async function AppShell({ ctx, children, wide = false }: { ctx: Ctx; children: React.ReactNode; wide?: boolean }) {
   const summary = await inboxSummaryQuery();
@@ -15,6 +17,7 @@ export async function AppShell({ ctx, children, wide = false }: { ctx: Ctx; chil
   const showAdmin = canAtAnyScope(ctx.assignments, "iam.admin.access");
 
   return (
+    <InboxSummaryProvider initial={initial}>
     <div className="flex min-h-full flex-1 bg-surface-sunken">
       <a
         href="#main"
@@ -23,7 +26,7 @@ export async function AppShell({ ctx, children, wide = false }: { ctx: Ctx; chil
         پرش به محتوا
       </a>
       <h1 className="sr-only">{title}</h1>
-      <AppNav initial={initial} schoolName={title} showAdmin={showAdmin} />
+      <AppNav schoolName={title} showAdmin={showAdmin} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-14 items-center gap-3 bg-surface-sunken/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm md:hidden">
           <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-xl bg-hero text-white shadow-1">
@@ -36,5 +39,6 @@ export async function AppShell({ ctx, children, wide = false }: { ctx: Ctx; chil
         </main>
       </div>
     </div>
+    </InboxSummaryProvider>
   );
 }
