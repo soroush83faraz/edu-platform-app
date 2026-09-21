@@ -10,12 +10,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SelectNative } from "@/components/ui/select-native";
 import { adminResourceMutate } from "@/lib/admin/actions";
-import type { FormField, SelectOption } from "@/lib/admin/defineResource";
-import type { FieldErrors } from "@/lib/actions";
+import { newLabelFa, type FormField, type SelectOption } from "@/lib/admin/defineResource";
+import { flatten } from "@/lib/admin/form-errors";
 import { toAsciiDigits } from "@/lib/normalize";
 import { ResponsiveModal } from "./ResponsiveModal";
 
 export type FormValue = string | number | boolean | null;
+
+export { flatten };
 
 export interface ResourceFormProps {
   resource: string;
@@ -59,11 +61,11 @@ export function ResourceForm({ resource, labelFa, fields, options, mode, id, ini
         router.refresh();
         return;
       }
-      setErrors(flatten(r.fieldErrors, r.message));
+      setErrors(flatten(r.fieldErrors, r.message, visible.map((f) => f.name)));
     });
   };
 
-  const title = mode === "create" ? `${labelFa} جدید` : `ویرایش ${labelFa}`;
+  const title = mode === "create" ? newLabelFa(labelFa) : `ویرایش ${labelFa}`;
   return (
     <>
       {trigger === "icon" ? (
@@ -132,13 +134,6 @@ function serialize(field: FormField, value: FormValue): unknown {
     default:
       return value === null ? "" : String(value).trim();
   }
-}
-
-export function flatten(fieldErrors: FieldErrors | undefined, message: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(fieldErrors ?? {})) if (v[0]) out[k.split(".")[0]] = v[0];
-  if (Object.keys(out).length === 0) out.form = message;
-  return out;
 }
 
 export function Field({

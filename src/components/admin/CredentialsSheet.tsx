@@ -1,4 +1,5 @@
 import { decryptInitialPassword } from "@/lib/crypto";
+import { formatLoginIdentifierFa, toFaDigits } from "@/lib/format";
 import type { CredentialRow } from "@/lib/admin/people";
 import { MESSAGES } from "@/modules/iam/service";
 import { PrintButton } from "./PrintButton";
@@ -49,7 +50,7 @@ function Slip({ row, schoolName }: { row: CredentialRow; schoolName: string }) {
           <>
             {row.className ? " · " : ""}
             <bdi dir="ltr" className="tabular">
-              {row.studentNumber}
+              {toFaDigits(row.studentNumber)}
             </bdi>
           </>
         ) : null}
@@ -58,7 +59,7 @@ function Slip({ row, schoolName }: { row: CredentialRow; schoolName: string }) {
         <dt className="text-text-muted">شناسهٴ ورود</dt>
         <dd>
           <bdi dir="ltr" className="tabular font-semibold">
-            {row.loginIdentifier}
+            {formatLoginIdentifierFa(row.loginIdentifier)}
           </bdi>
         </dd>
         <dt className="text-text-muted">رمز اولیه</dt>

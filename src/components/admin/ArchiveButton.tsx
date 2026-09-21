@@ -24,7 +24,7 @@ export function ArchiveButton({ resource, id, labelFa, confirmFa }: { resource: 
     });
   return (
     <>
-      <Button type="button" variant="ghost" size="icon" aria-label={labelFa} onClick={() => setOpen(true)} className="text-text-muted md:size-9">
+      <Button type="button" variant="ghost" size="icon" aria-label={labelFa} onClick={() => setOpen(true)} className="size-11 text-text-muted md:size-9">
         <Archive className="size-4" aria-hidden />
       </Button>
       <ResponsiveModal open={open} onOpenChange={setOpen} title={labelFa} description={confirmFa}>

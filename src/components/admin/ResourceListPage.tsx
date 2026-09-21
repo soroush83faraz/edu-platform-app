@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { AdminHeader, Pagination, SearchForm } from "@/components/admin/AdminPage";
+import { AdminHeader, Pagination, SearchForm, lastPage } from "@/components/admin/AdminPage";
 import { ResourceForm } from "@/components/admin/ResourceForm";
 import { ResourceTable } from "@/components/admin/ResourceTable";
 import { Button } from "@/components/ui/button";
@@ -35,9 +35,11 @@ export async function ResourceListPage({ def, sp, parent, basePath, back }: { de
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (def.parentParam && !basePath) params.set(def.parentParam.name, parentId);
-    params.set("page", String(p));
-    return `${basePath ?? `/admin/${def.key}`}?${params.toString()}`;
+    if (p > 1) params.set("page", String(p));
+    const s = params.toString();
+    return `${basePath ?? `/admin/${def.key}`}${s ? `?${s}` : ""}`;
   };
+  if (page > lastPage(total, pageSize)) redirect(hrefFor(lastPage(total, pageSize)));
   return (
     <div className="flex flex-col gap-4">
       <AdminHeader

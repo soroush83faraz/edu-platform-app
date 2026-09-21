@@ -2,13 +2,13 @@ import { Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { AdminHeader, Pagination, SearchForm } from "@/components/admin/AdminPage";
+import { AdminHeader, Pagination, SearchForm, lastPage } from "@/components/admin/AdminPage";
 import { one, type SearchParams } from "@/components/admin/ResourceListPage";
 import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { requireContext } from "@/lib/ctx";
-import { formatNumberFa } from "@/lib/format";
+import { formatLoginIdentifierFa, formatNumberFa } from "@/lib/format";
 import { staffListQuery } from "@/lib/admin/people-queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 
@@ -26,6 +26,8 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
   }
   const { rows, total, pageSize } = result.data;
   const canWrite = canAtAnyScope(ctx.assignments, "iam.person.write");
+  const hrefFor = (p: number) => `/admin/staff?${new URLSearchParams({ ...(q ? { q } : {}), ...(p > 1 ? { page: String(p) } : {}) })}`;
+  if (page > lastPage(total, pageSize)) redirect(hrefFor(lastPage(total, pageSize)));
   return (
     <div className="flex flex-col gap-4">
       <AdminHeader
@@ -60,7 +62,7 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
                   <span className="flex flex-wrap items-center gap-x-2 text-xs text-text-muted">
                     {r.loginIdentifier ? (
                       <bdi dir="ltr" className="tabular">
-                        {r.loginIdentifier}
+                        {formatLoginIdentifierFa(r.loginIdentifier)}
                       </bdi>
                     ) : null}
                     {r.roles.map((x) => (
@@ -77,7 +79,7 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
           ))}
         </ul>
       )}
-      <Pagination page={page} pageSize={pageSize} total={total} href={(p) => `/admin/staff?${new URLSearchParams({ ...(q ? { q } : {}), page: String(p) })}`} />
+      <Pagination page={page} pageSize={pageSize} total={total} href={hrefFor} />
     </div>
   );
 }

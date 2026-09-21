@@ -41,6 +41,8 @@ import { defineResource, type AnyResourceDef, type ListOptions, type SelectOptio
 // ---------------------------------------------------------------------------------------------------------------
 
 const uuid = z.uuid("شناسه نامعتبر است.");
+/** A reference picked in a `<select>` that may be empty («انتخاب کنید…» → `""`/null → undefined); the handler names the missing field. */
+const optionalRef = z.preprocess((v) => (v === "" || v === null ? undefined : v), uuid.optional());
 const name = (label: string) => z.string().trim().min(1, `${label} را وارد کنید.`).max(120, `${label} حداکثر ۱۲۰ نویسه است.`);
 const code = z.string().trim().min(1, "کد را وارد کنید.").max(20, "کد حداکثر ۲۰ نویسه است.");
 const jalaliDate = (label: string) =>
@@ -56,8 +58,16 @@ const jalaliDate = (label: string) =>
       }
       return iso;
     });
-const sequence = z.number().int("ترتیب باید عدد صحیح باشد.").min(1, "ترتیب از ۱ شروع می‌شود.").max(99, "ترتیب حداکثر ۹۹ است.");
-const optionalInt = (min: number, max: number, label: string) => z.number().int(`${label} باید عدد صحیح باشد.`).min(min).max(max, `${label} حداکثر ${formatNumberFa(max)} است.`).nullable().optional();
+const sequence = z.number("ترتیب باید عدد باشد.").int("ترتیب باید عدد صحیح باشد.").min(1, "ترتیب از ۱ شروع می‌شود.").max(99, "ترتیب حداکثر ۹۹ است.");
+/** Optional integer field (`null` = empty). Every failure has its own Persian message — nothing falls through to Zod's default text. */
+const optionalInt = (min: number, max: number, label: string) =>
+  z
+    .number(`${label} باید عدد باشد.`)
+    .int(`${label} باید عدد صحیح باشد.`)
+    .min(min, `${label} دست‌کم ${formatNumberFa(min)} است.`)
+    .max(max, `${label} حداکثر ${formatNumberFa(max)} است.`)
+    .nullable()
+    .optional();
 
 /** `app.fa_norm(col) ILIKE %fa_norm(q)%` — the same normalization the person search uses. */
 function faLike(column: SQL | { name: string }, q: string): SQL | undefined {
@@ -187,7 +197,7 @@ interface BranchRow {
 
 const BranchInput = z
   .object({
-    schoolId: uuid.optional(),
+    schoolId: optionalRef,
     name: name("نام شعبه"),
     address: z.string().trim().max(300, "نشانی حداکثر ۳۰۰ نویسه است.").nullable().optional(),
     isDefault: z.boolean().default(false),
@@ -258,7 +268,7 @@ interface YearRow {
 
 const YearInput = z
   .object({
-    schoolId: uuid.optional(),
+    schoolId: optionalRef,
     name: name("نام سال تحصیلی"),
     startsOn: jalaliDate("تاریخ شروع"),
     endsOn: jalaliDate("تاریخ پایان"),
@@ -634,8 +644,8 @@ export interface ClassRow {
 
 const ClassInput = z
   .object({
-    branchId: uuid.optional(),
-    academicYearId: uuid.optional(),
+    branchId: optionalRef,
+    academicYearId: optionalRef,
     gradeLevelId: uuid,
     name: name("نام کلاس"),
     capacity: optionalInt(1, 200, "ظرفیت"),
@@ -676,7 +686,8 @@ export const classResource = defineResource<ClassRow, z.output<typeof ClassInput
   columns: [
     { key: "name", labelFa: "کلاس" },
     { key: "gradeName", labelFa: "پایه" },
-    { key: "schoolName", labelFa: "مدرسه", render: (r) => `${r.schoolName}${r.branchName === "مرکزی" ? "" : ` — ${r.branchName}`}`, secondary: true },
+    // Only the school: the branch is one per school in phase 1 («— کارگر» repeated on every row said nothing).
+    { key: "schoolName", labelFa: "مدرسه", secondary: true },
     { key: "yearName", labelFa: "سال", secondary: true },
     { key: "students", labelFa: "دانش‌آموز", render: (r) => formatNumberFa(r.students) },
     { key: "status", labelFa: "وضعیت", render: (r) => (r.status === "active" ? "فعال" : "بایگانی"), secondary: true },
@@ -779,16 +790,23 @@ export interface OfferingRow {
   teacherName: string | null;
 }
 
+/**
+ * `subjectId` / `termId` are `createOnly` form fields: the edit form never sends them (natural keys), so they are
+ * optional here and `create` demands them itself (a required-on-update key was the QA-round-1 blocker: the form
+ * dropped them, the strict schema failed on fields nobody could see, and «ذخیره» did nothing).
+ */
 const OfferingInput = z
   .object({
     classGroupId: uuid,
-    subjectId: uuid,
-    termId: uuid,
+    subjectId: optionalRef,
+    termId: optionalRef,
     mainTeacherStaffProfileId: uuid.nullable().optional(),
-    weeklyHours: z.number().min(0).max(40, "ساعت هفتگی حداکثر ۴۰ است.").nullable().optional(),
-    status: z.enum(["planned", "active", "closed"]).default("active"),
+    weeklyHours: z.number("ساعت در هفته باید عدد باشد.").min(0, "ساعت در هفته نمی‌تواند منفی باشد.").max(40, "ساعت هفتگی حداکثر ۴۰ است.").nullable().optional(),
+    status: z.enum(["planned", "active", "closed"], "وضعیت را انتخاب کنید."),
   })
   .strict();
+
+const OFFERING_FIELD_MESSAGES = { subjectId: "درس را انتخاب کنید.", termId: "نوبت را انتخاب کنید." } as const;
 
 const OFFERING_STATUS: Record<string, string> = { active: "فعال", planned: "برنامه‌ریزی‌شده", closed: "پایان‌یافته" };
 
@@ -855,6 +873,10 @@ export const offeringResource = defineResource<OfferingRow, z.output<typeof Offe
     assertSchoolInScope(scope, cg.schoolId);
     // Structure: a vice principal (teacher_assignment.write only) may not define offerings — FORBIDDEN for a class they can see.
     if (!(await can(tx, ctx, "tenancy.structure.write", { scopeType: "school", id: cg.schoolId }))) throw forbidden(RESOURCE_MESSAGES.offeringCreateForbidden);
+    const missing = (["subjectId", "termId"] as const).filter((k) => !input[k]);
+    if (missing.length > 0 || !input.subjectId || !input.termId) {
+      throw validation({ fieldErrors: Object.fromEntries(missing.map((k) => [k, [OFFERING_FIELD_MESSAGES[k]]])) }, OFFERING_FIELD_MESSAGES[missing[0] ?? "subjectId"]);
+    }
     // Unknown term and another school's term are both NOT_FOUND (no existence oracle); the service then checks the year.
     assertSchoolInScope(scope, await schoolIdOfTerm(tx, input.termId));
     // A school admin may only hand a class to staff anchored in / already teaching at their schools (scope widening).

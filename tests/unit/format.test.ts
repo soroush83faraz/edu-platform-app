@@ -71,3 +71,15 @@ describe("parseJalaliToInstant", () => {
     expect(parseJalaliToInstant("۱۴۰۵/۰۷/۰۵", "25:00")).toBeNull();
   });
 });
+
+describe("phones and identifiers", () => {
+  it("E.164 → national Persian digits; non-phones keep their text; CSV keeps ASCII with a leading 0", async () => {
+    const { formatPhoneFa, phoneToNational, formatLoginIdentifierFa } = await import("@/lib/format");
+    expect(formatPhoneFa("+989351001016")).toBe("۰۹۳۵۱۰۰۱۰۱۶");
+    expect(formatPhoneFa("09351001016")).toBe("۰۹۳۵۱۰۰۱۰۱۶");
+    expect(phoneToNational("+989351001016")).toBe("09351001016");
+    expect(phoneToNational("alk-14051001")).toBe("alk-14051001");
+    expect(formatLoginIdentifierFa("+989351001016")).toBe("۰۹۳۵۱۰۰۱۰۱۶");
+    expect(formatLoginIdentifierFa("alk-14051001")).toBe("alk-14051001");
+  });
+});

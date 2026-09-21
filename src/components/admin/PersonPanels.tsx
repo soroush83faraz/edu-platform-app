@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
 import { Chip } from "@/components/Chip";
-import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
+import { formatJalaliDateTime, formatLoginIdentifierFa, formatNumberFa } from "@/lib/format";
 import { assignRoleAction, createAccountAction, endTeachingAction, placeStudentAction, resetPasswordAction, revokeRoleAction, unlockAccountAction } from "@/lib/admin/people-actions";
 import type { PersonDetail } from "@/lib/admin/people";
 import { roleLabel } from "@/lib/admin/labels";
@@ -74,7 +74,7 @@ export function AccountCard({ detail, caps }: { detail: PersonDetail; caps: Caps
             <dt className="text-text-muted">شناسهٴ ورود</dt>
             <dd>
               <bdi dir="ltr" className="tabular font-medium text-text">
-                {acct.loginIdentifier}
+                {formatLoginIdentifierFa(acct.loginIdentifier)}
               </bdi>
             </dd>
             <dt className="text-text-muted">وضعیت</dt>

@@ -4,6 +4,7 @@ import { and, asc, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { Tx } from "@/lib/actions";
 import { notFound } from "@/lib/errors";
+import { toAsciiDigits } from "@/lib/normalize";
 import { classEnrollment, schoolEnrollment, teacherAssignment } from "@/modules/academic/schema";
 import type { Assignment } from "@/modules/iam/can";
 import { authIdentity, contactPoint, organizationMembership, person, role, roleAssignment, staffProfile, studentProfile, userAccount } from "@/modules/iam/schema";
@@ -75,7 +76,10 @@ export async function listStudents(tx: Tx, scope: AdminScope, opts: StudentListO
       .from(classEnrollment)
       .where(eq(classEnrollment.status, "active")),
   );
-  const nameOrNumber = opts.q.trim() ? sql`(${faLike(person.searchText, opts.q)} or ${studentProfile.studentNumber} ilike '%' || ${opts.q.trim()} || '%')` : undefined;
+  // Names go through fa_norm (letters, digits, diacritics); the student number is a digit string, so the query's
+  // Persian/Arabic digits are folded to ASCII before the ILIKE (QA: «۱۴۰۵۱۱۴۸» found nothing).
+  const qNumber = toAsciiDigits(opts.q.trim());
+  const nameOrNumber = opts.q.trim() ? sql`(${faLike(person.searchText, opts.q)} or ${studentProfile.studentNumber} ilike '%' || ${qNumber} || '%')` : undefined;
   const where = and(
     eq(person.status, "active"),
     eq(studentProfile.status, "active"),
@@ -138,7 +142,12 @@ export interface StaffListRow {
 export { roleLabel };
 
 export async function listStaff(tx: Tx, scope: AdminScope, opts: { q: string; page: number; pageSize: number }): Promise<{ rows: StaffListRow[]; total: number }> {
-  const where = and(eq(person.status, "active"), isNull(staffProfile.leftOn), personInScope(scope, "iam.person.id"), faLike(person.searchText, opts.q));
+  const qNumber = toAsciiDigits(opts.q.trim()).replace(/[\s\-().]/g, "");
+  const qPhone = /^(\+?98|0)?9\d{2,9}$/.test(qNumber) ? qNumber.replace(/^(\+?98|0)/, "") : null;
+  const nameOrNumber = opts.q.trim()
+    ? sql`(${faLike(person.searchText, opts.q)} or ${staffProfile.employeeNumber} ilike '%' || ${qNumber} || '%'${qPhone ? sql` or ${userAccount.loginIdentifier} like '%' || ${qPhone} || '%'` : sql``})`
+    : undefined;
+  const where = and(eq(person.status, "active"), isNull(staffProfile.leftOn), personInScope(scope, "iam.person.id"), nameOrNumber);
   const rows = await tx
     .select({
       personId: person.id,
@@ -160,7 +169,13 @@ export async function listStaff(tx: Tx, scope: AdminScope, opts: { q: string; pa
     .orderBy(asc(person.lastName), asc(person.firstName))
     .limit(opts.pageSize)
     .offset((Math.max(1, opts.page) - 1) * opts.pageSize);
-  const [{ n }] = await tx.select({ n: sql<number>`count(*)::int` }).from(person).innerJoin(staffProfile, eq(staffProfile.personId, person.id)).where(where);
+  const [{ n }] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(person)
+    .innerJoin(staffProfile, eq(staffProfile.personId, person.id))
+    .leftJoin(organizationMembership, eq(organizationMembership.personId, person.id))
+    .leftJoin(userAccount, eq(userAccount.id, organizationMembership.userAccountId))
+    .where(where);
   return {
     rows: rows.map((r) => ({
       ...r,

@@ -84,6 +84,7 @@ async function main(): Promise<void> {
   const { findAccountByIdentifier, findActiveMembership, listValidAssignments } = await import("../src/modules/iam/repo");
   const { can } = await import("../src/modules/iam/can");
   const { normalizePhoneIR } = await import("../src/lib/normalize");
+  const { phoneToNational } = await import("../src/lib/format");
   const { parseWorkbook, ImportFileError } = await import("../src/modules/integ/importers/parse");
   const { loadReference, validateImport } = await import("../src/modules/integ/importers/validate");
   const { commitImport, recordBatch, sha256Hex } = await import("../src/modules/integ/importers/commit");
@@ -179,7 +180,8 @@ async function main(): Promise<void> {
     fs.mkdirSync(dir, { recursive: true });
     const csvPath = path.join(dir, `credentials-${result.batchId}.csv`);
     const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
-    const lines = ["کلاس,نام,شناسهٴ ورود,رمز اولیه", ...result.credentials.map((c) => [c.className, c.name, c.loginIdentifier, c.initialPassword].map(esc).join(","))];
+    // Phones as `09…` (ASCII, leading zero) — what people type; generated usernames unchanged.
+    const lines = ["کلاس,نام,شناسهٴ ورود,رمز اولیه", ...result.credentials.map((c) => [c.className, c.name, phoneToNational(c.loginIdentifier), c.initialPassword].map(esc).join(","))];
     fs.writeFileSync(csvPath, `﻿${lines.join("\r\n")}\r\n`, "utf8");
     console.log(`  credentials: ${result.credentials.length} account(s) → ${csvPath}  (plaintext; hand out and delete)`);
   }

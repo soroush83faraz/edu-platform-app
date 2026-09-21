@@ -8,7 +8,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <Direction.Provider dir="rtl">
       {children}
-      <Toaster position="bottom-center" dir="rtl" />
+      <Toaster position="bottom-center" dir="rtl" containerAriaLabel="اعلان‌های لحظه‌ای" />
     </Direction.Provider>
   );
 }

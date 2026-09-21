@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { formatPhoneFa } from "@/lib/format";
 import { createStudentAction, updateStudentAction } from "@/lib/admin/people-actions";
 import type { PersonDetail } from "@/lib/admin/people";
 import { CredentialsDialog, type Credentials } from "./CredentialsDialog";
@@ -48,8 +49,8 @@ export function StudentForm({ classes, schools, detail }: Props) {
     gender: detail?.gender ?? "",
     studentNumber: detail?.student?.studentNumber ?? "",
     externalRef: detail?.externalRef ?? "",
-    contactPhone: detail?.contactPhone ?? "",
-    guardianPhone: detail?.guardianPhone ?? "",
+    contactPhone: detail?.contactPhone ? formatPhoneFa(detail.contactPhone) : "",
+    guardianPhone: detail?.guardianPhone ? formatPhoneFa(detail.guardianPhone) : "",
     classGroupId: "",
     schoolId: schools.length === 1 ? schools[0].value : "",
     createAccount: true,
@@ -69,6 +70,9 @@ export function StudentForm({ classes, schools, detail }: Props) {
       : schoolCode
         ? `خالی = نام‌کاربری تولیدی «${schoolCode.toLowerCase()}-${String(v.studentNumber ?? "").trim() || "شماره"}».`
         : "بدون موبایل، نام‌کاربری از کد مدرسه و شمارهٴ دانش‌آموزی ساخته می‌شود.";
+
+  // Fields on screen right now; an error on anything else is folded into the form-level line by `flatten`.
+  const rendered = ["firstName", "lastName", "studentNumber", "gender", "contactPhone", "guardianPhone", "externalRef", ...(detail ? [] : ["classGroupId", "createAccount", "identifier", ...(schoolFieldShown ? ["schoolId"] : [])])];
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,7 +94,7 @@ export function StudentForm({ classes, schools, detail }: Props) {
           toast.success("تغییرات ذخیره شد.");
           router.refresh();
           setErrors({});
-        } else setErrors(flatten(r.fieldErrors, r.message));
+        } else setErrors(flatten(r.fieldErrors, r.message, rendered));
         return;
       }
       const r = await createStudentAction({
@@ -107,7 +111,7 @@ export function StudentForm({ classes, schools, detail }: Props) {
         identifier: opt("identifier"),
       });
       if (!r.ok) {
-        setErrors(flatten(r.fieldErrors, r.message));
+        setErrors(flatten(r.fieldErrors, r.message, rendered));
         return;
       }
       setErrors({});
@@ -150,8 +154,7 @@ export function StudentForm({ classes, schools, detail }: Props) {
         </>
       ) : null}
 
-      {/* A school error with no visible school field (one school, or a class chosen) surfaces at the form level. */}
-      <FieldError id={`${ids}-form`} text={errors.form ?? (!schoolFieldShown ? errors.schoolId : undefined)} />
+      <FieldError id={`${ids}-form`} text={errors.form} />
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button type="button" variant="outline" onClick={() => router.back()}>
           انصراف

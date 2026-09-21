@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { cn } from "cn";
 import { EmptyState } from "@/components/EmptyState";
-import type { AnyResourceDef, SelectOption } from "@/lib/admin/defineResource";
+import { indefiniteFa, newLabelFa, type AnyResourceDef, type SelectOption } from "@/lib/admin/defineResource";
 import { ArchiveButton } from "./ArchiveButton";
 import { ResourceForm, type FormValue } from "./ResourceForm";
 
@@ -24,7 +24,7 @@ export function ResourceTable({
   fixed?: Record<string, string>;
 }) {
   if (rows.length === 0) {
-    return <EmptyState title={`هنوز ${def.labelFa}ی ثبت نشده`} description={canWrite ? `با «${def.labelFa} جدید» شروع کنید.` : undefined} className="rounded-card bg-surface shadow-1 py-10" />;
+    return <EmptyState title={`هنوز ${indefiniteFa(def.labelFa)} ثبت نشده`} description={canWrite ? `با «${newLabelFa(def.labelFa)}» شروع کنید.` : undefined} className="rounded-card bg-surface shadow-1 py-10" />;
   }
   return (
     <div className="overflow-x-auto rounded-card bg-surface shadow-1">

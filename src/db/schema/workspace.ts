@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { id, timestamps } from "./_common";
@@ -86,10 +87,15 @@ export const workItem = workspace.table(
     visibility: text("visibility").notNull().default("assignees"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    /** Client-generated UUID v7 of the «کار جدید» form; a resubmit within 10 minutes returns the existing item. */
+    idempotencyKey: uuid("idempotency_key"),
     ...timestamps(),
   },
   (t) => [
     unique("work_item_org_id_uq").on(t.organizationId, t.id),
+    uniqueIndex("work_item_idempotency_uq")
+      .on(t.organizationId, t.createdByPersonId, t.idempotencyKey)
+      .where(sql`${t.idempotencyKey} IS NOT NULL`),
     index("work_item_org_due_open_idx")
       .on(t.organizationId, t.dueAt)
       .where(sql`${t.completedAt} IS NULL AND ${t.archivedAt} IS NULL`),

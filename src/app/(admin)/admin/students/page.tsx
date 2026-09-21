@@ -3,13 +3,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { cn } from "cn";
-import { AdminHeader, Pagination, SearchForm } from "@/components/admin/AdminPage";
+import { AdminHeader, Pagination, SearchForm, lastPage } from "@/components/admin/AdminPage";
 import { one, type SearchParams } from "@/components/admin/ResourceListPage";
 import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { requireContext } from "@/lib/ctx";
-import { formatNumberFa } from "@/lib/format";
+import { formatNumberFa, toFaDigits } from "@/lib/format";
 import { studentsListQuery } from "@/lib/admin/people-queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 
@@ -36,6 +36,8 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
     const s = p.toString();
     return `/admin/students${s ? `?${s}` : ""}`;
   };
+  // `?page=99` beyond the end: clamp to the last page instead of an empty list.
+  if (page > lastPage(total, pageSize)) redirect(href({ page: lastPage(total, pageSize) > 1 ? String(lastPage(total, pageSize)) : undefined }));
 
   return (
     <div className="flex flex-col gap-4">
@@ -75,7 +77,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
                   </span>
                   <span className="flex flex-wrap items-center gap-x-2 text-xs text-text-muted">
                     <bdi dir="ltr" className="tabular">
-                      {r.studentNumber}
+                      {toFaDigits(r.studentNumber)}
                     </bdi>
                     {r.className ? <bdi>{r.className}</bdi> : <span className="text-warning-text">بدون کلاس</span>}
                     {r.schoolName ? <span className="hidden sm:inline">{r.schoolName}</span> : null}
@@ -96,7 +98,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
 
 function FilterChip({ href, active, label }: { href: string; active: boolean; label: string }) {
   return (
-    <Link href={href} aria-pressed={active} className={cn("inline-flex h-9 items-center rounded-full border px-3 transition-base", active ? "border-primary-600 bg-primary-50 font-semibold text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong")}>
+    <Link href={href} aria-pressed={active} className={cn("inline-flex min-h-11 items-center rounded-full border px-3 transition-base md:min-h-9", active ? "border-primary-600 bg-primary-50 font-semibold text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong")}>
       {label}
     </Link>
   );

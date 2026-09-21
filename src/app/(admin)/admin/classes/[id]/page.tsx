@@ -7,7 +7,7 @@ import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { requireContext } from "@/lib/ctx";
-import { formatNumberFa } from "@/lib/format";
+import { formatLoginIdentifierFa, formatNumberFa, toFaDigits } from "@/lib/format";
 import { classDetailQuery } from "@/lib/admin/class-queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 
@@ -111,13 +111,13 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
                     </span>
                     <span className="text-xs text-text-muted">
                       <bdi dir="ltr" className="tabular">
-                        {r.studentNumber}
+                        {toFaDigits(r.studentNumber)}
                       </bdi>
                       {r.loginIdentifier ? (
                         <>
                           {" · "}
                           <bdi dir="ltr" className="tabular">
-                            {r.loginIdentifier}
+                            {formatLoginIdentifierFa(r.loginIdentifier)}
                           </bdi>
                         </>
                       ) : null}

@@ -110,10 +110,14 @@ export function defineResource<TRow extends { id: string }, TInput>(def: Resourc
 
 export type ResourceOp = "create" | "update" | "archive";
 
+/** «مدرسهٴ جدید» / «کلاس جدید»: the written ezafe (ٴ) only after a final heh. */
+export const newLabelFa = (labelFa: string): string => `${labelFa}${labelFa.endsWith("ه") ? "ٴ" : ""} جدید`;
+/** «مدرسه‌ای» / «کلاسی»: the indefinite suffix. */
+export const indefiniteFa = (labelFa: string): string => `${labelFa}${labelFa.endsWith("ه") ? "‌ای" : "ی"}`;
+
 export const GATE_MESSAGES = {
   orgOnly: "این بخش را فقط مدیر سازمان می‌تواند ویرایش کند.",
-  /** «ساختن مدرسهٴ جدید…» — the written ezafe (ٴ) only after a final heh. */
-  createNeedsOrgScope: (labelFa: string) => `ساختن ${labelFa}${labelFa.endsWith("ه") ? "ٴ" : ""} جدید فقط با مدیر سازمان است.`,
+  createNeedsOrgScope: (labelFa: string) => `ساختن ${newLabelFa(labelFa)} فقط با مدیر سازمان است.`,
 } as const;
 
 /** `ok: false` = refuse with FORBIDDEN (the action throws it, the list page hides the button); `message` when there is one worth showing. */

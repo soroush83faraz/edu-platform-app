@@ -6,6 +6,7 @@ import { StaffForm } from "@/components/admin/StaffForm";
 import { StudentForm } from "@/components/admin/StudentForm";
 import { Chip } from "@/components/Chip";
 import { requireContext } from "@/lib/ctx";
+import { formatPhoneFa, toFaDigits } from "@/lib/format";
 import { personDetailQuery } from "@/lib/admin/people-queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 
@@ -45,7 +46,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
             {detail.student ? (
               <Chip tone="neutral">
                 <bdi dir="ltr" className="tabular">
-                  {detail.student.studentNumber}
+                  {toFaDigits(detail.student.studentNumber)}
                 </bdi>
               </Chip>
             ) : null}
@@ -74,7 +75,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
                   <>
                     <dt className="text-text-muted">موبایل</dt>
                     <dd>
-                      <bdi dir="ltr">{detail.contactPhone}</bdi>
+                      <bdi dir="ltr">{formatPhoneFa(detail.contactPhone)}</bdi>
                     </dd>
                   </>
                 ) : null}

@@ -16,6 +16,30 @@ export function toFaDigits(s: string): string {
   return s.replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]);
 }
 
+/**
+ * Stored E.164 `+989351001016` → the national form people read and type, in Persian digits: `۰۹۳۵۱۰۰۱۰۱۶`.
+ * Anything that is not an Iranian E.164 mobile comes back with its digits converted only. Render it inside
+ * `<bdi dir="ltr">` — it is a number, not prose.
+ */
+export function formatPhoneFa(e164: string): string {
+  const m = /^\+98(9\d{9})$/.exec(e164.trim());
+  return toFaDigits(m ? `0${m[1]}` : e164.trim());
+}
+
+/** `+98935…` → `0935…` (ASCII, leading zero) for CSV / plain-text exports; other identifiers unchanged. */
+export function phoneToNational(e164: string): string {
+  const m = /^\+98(9\d{9})$/.exec(e164.trim());
+  return m ? `0${m[1]}` : e164;
+}
+
+/**
+ * A login identifier as shown on slips and lists: a phone becomes `۰۹۳۵…` (Persian digits); a generated username
+ * such as `alk-14051001` is a Latin code and stays exactly as typed at login.
+ */
+export function formatLoginIdentifierFa(id: string): string {
+  return /^\+98/.test(id) ? formatPhoneFa(id) : id;
+}
+
 /** A Date whose LOCAL fields equal the current wall-clock time in Asia/Tehran (the server runs in UTC). */
 export function tehranNow(now = new Date()): Date {
   const parts = new Intl.DateTimeFormat("en-US", {

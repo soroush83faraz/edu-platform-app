@@ -68,6 +68,9 @@ export function StaffForm({ schools, detail, roleGrant }: { schools: SchoolOptio
     setErrors((p) => ({ ...p, roles: "" }));
   };
 
+  // Fields on screen right now; an error on anything else is folded into the form-level line by `flatten`.
+  const rendered = ["firstName", "lastName", "gender", "employeeNumber", "employmentType", "roles", ...(detail ? [] : ["phone"]), ...((detail && schools.length > 0) || (!detail && schools.length > 1) ? ["schoolId"] : [])];
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const s = (k: string) => String(v[k] ?? "").trim();
@@ -87,7 +90,7 @@ export function StaffForm({ schools, detail, roleGrant }: { schools: SchoolOptio
           toast.success("تغییرات ذخیره شد.");
           router.refresh();
           setErrors({});
-        } else setErrors(flatten(r.fieldErrors, r.message));
+        } else setErrors(flatten(r.fieldErrors, r.message, rendered));
         return;
       }
       const r = await createStaffAction({
@@ -101,7 +104,7 @@ export function StaffForm({ schools, detail, roleGrant }: { schools: SchoolOptio
         roles,
       });
       if (!r.ok) {
-        setErrors(flatten(r.fieldErrors, r.message));
+        setErrors(flatten(r.fieldErrors, r.message, rendered));
         return;
       }
       setErrors({});

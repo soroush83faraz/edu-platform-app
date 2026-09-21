@@ -17,7 +17,8 @@ export const rolesPageQuery = defineQuery({ permission: "iam.person.read", scope
       permissions: sql<number>`(select count(*)::int from ${rolePermission} rp where rp.role_id = ${role.id})`,
     })
     .from(role)
-    .where(and(isNull(role.organizationId), eq(role.isSystem, true)))
+    // `guardian_full` («ولی») is seeded for phase 2; no guardian logs in yet, so it is not listed.
+    .where(and(isNull(role.organizationId), eq(role.isSystem, true), sql`${role.code} <> 'guardian_full'`))
     .orderBy(asc(role.code));
   const assignments = await tx
     .select({

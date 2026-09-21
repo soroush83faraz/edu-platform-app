@@ -36,6 +36,11 @@ export function SearchForm({ q, hidden, placeholder = "جست‌وجو…" }: { 
   );
 }
 
+/** `?page=99` past the end → the last page that exists (1 when the list is empty). */
+export function lastPage(total: number, pageSize: number): number {
+  return Math.max(1, Math.ceil(total / pageSize));
+}
+
 /** «قبلی / بعدی» links with the count; hidden when everything fits on one page. */
 export function Pagination({ page, pageSize, total, href }: { page: number; pageSize: number; total: number; href: (page: number) => string }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));

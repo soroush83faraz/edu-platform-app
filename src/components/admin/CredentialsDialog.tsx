@@ -3,6 +3,7 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { formatLoginIdentifierFa, phoneToNational } from "@/lib/format";
 import { ResponsiveModal } from "./ResponsiveModal";
 
 export interface Credentials {
@@ -23,9 +24,10 @@ export function CredentialsDialog({ creds, onClose }: { creds: Credentials | nul
           <p className="text-base font-medium text-text">
             <bdi>{creds.name}</bdi>
           </p>
-          <CredentialLine label="شناسهٴ ورود" value={creds.loginIdentifier} />
+          {/* Shown in Persian digits (`۰۹۳۵…`), copied as the national ASCII form (`0935…`) — both log in. */}
+          <CredentialLine label="شناسهٴ ورود" value={formatLoginIdentifierFa(creds.loginIdentifier)} copyText={phoneToNational(creds.loginIdentifier)} />
           <CredentialLine label="رمز اولیه" value={creds.initialPassword} />
-          <CopyAllButton text={`${creds.name}\nشناسهٴ ورود: ${creds.loginIdentifier}\nرمز اولیه: ${creds.initialPassword}`} />
+          <CopyAllButton text={`${creds.name}\nشناسهٴ ورود: ${phoneToNational(creds.loginIdentifier)}\nرمز اولیه: ${creds.initialPassword}`} />
           <Button type="button" onClick={onClose}>
             متوجه شدم
           </Button>
@@ -35,7 +37,7 @@ export function CredentialsDialog({ creds, onClose }: { creds: Credentials | nul
   );
 }
 
-function CredentialLine({ label, value }: { label: string; value: string }) {
+function CredentialLine({ label, value, copyText }: { label: string; value: string; copyText?: string }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-surface-sunken px-3 py-2">
       <span className="text-sm text-text-muted">{label}</span>
@@ -43,7 +45,7 @@ function CredentialLine({ label, value }: { label: string; value: string }) {
         <bdi dir="ltr" className="tabular select-all text-lg font-semibold tracking-wider text-text">
           {value}
         </bdi>
-        <CopyButton text={value} label={`کپی ${label}`} />
+        <CopyButton text={copyText ?? value} label={`کپی ${label}`} />
       </span>
     </div>
   );
