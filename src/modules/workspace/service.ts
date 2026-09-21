@@ -52,22 +52,22 @@ export const INSERT_CHUNK = 500;
 // ---------------------------------------------------------------------------------------------------------------
 
 /**
- * The item when the caller may see it; throws NOT_FOUND (never FORBIDDEN) otherwise. A personal `todo` — type
- * `todo` whose only assignee is its creator («کار شخصی») — is visible to that person alone: the broad
- * `workspace.work_item.read` of managers does not reach it, so nobody else can open or reopen it (QA round 1, m5).
+ * The item when the caller may see it; throws NOT_FOUND (never FORBIDDEN) otherwise. A personal item — one whose
+ * ONLY assignee is its creator, whatever its type («کار شخصی», or a `task` someone gave themselves) — is visible
+ * to that person alone: the broad `workspace.work_item.read` of managers does not reach it, so nobody else can
+ * open or reopen it (QA round 1 m5; widened from `todo` only in round 2).
  */
 export async function canViewWorkItem(tx: Tx, ctx: WorkspaceCtx, workItemId: string): Promise<WorkItemCore> {
   const item = await findWorkItemCore(tx, workItemId);
   if (!item) throw notFound();
   if (item.createdByPersonId === ctx.personId) return item;
   if (await findMyInboxEntry(tx, ctx.personId, workItemId)) return item;
-  if (canBroadly(ctx.assignments, "workspace.work_item.read") && !(await isPersonalTodo(tx, item))) return item;
+  if (canBroadly(ctx.assignments, "workspace.work_item.read") && !(await isSelfAssigned(tx, item))) return item;
   throw notFound();
 }
 
-/** `todo` with exactly one assignee row, and that assignee is the creator. */
-async function isPersonalTodo(tx: Tx, item: WorkItemCore): Promise<boolean> {
-  if (item.typeCode !== "todo") return false;
+/** Exactly one assignee row, and that assignee is the creator — any type. One indexed query, only on the broad-reader branch. */
+async function isSelfAssigned(tx: Tx, item: WorkItemCore): Promise<boolean> {
   const assignees = await tx
     .select({ personId: workItemAssignee.personId })
     .from(workItemAssignee)

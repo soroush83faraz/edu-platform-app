@@ -1,8 +1,9 @@
-import { ArrowRight, Bell, ClipboardPlus, Inbox, KeyRound, LifeBuoy, LogIn, type LucideIcon, Settings2, Smartphone } from "lucide-react";
+import { Bell, ClipboardPlus, Inbox, KeyRound, LifeBuoy, LogIn, type LucideIcon, Settings2, Smartphone } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ClayIcon } from "@/components/ClayIcon";
-import { requireContext } from "@/lib/ctx";
+import { PublicBackLink } from "@/components/shell/PublicBackLink";
+import { getRequestContext } from "@/lib/ctx";
 import { productName } from "@/lib/product";
 import { canAtAnyScope } from "@/modules/iam/can";
 
@@ -26,25 +27,28 @@ const TOPICS: Topic[] = [
   { id: "install", icon: Smartphone, title: "نصب روی گوشی", audience: "همه" },
 ];
 
-/** The phase-1 guide: one card per topic, anchored (`/help#inbox`), with the clay marks of the product. */
+/**
+ * The phase-1 guide: one card per topic, anchored (`/help#inbox`), with the clay marks of the product. Public
+ * (linked from /login): without a session every topic is shown, each with its audience caption; a signed-in
+ * reader sees only the topics of their roles.
+ */
 export default async function HelpPage() {
-  const ctx = await requireContext();
+  const ctx = await getRequestContext();
   const name = productName();
-  const canCreate = canAtAnyScope(ctx.assignments, "workspace.work_item.create");
-  const isAdmin = canAtAnyScope(ctx.assignments, "iam.admin.access");
+  const canCreate = ctx ? canAtAnyScope(ctx.assignments, "workspace.work_item.create") : true;
+  const isAdmin = ctx ? canAtAnyScope(ctx.assignments, "iam.admin.access") : true;
   const topics = TOPICS.filter((t) => (t.id === "new-item" ? canCreate : t.id === "admin" ? isAdmin : true));
 
   return (
     <article className="flex flex-col gap-5 px-4 pt-3 pb-8 md:pt-6">
-      <Link href="/more" className="inline-flex min-h-11 items-center gap-1 self-start text-sm text-text-muted hover:text-text">
-        <ArrowRight className="size-4" aria-hidden />
-        بیشتر
-      </Link>
+      <PublicBackLink />
       <header className="flex items-start gap-4">
         <ClayIcon icon={LifeBuoy} size="xl" />
         <div className="flex min-w-0 flex-col gap-1">
           <h2 className="text-xl font-bold leading-8 text-text">راهنمای {name}</h2>
-          <p className="text-sm leading-6 text-text-muted">کوتاه و به ترتیب کار: از ورود تا نصب روی گوشی. بخش‌هایی که به نقش شما مربوط نیست نشان داده نمی‌شود.</p>
+          <p className="text-sm leading-6 text-text-muted">
+            کوتاه و به ترتیب کار: از ورود تا نصب روی گوشی.{ctx ? " بخش‌هایی که به نقش شما مربوط نیست نشان داده نمی‌شود." : " زیر عنوان هر بخش نوشته شده برای کدام نقش است."}
+          </p>
         </div>
       </header>
 
@@ -144,7 +148,7 @@ export default async function HelpPage() {
             <Link href="/admin" className="font-semibold text-primary-700 hover:underline">
               مدیریت
             </Link>{" "}
-            ساختار مدرسه و افراد را نگه می‌دارد. ترتیب راه‌اندازی همان ترتیب چیپ‌های بالای صفحه است؛ صفحهٴ «راه‌اندازی» چک‌لیست پیشرفت را نشان می‌دهد.
+            ساختار مدرسه و افراد را نگه می‌دارد. ترتیب راه‌اندازی همان ترتیب چیپ‌های بالای صفحه است؛ صفحهٴ «راه‌اندازی مدرسه» (فقط برای مدیر سازمان، که مدرسه‌ها را تعریف می‌کند) چک‌لیست پیشرفت را نشان می‌دهد.
           </p>
           <ul className="list-disc space-y-1 ps-5">
             <li>

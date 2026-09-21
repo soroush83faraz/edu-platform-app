@@ -6,8 +6,10 @@ import { headers } from "next/headers";
 import { randomUUID } from "node:crypto";
 import { withTenant, withoutTenant } from "@/db/client";
 import { unauthenticated } from "@/lib/errors";
+import { NEXT_PATH_HEADER } from "@/lib/next-path-header";
 import { getClientIp, getUserAgent } from "@/lib/request";
 import type { Assignment } from "@/modules/iam/can";
+import { safeNextPath } from "@/modules/iam/next-path";
 import {
   findAccountById,
   findActiveMembership,
@@ -44,6 +46,19 @@ export const getRequestId = cache(async (): Promise<string> => {
   const id = h.get("x-request-id");
   return id && /^[0-9a-f-]{36}$/i.test(id) ? id : randomUUID();
 });
+
+/**
+ * Where a PAGE sends a visitor whose cookie resolved to no context (dead, revoked, forged): `/login`, carrying the
+ * page the proxy recorded in `x-next-path` as `?next=` so the deep link survives the re-login — the same rule as
+ * the proxy's cookie-less redirect (docs/auth.md). The header only ever comes from src/proxy.ts (it overwrites or
+ * removes whatever the client sent) and is re-validated by `safeNextPath` here; it is a convenience, never an
+ * authorization input. Without the proxy (tests, internal renders) the result is plain `/login`.
+ */
+export async function loginRedirectHref(): Promise<string> {
+  const h = await headers();
+  const next = safeNextPath(h.get(NEXT_PATH_HEADER));
+  return next ? `/login?next=${encodeURIComponent(next)}` : "/login";
+}
 
 /**
  * cookie → (global) live session + active account → (tenant = session.current_org_id) active membership →

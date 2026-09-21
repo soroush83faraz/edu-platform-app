@@ -1,7 +1,7 @@
-import { ArrowRight, Building2, Eye, FileText, Globe, ListChecks, type LucideIcon, MapPin, Pencil, ShieldCheck } from "lucide-react";
+import { Building2, Eye, FileText, Globe, ListChecks, type LucideIcon, MapPin, Pencil, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { ClayIcon } from "@/components/ClayIcon";
+import { PublicBackLink } from "@/components/shell/PublicBackLink";
 import { productName } from "@/lib/product";
 
 export const metadata: Metadata = { title: "حریم خصوصی | سامانهٴ مدرسه" };
@@ -10,15 +10,13 @@ export const metadata: Metadata = { title: "حریم خصوصی | سامانهٴ
  * The privacy notice of phase 1 — the client's own text (edu-platform-architecture/docs/client/06-etelaieh-harim-
  * khosoosi.md) adapted to a web page: what is stored, why, who sees it, where, external services, who owns it,
  * how to ask for a correction. The school is the data owner; the contact line is what the school configures.
+ * Public: readable before signing in (linked from /login).
  */
 export default function PrivacyPage() {
   const name = productName();
   return (
     <article className="flex flex-col gap-5 px-4 pt-3 pb-8 md:pt-6">
-      <Link href="/more" className="inline-flex min-h-11 items-center gap-1 self-start text-sm text-text-muted hover:text-text">
-        <ArrowRight className="size-4" aria-hidden />
-        بیشتر
-      </Link>
+      <PublicBackLink />
       <header className="flex items-start gap-4">
         <ClayIcon icon={ShieldCheck} size="xl" />
         <div className="flex min-w-0 flex-col gap-1">

@@ -13,7 +13,7 @@ import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
 import { changePasswordAction, loginAction, logoutAction, logoutAllAction } from "@/modules/iam/actions";
 import { CURRENT_PASSWORD_REQUIRED_MESSAGE, CURRENT_PASSWORD_WRONG_MESSAGE, LOGIN_GENERIC_MESSAGE } from "@/modules/iam/messages";
 import { PASSWORD_POLICY_MESSAGES, hashPassword } from "@/modules/iam/password";
-import { unlockAccount, type IamCtx } from "@/modules/iam/service";
+import { resetInitialPassword, unlockAccount, type IamCtx } from "@/modules/iam/service";
 import { hashToken } from "@/modules/iam/session";
 import { THROTTLE } from "@/modules/iam/throttle";
 import * as f from "./fixtures";
@@ -332,6 +332,38 @@ describe("loginAction", () => {
 
     await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: PASSWORD })));
     expect((await attempts(acc.phone)).at(-1)).toMatchObject({ succeeded: true, outcome: "success", cleared_at: null });
+  });
+
+  it("«تعیین رمز موقت» clears the throttle too: soft-locked → reset → the NEW temporary password logs in at once (→ /change-password)", async () => {
+    const acc = await createAccount(26);
+    for (let i = 0; i < 5; i++) await loginAction(form({ identifier: acc.phone, password: "bad-password" }));
+    expect(await loginAction(form({ identifier: acc.phone, password: PASSWORD }))).toMatchObject({ ok: false, code: "UNAUTHENTICATED" });
+    expect(await accountRow(acc.id)).toMatchObject({ failed_login_count: 5, locked_until: null, status: "active" });
+
+    const reset = await withTenant({ orgId: f.ORG_A, personId: f.PERSON_A1 }, (tx) => resetInitialPassword(tx, adminCtx, { userAccountId: acc.id }));
+    expect(reset.initialPassword).toMatch(/^\d{8}$/);
+    expect(reset.clearedAttempts).toBe(6); // 5 counted + 1 refused: all stamped, none deleted
+    expect(await accountRow(acc.id)).toMatchObject({ failed_login_count: 0, locked_until: null, status: "active", must_change_password: true });
+    expect((await attempts(acc.phone)).every((a) => a.cleared_at instanceof Date)).toBe(true);
+    expect((await auditActions(acc.id)).at(-1)).toMatchObject({ action: "iam.account.password_reset", after: { status: "active", clearedAttempts: 6, revokedSessions: 0 } });
+
+    // The old password is gone; the temporary one works right away and lands on the forced change.
+    expect(await loginAction(form({ identifier: acc.phone, password: PASSWORD }))).toMatchObject({ ok: false, code: "UNAUTHENTICATED" });
+    expect(await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: reset.initialPassword })))).toBe("/change-password");
+  });
+
+  it("«تعیین رمز موقت» on a permanently locked account (20 / 24 h) reopens it; a disabled account stays disabled", async () => {
+    const locked = await createAccount(27, { status: "locked" });
+    await insertFailures(locked.phone, 20, "2 hours");
+    const reset = await withTenant({ orgId: f.ORG_A, personId: f.PERSON_A1 }, (tx) => resetInitialPassword(tx, adminCtx, { userAccountId: locked.id }));
+    expect(reset.clearedAttempts).toBe(20);
+    expect(await accountRow(locked.id)).toMatchObject({ status: "active", failed_login_count: 0, locked_until: null });
+    expect(await expectRedirect(() => loginAction(form({ identifier: locked.phone, password: reset.initialPassword })))).toBe("/change-password");
+
+    const disabled = await createAccount(28, { status: "disabled" });
+    const reset2 = await withTenant({ orgId: f.ORG_A, personId: f.PERSON_A1 }, (tx) => resetInitialPassword(tx, adminCtx, { userAccountId: disabled.id }));
+    expect((await accountRow(disabled.id)).status).toBe("disabled");
+    expect(await loginAction(form({ identifier: disabled.phone, password: reset2.initialPassword }))).toMatchObject({ ok: false, code: "UNAUTHENTICATED" });
   });
 
   it("10 counted failures within an hour set locked_until; 20 within 24 h set status = locked; refused attempts escalate nothing", async () => {

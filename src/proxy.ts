@@ -1,15 +1,18 @@
 // Request hook (Next 16: `proxy`, not middleware). Deliberately dumb — it is NOT a security boundary:
 //   1. mint `x-request-id` into the request (read by getRequestId) and the response,
 //   2. convenience redirect to /login when a protected path is requested without ANY session cookie
-//      (a present-but-dead cookie is caught by the (app) layout / defineAction, which check the database),
+//      (a present-but-dead cookie is caught by the (app)/(admin) layouts / defineAction, which check the database),
 //      carrying the requested path as `?next=` so the login lands back on the deep link (`safeNextPath` accepts
-//      only a same-origin relative path; loginAction re-validates it),
+//      only a same-origin relative path; loginAction re-validates it). The same deep link travels to the layouts
+//      as the `x-next-path` request header (always overwritten here — a client cannot smuggle one in), so their
+//      dead-cookie redirect keeps it too (`loginRedirectHref`),
 //   3. `Cache-Control: private, no-store` on protected pages, `Clear-Site-Data` on /login?out=1 (after logout).
 //      Production (`next start`) keeps that header on HTML/RSC/API responses — Next sets its own default only when
 //      none is present (send-payload.js / send-response.js); Server Action POSTs get Next's unconditional
 //      `no-cache, no-store, max-age=0, must-revalidate`. `next dev` alone overwrites page responses with
 //      `no-cache, must-revalidate` (base-server.js, for back/forward restoration) — docs/decisions.md.
 import { NextResponse, type NextRequest } from "next/server";
+import { NEXT_PATH_HEADER } from "@/lib/next-path-header";
 import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
 import { safeNextPath } from "@/modules/iam/next-path";
 
@@ -47,6 +50,9 @@ export function proxy(request: NextRequest): NextResponse {
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-request-id", requestId);
+  const deepLink = isPublic ? null : deepLinkOf(request);
+  if (deepLink) requestHeaders.set(NEXT_PATH_HEADER, deepLink);
+  else requestHeaders.delete(NEXT_PATH_HEADER);
   const res = NextResponse.next({ request: { headers: requestHeaders } });
   res.headers.set("x-request-id", requestId);
   if (!isPublic) res.headers.set("Cache-Control", "private, no-store");

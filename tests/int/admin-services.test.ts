@@ -151,18 +151,22 @@ describe("admin services", () => {
       expect(live).toHaveLength(0);
       const [ident] = await tx.select({ enc: authIdentity.initialPasswordEnc }).from(authIdentity).where(eq(authIdentity.userAccountId, accountId));
       expect(decryptInitialPassword(ident.enc)).toBe(reset.initialPassword);
-      let [acct] = await tx.select({ must: userAccount.mustChangePassword, status: userAccount.status }).from(userAccount).where(eq(userAccount.id, accountId));
-      expect(acct).toEqual({ must: true, status: "locked" });
+      // QA round 2: the temporary password must work at once — the reset also lifts the lock and the throttle
+      // (status locked → active, failed_login_count 0, locked_until null; `clearedAttempts` counts stamped rows).
+      const account = () => tx.select({ must: userAccount.mustChangePassword, status: userAccount.status, failed: userAccount.failedLoginCount, until: userAccount.lockedUntil }).from(userAccount).where(eq(userAccount.id, accountId));
+      expect(reset.clearedAttempts).toBe(0);
+      expect((await account())[0]).toEqual({ must: true, status: "active", failed: 0, until: null });
 
-      // The admin wrapper resolves the account through the person and the scope.
+      // The admin wrapper resolves the account through the person and the scope — and unlocks the same way.
+      await tx.update(userAccount).set({ status: "locked", failedLoginCount: 7, lockedUntil: sql`now() + interval '1 hour'` }).where(eq(userAccount.id, accountId));
       const viaAdmin = await adminResetInitialPassword(tx, schoolAdmin, created.personId);
       expect(viaAdmin.loginIdentifier).toBe("+989127000020");
+      expect((await account())[0]).toEqual({ must: true, status: "active", failed: 0, until: null });
 
+      // «رفع قفل» on a locked account.
+      await tx.update(userAccount).set({ status: "locked", failedLoginCount: 20 }).where(eq(userAccount.id, accountId));
       await unlockAccount(tx, orgAdmin, { userAccountId: accountId });
-      [acct] = await tx.select({ must: userAccount.mustChangePassword, status: userAccount.status }).from(userAccount).where(eq(userAccount.id, accountId));
-      expect(acct.status).toBe("active");
-      const [row] = await tx.select({ failed: userAccount.failedLoginCount, until: userAccount.lockedUntil }).from(userAccount).where(eq(userAccount.id, accountId));
-      expect(row).toEqual({ failed: 0, until: null });
+      expect((await account())[0]).toEqual({ must: true, status: "active", failed: 0, until: null });
       const actions = (await tx.select({ action: auditLog.action }).from(auditLog).where(eq(auditLog.entityId, accountId))).map((r) => r.action);
       expect(actions).toEqual(expect.arrayContaining(["iam.account.password_reset", "iam.account.unlocked"]));
       // An account of another organization is invisible: NOT_FOUND.

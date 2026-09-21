@@ -15,7 +15,7 @@ import { normalizeFa, normalizePhoneIR, toAsciiDigits } from "@/lib/normalize";
 import { schoolEnrollment } from "@/modules/academic/schema";
 import { enrollStudent } from "@/modules/academic/service";
 import { findClassGroup, findCurrentAcademicYear, findSchoolById, schoolIdOfBranch } from "@/modules/tenancy/repo";
-import { can, canAtAnyScope, resolveScopeChain, type Assignment } from "./can";
+import { can, canAtAnyScope, isOrganizationAdmin, resolveScopeChain, type Assignment } from "./can";
 import { generateInitialPassword, hashPassword } from "./password";
 import { findAccountByIdentifier } from "./repo";
 import { clearRecentFailures } from "./throttle";
@@ -77,8 +77,8 @@ export type AdminScope = { kind: "organization" } | { kind: "school"; schoolIds:
  * Every admin list filters by it; every admin mutation on a school-owned entity checks `assertSchoolInScope`.
  */
 export async function getAdminScope(tx: Tx, ctx: { orgId: string; assignments: readonly Assignment[] }): Promise<AdminScope> {
+  if (isOrganizationAdmin(ctx.assignments)) return { kind: "organization" };
   const admin = ctx.assignments.filter((a) => a.permissions.includes("iam.admin.access"));
-  if (admin.some((a) => a.scopeType === "organization")) return { kind: "organization" };
   const schoolIds = new Set<string>();
   for (const a of admin) {
     if (a.scopeId === null) continue;
@@ -308,9 +308,19 @@ export async function setAccountPassword(tx: Tx, ctx: IamCtx, input: SetPassword
 /**
  * «تعیین رمز موقت»: new random password, must_change_password, ALL sessions of the account revoked (a stolen
  * session dies with the old password), encrypted copy stored for the credentials sheet. Returns the plaintext once.
+ * The new password must WORK at once, so the reset also does what «رفع قفل» does (QA round 2): `failed_login_count`
+ * 0, `locked_until` null, a throttle-set `status = 'locked'` back to `active` (a `disabled` account stays disabled —
+ * that is an admin decision, not a lock), and the identifier's recent failures stamped `cleared_at`
+ * (`clearRecentFailures`) so the 5 / 15 min … 20 / 24 h windows stop refusing; `clearedAttempts` lands in the audit.
  */
-export async function resetInitialPassword(tx: Tx, ctx: IamCtx, input: { userAccountId: string }): Promise<{ initialPassword: string; revokedSessions: number }> {
+export async function resetInitialPassword(tx: Tx, ctx: IamCtx, input: { userAccountId: string }): Promise<{ initialPassword: string; revokedSessions: number; clearedAttempts: number }> {
   const { personId } = await requireAccountInOrg(tx, input.userAccountId);
+  const [before] = await tx
+    .select({ loginIdentifier: userAccount.loginIdentifier, status: userAccount.status, failedLoginCount: userAccount.failedLoginCount, lockedUntil: userAccount.lockedUntil })
+    .from(userAccount)
+    .where(eq(userAccount.id, input.userAccountId))
+    .limit(1);
+  if (!before) throw notFound();
   const initialPassword = generateInitialPassword();
   const secretHash = await hashPassword(initialPassword);
   const updated = await tx
@@ -319,14 +329,23 @@ export async function resetInitialPassword(tx: Tx, ctx: IamCtx, input: { userAcc
     .where(and(eq(authIdentity.userAccountId, input.userAccountId), eq(authIdentity.provider, "password")))
     .returning({ id: authIdentity.id });
   if (!updated[0]) await tx.insert(authIdentity).values({ userAccountId: input.userAccountId, provider: "password", secretHash, initialPasswordEnc: encryptInitialPassword(initialPassword) });
-  await tx.update(userAccount).set({ mustChangePassword: true, passwordChangedAt: null }).where(eq(userAccount.id, input.userAccountId));
+  const status = before.status === "locked" ? "active" : before.status;
+  await tx.update(userAccount).set({ mustChangePassword: true, passwordChangedAt: null, failedLoginCount: 0, lockedUntil: null, status }).where(eq(userAccount.id, input.userAccountId));
+  const clearedAttempts = await clearRecentFailures(tx, before.loginIdentifier);
   const revoked = await tx
     .update(userSession)
     .set({ revokedAt: sql`now()` })
     .where(and(eq(userSession.userAccountId, input.userAccountId), isNull(userSession.revokedAt)))
     .returning({ id: userSession.id });
-  await audit(ctx, "iam.account.password_reset", { schema: "iam", table: "user_account", id: input.userAccountId }, null, { personId, revokedSessions: revoked.length }, tx);
-  return { initialPassword, revokedSessions: revoked.length };
+  await audit(
+    ctx,
+    "iam.account.password_reset",
+    { schema: "iam", table: "user_account", id: input.userAccountId },
+    { status: before.status, failedLoginCount: before.failedLoginCount, lockedUntil: before.lockedUntil },
+    { personId, status, revokedSessions: revoked.length, clearedAttempts },
+    tx,
+  );
+  return { initialPassword, revokedSessions: revoked.length, clearedAttempts };
 }
 
 /**
