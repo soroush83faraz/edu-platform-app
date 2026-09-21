@@ -119,7 +119,7 @@ Drizzle SQL را می‌سازد؛ شما فقط مطمئن شوید: `organizat
 
 ### خ) دادهٴ کاتالوگ (permission, role, work_item_type, notification_type)
 
-مهاجرت نه؛ `scripts/seed.ts --catalog` منبع حقیقت است و بعد از هر deploy اجرا می‌شود (idempotent، حذف ردیف اضافی نقش‌های سیستمی). مجوز جدید = افزودن به `PERMISSIONS` + نقش‌ها در `SYSTEM_ROLES` + `pnpm seed`.
+مهاجرت نه؛ `scripts/catalog.ts` (+ `src/modules/iam/permissions.ts`) منبع حقیقت است و در هر deploy خودکار اجرا می‌شود — سرویس `seed` نسخهٴ کامپایل‌شدهٴ آن (`scripts/seed-catalog.js`، تولیدشده در `pnpm build`) را بعد از `migrate` می‌زند (idempotent، حذف ردیف اضافی نقش‌های سیستمی). مجوز جدید = افزودن به `PERMISSIONS` + نقش‌ها در `SYSTEM_ROLES` + محلی `pnpm seed`؛ روی سرور هیچ گام دستی ندارد.
 
 ## چک‌لیست قبل از commit مهاجرت
 

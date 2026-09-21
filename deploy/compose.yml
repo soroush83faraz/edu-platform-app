@@ -50,6 +50,23 @@ services:
       db:
         condition: service_healthy
 
+  # The permission / role / work-item-type / notification-type catalog, compiled from the TypeScript source of truth
+  # at build time (scripts/seed-catalog.js, pg only, MIGRATION_DATABASE_URL = app_owner). Idempotent and authoritative
+  # (role_permission rows no longer listed are removed), so it runs on EVERY deploy right after `migrate` — a release
+  # that adds a permission or changes a role matrix needs no manual seed step. No accounts, no tenant rows.
+  seed:
+    image: ${APP_IMAGE:?set APP_IMAGE in .env}
+    command: ["node", "scripts/seed-catalog.js"]
+    restart: "no"
+    env_file: .env
+    environment:
+      TZ: UTC
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
   app:
     image: ${APP_IMAGE:?set APP_IMAGE in .env}
     restart: unless-stopped
@@ -71,6 +88,8 @@ services:
       db:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      seed:
         condition: service_completed_successfully
 
   caddy:

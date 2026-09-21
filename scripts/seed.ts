@@ -6,7 +6,8 @@
 // --catalog: iam.permission from PERMISSIONS + the system role templates (organization_id NULL) and their
 //            role_permission rows (authoritative: extra rows of a system role are removed); the system
 //            workspace.work_item_type rows (organization_id NULL) with their work_item_status catalog; and
-//            notif.notification_type.
+//            notif.notification_type. The data and the writer live in ./catalog (pg-only), shared with the
+//            compiled scripts/seed-catalog.js that the deploy runs after `migrate` (deploy/README.md).
 // --demo:    two organizations with schools, years, terms, levels/grades, subjects, classes, offerings, persons,
 //            accounts and role assignments; the students are enrolled in their class (school_enrollment +
 //            class_enrollment) and the teachers get real academic.teacher_assignment rows through the academic
@@ -18,12 +19,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { and, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
-import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { drizzle, type NodePgClient, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../src/db/schema";
 import { assignTeacher, enrollStudent, type ServiceCtx } from "../src/modules/academic/service";
-import { IMPLICIT_PERMISSIONS, PERMISSIONS, type Permission, type ScopeType } from "../src/modules/iam/permissions";
+import { IMPLICIT_PERMISSIONS, PERMISSIONS } from "../src/modules/iam/permissions";
 import { generateInitialPassword } from "../src/modules/iam/password";
 import { assignRole, createStaff, createStudent, findAccountOfPerson, setAccountPassword, updatePerson, type IamCtx } from "../src/modules/iam/service";
 import {
@@ -55,273 +56,49 @@ import {
   updateSubject,
   upsertTerm,
 } from "../src/modules/tenancy/service";
+import { SYSTEM_ROLES, catalogCountsWith, formatCatalogSummary, seedCatalogWith, type CatalogCounts, type Queryable } from "./catalog";
 
-type Db = NodePgDatabase<typeof schema>;
+export { NOTIFICATION_TYPES, SYSTEM_ROLES, SYSTEM_WORK_ITEM_TYPES, type CatalogCounts } from "./catalog";
+const SYSTEM_ROLE_CODES = SYSTEM_ROLES.map((r) => r.code);
+
+/** What `drizzle({ client })` returns: the database plus its driver (`$client`), which the catalog seed writes through. */
+type Db = NodePgDatabase<typeof schema> & { $client: NodePgClient };
 
 
-const { organization, person, studentProfile, staffProfile, role, permission, rolePermission, roleAssignment, workItemType, workItemStatus, notificationType, classEnrollment, teacherAssignment } = schema;
+const { organization, person, studentProfile, staffProfile, role, roleAssignment, classEnrollment, teacherAssignment } = schema;
 
 // ---------------------------------------------------------------------------------------------------------------
 // catalog
 // ---------------------------------------------------------------------------------------------------------------
 
 const ALL_ROLE_PERMS = PERMISSIONS.map((p) => p.code).filter((c) => !IMPLICIT_PERMISSIONS.includes(c));
-const WORK_ITEM_ALL: Permission[] = [
-  "workspace.work_item.read",
-  "workspace.work_item.create",
-  "workspace.work_item.update",
-  "workspace.work_item.comment",
-  "workspace.work_item.assign_class",
-];
 
-interface SystemRole {
-  code: string;
-  name: string;
-  description: string;
-  allowedScopeTypes: ScopeType[];
-  permissions: Permission[];
-}
-
-/** System role templates (doc 03 §7). Custom roles are out of phase 1. */
-export const SYSTEM_ROLES: SystemRole[] = [
-  { code: "org_admin", name: "مدیر سازمان", description: "همهٴ دسترسی‌ها در سطح سازمان", allowedScopeTypes: ["organization"], permissions: ALL_ROLE_PERMS },
-  // Holds `iam.role_assignment.write` too, but the service only lets a school-scoped admin grant/revoke `vice_principal`
-  // at their own schools (owner's matrix: principals are appointed by the organization admin only), and
-  // `tenancy.structure.write` never creates schools outside the organization scope (docs/admin.md).
-  { code: "school_principal", name: "مدیر مدرسه", description: "همهٴ دسترسی‌ها در سطح یک مدرسه", allowedScopeTypes: ["school"], permissions: ALL_ROLE_PERMS },
-  {
-    code: "vice_principal",
-    name: "معاون",
-    description: "کارتابل، افراد، ثبت‌نام، حساب‌ها و تعیین دبیر در سطح مدرسه یا شعبه",
-    allowedScopeTypes: ["school", "branch"],
-    permissions: [
-      "iam.admin.access",
-      "tenancy.structure.read",
-      "iam.person.read",
-      "iam.person.write",
-      "academic.enrollment.write",
-      // Owner's matrix: a vice principal defines teachers — sets/changes the main teacher of EXISTING offerings and ends
-      // teaching (the derived `teacher` role follows); defining offerings/structure stays `tenancy.structure.write`.
-      "academic.teacher_assignment.write",
-      "iam.account.reset_password",
-      "iam.account.unlock",
-      ...WORK_ITEM_ALL,
-      "notif.notification.read",
-    ],
-  },
-  {
-    code: "teacher",
-    name: "معلم",
-    description: "کارتابل درس‌های خود",
-    allowedScopeTypes: ["class_offering", "class_group"],
-    permissions: [...WORK_ITEM_ALL, "notif.notification.read", "iam.person.read"],
-  },
-  {
-    code: "student",
-    name: "دانش‌آموز",
-    description: "کارتابل خود",
-    allowedScopeTypes: ["student"],
-    permissions: ["workspace.work_item.read", "workspace.work_item.update", "workspace.work_item.comment", "notif.notification.read"],
-  },
-  {
-    code: "guardian_full",
-    name: "ولی",
-    description: "مشاهدهٴ کارتابل فرزند",
-    allowedScopeTypes: ["student", "family"],
-    permissions: ["workspace.work_item.read", "workspace.work_item.comment", "notif.notification.read"],
-  },
-];
-
-type StatusCategory = "todo" | "doing" | "done" | "cancelled";
-interface SystemStatus {
-  code: string;
-  name: string;
-  category: StatusCategory;
-  sequence: number;
-  isTerminal?: boolean;
-}
-interface SystemWorkItemType {
-  code: string;
-  name: string;
-  requiresAssignee: boolean;
-  allowRecurrence?: boolean;
-  statuses: SystemStatus[];
-}
-
-const STANDARD_STATUSES: SystemStatus[] = [
-  { code: "open", name: "باز", category: "todo", sequence: 1 },
-  { code: "in_progress", name: "در حال انجام", category: "doing", sequence: 2 },
-  { code: "done", name: "انجام‌شده", category: "done", sequence: 3, isTerminal: true },
-  { code: "cancelled", name: "لغوشده", category: "cancelled", sequence: 4, isTerminal: true },
-];
-
-/** System work item types (organization_id NULL). Statuses are authoritative: stale codes of a type are removed. */
-export const SYSTEM_WORK_ITEM_TYPES: SystemWorkItemType[] = [
-  { code: "todo", name: "کار شخصی", requiresAssignee: false, statuses: STANDARD_STATUSES },
-  { code: "task", name: "تکلیف", requiresAssignee: true, statuses: STANDARD_STATUSES },
-  {
-    code: "admin_request",
-    name: "درخواست اداری",
-    requiresAssignee: true,
-    statuses: [
-      { code: "open", name: "باز", category: "todo", sequence: 1 },
-      { code: "in_review", name: "در حال بررسی", category: "doing", sequence: 2 },
-      { code: "answered", name: "پاسخ‌داده‌شده", category: "done", sequence: 3, isTerminal: true },
-      { code: "rejected", name: "ردشده", category: "cancelled", sequence: 4, isTerminal: true },
-    ],
-  },
-  // The spec lists no statuses for `reminder`; it behaves like a personal todo (recurrence allowed later).
-  { code: "reminder", name: "یادآوری", requiresAssignee: false, allowRecurrence: true, statuses: STANDARD_STATUSES },
-  {
-    code: "approval",
-    name: "تأیید",
-    requiresAssignee: true,
-    statuses: [
-      { code: "pending", name: "در انتظار", category: "todo", sequence: 1 },
-      { code: "approved", name: "تأییدشده", category: "done", sequence: 2, isTerminal: true },
-      { code: "rejected", name: "ردشده", category: "cancelled", sequence: 3, isTerminal: true },
-    ],
-  },
-];
-
-interface SystemNotificationType {
-  code: string;
-  module: string;
-  name: string;
-  urgency?: "low" | "normal" | "high";
-  userCanDisable?: boolean;
-}
-
-export const NOTIFICATION_TYPES: SystemNotificationType[] = [
-  { code: "work_item.assigned", module: "workspace", name: "کار جدید به شما سپرده شد" },
-  { code: "work_item.comment", module: "workspace", name: "نظر جدید روی کار" },
-  { code: "work_item.status_changed", module: "workspace", name: "وضعیت کار تغییر کرد" },
-  { code: "work_item.due_soon", module: "workspace", name: "مهلت کار نزدیک است", urgency: "high" },
-  { code: "account.password_reset", module: "iam", name: "رمز حساب بازنشانی شد", urgency: "high", userCanDisable: false },
-  { code: "system.announcement", module: "system", name: "اطلاعیهٴ سامانه", userCanDisable: false },
-];
-
-export interface CatalogCounts {
-  permissions: number;
-  roles: number;
-  workItemTypes: number;
-  workItemStatuses: number;
-  notificationTypes: number;
-}
-
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-
-async function seedWorkItemTypes(tx: Tx): Promise<void> {
-  for (const t of SYSTEM_WORK_ITEM_TYPES) {
-    const [row] = await tx
-      .insert(workItemType)
-      .values({ organizationId: null, code: t.code, name: t.name, requiresAssignee: t.requiresAssignee, allowRecurrence: t.allowRecurrence ?? false })
-      .onConflictDoUpdate({
-        target: [workItemType.organizationId, workItemType.code],
-        set: { name: t.name, requiresAssignee: t.requiresAssignee, allowRecurrence: t.allowRecurrence ?? false },
-      })
-      .returning({ id: workItemType.id });
-    await tx
-      .insert(workItemStatus)
-      .values(
-        t.statuses.map((st) => ({
-          workItemTypeId: row.id,
-          code: st.code,
-          name: st.name,
-          category: st.category,
-          sequence: st.sequence,
-          isTerminal: st.isTerminal ?? false,
-        })),
-      )
-      .onConflictDoUpdate({
-        target: [workItemStatus.workItemTypeId, workItemStatus.code],
-        set: { name: sql`excluded.name`, category: sql`excluded.category`, sequence: sql`excluded.sequence`, isTerminal: sql`excluded.is_terminal` },
-      });
-    await tx.delete(workItemStatus).where(
-      and(
-        eq(workItemStatus.workItemTypeId, row.id),
-        notInArray(
-          workItemStatus.code,
-          t.statuses.map((st) => st.code),
-        ),
-      ),
-    );
-  }
-}
-
-async function seedNotificationTypes(tx: Tx): Promise<void> {
-  await tx
-    .insert(notificationType)
-    .values(
-      NOTIFICATION_TYPES.map((n) => ({
-        code: n.code,
-        module: n.module,
-        name: n.name,
-        urgency: n.urgency ?? "normal",
-        userCanDisable: n.userCanDisable ?? true,
-      })),
-    )
-    .onConflictDoUpdate({
-      target: notificationType.code,
-      set: { module: sql`excluded.module`, name: sql`excluded.name`, urgency: sql`excluded.urgency`, userCanDisable: sql`excluded.user_can_disable` },
-    });
-}
-
-export async function seedCatalog(db: Db): Promise<Record<string, string>> {
-  return db.transaction(async (tx) => {
-    await seedWorkItemTypes(tx);
-    await seedNotificationTypes(tx);
-
-    await tx
-      .insert(permission)
-      .values(PERMISSIONS.map((p) => ({ code: p.code, module: p.module, name: p.name, isSensitive: p.isSensitive })))
-      .onConflictDoUpdate({
-        target: permission.code,
-        set: { module: sql`excluded.module`, name: sql`excluded.name`, isSensitive: sql`excluded.is_sensitive` },
-      });
-
-    const roleIds: Record<string, string> = {};
-    for (const r of SYSTEM_ROLES) {
-      const [row] = await tx
-        .insert(role)
-        .values({ organizationId: null, code: r.code, name: r.name, description: r.description, isSystem: true, allowedScopeTypes: r.allowedScopeTypes })
-        .onConflictDoUpdate({
-          target: [role.organizationId, role.code],
-          set: { name: r.name, description: r.description, isSystem: true, allowedScopeTypes: r.allowedScopeTypes },
-        })
-        .returning({ id: role.id });
-      roleIds[r.code] = row.id;
-      if (r.permissions.length > 0) {
-        await tx
-          .insert(rolePermission)
-          .values(r.permissions.map((code) => ({ roleId: row.id, permissionCode: code })))
-          .onConflictDoNothing();
-        await tx.delete(rolePermission).where(and(eq(rolePermission.roleId, row.id), notInArray(rolePermission.permissionCode, r.permissions)));
-      } else {
-        await tx.delete(rolePermission).where(eq(rolePermission.roleId, row.id));
-      }
+/** One connection of the drizzle database's driver: a checked-out client of its Pool, or the Client it wraps. */
+async function withDriverConnection<T>(db: Db, fn: (q: Queryable) => Promise<T>): Promise<T> {
+  const client = db.$client;
+  if (client instanceof Pool) {
+    const c = await client.connect();
+    try {
+      return await fn(c);
+    } finally {
+      c.release();
     }
-    return roleIds;
-  });
+  }
+  return fn(client);
 }
 
 /**
- * Row counts of the catalog tables (printed by the CLI; asserted by tests/int/seed.test.ts for idempotency).
- * `roles` / `workItemTypes` count the system templates only (organization_id IS NULL) — tenant rows are invisible to
- * app_owner without a tenant context anyway (FORCE RLS).
+ * The catalog seed through a drizzle `Db` (the CLI below, seed-pilot, the int tests): `seedCatalogWith` on ONE
+ * driver connection — one transaction — returns the system role ids by code. The same function, over the same
+ * SQL, is what the compiled scripts/seed-catalog.js runs on the server.
  */
+export async function seedCatalog(db: Db): Promise<Record<string, string>> {
+  return withDriverConnection(db, (q) => seedCatalogWith(q));
+}
+
+/** Row counts of the catalog tables (see ./catalog). */
 export async function catalogCounts(db: Db): Promise<CatalogCounts> {
-  const count = async (table: string, where = ""): Promise<number> => {
-    const res = await db.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table} ${where}`));
-    return res.rows[0].n;
-  };
-  return {
-    permissions: await count("iam.permission"),
-    roles: await count("iam.role", "where organization_id is null"),
-    workItemTypes: await count("workspace.work_item_type", "where organization_id is null"),
-    workItemStatuses: await count("workspace.work_item_status"),
-    notificationTypes: await count("notif.notification_type"),
-  };
+  return withDriverConnection(db, (q) => catalogCountsWith(q));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -823,13 +600,8 @@ async function main(): Promise<void> {
     const db = drizzle({ client: pool, schema });
     const roleIds = doCatalog
       ? await seedCatalog(db)
-      : Object.fromEntries((await db.select({ code: role.code, id: role.id }).from(role).where(and(isNull(role.organizationId), inArray(role.code, SYSTEM_ROLES.map((r) => r.code))))).map((r) => [r.code, r.id]));
-    if (doCatalog) {
-      const c = await catalogCounts(db);
-      console.log(
-        `[seed] catalog: ${c.permissions} permissions, ${c.roles} system roles, ${c.workItemTypes} system work item types, ${c.workItemStatuses} statuses, ${c.notificationTypes} notification types`,
-      );
-    }
+      : Object.fromEntries((await db.select({ code: role.code, id: role.id }).from(role).where(and(isNull(role.organizationId), inArray(role.code, SYSTEM_ROLE_CODES)))).map((r) => [r.code, r.id]));
+    if (doCatalog) console.log(formatCatalogSummary(await catalogCounts(db)));
     if (doDemo) {
       const { logins, password, generated, counts } = await seedDemo(db, roleIds);
       console.log(`[seed] demo: ${logins.length} accounts in 2 organizations`);

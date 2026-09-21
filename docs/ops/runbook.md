@@ -5,7 +5,7 @@
 ## ۰. سی ثانیهٴ اول — وضعیت
 
 ```bash
-docker compose ps                                  # db / app / caddy همه Up (healthy)؛ migrate باید Exited 0 باشد
+docker compose ps                                  # db / app / caddy همه Up (healthy)؛ migrate و seed باید Exited 0 باشند
 docker compose exec -T app node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>r.text()).then(console.log)"
 #  {"ok":true,"db":"up","pendingMigrations":0,"version":"<sha>",...}
 docker compose logs --tail=100 app | grep -iE 'error|fatal' | tail -20
@@ -23,13 +23,13 @@ df -h / ; free -m                                  # دیسک < ۸۰٪، RAM آ�
 .\deploy\ship.ps1 -Server SERVER            # docker build (ویندوز) → docker save | ssh docker load → deploy.sh <sha>
 ```
 
-`deploy.sh <sha>` روی سرور به ترتیب: تگ فعلی → `.last_tag` · `pg_dump -Fc -U app_backup` → `backups/pre-<ts>.dump` (شکست = توقف **قبل** از migrate) · `APP_IMAGE` در `.env` · `docker compose run --rm migrate` · `docker compose up -d app caddy` · ۶۰ ثانیه poll روی `/api/health` · در شکست `rollback.sh` خودکار. بعد از پیام `healthy:` از ویندوز:
+`deploy.sh <sha>` روی سرور به ترتیب: تگ فعلی → `.last_tag` · `pg_dump -Fc -U app_backup` → `backups/pre-<ts>.dump` (شکست = توقف **قبل** از migrate) · `APP_IMAGE` در `.env` · `docker compose run --rm migrate` · `docker compose run --rm --no-deps seed` (سید کاتالوگ مجوزها/نقش‌ها؛ idempotent) · `docker compose up -d app caddy` · ۶۰ ثانیه poll روی `/api/health` · در شکست `rollback.sh` خودکار. بعد از پیام `healthy:` از ویندوز:
 
 ```powershell
 $env:BASE_URL="https://PUBLIC_HOST"; $env:SMOKE_IDENTIFIER="<qa login>"; $env:SMOKE_PASSWORD="<qa pw>"; pnpm smoke:prod
 ```
 
-۷ تیک سبز = استقرار تمام. کاتالوگ (`iam.permission`، نقش‌های سیستمی) بعد از هر migrate با `pnpm seed` از ماشین توسعه به دیتابیس سرور (تونل ssh) همگام می‌شود — `deploy/README.md` «سید کاتالوگ».
+۷ تیک سبز = استقرار تمام. کاتالوگ (`iam.permission`، نقش‌های سیستمی و `role_permission`) را خودِ استقرار همگام می‌کند (سرویس `seed`، `scripts/seed-catalog.js`؛ `docker compose logs seed` باید `[seed] catalog: …` را نشان دهد) — دیگر `pnpm seed` از ماشین توسعه لازم نیست؛ `deploy/README.md` «سید کاتالوگ».
 
 ## ۲. بازگشت (rollback)
 
@@ -50,6 +50,7 @@ docker compose logs -f --tail=200 app      # لاگ JSON (pino)؛ هر خط requ
 docker compose logs --since 30m app | grep '"level":50'      # فقط error
 docker compose logs --tail=50 caddy        # certificate obtained / renew
 docker compose logs migrate                # خروجی آخرین مهاجرت
+docker compose logs seed                   # خروجی سید کاتالوگ ([seed] catalog: …)
 journalctl -u docker --since "1 hour ago"  # اگر خود docker مشکوک است
 ```
 
@@ -124,7 +125,7 @@ pnpm sessions:revoke --org <slug> --yes    # همهٴ اعضای یک سازما
 pnpm sessions:revoke --all --yes           # همه — بعد از نشت DB/secret، یا بعد از بازیابی بکاپ
 ```
 
-از ماشین توسعه با `DATABASE_URL` سرور (تونل: `ssh -L 5433:<db container ip>:5432 deploy@SERVER` یا `docker compose exec` + `psql` مستقیم: `update iam.user_session set revoked_at=now() where revoked_at is null`). کاربران در اکشن بعدی `UNAUTHENTICATED` می‌گیرند و به `/login` می‌روند. «خروج از همهٴ دستگاه‌ها» در «بیشتر» همین کار را برای خودِ کاربر می‌کند.
+از ماشین توسعه با `DATABASE_URL` سرور (تونل: `ssh -L 5433:<db container ip>:5432 deploy@SERVER` یا `docker compose exec` + `psql` مستقیم: `update iam.user_session set revoked_at=now() where revoked_at is null`). کاربران در اکشن بعدی `UNAUTHENTICATED` می‌گیرند و به `/login` می‌روند. (ردیف «خروج از همهٴ دستگاه‌ها» در «بیشتر» فعلاً پنهان است — تصمیم مالک، دور دوم QA؛ `logoutAllAction` در کد مانده. کاربر با «تغییر رمز» همهٴ نشست‌های دیگرِ خودش را می‌بندد.)
 
 ## ۸. چرخش secret ها
 

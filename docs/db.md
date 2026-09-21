@@ -39,7 +39,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 1. اسکیما را در `src/db/schema/<schema>.ts` تغییر دهید (و در `src/modules/<ctx>/schema.ts` re-export کنید).
 2. `pnpm db:generate` → فایل `drizzle/NNNN_<name>.sql` را **بخوانید**؛ آنچه Drizzle نمی‌تواند (RLS، grant، تابع) را با `pnpm db:generate:custom -- --name <x>` به مهاجرت دستی اضافه کنید. فایل‌ها باید **بدون BOM** و با LF باشند؛ رشتهٴ `--> statement-breakpoint` حتی در کامنت هم جداکنندهٴ statement است.
 3. `pnpm db:check` (سازگاری snapshotها) → `pnpm db:reset:test && pnpm test:int` → commit.
-4. اعمال: محلی `pnpm db:migrate`؛ روی سرور سرویس `migrate` (`node scripts/migrate.js`) قبل از `app` اجرا می‌شود. همهٴ مهاجرت‌های معوق در **یک تراکنش** اعمال می‌شوند؛ اجرای دوباره no-op است.
+4. اعمال: محلی `pnpm db:migrate` (و `pnpm seed` برای کاتالوگ)؛ روی سرور سرویس `migrate` (`node scripts/migrate.js`) و سپس سرویس `seed` (`node scripts/seed-catalog.js`، کاتالوگ مجوزها/نقش‌ها) قبل از `app` اجرا می‌شوند. همهٴ مهاجرت‌های معوق در **یک تراکنش** اعمال می‌شوند؛ اجرای دوباره no-op است.
 5. **هرگز `drizzle-kit push` نه.** مهاجرتِ اعمال‌شده هرگز ویرایش نمی‌شود (تا وقتی فقط محلی است، حذف و دوباره generate کنید). تغییرات production فقط **افزودنی**: ستون جدید nullable یا با DEFAULT؛ تغییر نام با expand/contract.
 6. `NOT NULL` در دو گام: (۱) ستون nullable + backfill، (۲) در مهاجرت/ریلیز بعدی `SET NOT NULL`.
 7. قواعد ثابت: `timestamptz` (UTC)، `text + CHECK` نه ENUM، بدون `deleted_at` (از `status`/`archived_at`)، UUID v7 از اپ (`uuid.v7()`) یا `app.uuid_generate_v7()` در SQL، هر FK صریح `ON DELETE RESTRICT`، FK ترکیبی `(organization_id, x_id) → x(organization_id, id)` و والدها `UNIQUE(organization_id, id)`.

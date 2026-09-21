@@ -1,11 +1,17 @@
 // scripts/seed.ts --catalog must be idempotent: a second run changes no counts. Runs the real seedCatalog against
 // app_test as app_owner (its own Pool, like the CLI). The catalog rows it adds are removed again in afterAll by
 // re-creating the fixture database, because later files (alphabetically) assert exact template lists.
+// The second test builds the deploy-time bundle (scripts/seed-catalog.js, `pnpm build`) and runs it with plain
+// `node` exactly as the `seed` service does — same summary line, zero diff in the catalog tables.
+import { spawnSync } from "node:child_process";
+import path from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "@/db/schema";
 import { PERMISSIONS } from "@/modules/iam/permissions";
+import { buildSeedCatalog } from "../../scripts/build-seed-catalog";
+import { formatCatalogSummary } from "../../scripts/catalog";
 import { runMigrations } from "../../scripts/migrate";
 import { NOTIFICATION_TYPES, SYSTEM_ROLES, SYSTEM_WORK_ITEM_TYPES, catalogCounts, seedCatalog } from "../../scripts/seed";
 import { OWNER_URL } from "./env";
@@ -46,6 +52,40 @@ describe("seed --catalog", () => {
       expect(todo.rows).toEqual([{ id: f.WIT_TEMPLATE, requires_assignee: false }]);
       const todoStatuses = await pool.query<{ code: string }>("select code from workspace.work_item_status where work_item_type_id = $1 order by sequence", [f.WIT_TEMPLATE]);
       expect(todoStatuses.rows.map((r) => r.code)).toEqual(["open", "in_progress", "done", "cancelled"]);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  it("the compiled scripts/seed-catalog.js (pg only, the deploy's `seed` service) prints the same summary and changes nothing after the TS seed", async () => {
+    const { out, modules } = buildSeedCatalog();
+    // Only the entry, the catalog and the permission catalog reach the bundle — no drizzle, no zod, no schema.
+    expect(modules.sort()).toEqual(["scripts/catalog", "scripts/seed-catalog", "src/modules/iam/permissions"]);
+
+    const pool = new Pool({ connectionString: OWNER_URL, max: 1 });
+    try {
+      const db = drizzle({ client: pool, schema });
+      await seedCatalog(db);
+      const snapshot = () =>
+        pool.query<{ code: string; permission_code: string }>(
+          "select r.code, rp.permission_code from iam.role_permission rp join iam.role r on r.id = rp.role_id where r.organization_id is null order by 1, 2",
+        );
+      const before = (await snapshot()).rows;
+      expect(before.length).toBe(SYSTEM_ROLES.reduce((n, r) => n + r.permissions.length, 0));
+      const counts = await catalogCounts(db);
+
+      const run = spawnSync(process.execPath, [out, "--test"], { encoding: "utf8", env: { ...process.env, MIGRATION_DATABASE_URL_TEST: OWNER_URL } });
+      expect(run.stderr, run.stderr).toBe("");
+      expect(run.status).toBe(0);
+      expect(run.stdout.trim()).toBe(formatCatalogSummary(counts));
+      expect(path.basename(out)).toBe("seed-catalog.js");
+
+      expect((await snapshot()).rows).toEqual(before);
+      expect(await catalogCounts(db)).toEqual(counts);
+      // A database name that does not end with _test is refused under --test (the deploy uses MIGRATION_DATABASE_URL).
+      const refused = spawnSync(process.execPath, [out, "--test"], { encoding: "utf8", env: { ...process.env, MIGRATION_DATABASE_URL_TEST: OWNER_URL.replace(/_test(\?|$)/, "$1") } });
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain("_test");
     } finally {
       await pool.end();
     }

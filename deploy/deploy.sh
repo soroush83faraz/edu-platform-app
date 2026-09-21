@@ -63,9 +63,14 @@ rollback() {
   exit 1
 }
 
-# 4) migrate (one-shot, additive-only SQL) then start app + caddy
+# 4) migrate (one-shot, additive-only SQL), seed the permission catalog (one-shot, idempotent, compiled into the
+#    image from the TypeScript source — scripts/seed-catalog.js), then start app + caddy. `--no-deps` on the seed:
+#    migrate just ran. `up -d app` re-runs both one-shots through depends_on (each a no-op the second time).
 log "running migrations"
 docker compose run --rm migrate || rollback
+
+log "seeding the permission catalog"
+docker compose run --rm --no-deps seed || rollback
 
 log "starting app + caddy"
 docker compose up -d app caddy || rollback

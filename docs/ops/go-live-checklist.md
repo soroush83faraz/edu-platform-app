@@ -32,7 +32,7 @@
 | ☐ | ■ RLS fail-closed | `docker compose exec -T db psql -U app_rw -d app -tAc "select count(*) from iam.person"` | `0` |
 | ☐ | ■ BYPASSRLS فقط app_backup | `docker compose exec -T db psql -U postgres -tAc "select rolname, rolbypassrls, rolsuper from pg_roles where rolname like 'app_%' order by 1"` | `app_backup\|t\|f`, `app_owner\|f\|f`, `app_rw\|f\|f` |
 | ☐ | □ timeouts نقش app_rw | `… -tAc "select rolconfig from pg_roles where rolname='app_rw'"` | `statement_timeout=10s`, `idle_in_transaction_session_timeout=30s`, `lock_timeout=5s` |
-| ☐ | □ کاتالوگ seed شده | `… -U app_backup -d app -tAc "select count(*) from iam.permission; select count(*) from iam.role where organization_id is null"` | برابر `PERMISSIONS.length` و ۶ نقش سیستمی (`pnpm seed` بعد از آخرین migrate) |
+| ☐ | □ کاتالوگ seed شده | `docker compose logs seed` و `… -U app_backup -d app -tAc "select count(*) from iam.permission; select count(*) from iam.role where organization_id is null"` | خط `[seed] catalog: …`؛ شمارش برابر `PERMISSIONS.length` و ۶ نقش سیستمی (سرویس `seed` در هر استقرار خودکار اجرا می‌شود؛ گام دستی ندارد) |
 
 کوئری RLS drift (همان `docs/qa/security-probe.md`):
 
