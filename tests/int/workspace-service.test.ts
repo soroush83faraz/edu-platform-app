@@ -11,7 +11,7 @@ import { AppError } from "@/lib/errors";
 import { tehranDayBounds, toFaDigits } from "@/lib/format";
 import type { Assignment } from "@/modules/iam/can";
 import { notifyMany } from "@/modules/notif/service";
-import { inboxCounts, listComments, listInbox } from "@/modules/workspace/repo";
+import { inboxCounts, inboxTabCounts, listComments, listInbox } from "@/modules/workspace/repo";
 import { addComment, canViewWorkItem, changeStatus, createWorkItem, getWorkItemDetail, markInboxRead, type WorkspaceCtx } from "@/modules/workspace/service";
 import * as f from "./fixtures";
 import { Rollback, asAppOwner } from "./helpers";
@@ -231,8 +231,12 @@ describe("changeStatus — per-assignee completion", () => {
       const [s1, s2, s3] = await enrollStudents(tx, 3);
       const res = await createWorkItem(tx, teacher, { typeCode: "task", title: "تمرین", priority: "normal", recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: [] } });
 
+      // Tab counts follow the same effective category as the lists: s1 sees the item under «در جریان», s2 still under «انجام‌نشده».
+      expect(await inboxTabCounts(tx, s1.personId)).toEqual({ todo: 1, doing: 0, done: 0 });
       const started = await changeStatus(tx, s1.ctx, { workItemId: res.id, toStatusCode: "in_progress" });
       expect(started).toMatchObject({ statusCode: "in_progress", itemChanged: true, assigneesDone: 0, assigneesTotal: 3 });
+      expect(await inboxTabCounts(tx, s1.personId)).toEqual({ todo: 0, doing: 1, done: 0 });
+      expect(await inboxTabCounts(tx, s2.personId)).toEqual({ todo: 0, doing: 1, done: 0 }); // the item itself moved to in_progress
 
       const d1 = await changeStatus(tx, s1.ctx, { workItemId: res.id, toStatusCode: "done" });
       expect(d1).toMatchObject({ statusCode: "in_progress", itemChanged: false, assigneesDone: 1, assigneesTotal: 3 });
@@ -252,6 +256,8 @@ describe("changeStatus — per-assignee completion", () => {
       const mine = await listInbox(tx, s1.personId, { tab: "done" });
       expect(mine.rows.map((r) => r.id)).toEqual([res.id]);
       expect(mine.rows[0]).toMatchObject({ category: "done", myAssigneeState: "done", assigneesDone: 1, assigneesTotal: 3 });
+      expect(await inboxTabCounts(tx, s1.personId)).toEqual({ todo: 0, doing: 0, done: 1 });
+      expect(await inboxTabCounts(tx, f.PERSON_A2)).toEqual({ todo: 0, doing: 1, done: 0 });
       const teacherDoing = await listInbox(tx, f.PERSON_A2, { tab: "doing", createdByMe: true });
       expect(teacherDoing.rows[0]).toMatchObject({ id: res.id, createdByMe: true, assigneesDone: 1, assigneesTotal: 3 });
 

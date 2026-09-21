@@ -19,7 +19,7 @@ export default async function NewWorkItemPage() {
         description="ایجاد کار برای معلمان و کادر مدرسه است."
         action={
           <Button asChild variant="outline" className="h-11">
-            <Link href="/inbox">بازگشت به کارتابل</Link>
+            <Link href="/inbox">بازگشت به پنل من</Link>
           </Button>
         }
       />
@@ -29,7 +29,7 @@ export default async function NewWorkItemPage() {
     <div className="flex flex-col gap-4 px-4 pt-3 pb-6 md:pt-6">
       <Link href="/inbox" className="inline-flex min-h-11 items-center gap-1 self-start text-sm text-text-muted hover:text-text">
         <ArrowRight className="size-4" aria-hidden />
-        کارتابل
+        پنل من
       </Link>
       <h2 className="text-xl font-bold text-text">کار جدید</h2>
       <NewWorkItemForm offerings={options.data.offerings} canPickPersons={options.data.canPickPersons} />

@@ -1,4 +1,4 @@
-# کارتابل — فاز ۱
+# کارتابل («پنل من» در رابط کاربری) — فاز ۱
 
 منبع حقیقت: `src/modules/workspace/{dto,repo,service,actions,queries,ui}`، `src/modules/notif/*`، صفحه‌ها زیر `src/app/(app)/{inbox,notifications,more}`. تست‌ها: `tests/int/workspace-service.test.ts`، `tests/unit/format.test.ts`.
 

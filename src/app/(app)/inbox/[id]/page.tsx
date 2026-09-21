@@ -1,10 +1,11 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Ban, CalendarOff, CircleCheck, Clock, Flag, ListTodo, type LucideIcon, Play } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { cn } from "cn";
 import { Chip, type ChipTone } from "@/components/Chip";
-import { PRIORITY_LABELS, priorityTone } from "@/components/PriorityStripe";
+import { IconChip, type IconChipTone } from "@/components/IconChip";
+import { PRIORITY_LABELS, priorityChipTone } from "@/components/priority";
 import { RelativeTime } from "@/components/RelativeTime";
 import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
 import { workItemDetailQuery } from "@/modules/workspace/queries";
@@ -16,11 +17,21 @@ export const metadata: Metadata = { title: "کار | سامانهٴ مدرسه" 
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const CATEGORY_TONE: Record<StatusCategory, ChipTone> = { todo: "neutral", doing: "primary", done: "success", cancelled: "neutral" };
+const CATEGORY_FACT: Record<StatusCategory, { icon: LucideIcon; tone: IconChipTone }> = {
+  todo: { icon: ListTodo, tone: "primary" },
+  doing: { icon: Play, tone: "sky" },
+  done: { icon: CircleCheck, tone: "success" },
+  cancelled: { icon: Ban, tone: "muted" },
+};
 const ASSIGNEE_STATE: Record<"pending" | "accepted" | "done", { label: string; tone: ChipTone }> = {
   pending: { label: "در انتظار", tone: "neutral" },
   accepted: { label: "در حال انجام", tone: "primary" },
   done: { label: "انجام‌شده", tone: "success" },
+};
+const ASSIGNEE_FACT: Record<"pending" | "accepted" | "done", { icon: LucideIcon; tone: IconChipTone }> = {
+  pending: { icon: ListTodo, tone: "primary" },
+  accepted: { icon: Play, tone: "sky" },
+  done: { icon: CircleCheck, tone: "success" },
 };
 
 export default async function WorkItemPage({ params }: { params: Promise<{ id: string }> }) {
@@ -38,47 +49,39 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
   const now = new Date();
   const overdue = item.dueAt !== null && item.dueAt.getTime() < now.getTime() && (item.statusCategory === "todo" || item.statusCategory === "doing");
   const myState = myAssigneeState ? ASSIGNEE_STATE[myAssigneeState] : null;
+  // Assignees see their own state; managers see the item's status.
+  const statusFact =
+    myAssigneeState && myState && !viewer.isManager ? { ...ASSIGNEE_FACT[myAssigneeState], value: myState.label } : { ...CATEGORY_FACT[item.statusCategory], value: item.statusName };
 
   return (
     <article className="flex flex-col gap-4 px-4 pt-3 pb-6 md:pt-6">
       <Link href="/inbox" className="inline-flex min-h-11 items-center gap-1 self-start text-sm text-text-muted hover:text-text">
         <ArrowRight className="size-4" aria-hidden />
-        کارتابل
+        پنل من
       </Link>
 
       <header className="flex flex-col gap-3">
         <h2 className="text-xl font-bold leading-8 text-text">
           <bdi>{item.title}</bdi>
         </h2>
-        <div className="flex flex-wrap items-center gap-2">
-          <Chip tone={item.typeCode === "todo" ? "neutral" : "primary"}>{item.typeName}</Chip>
-          <Chip tone={priorityTone(item.priority)}>اولویت {PRIORITY_LABELS[item.priority]}</Chip>
-          {myState && !viewer.isManager ? <Chip tone={myState.tone}>{myState.label}</Chip> : <Chip tone={CATEGORY_TONE[item.statusCategory]}>{item.statusName}</Chip>}
-        </div>
-        <dl className="flex flex-col gap-1 text-sm text-text-muted">
-          <div className="flex gap-2">
-            <dt className="shrink-0">از</dt>
-            <dd className="text-text">
-              <bdi>{creatorName}</bdi>
-              <span className="text-text-muted">
-                {" · "}
-                <RelativeTime at={item.createdAt} mode="time" />
-              </span>
-            </dd>
-          </div>
+        <p className="text-sm text-text-muted">
+          <Chip tone={item.typeCode === "todo" ? "neutral" : "primary"} className="me-1.5 align-middle">
+            {item.typeName}
+          </Chip>
+          از <bdi className="text-text">{creatorName}</bdi>
+          <span aria-hidden> · </span>
+          <RelativeTime at={item.createdAt} mode="time" />
+        </p>
+
+        {/* The three facts a reader checks before acting — status, priority, due — as chip-led cells in one card. */}
+        <dl className="grid grid-cols-3 divide-x divide-line/70 rounded-card bg-surface shadow-1">
+          <Fact icon={statusFact.icon} tone={statusFact.tone} label="وضعیت" value={statusFact.value} />
+          <Fact icon={Flag} tone={priorityChipTone(item.priority)} label="اولویت" value={PRIORITY_LABELS[item.priority]} />
           {item.dueAt ? (
-            <div className="flex gap-2">
-              <dt className="shrink-0">مهلت</dt>
-              <dd className={cn(overdue ? "font-medium text-danger" : "text-text")}>
-                {formatJalaliDateTime(item.dueAt)}
-                <span className={cn("text-text-muted", overdue && "text-danger")}>
-                  {" ("}
-                  <RelativeTime at={item.dueAt} />
-                  {")"}
-                </span>
-              </dd>
-            </div>
-          ) : null}
+            <Fact icon={Clock} tone={overdue ? "danger" : "primary"} label="مهلت" value={<RelativeTime at={item.dueAt} />} hint={formatJalaliDateTime(item.dueAt)} alert={overdue} />
+          ) : (
+            <Fact icon={CalendarOff} tone="muted" label="مهلت" value="بدون مهلت" />
+          )}
         </dl>
         <WorkItemActions
           workItemId={item.id}
@@ -183,5 +186,19 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
         </details>
       ) : null}
     </article>
+  );
+}
+
+/** One cell of the facts row: chip on top, a quiet label, the value; `hint` is the exact timestamp under a relative due. */
+function Fact({ icon, tone, label, value, hint, alert = false }: { icon: LucideIcon; tone: IconChipTone; label: string; value: React.ReactNode; hint?: string; alert?: boolean }) {
+  return (
+    <div className="flex min-w-0 flex-col items-center gap-1.5 px-2 py-4 text-center">
+      <IconChip icon={icon} tone={tone} size="lg" />
+      <dt className="text-xs text-text-muted">{label}</dt>
+      <dd className={cn("text-sm font-semibold leading-5 text-balance", alert ? "text-danger" : "text-text")}>
+        {value}
+        {hint ? <span className="mt-0.5 block text-xs font-normal text-text-faint">{hint}</span> : null}
+      </dd>
+    </div>
   );
 }

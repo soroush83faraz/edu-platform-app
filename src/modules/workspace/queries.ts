@@ -6,7 +6,7 @@ import { defineQuery } from "@/lib/actions";
 import { canAtAnyScope, canBroadly } from "@/modules/iam/can";
 import { unreadNotificationCount } from "@/modules/notif";
 import { ListInboxInput, WorkItemIdInput } from "./dto";
-import { type InboxSummary, inboxCounts, isStaff, listAllOfferings, listInbox, listTaughtOfferings } from "./repo";
+import { type InboxSummary, inboxCounts, inboxTabCounts, isStaff, listAllOfferings, listInbox, listTaughtOfferings } from "./repo";
 import { getWorkItemDetail } from "./service";
 
 export const listInboxQuery = defineQuery({ schema: ListInboxInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) => {
@@ -22,6 +22,7 @@ export const listInboxQuery = defineQuery({ schema: ListInboxInput, permission: 
   });
   return {
     ...page,
+    tabCounts: await inboxTabCounts(tx, ctx.personId),
     isStaff: staff,
     canCreate: canAtAnyScope(ctx.assignments, "workspace.work_item.create"),
   };

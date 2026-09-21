@@ -381,6 +381,39 @@ export async function inboxCounts(tx: Tx, personId: string, bounds: DayBounds = 
   return { overdue: r?.overdue ?? 0, dueToday: r?.due_today ?? 0, unread: r?.unread ?? 0 };
 }
 
+export interface InboxTabCounts {
+  todo: number;
+  doing: number;
+  done: number;
+}
+
+/**
+ * Rows per کارتابل tab for the segmented control — the same effective category as `listInbox` (own assignee state
+ * wins), so the numbers match the lists. `done` includes cancelled, like the tab.
+ */
+export async function inboxTabCounts(tx: Tx, personId: string): Promise<InboxTabCounts> {
+  const res = await tx.execute<{ todo: number; doing: number; done: number }>(sql`
+    select
+      (count(*) filter (where eff.category = 'todo'))::int as todo,
+      (count(*) filter (where eff.category = 'doing'))::int as doing,
+      (count(*) filter (where eff.category in ('done', 'cancelled')))::int as done
+    from ${inboxEntry} ie
+    join ${workItem} wi on wi.id = ie.work_item_id
+    join ${workItemStatus} s on s.id = wi.status_id
+    left join ${workItemAssignee} wa on wa.work_item_id = wi.id and wa.person_id = ie.person_id and wa.role = 'assignee'
+    cross join lateral (
+      select case
+        when wa.state = 'done' then 'done'
+        when wa.state = 'accepted' and s.category = 'todo' then 'doing'
+        else s.category
+      end as category
+    ) eff
+    where ie.person_id = ${personId}::uuid and ie.state <> 'archived' and wi.archived_at is null
+  `);
+  const r = res.rows[0];
+  return { todo: r?.todo ?? 0, doing: r?.doing ?? 0, done: r?.done ?? 0 };
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // detail
 // ---------------------------------------------------------------------------------------------------------------

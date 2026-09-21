@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
-import { PRIORITY_LABELS, type Priority } from "@/components/PriorityStripe";
+import { PRIORITY_LABELS, type Priority } from "@/components/priority";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatJalaliNumeric, formatNumberFa } from "@/lib/format";
@@ -344,7 +344,7 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
           </div>
         ) : null}
 
-        {mode === "self" ? <p className="text-sm text-text-muted">یک کار شخصی فقط در کارتابل خودتان می‌ماند.</p> : null}
+        {mode === "self" ? <p className="text-sm text-text-muted">یک کار شخصی فقط در پنل خودتان می‌ماند.</p> : null}
         <FieldError id={`${ids}-recipients-err`} text={errors.recipients} />
       </fieldset>
 

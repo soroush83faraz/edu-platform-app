@@ -18,7 +18,7 @@ export interface WorkItemActionsProps {
   inbox: { state: string; isPinned: boolean } | null;
 }
 
-/** Status buttons per role + the «بیشتر» menu (pin / archive). Marks my inbox row read once on mount. */
+/** Status buttons per role + the «گزینه‌های بیشتر» menu (pin / archive). Marks my inbox row read once on mount. */
 export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, isManager, canUpdate, inbox }: WorkItemActionsProps) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -47,7 +47,7 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
   if (canUpdate && isAssignee && !closed) {
     if (myAssigneeState === "pending") {
       buttons.push(
-        <Button key="start" variant="outline" className="h-11 flex-1 px-4" disabled={pending} onClick={() => run("شروع شد", () => changeStatusAction({ workItemId, toStatusCode: "in_progress" }))}>
+        <Button key="start" variant="outline" className="h-12 w-full rounded-xl px-4 text-base" disabled={pending} onClick={() => run("شروع شد", () => changeStatusAction({ workItemId, toStatusCode: "in_progress" }))}>
           <Play aria-hidden />
           شروع کردم
         </Button>,
@@ -55,7 +55,7 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
     }
     if (myAssigneeState !== "done") {
       buttons.push(
-        <Button key="done" className="h-11 flex-1 px-4" disabled={pending} onClick={() => run("انجام شد", () => changeStatusAction({ workItemId, toStatusCode: "done" }))}>
+        <Button key="done" className="h-12 w-full rounded-xl px-4 text-base" disabled={pending} onClick={() => run("انجام شد", () => changeStatusAction({ workItemId, toStatusCode: "done" }))}>
           <Check aria-hidden />
           انجام شد
         </Button>,
@@ -65,14 +65,14 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
   if (canUpdate && isManager) {
     if (closed) {
       buttons.push(
-        <Button key="reopen" variant="outline" className="h-11 flex-1 px-4" disabled={pending} onClick={() => run("بازگشایی شد", () => changeStatusAction({ workItemId, toStatusCode: "open" }))}>
+        <Button key="reopen" variant="outline" className="h-12 w-full rounded-xl px-4 text-base" disabled={pending} onClick={() => run("بازگشایی شد", () => changeStatusAction({ workItemId, toStatusCode: "open" }))}>
           <RotateCcw aria-hidden />
           بازگشایی
         </Button>,
       );
     } else {
       buttons.push(
-        <Button key="cancel" variant="ghost" className="h-11 px-4 text-danger hover:text-danger" disabled={pending} onClick={() => run("لغو شد", () => changeStatusAction({ workItemId, toStatusCode: "cancelled" }))}>
+        <Button key="cancel" variant="ghost" className="h-12 w-full rounded-xl px-4 text-base text-danger hover:text-danger" disabled={pending} onClick={() => run("لغو شد", () => changeStatusAction({ workItemId, toStatusCode: "cancelled" }))}>
           <Ban aria-hidden />
           لغو
         </Button>,
@@ -80,14 +80,16 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
     }
   }
 
+  // Full-width, stacked on phones (thumb-sized, in reading order: the main action first); two-up from `sm:`.
   return (
-    <div className="flex items-center gap-2">
+    <div className="grid gap-2 sm:grid-cols-2">
       {buttons}
       {inbox ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className="size-11 shrink-0" aria-label="بیشتر">
+            <Button variant="outline" className="h-12 w-full rounded-xl px-4 text-base text-text-muted">
               <Ellipsis aria-hidden />
+              گزینه‌های بیشتر
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -102,7 +104,7 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
               }
             >
               {pinned ? <PinOff aria-hidden /> : <Pin aria-hidden />}
-              {pinned ? "برداشتن سنجاق" : "سنجاق به بالای کارتابل"}
+              {pinned ? "برداشتن سنجاق" : "سنجاق به بالای پنل من"}
             </DropdownMenuItem>
             {inbox.state !== "archived" ? (
               <DropdownMenuItem
@@ -111,14 +113,14 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
                   start(async () => {
                     const r = await archiveInboxAction({ workItemId });
                     if (r.ok) {
-                      toast.success("از کارتابل شما بایگانی شد");
+                      toast.success("از پنل شما بایگانی شد");
                       router.push("/inbox");
                     } else toast.error(r.message);
                   })
                 }
               >
                 <Archive aria-hidden />
-                بایگانی در کارتابل من
+                بایگانی در پنل من
               </DropdownMenuItem>
             ) : null}
           </DropdownMenuContent>

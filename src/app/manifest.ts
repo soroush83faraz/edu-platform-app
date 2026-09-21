@@ -8,7 +8,7 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/",
     name,
     short_name: name.length > 12 ? "مدرسه" : name,
-    description: "کارتابل، اعلان‌ها و مدیریت مدرسه — روی گوشی",
+    description: "پنل من، اعلان‌ها و مدیریت مدرسه — روی گوشی",
     lang: "fa",
     dir: "rtl",
     start_url: "/home",

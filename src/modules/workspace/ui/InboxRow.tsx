@@ -1,38 +1,48 @@
-import { MessageSquare, Pin } from "lucide-react";
+import { ClipboardList, Clock, ListTodo, MessageSquare, Pin } from "lucide-react";
 import Link from "next/link";
 import { cn } from "cn";
 import { Chip } from "@/components/Chip";
-import { PriorityStripe } from "@/components/PriorityStripe";
+import { IconChip } from "@/components/IconChip";
+import { priorityChipTone } from "@/components/priority";
 import { RelativeTime } from "@/components/RelativeTime";
 import { formatNumberFa } from "@/lib/format";
 import type { InboxRow as Row } from "../repo";
 
 /**
- * One کار in the list. Reads in one glance: colour bar = priority, bold = unread, second line = who/when,
- * end = progress (for items I gave) or the unread dot.
+ * One کار in the list, read in one glance: the type chip (todo / task glyph) tinted by priority, bold title when
+ * unread, one meta line (due on a clock chip — red when overdue — then who gave it or my progress on it), and the
+ * unread dot at the end. 64 px minimum, the whole row is the target.
  */
 export function InboxRow({ row }: { row: Row }) {
   const overdue = row.bucket === "overdue";
   const closed = row.category === "done" || row.category === "cancelled";
+  const showProgress = row.createdByMe && row.assigneesTotal > 0 && !(row.assigneesTotal === 1 && row.myAssigneeState);
   return (
-    <li className="relative">
-      <PriorityStripe priority={row.priority} className="inset-y-3 w-0.75" />
+    <li>
       <Link
         href={`/inbox/${row.id}`}
-        className={cn("flex min-h-[4.5rem] items-center gap-3 ps-5 pe-4 py-3 transition-colors duration-150 hover:bg-surface-sunken active:bg-surface-sunken", closed && "opacity-70")}
+        className={cn(
+          "pressable flex min-h-16 items-center gap-3 px-3 py-2.5 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken active:bg-surface-sunken",
+          closed && "opacity-70",
+        )}
       >
+        <IconChip icon={row.typeCode === "todo" ? ListTodo : ClipboardList} tone={closed ? "muted" : priorityChipTone(row.priority)} label={row.typeName} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <p className={cn("line-clamp-2 text-base leading-6 text-text", row.unread ? "font-semibold" : "font-medium")}>
             <bdi>{row.title}</bdi>
           </p>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-muted">
-            <Chip tone={row.typeCode === "todo" ? "neutral" : "primary"}>{row.typeName}</Chip>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-muted">
             {row.dueAt ? (
-              <span className={cn("inline-flex items-center gap-1", overdue && "font-medium text-danger")}>
+              <Chip tone={overdue ? "danger" : "neutral"} className="h-5 px-1.5 text-xs">
+                <Clock className="size-3" strokeWidth={2} aria-hidden />
                 <RelativeTime at={row.dueAt} />
-              </span>
+              </Chip>
             ) : null}
-            {row.createdByMe ? null : (
+            {showProgress ? (
+              <span className="tabular">
+                {formatNumberFa(row.assigneesDone)}/{formatNumberFa(row.assigneesTotal)} انجام شد
+              </span>
+            ) : row.createdByMe ? null : (
               <span className="truncate">
                 از <bdi>{row.creatorName}</bdi>
               </span>
@@ -46,10 +56,8 @@ export function InboxRow({ row }: { row: Row }) {
             {row.isPinned ? <Pin className="size-3.5 text-sky-strong" aria-label="سنجاق‌شده" /> : null}
           </div>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          {row.createdByMe && row.assigneesTotal > 0 && !(row.assigneesTotal === 1 && row.myAssigneeState) ? (
-            <Progress done={row.assigneesDone} total={row.assigneesTotal} />
-          ) : null}
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          {showProgress ? <ProgressBar done={row.assigneesDone} total={row.assigneesTotal} /> : null}
           {row.unread ? <span className="size-2.5 rounded-full bg-sky" aria-label="خوانده‌نشده" /> : null}
           {row.category === "done" ? <Chip tone="success">انجام‌شده</Chip> : row.category === "cancelled" ? <Chip tone="neutral">لغوشده</Chip> : null}
         </div>
@@ -58,16 +66,11 @@ export function InboxRow({ row }: { row: Row }) {
   );
 }
 
-function Progress({ done, total }: { done: number; total: number }) {
+function ProgressBar({ done, total }: { done: number; total: number }) {
   const pct = total === 0 ? 0 : Math.round((done / total) * 100);
   return (
-    <div className="flex flex-col items-end gap-1">
-      <span className="tabular text-sm text-text-muted">
-        {formatNumberFa(done)}/{formatNumberFa(total)} انجام شد
-      </span>
-      <span className="block h-1 w-16 overflow-hidden rounded-full bg-neutral-200" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done}>
-        <span className={cn("block h-full rounded-full", pct === 100 ? "bg-success" : "bg-sky")} style={{ width: `${pct}%` }} />
-      </span>
-    </div>
+    <span className="block h-1.5 w-14 overflow-hidden rounded-full bg-neutral-200" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done} aria-label="پیشرفت">
+      <span className={cn("block h-full rounded-full", pct === 100 ? "bg-success" : "bg-sky")} style={{ width: `${pct}%` }} />
+    </span>
   );
 }
