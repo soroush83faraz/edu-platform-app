@@ -24,15 +24,15 @@ export function ArchiveButton({ resource, id, labelFa, confirmFa }: { resource: 
     });
   return (
     <>
-      <Button type="button" variant="ghost" size="icon" aria-label={labelFa} onClick={() => setOpen(true)} className="size-11 text-text-muted md:size-9">
+      <Button type="button" variant="ghost" size="icon" aria-label={labelFa} onClick={() => setOpen(true)} className="text-text-muted md:size-9">
         <Archive className="size-4" aria-hidden />
       </Button>
       <ResponsiveModal open={open} onOpenChange={setOpen} title={labelFa} description={confirmFa}>
         <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="outline" className="h-11" onClick={() => setOpen(false)}>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)}>
             انصراف
           </Button>
-          <Button type="button" variant="destructive" className="h-11 min-w-28" disabled={pending} onClick={run}>
+          <Button type="button" variant="destructive" className="min-w-28" disabled={pending} onClick={run}>
             {pending ? "…" : labelFa}
           </Button>
         </div>

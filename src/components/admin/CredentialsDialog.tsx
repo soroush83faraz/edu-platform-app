@@ -26,7 +26,7 @@ export function CredentialsDialog({ creds, onClose }: { creds: Credentials | nul
           <CredentialLine label="شناسهٴ ورود" value={creds.loginIdentifier} />
           <CredentialLine label="رمز اولیه" value={creds.initialPassword} />
           <CopyAllButton text={`${creds.name}\nشناسهٴ ورود: ${creds.loginIdentifier}\nرمز اولیه: ${creds.initialPassword}`} />
-          <Button type="button" className="h-11" onClick={onClose}>
+          <Button type="button" onClick={onClose}>
             متوجه شدم
           </Button>
         </div>
@@ -61,7 +61,7 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
     }
   };
   return (
-    <Button type="button" variant="ghost" size="icon" aria-label={label} onClick={copy} className="size-9">
+    <Button type="button" variant="ghost" size="icon-sm" aria-label={label} onClick={copy}>
       {done ? <Check className="size-4 text-success" aria-hidden /> : <Copy className="size-4" aria-hidden />}
     </Button>
   );
@@ -73,7 +73,7 @@ function CopyAllButton({ text }: { text: string }) {
     <Button
       type="button"
       variant="outline"
-      className="h-11 gap-2"
+      className="gap-2"
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(text);

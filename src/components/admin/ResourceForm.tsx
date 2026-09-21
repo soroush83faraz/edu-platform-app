@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { SelectNative } from "@/components/ui/select-native";
 import { adminResourceMutate } from "@/lib/admin/actions";
 import type { FormField, SelectOption } from "@/lib/admin/defineResource";
 import type { FieldErrors } from "@/lib/actions";
@@ -69,7 +71,7 @@ export function ResourceForm({ resource, labelFa, fields, options, mode, id, ini
           <Pencil className="size-4" aria-hidden />
         </Button>
       ) : (
-        <Button type="button" onClick={() => setOpen(true)} className="h-11 gap-1.5 px-4">
+        <Button type="button" onClick={() => setOpen(true)}>
           <Plus className="size-4" aria-hidden />
           {title}
         </Button>
@@ -90,10 +92,10 @@ export function ResourceForm({ resource, labelFa, fields, options, mode, id, ini
             {errors.form}
           </p>
           <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="outline" className="h-11" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               انصراف
             </Button>
-            <Button type="submit" className="h-11 min-w-28" disabled={pending}>
+            <Button type="submit" className="min-w-28" disabled={pending}>
               {pending ? "در حال ذخیره…" : mode === "create" ? "ثبت" : "ذخیره"}
             </Button>
           </div>
@@ -139,8 +141,6 @@ export function flatten(fieldErrors: FieldErrors | undefined, message: string): 
   return out;
 }
 
-const inputClass = "h-11 bg-surface text-base";
-
 export function Field({
   field,
   id,
@@ -158,10 +158,10 @@ export function Field({
 }) {
   const errId = `${id}-err`;
   const label = (
-    <label htmlFor={id} className="text-sm font-medium text-text">
+    <Label htmlFor={id}>
       {field.labelFa}
       {field.required ? null : <span className="text-text-faint"> (اختیاری)</span>}
-    </label>
+    </Label>
   );
   if (field.type === "toggle") {
     return (
@@ -170,7 +170,7 @@ export function Field({
           <input id={id} type="checkbox" className="size-5 accent-primary-600" checked={value === true} onChange={(e) => onChange(e.target.checked)} />
           {field.labelFa}
         </label>
-        {field.hint ? <p className="text-xs text-text-muted">{field.hint}</p> : null}
+        {field.hint ? <p className="text-sm leading-6 text-text-muted">{field.hint}</p> : null}
         <FieldError id={errId} text={error} />
       </div>
     );
@@ -186,13 +186,12 @@ export function Field({
     return (
       <div className="flex flex-col gap-1.5">
         {label}
-        <select
+        <SelectNative
           id={id}
           value={value === null || value === undefined ? "" : String(value)}
           onChange={(e) => onChange(e.target.value)}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errId : undefined}
-          className={cn("w-full rounded-lg border border-line px-3 outline-none focus-visible:border-primary-400 focus-visible:ring-3 focus-visible:ring-primary-400/30", inputClass)}
         >
           {!field.required || value === "" ? <option value="">{field.required ? "انتخاب کنید…" : "—"}</option> : null}
           {groups.length > 0
@@ -202,8 +201,8 @@ export function Field({
                 </optgroup>
               ))
             : render(options)}
-        </select>
-        {field.hint ? <p className="text-xs text-text-muted">{field.hint}</p> : null}
+        </SelectNative>
+        {field.hint ? <p className="text-sm leading-6 text-text-muted">{field.hint}</p> : null}
         <FieldError id={errId} text={error} />
       </div>
     );
@@ -220,10 +219,10 @@ export function Field({
         dir={field.ltr ? "ltr" : undefined}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errId : undefined}
-        className={cn(inputClass, (field.type === "number" || field.type === "jalali_date") && "tabular", field.ltr && "text-start")}
+        className={cn((field.type === "number" || field.type === "jalali_date") && "tabular", field.ltr && "text-start")}
         autoComplete="off"
       />
-      {field.hint ? <p className="text-xs text-text-muted">{field.hint}</p> : null}
+      {field.hint ? <p className="text-sm leading-6 text-text-muted">{field.hint}</p> : null}
       <FieldError id={errId} text={error} />
     </div>
   );

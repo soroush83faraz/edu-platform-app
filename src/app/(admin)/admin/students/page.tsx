@@ -44,7 +44,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
         description="ثبت دانش‌آموز با حساب کاربری و کلاس در یک فرم؛ رمز اولیه فقط یک‌بار نمایش داده می‌شود و بعداً از صفحهٴ کلاس چاپ می‌شود."
         actions={
           canWrite ? (
-            <Button asChild className="h-11 gap-1.5 px-4">
+            <Button asChild>
               <Link href="/admin/students/new">
                 <Plus className="size-4" aria-hidden />
                 دانش‌آموز جدید
@@ -96,7 +96,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
 
 function FilterChip({ href, active, label }: { href: string; active: boolean; label: string }) {
   return (
-    <Link href={href} aria-pressed={active} className={cn("inline-flex h-9 items-center rounded-full border px-3 transition-colors", active ? "border-primary-600 bg-primary-50 font-semibold text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong")}>
+    <Link href={href} aria-pressed={active} className={cn("inline-flex h-9 items-center rounded-full border px-3 transition-base", active ? "border-primary-600 bg-primary-50 font-semibold text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong")}>
       {label}
     </Link>
   );

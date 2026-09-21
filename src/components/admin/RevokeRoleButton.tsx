@@ -22,15 +22,15 @@ export function RevokeRoleButton({ roleAssignmentId }: { roleAssignmentId: strin
     });
   return (
     <>
-      <Button type="button" variant="ghost" size="sm" className="h-9 text-danger" onClick={() => setOpen(true)}>
+      <Button type="button" variant="ghost" size="sm" className="text-danger" onClick={() => setOpen(true)}>
         لغو
       </Button>
       <ResponsiveModal open={open} onOpenChange={setOpen} title="لغو نقش" description="این نقش از فرد گرفته می‌شود و دسترسی‌های آن از همین لحظه قطع می‌شود.">
         <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="outline" className="h-11" onClick={() => setOpen(false)}>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)}>
             انصراف
           </Button>
-          <Button type="button" variant="destructive" className="h-11 min-w-28" disabled={pending} onClick={run}>
+          <Button type="button" variant="destructive" className="min-w-28" disabled={pending} onClick={run}>
             لغو نقش
           </Button>
         </div>

@@ -71,7 +71,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       <div className="flex items-center justify-between gap-3 px-4 pt-5 pb-3 md:pt-8">
         <h2 className="text-xl font-bold text-text">پنل من</h2>
         {canCreate ? (
-          <Button asChild className="h-11 rounded-xl px-4">
+          <Button asChild>
             <Link href="/inbox/new">
               <Plus aria-hidden />
               کار جدید
@@ -141,12 +141,12 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           {nextCursor || f.cursor ? (
             <div className="flex items-center justify-center gap-3 px-4 py-5">
               {f.cursor ? (
-                <Button asChild variant="ghost" className="h-11">
+                <Button asChild variant="ghost">
                   <Link href={href({ ...f, cursor: undefined })}>بازگشت به ابتدا</Link>
                 </Button>
               ) : null}
               {nextCursor ? (
-                <Button asChild variant="outline" className="h-11 px-5">
+                <Button asChild variant="outline">
                   <Link href={href({ ...f, cursor: nextCursor })}>نمایش بیشتر</Link>
                 </Button>
               ) : null}
@@ -189,7 +189,7 @@ function Empty({ tab, filtered, canCreate, clearHref }: { tab: InboxTab; filtere
         illustration={<EmptyClay size={96} />}
         title="با این فیلتر کاری پیدا نشد"
         action={
-          <Button asChild variant="outline" className="h-11">
+          <Button asChild variant="outline">
             <Link href={clearHref}>حذف فیلتر</Link>
           </Button>
         }
@@ -204,7 +204,7 @@ function Empty({ tab, filtered, canCreate, clearHref }: { tab: InboxTab; filtere
         description={canCreate ? "وقتی کاری به شما سپرده شود یا خودتان کاری بسازید، همین‌جا می‌آید." : "وقتی کاری به شما سپرده شود، همین‌جا می‌آید."}
         action={
           canCreate ? (
-            <Button asChild className="h-11 px-5">
+            <Button asChild>
               <Link href="/inbox/new">کار جدید</Link>
             </Button>
           ) : undefined

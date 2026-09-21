@@ -38,14 +38,14 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
         back={{ href: "/admin/classes", label: "کلاس‌ها" }}
         actions={
           <>
-            <Button asChild variant="outline" className="h-11 gap-2">
+            <Button asChild variant="outline">
               <Link href={`/admin/classes/${id}/offerings`}>
                 <BookOpen className="size-4" aria-hidden />
                 ارائهٴ درس‌ها ({formatNumberFa(offerings.length)})
               </Link>
             </Button>
             {canPrint ? (
-              <Button asChild variant="outline" className="h-11 gap-2">
+              <Button asChild variant="outline">
                 <Link href={`/admin/classes/${id}/credentials`}>
                   <Printer className="size-4" aria-hidden />
                   چاپ اعتبارنامه‌ها
@@ -53,7 +53,7 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
               </Button>
             ) : null}
             {canAddStudent ? (
-              <Button asChild className="h-11 gap-1.5">
+              <Button asChild>
                 <Link href="/admin/students/new">
                   <Plus className="size-4" aria-hidden />
                   دانش‌آموز جدید

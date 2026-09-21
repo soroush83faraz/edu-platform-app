@@ -35,7 +35,7 @@ export default async function ClassesPage() {
           <h2 className="text-xl font-bold leading-8 text-text">کلاس‌های من</h2>
           <p className="text-sm text-text-muted">{offerings.length > 0 ? `${formatNumberFa(offerings.length)} درس در این سال` : "درسی به شما سپرده نشده"}</p>
         </div>
-        <Button asChild className="ms-auto h-11 shrink-0 rounded-xl px-4">
+        <Button asChild className="ms-auto shrink-0">
           <Link href="/inbox/new">
             <Plus aria-hidden />
             کار جدید

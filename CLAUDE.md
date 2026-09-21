@@ -7,7 +7,7 @@ next 16.3.5 · react/react-dom 19.2.8 · typescript 5.9.3 · tailwindcss 4.3.3 �
 - Zod is v4: `z.url()`, `z.email()`, `error.issues`. Drizzle migrations are SQL files in `/drizzle`.
 
 ## Layout
-`src/app` (routes only; thin) · `src/modules/<ctx>/{schema,dto,repo,service,actions,ui}` for tenancy, iam, config, files, audit, notif, workspace, academic, integ · `src/db/{client.ts,schema/_common.ts}` · `src/lib/{env,logger,normalize,errors,actions}` · `src/components/ui` (shadcn, generated — do not hand-edit) · `scripts/` (migrate, seed, import; tsx) · `drizzle/` (SQL) · `deploy/` (compose, Caddy, ship/deploy scripts) · `tests/{unit,int}`.
+`src/app` (routes only; thin) · `src/modules/<ctx>/{schema,dto,repo,service,actions,ui}` for tenancy, iam, config, files, audit, notif, workspace, academic, integ · `src/db/{client.ts,schema/_common.ts}` · `src/lib/{env,logger,normalize,errors,actions}` · `src/components/ui` (shadcn, generated — do not hand-edit, EXCEPT the two owned files `button.tsx` and `input.tsx` plus our hand-written `select-native.tsx` / `textarea.tsx`: padding-based 44 px controls, see docs/decisions.md «form controls»; a re-generation must re-apply their header blocks) · `scripts/` (migrate, seed, import; tsx) · `drizzle/` (SQL) · `deploy/` (compose, Caddy, ship/deploy scripts) · `tests/{unit,int}`.
 Service signature: `(tx, ctx, input)`. Repos take `tx`. Explicit column selects, never `select *`.
 
 ## DB rules (non-negotiable)

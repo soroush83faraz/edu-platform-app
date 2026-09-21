@@ -33,7 +33,7 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
         description="دبیران و کادر. حساب کاربری با شمارهٴ موبایل ساخته می‌شود؛ نقش «معلم» از تخصیص درس در صفحهٴ کلاس می‌آید."
         actions={
           canWrite ? (
-            <Button asChild className="h-11 gap-1.5 px-4">
+            <Button asChild>
               <Link href="/admin/staff/new">
                 <Plus className="size-4" aria-hidden />
                 همکار جدید

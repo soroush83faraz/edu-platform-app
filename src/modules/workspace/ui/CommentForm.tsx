@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { addCommentAction } from "../actions";
 
 export function CommentForm({ workItemId, canStaffOnly }: { workItemId: string; canStaffOnly: boolean }) {
@@ -34,10 +36,8 @@ export function CommentForm({ workItemId, canStaffOnly }: { workItemId: string; 
 
   return (
     <form ref={formRef} onSubmit={onSubmit} className="flex flex-col gap-2" noValidate>
-      <label htmlFor="comment-body" className="text-sm font-medium text-text">
-        نظر جدید
-      </label>
-      <textarea
+      <Label htmlFor="comment-body">نظر جدید</Label>
+      <Textarea
         id="comment-body"
         name="body"
         dir="auto"
@@ -47,7 +47,6 @@ export function CommentForm({ workItemId, canStaffOnly }: { workItemId: string; 
         placeholder="مثلاً: انجام دادم، فقط سؤال ۳ را نفهمیدم."
         aria-invalid={error ? true : undefined}
         aria-describedby="comment-error"
-        className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-base leading-7 outline-none placeholder:text-text-faint focus-visible:border-primary-400 focus-visible:ring-3 focus-visible:ring-primary-400/30 aria-invalid:border-danger"
       />
       <div className="flex flex-wrap items-center justify-between gap-2">
         {canStaffOnly ? (
@@ -58,11 +57,11 @@ export function CommentForm({ workItemId, canStaffOnly }: { workItemId: string; 
         ) : (
           <span />
         )}
-        <Button type="submit" className="h-11 px-5" disabled={pending}>
+        <Button type="submit" disabled={pending}>
           {pending ? "در حال ثبت…" : "ثبت نظر"}
         </Button>
       </div>
-      <p id="comment-error" role="alert" className="min-h-5 text-sm text-danger">
+      <p id="comment-error" role="alert" className="min-h-6 text-sm leading-6 text-danger">
         {error}
       </p>
     </form>

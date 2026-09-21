@@ -65,14 +65,14 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
   if (canUpdate && isManager) {
     if (closed) {
       buttons.push(
-        <Button key="reopen" variant="outline" className="h-12 w-full rounded-xl px-4 text-base" disabled={pending} onClick={() => run("بازگشایی شد", () => changeStatusAction({ workItemId, toStatusCode: "open" }))}>
+        <Button key="reopen" variant="outline" size="lg" className="w-full" disabled={pending} onClick={() => run("بازگشایی شد", () => changeStatusAction({ workItemId, toStatusCode: "open" }))}>
           <RotateCcw aria-hidden />
           بازگشایی
         </Button>,
       );
     } else {
       buttons.push(
-        <Button key="cancel" variant="ghost" className="h-12 w-full rounded-xl px-4 text-base text-danger hover:text-danger" disabled={pending} onClick={() => run("لغو شد", () => changeStatusAction({ workItemId, toStatusCode: "cancelled" }))}>
+        <Button key="cancel" variant="ghost" size="lg" className="w-full text-danger hover:text-danger" disabled={pending} onClick={() => run("لغو شد", () => changeStatusAction({ workItemId, toStatusCode: "cancelled" }))}>
           <Ban aria-hidden />
           لغو
         </Button>,
@@ -87,7 +87,7 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
       {inbox ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="h-12 w-full rounded-xl px-4 text-base text-text-muted">
+            <Button variant="outline" size="lg" className="w-full text-text-muted">
               <Ellipsis aria-hidden />
               گزینه‌های بیشتر
             </Button>

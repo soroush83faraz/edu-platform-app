@@ -27,7 +27,7 @@ export default async function ChangePasswordPage() {
       </CardContent>
       <CardFooter className="justify-between">
         <form action={logoutAction}>
-          <Button type="submit" variant="ghost" className="h-11">
+          <Button type="submit" variant="ghost">
             خروج از حساب
           </Button>
         </form>

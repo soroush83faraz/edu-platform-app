@@ -9,7 +9,7 @@ export default function AdminNotFound() {
       title="چنین موردی پیدا نشد"
       description="ممکن است حذف شده باشد یا در دسترس شما نباشد."
       action={
-        <Button asChild variant="outline" className="h-11">
+        <Button asChild variant="outline">
           <Link href="/home">بازگشت به خانه</Link>
         </Button>
       }

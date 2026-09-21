@@ -14,7 +14,7 @@ export default function Page() {
         title="به‌زودی"
         description="این بخش در حال آماده‌سازی است."
         action={
-          <Button asChild variant="outline" className="h-11">
+          <Button asChild variant="outline">
             <Link href="/more">بازگشت</Link>
           </Button>
         }

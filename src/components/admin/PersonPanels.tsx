@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { SelectNative } from "@/components/ui/select-native";
 import { Chip } from "@/components/Chip";
 import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
 import { assignRoleAction, createAccountAction, endTeachingAction, placeStudentAction, resetPasswordAction, revokeRoleAction, unlockAccountAction } from "@/lib/admin/people-actions";
@@ -87,19 +88,19 @@ export function AccountCard({ detail, caps }: { detail: PersonDetail; caps: Caps
           </dl>
           <div className="flex flex-wrap gap-2">
             {caps.canReset ? (
-              <Button type="button" variant="outline" className="h-11 gap-2" onClick={() => setConfirmReset(true)} disabled={pending}>
+              <Button type="button" variant="outline" className="gap-2" onClick={() => setConfirmReset(true)} disabled={pending}>
                 <KeyRound className="size-4" aria-hidden />
                 تعیین رمز موقت
               </Button>
             ) : null}
             {caps.canUnlock && (locked || acct.failedLoginCount > 0) ? (
-              <Button type="button" variant="outline" className="h-11 gap-2" onClick={unlock} disabled={pending}>
+              <Button type="button" variant="outline" className="gap-2" onClick={unlock} disabled={pending}>
                 <LockOpen className="size-4" aria-hidden />
                 رفع قفل
               </Button>
             ) : null}
             {caps.canReset && acct.mustChangePassword && acct.hasInitialPassword ? (
-              <Button asChild variant="ghost" className="h-11 gap-2">
+              <Button asChild variant="ghost" className="gap-2">
                 <Link href={`/admin/people/${detail.id}/credentials`}>
                   <Printer className="size-4" aria-hidden />
                   چاپ اعتبارنامه
@@ -112,7 +113,7 @@ export function AccountCard({ detail, caps }: { detail: PersonDetail; caps: Caps
         <div className="flex flex-col gap-2">
           <p className="text-sm text-text-muted">این فرد حساب کاربری ندارد و نمی‌تواند وارد سامانه شود.</p>
           {caps.canWritePerson ? (
-            <Button type="button" className="h-11 gap-2 self-start" onClick={create} disabled={pending}>
+            <Button type="button" className="gap-2 self-start" onClick={create} disabled={pending}>
               <UserPlus className="size-4" aria-hidden />
               ساخت حساب کاربری
             </Button>
@@ -121,10 +122,10 @@ export function AccountCard({ detail, caps }: { detail: PersonDetail; caps: Caps
       )}
       <ResponsiveModal open={confirmReset} onOpenChange={setConfirmReset} title="تعیین رمز موقت" description="رمز فعلی باطل می‌شود، همهٴ نشست‌های این حساب خارج می‌شوند و رمز جدید فقط یک‌بار نمایش داده می‌شود.">
         <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="outline" className="h-11" onClick={() => setConfirmReset(false)}>
+          <Button type="button" variant="outline" onClick={() => setConfirmReset(false)}>
             انصراف
           </Button>
-          <Button type="button" className="h-11 min-w-32" onClick={reset} disabled={pending}>
+          <Button type="button" className="min-w-32" onClick={reset} disabled={pending}>
             {pending ? "…" : "تعیین رمز موقت"}
           </Button>
         </div>
@@ -175,7 +176,7 @@ export function EnrollmentCard({ detail, classes, canEnroll }: { detail: PersonD
           <label htmlFor={id} className="sr-only">
             کلاس مقصد
           </label>
-          <select id={id} value={target} onChange={(e) => setTarget(e.target.value)} className="h-11 flex-1 rounded-lg border border-line bg-surface px-3 text-base">
+          <SelectNative id={id} value={target} onChange={(e) => setTarget(e.target.value)} wrapperClassName="flex-1">
             <option value="">{detail.enrollment ? "انتقال به کلاس…" : "ثبت‌نام در کلاس…"}</option>
             {groups.length > 0
               ? groups.map((g) => (
@@ -194,8 +195,8 @@ export function EnrollmentCard({ detail, classes, canEnroll }: { detail: PersonD
                     {o.label}
                   </option>
                 ))}
-          </select>
-          <Button type="button" variant="outline" className="h-11" onClick={move} disabled={pending || !target}>
+          </SelectNative>
+          <Button type="button" variant="outline" onClick={move} disabled={pending || !target}>
             {detail.enrollment ? "انتقال" : "ثبت‌نام"}
           </Button>
         </div>
@@ -253,7 +254,7 @@ export function RolesCard({ detail, caps, roleGrant }: { detail: PersonDetail; c
                 {r.schoolName ? <span className="text-text-muted"> — {r.schoolName}</span> : r.scopeType === "organization" ? <span className="text-text-muted"> — سازمان</span> : null}
               </span>
               {caps.canRoles && r.sourceType === "manual" ? (
-                <Button type="button" variant="ghost" size="sm" className="h-9 text-danger" onClick={() => revoke(r.roleAssignmentId)} disabled={pending}>
+                <Button type="button" variant="ghost" size="sm" className="text-danger" onClick={() => revoke(r.roleAssignmentId)} disabled={pending}>
                   لغو
                 </Button>
               ) : null}
@@ -269,7 +270,7 @@ export function RolesCard({ detail, caps, roleGrant }: { detail: PersonDetail; c
                 معلم {t.subjectName} <bdi>{t.className}</bdi>
               </span>
               {caps.canTeaching ? (
-                <Button type="button" variant="ghost" size="sm" className="h-9 text-danger" onClick={() => endTeaching(t.teacherAssignmentId)} disabled={pending}>
+                <Button type="button" variant="ghost" size="sm" className="text-danger" onClick={() => endTeaching(t.teacherAssignmentId)} disabled={pending}>
                   پایان تدریس
                 </Button>
               ) : null}
@@ -279,22 +280,22 @@ export function RolesCard({ detail, caps, roleGrant }: { detail: PersonDetail; c
       ) : null}
       {caps.canRoles && detail.staff && roleOptions.length > 0 ? (
         <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-          <select aria-label="نقش جدید" value={draft.roleCode} onChange={(e) => setDraft((p) => ({ ...p, roleCode: e.target.value }))} className="h-11 rounded-lg border border-line bg-surface px-3 text-base">
+          <SelectNative aria-label="نقش جدید" value={draft.roleCode} onChange={(e) => setDraft((p) => ({ ...p, roleCode: e.target.value }))}>
             <option value="">افزودن نقش…</option>
             {roleOptions.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
             ))}
-          </select>
-          <select aria-label="مدرسهٴ نقش" value={draft.schoolId} onChange={(e) => setDraft((p) => ({ ...p, schoolId: e.target.value }))} disabled={draft.roleCode === "org_admin" || !draft.roleCode} className="h-11 rounded-lg border border-line bg-surface px-3 text-base disabled:opacity-50">
+          </SelectNative>
+          <SelectNative aria-label="مدرسهٴ نقش" value={draft.schoolId} onChange={(e) => setDraft((p) => ({ ...p, schoolId: e.target.value }))} disabled={draft.roleCode === "org_admin" || !draft.roleCode}>
             {roleGrant.schools.map((s) => (
               <option key={s.value} value={s.value}>
                 {s.label}
               </option>
             ))}
-          </select>
-          <Button type="button" variant="outline" className="h-11" onClick={grant} disabled={pending || !draft.roleCode}>
+          </SelectNative>
+          <Button type="button" variant="outline" onClick={grant} disabled={pending || !draft.roleCode}>
             افزودن
           </Button>
         </div>

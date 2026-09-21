@@ -91,10 +91,10 @@ export function InstallPrompt() {
           </h3>
           <p className="text-xs text-primary-800">بدون فروشگاه؛ یک آیکون روی صفحهٴ اصلی و باز شدن سریع.</p>
           <div className="mt-2 flex items-center gap-1">
-            <Button type="button" size="sm" className="h-9 rounded-lg px-3 text-xs font-semibold" onClick={install}>
+            <Button type="button" size="sm" className="font-semibold" onClick={install}>
               {mode === "ios" ? "راهنمای نصب" : "نصب"}
             </Button>
-            <Button type="button" size="sm" variant="ghost" className="h-9 rounded-lg px-3 text-xs text-primary-800" onClick={dismiss}>
+            <Button type="button" size="sm" variant="ghost" className="text-primary-800" onClick={dismiss}>
               بعداً
             </Button>
           </div>
@@ -135,7 +135,7 @@ export function InstallPrompt() {
                 بالای صفحه «افزودن» را بزنید.
               </li>
             </ol>
-            <Button type="button" autoFocus className="mt-5 h-11 w-full rounded-xl" onClick={dismiss}>
+            <Button type="button" autoFocus className="mt-5 w-full" onClick={dismiss}>
               متوجه شدم
             </Button>
           </div>

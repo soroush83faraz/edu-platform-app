@@ -47,7 +47,7 @@ export async function ResourceListPage({ def, sp, parent, basePath, back }: { de
         actions={
           <>
             {def.links?.map((l) => (
-              <Button key={l.href} asChild variant="outline" className="h-11">
+              <Button key={l.href} asChild variant="outline">
                 <Link href={l.href}>{l.labelFa}</Link>
               </Button>
             ))}

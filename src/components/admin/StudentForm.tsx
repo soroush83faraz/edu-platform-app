@@ -153,10 +153,10 @@ export function StudentForm({ classes, schools, detail }: Props) {
       {/* A school error with no visible school field (one school, or a class chosen) surfaces at the form level. */}
       <FieldError id={`${ids}-form`} text={errors.form ?? (!schoolFieldShown ? errors.schoolId : undefined)} />
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button type="button" variant="outline" className="h-11" onClick={() => router.back()}>
+        <Button type="button" variant="outline" onClick={() => router.back()}>
           انصراف
         </Button>
-        <Button type="submit" className="h-11 min-w-32" disabled={pending}>
+        <Button type="submit" className="min-w-32" disabled={pending}>
           {pending ? "در حال ذخیره…" : detail ? "ذخیره" : "ثبت دانش‌آموز"}
         </Button>
       </div>

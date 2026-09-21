@@ -34,12 +34,12 @@ export default async function NotificationsPage({ searchParams }: { searchParams
           {nextCursor || cursor ? (
             <div className="flex items-center justify-center gap-3 px-4 py-5">
               {cursor ? (
-                <Button asChild variant="ghost" className="h-11">
+                <Button asChild variant="ghost">
                   <Link href="/notifications">بازگشت به ابتدا</Link>
                 </Button>
               ) : null}
               {nextCursor ? (
-                <Button asChild variant="outline" className="h-11 px-5">
+                <Button asChild variant="outline">
                   <Link href={`/notifications?cursor=${encodeURIComponent(nextCursor)}`}>نمایش بیشتر</Link>
                 </Button>
               ) : null}

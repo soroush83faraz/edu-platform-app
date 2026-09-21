@@ -18,7 +18,7 @@ export default async function NewWorkItemPage() {
         title="شما نمی‌توانید کار جدید بسازید"
         description="ایجاد کار برای معلمان و کادر مدرسه است."
         action={
-          <Button asChild variant="outline" className="h-11">
+          <Button asChild variant="outline">
             <Link href="/inbox">بازگشت به پنل من</Link>
           </Button>
         }

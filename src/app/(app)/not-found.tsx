@@ -9,7 +9,7 @@ export default function AppNotFound() {
       title="چنین موردی پیدا نشد"
       description="ممکن است حذف شده باشد یا در دسترس شما نباشد."
       action={
-        <Button asChild variant="outline" className="h-11">
+        <Button asChild variant="outline">
           <Link href="/inbox">بازگشت به پنل من</Link>
         </Button>
       }

@@ -17,7 +17,7 @@ export function AdminNav({ items }: { items: Array<{ href: string; labelFa: stri
               href={it.href}
               aria-current={active(it.href) ? "page" : undefined}
               className={cn(
-                "inline-flex h-10 items-center rounded-full border px-4 text-sm whitespace-nowrap transition-colors",
+                "inline-flex h-10 items-center rounded-full border px-4 text-sm whitespace-nowrap transition-base",
                 active(it.href) ? "border-primary-600 bg-primary-50 font-semibold text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong hover:text-text",
               )}
             >

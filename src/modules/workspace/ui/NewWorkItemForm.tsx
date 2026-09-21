@@ -8,6 +8,9 @@ import { cn } from "cn";
 import { PRIORITY_LABELS, type Priority } from "@/components/priority";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { SelectNative } from "@/components/ui/select-native";
+import { Textarea } from "@/components/ui/textarea";
 import { formatJalaliNumeric, formatNumberFa } from "@/lib/format";
 import { createWorkItemAction, offeringRosterQuery, searchPersonsQuery } from "../actions";
 import type { OfferingRow, PersonHit, RosterRow } from "../repo";
@@ -136,25 +139,16 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-6">
       <div className="flex flex-col gap-1.5">
-        <label htmlFor={titleF.id} className="text-sm font-medium text-text">
-          عنوان
-        </label>
-        <Input id={titleF.id} name="title" dir="auto" maxLength={200} required className="h-11 bg-surface" placeholder="مثلاً: تمرین صفحهٴ ۴۲" aria-invalid={titleF.error ? true : undefined} aria-describedby={titleF.describedBy} autoFocus />
+        <Label htmlFor={titleF.id}>عنوان</Label>
+        <Input id={titleF.id} name="title" dir="auto" maxLength={200} required placeholder="مثلاً: تمرین صفحهٴ ۴۲" aria-invalid={titleF.error ? true : undefined} aria-describedby={titleF.describedBy} autoFocus />
         <FieldError id={`${titleF.id}-err`} text={titleF.error} />
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label htmlFor={`${ids}-desc`} className="text-sm font-medium text-text">
+        <Label htmlFor={`${ids}-desc`}>
           توضیح <span className="text-text-faint">(اختیاری)</span>
-        </label>
-        <textarea
-          id={`${ids}-desc`}
-          name="description"
-          dir="auto"
-          rows={3}
-          maxLength={4000}
-          className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-base leading-7 outline-none placeholder:text-text-faint focus-visible:border-primary-400 focus-visible:ring-3 focus-visible:ring-primary-400/30"
-        />
+        </Label>
+        <Textarea id={`${ids}-desc`} name="description" dir="auto" rows={3} maxLength={4000} />
       </div>
 
       <fieldset className="flex flex-col gap-2">
@@ -164,7 +158,7 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
             <label
               key={p}
               className={cn(
-                "flex h-11 cursor-pointer items-center justify-center rounded-lg border text-sm transition-colors has-focus-visible:ring-2 has-focus-visible:ring-primary-400",
+                "flex min-h-11 cursor-pointer items-center justify-center rounded-lg border text-sm transition-base has-focus-visible:ring-2 has-focus-visible:ring-primary-400",
                 priority === p ? "border-primary-600 bg-primary-50 font-semibold text-primary-700" : "border-line bg-surface text-text-muted",
               )}
             >
@@ -176,9 +170,9 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
       </fieldset>
 
       <div className="flex flex-col gap-2">
-        <label htmlFor={dueF.id} className="text-sm font-medium text-text">
+        <Label htmlFor={dueF.id}>
           مهلت <span className="text-text-faint">(اختیاری)</span>
-        </label>
+        </Label>
         <div className="flex flex-wrap gap-2">
           {dueChips.map(([label, value]) => (
             <button
@@ -187,7 +181,7 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
               onClick={() => setDueDate(value)}
               aria-pressed={dueDate === value}
               className={cn(
-                "h-9 rounded-full border px-3 text-sm transition-colors",
+                "h-9 rounded-full border px-3 text-sm transition-base",
                 dueDate === value ? "border-primary-600 bg-primary-50 text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong",
               )}
             >
@@ -203,11 +197,11 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
             placeholder="۱۴۰۵/۰۷/۰۵"
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
-            className="h-11 bg-surface tabular"
+            className="tabular"
             aria-invalid={dueF.error ? true : undefined}
             aria-describedby={dueF.describedBy}
           />
-          <Input name="dueTime" inputMode="numeric" placeholder="ساعت ۲۳:۵۹" value={dueTime} onChange={(e) => setDueTime(e.target.value)} className="h-11 w-28 bg-surface tabular" aria-label="ساعت مهلت" />
+          <Input name="dueTime" inputMode="numeric" placeholder="ساعت ۲۳:۵۹" value={dueTime} onChange={(e) => setDueTime(e.target.value)} className="w-28 tabular" aria-label="ساعت مهلت" />
         </div>
         <FieldError id={`${dueF.id}-err`} text={dueF.error} />
       </div>
@@ -222,18 +216,13 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
 
         {mode === "class" ? (
           <div className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-3">
-            <select
-              aria-label="درس و کلاس"
-              value={offeringId}
-              onChange={(e) => selectOffering(e.target.value)}
-              className="h-11 w-full rounded-lg border border-line bg-surface px-3 text-base outline-none focus-visible:border-primary-400 focus-visible:ring-3 focus-visible:ring-primary-400/30"
-            >
+            <SelectNative aria-label="درس و کلاس" value={offeringId} onChange={(e) => selectOffering(e.target.value)}>
               {offerings.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.subjectName} {o.classGroupName} ({formatNumberFa(o.studentCount)} دانش‌آموز)
                 </option>
               ))}
-            </select>
+            </SelectNative>
             {roster === null ? (
               <p className="text-sm text-text-muted">در حال بارگذاری فهرست کلاس…</p>
             ) : (
@@ -243,10 +232,10 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
                     {formatNumberFa(selectedCount)} از {formatNumberFa(roster.length)} نفر انتخاب شده
                   </span>
                   <span className="flex gap-1">
-                    <Button type="button" variant="ghost" size="sm" className="h-9" onClick={() => setExcluded(new Set())}>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setExcluded(new Set())}>
                       همه
                     </Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-9" onClick={() => setExcluded(new Set(roster.map((s) => s.personId)))}>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setExcluded(new Set(roster.map((s) => s.personId)))}>
                       هیچ‌کدام
                     </Button>
                   </span>
@@ -254,7 +243,7 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
                 {roster.length > 8 ? (
                   <div className="relative">
                     <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-text-faint" aria-hidden />
-                    <Input value={rosterFilter} onChange={(e) => setRosterFilter(e.target.value)} placeholder="جست‌وجوی نام" aria-label="جست‌وجو در فهرست کلاس" className="h-11 bg-surface ps-9" />
+                    <Input value={rosterFilter} onChange={(e) => setRosterFilter(e.target.value)} placeholder="جست‌وجوی نام" aria-label="جست‌وجو در فهرست کلاس" className="ps-9" />
                   </div>
                 ) : null}
                 <ul className="max-h-72 overflow-y-auto divide-y divide-line rounded-lg border border-line">
@@ -318,7 +307,7 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
             ) : null}
             <div className="relative">
               <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-text-faint" aria-hidden />
-              <Input value={personQuery} onChange={(e) => setPersonQuery(e.target.value)} placeholder="نام شخص (دست‌کم دو حرف)" aria-label="جست‌وجوی اشخاص" className="h-11 bg-surface ps-9" />
+              <Input value={personQuery} onChange={(e) => setPersonQuery(e.target.value)} placeholder="نام شخص (دست‌کم دو حرف)" aria-label="جست‌وجوی اشخاص" className="ps-9" />
             </div>
             {hits.length > 0 ? (
               <ul className="divide-y divide-line rounded-lg border border-line">
@@ -351,7 +340,7 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
       <p role="alert" className="min-h-5 text-sm text-danger">
         {errors.form}
       </p>
-      <Button type="submit" size="lg" className="h-12 text-base" disabled={pending || (mode === "class" && roster === null)}>
+      <Button type="submit" size="lg" disabled={pending || (mode === "class" && roster === null)}>
         {pending ? "در حال ایجاد…" : mode === "class" && roster ? `ارسال به ${formatNumberFa(selectedCount)} نفر` : "ایجاد کار"}
       </Button>
     </form>
@@ -365,7 +354,7 @@ function ModeChip({ label, active, onClick }: { label: string; active: boolean; 
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "h-10 rounded-full border px-4 text-sm transition-colors",
+        "h-10 rounded-full border px-4 text-sm transition-base",
         active ? "border-primary-600 bg-primary-50 font-semibold text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong",
       )}
     >

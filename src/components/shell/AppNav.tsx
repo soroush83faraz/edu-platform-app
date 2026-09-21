@@ -24,15 +24,16 @@ const ITEMS: Item[] = [
 ];
 
 /**
- * The one navigation component: bottom bar on phones, start-side rail from `md:`. The current item sits in a solid
- * persian-blue pill with a white glyph (the bottom bar slides ONE pill between its cells); counts are yellow pills.
+ * The one navigation component: bottom bar on phones, start-side rail from `md:`. The current item is a WHOLE tinted
+ * cell — a `primary-50` rounded-lg block inset 4 px, glyph and label in `primary-700` (owner ask; the small solid pill
+ * behind the glyph is gone). The bottom bar slides ONE such cell between its four columns; counts are yellow pills.
  * Both renderings read the shell's single summary poller (`InboxSummaryProvider`), as do the Home strip and tile badges.
  */
 export function AppNav({ schoolName, showAdmin = false }: { schoolName: string; showAdmin?: boolean }) {
   const pathname = usePathname();
   const summary = useInboxSummaryContext();
   const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
-  // The bottom bar has ONE pill that slides between the four cells; off-tab routes (/admin, /change-password) hide it.
+  // The bottom bar has ONE tinted cell that slides between the four columns; off-tab routes (/admin, /change-password) hide it.
   const activeIndex = ITEMS.findIndex((item) => isCurrent(item.href));
   // «مدیریت» only on the desktop rail (the bottom bar keeps its four fixed items; phones reach it via «بیشتر»).
   const sideItems: Item[] = showAdmin ? [...ITEMS.slice(0, 3), { href: "/admin", label: "مدیریت", icon: Settings2 }, ITEMS[3]] : ITEMS;
@@ -43,10 +44,10 @@ export function AppNav({ schoolName, showAdmin = false }: { schoolName: string; 
         <ul className="relative grid grid-cols-4">
           <li
             aria-hidden
-            className="pointer-events-none absolute top-1.5 flex h-7 w-1/4 justify-center transition-[inset-inline-start,opacity] duration-(--duration-base) ease-(--ease-in-out)"
+            className="pointer-events-none absolute inset-y-1 w-1/4 px-1 transition-[inset-inline-start,opacity] duration-(--duration-base) ease-(--ease-in-out)"
             style={{ insetInlineStart: `${Math.max(activeIndex, 0) * 25}%`, opacity: activeIndex < 0 ? 0 : 1 }}
           >
-            <span className="h-7 w-12 rounded-full bg-primary-600 shadow-1" />
+            <span className="block h-full w-full rounded-lg bg-primary-50" />
           </li>
           {ITEMS.map((item) => (
             <NavLink key={item.href} item={item} current={isCurrent(item.href)} count={item.badge?.(summary) ?? 0} layout="bottom" />
@@ -83,16 +84,18 @@ function NavLink({ item, current, count, layout }: { item: Item; current: boolea
           href={item.href}
           aria-current={current ? "page" : undefined}
           className={cn(
-            "group pressable relative flex min-h-14 flex-col items-center justify-center gap-0.5 pt-1.5 pb-1 text-xs",
+            "group pressable relative flex min-h-14 flex-col p-1 text-xs",
             current ? "font-semibold text-primary-700" : "text-text-muted hover:text-text",
           )}
         >
-          {/* The sliding pill lives on the <ul>; this span only positions the icon and badge, and darkens on press. */}
-          <span className={cn("relative flex h-7 w-12 items-center justify-center rounded-full transition-base", !current && "group-active:bg-surface-sunken")}>
-            <Icon className={cn("size-5 transition-base", current && "text-white")} strokeWidth={2} aria-hidden />
-            {badge}
+          {/* The sliding tinted cell lives on the <ul>; this block is the same shape so a press tints the whole cell too. */}
+          <span className={cn("flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg pt-1 pb-0.5 transition-base", !current && "group-active:bg-primary-50 group-active:text-primary-700")}>
+            <span className="relative flex h-6 w-12 items-center justify-center">
+              <Icon className="size-5 transition-base" strokeWidth={2} aria-hidden />
+              {badge}
+            </span>
+            {item.label}
           </span>
-          {item.label}
         </Link>
       </li>
     );
@@ -103,11 +106,11 @@ function NavLink({ item, current, count, layout }: { item: Item; current: boolea
         href={item.href}
         aria-current={current ? "page" : undefined}
         className={cn(
-          "pressable flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm",
-          current ? "bg-primary-600 font-semibold text-white shadow-1" : "text-text-muted hover:bg-surface-sunken hover:text-text",
+          "pressable flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm",
+          current ? "bg-primary-50 font-semibold text-primary-700" : "text-text-muted hover:bg-surface-sunken hover:text-text active:bg-primary-50 active:text-primary-700",
         )}
       >
-        <Icon className={cn("size-5", current ? "text-white" : "text-text-faint")} strokeWidth={2} aria-hidden />
+        <Icon className={cn("size-5 transition-base", current ? "text-primary-700" : "text-text-faint")} strokeWidth={2} aria-hidden />
         <span className="flex-1">{item.label}</span>
         {badge}
       </Link>

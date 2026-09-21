@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { OfflineClay } from "@/components/illustrations";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = { title: "آفلاین | سامانهٴ مدرسه" };
 export const dynamic = "force-static";
@@ -14,9 +15,9 @@ export default function OfflinePage() {
       <OfflineClay size={140} />
       <h1 className="text-xl font-bold text-text">اتصال اینترنت برقرار نیست</h1>
       <p className="max-w-xs text-sm text-text-muted">پنل من و اعلان‌ها روی گوشی نگه داشته نمی‌شوند؛ با برقراری اتصال، همه‌چیز دوباره بارگذاری می‌شود.</p>
-      <a href="/home" className="mt-2 inline-flex h-12 items-center justify-center rounded-xl bg-primary-600 px-6 text-sm font-semibold text-white hover:bg-primary-700">
-        تلاش دوباره
-      </a>
+      <Button asChild size="lg" className="mt-2 font-semibold">
+        <a href="/home">تلاش دوباره</a>
+      </Button>
     </main>
   );
 }
