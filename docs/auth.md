@@ -51,7 +51,7 @@ IP از اولین مقدار `x-forwarded-for` (Caddy)، وگرنه `x-real-ip`
 
 ## Cache-Control
 
-`src/proxy.ts` روی هر مسیرِ غیرعمومی `Cache-Control: private, no-store` می‌گذارد. در production (`next start`) این هدر روی پاسخ‌های HTML/RSC و Route Handlerها می‌ماند: Next پیش‌فرضِ خودش را فقط وقتی می‌گذارد که هدری نباشد (`send-payload.js`: «if cache control is already set … we don't override it»؛ `send-response.js` هدرِ موجود را نگه می‌دارد). پاسخِ Server Actionها هدرِ بی‌قیدِ Next را می‌گیرد: `no-cache, no-store, max-age=0, must-revalidate` (`action-handler.js`) — باز هم `no-store`. فقط `next dev` پاسخِ صفحه‌ها را با `no-cache, must-revalidate` بازنویسی می‌کند (`base-server.js`، برای بازگردانیِ back/forward در توسعه) — همان چیزی که QA روی سرور توسعه دید؛ در production رخ نمی‌دهد.
+`src/proxy.ts` روی هر مسیرِ غیرعمومی `Cache-Control: private, no-store` می‌گذارد. در production (`next start`) این هدر روی پاسخ‌های HTML/RSC و Route Handlerها می‌ماند: Next پیش‌فرضِ خودش را فقط وقتی می‌گذارد که هدری نباشد (`send-payload.js`: «if cache control is already set … we don't override it»؛ `send-response.js` هدرِ موجود را نگه می‌دارد). پاسخِ Server Actionها هدرِ بی‌قیدِ Next را می‌گیرد: `no-cache, no-store, max-age=0, must-revalidate` (`action-handler.js`) — باز هم `no-store`. فقط `next dev` پاسخِ صفحه‌ها را با `no-cache, must-revalidate` بازنویسی می‌کند (`base-server.js`، برای بازگردانیِ back/forward در توسعه) — همان چیزی که QA روی سرور توسعه دید؛ در production رخ نمی‌دهد (روی build آمادهٴ production تأیید شد: `/home`، `/inbox` و `/api/inbox/summary` با نشست → `private, no-store`).
 
 ## مجوزها
 
