@@ -26,15 +26,18 @@ import * as schema from "./schema";
 const globalForDb = globalThis as unknown as { __eduPgPool?: Pool };
 
 function createPool(): Pool {
-  const p = new Pool({ connectionString: env.DATABASE_URL, max: 10 });
+  const p = new Pool({ connectionString: env.DATABASE_URL, max: env.DB_POOL_MAX });
   // An idle client dropped by the server (restart, failover) must never become an uncaught exception.
   p.on("error", (err) => logger.error({ err }, "pg pool: idle client error"));
   return p;
 }
 
-// In development the module is re-evaluated on every HMR cycle; keep one pool per process.
-const pool: Pool =
-  env.NODE_ENV === "production" ? createPool() : (globalForDb.__eduPgPool ??= createPool());
+// ONE pool per process, always. In development the module is re-evaluated on every HMR cycle; in the production
+// build Next emits this module into several server bundles (SSR chunks, route handlers, actions — 4 in the 2026-09
+// build), each of which would otherwise create its own Pool and the process would hold up to 4 × DB_POOL_MAX
+// connections (measured in the load test: 20 for max 10 — docs/ops/capacity.md). The globalThis slot is the only
+// thing shared by every bundle.
+const pool: Pool = globalForDb.__eduPgPool ??= createPool();
 
 const db = drizzle({ client: pool, schema });
 

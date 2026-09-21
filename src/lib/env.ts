@@ -10,6 +10,12 @@ const EnvSchema = z.object({
   DATABASE_URL: z.url(),
   /** Connection string for the schema owner (app_owner). Used ONLY by migrate/seed scripts. */
   MIGRATION_DATABASE_URL: z.url(),
+  /**
+   * Max pooled connections of the ONE app process (`pg` Pool `max`, src/db/client.ts). Every request holds a client for
+   * the length of its transaction; more than ~2× the vCPUs of the database only queues inside Postgres instead of in
+   * the pool. Size Postgres `max_connections` for it plus migrate/seed/backup/psql headroom (docs/ops/capacity.md).
+   */
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
   /** ≥ 32 chars; used to derive session/CSRF secrets. */
   SESSION_SECRET: z.string().min(32),
   /**

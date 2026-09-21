@@ -53,6 +53,8 @@ docker compose logs migrate                # خروجی آخرین مهاجرت
 journalctl -u docker --since "1 hour ago"  # اگر خود docker مشکوک است
 ```
 
+اگر برنامه «کند شده» اما health سبز است (روز اول مهر، همه در یک زنگ): `docker stats --no-stream school-app-1 school-db-1` — CPU کانتینر app نزدیک ۱۰۰٪ یعنی به سقف یک هسته رسیده‌ایم (≈ ۵۰ درخواست/ثانیه؛ `docs/ops/capacity.md`)، و `docker compose exec -T db psql -U app_backup -d app -tAc "select state, count(*) from pg_stat_activity where usename='app_rw' group by 1"` — اگر بیش از ۱۰ اتصال `idle in transaction` باشد همان فشار است، نه دیتابیس. خطا نمی‌دهد، فقط کند می‌شود؛ چیزی ری‌استارت نکنید.
+
 لاگ کانتینرها json-file با `max-size 50m × 5` است (compose.yml)؛ دیسک را پر نمی‌کند. سرور بعد از ریبوت (جمعه ۰۴:۰۰ اگر `reboot-required` باشد) خودش برمی‌گردد؛ ۰۹:۰۰ صبح شنبه یک health بزنید.
 
 ## ۴. بازیابی از بکاپ

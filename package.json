@@ -28,6 +28,7 @@
     "seed:demo": "tsx scripts/seed.ts --catalog --demo",
     "seed:pilot": "tsx scripts/seed-pilot.ts",
     "smoke:prod": "tsx scripts/smoke-prod.ts",
+    "load:test": "tsx scripts/load-test.ts",
     "sessions:revoke": "tsx scripts/revoke-sessions.ts"
   },
   "dependencies": {

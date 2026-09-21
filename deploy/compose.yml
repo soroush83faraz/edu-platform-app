@@ -9,7 +9,15 @@ services:
     logging:
       driver: json-file
       options: { max-size: "50m", max-file: "5" }
-    command: ["postgres", "-c", "password_encryption=scram-sha-256", "-c", "timezone=UTC"]
+    # max_connections=100: app pool (DB_POOL_MAX, default 20) + migrate + backup + psql + a second app instance during a
+    # deploy, with headroom; sized from the load test in docs/ops/capacity.md. shared_buffers/work_mem: postgres defaults.
+    command:
+      [
+        "postgres",
+        "-c", "password_encryption=scram-sha-256",
+        "-c", "timezone=UTC",
+        "-c", "max_connections=100",
+      ]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
