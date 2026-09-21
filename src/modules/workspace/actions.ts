@@ -15,7 +15,11 @@ export const createWorkItemAction = defineAction({ schema: CreateWorkItemInput, 
   let dueAt: Date | null = null;
   if (input.dueDate && input.dueDate.trim() !== "") {
     dueAt = parseJalaliToInstant(input.dueDate, input.dueTime);
-    if (!dueAt) throw validation({ fieldErrors: { dueDate: ["تاریخ را به شکل ۱۴۰۵/۰۷/۰۵ وارد کنید."] } });
+    if (!dueAt) {
+      // The date alone parses → the time is what is wrong; point at the right field (m3).
+      const dateOk = parseJalaliToInstant(input.dueDate, null) !== null;
+      throw validation({ fieldErrors: dateOk ? { dueTime: ["ساعت را به شکل ۲۳:۵۹ وارد کنید."] } : { dueDate: ["تاریخ را به شکل ۱۴۰۵/۰۷/۰۵ وارد کنید."] } });
+    }
   } else if (input.dueTime && input.dueTime.trim() !== "") {
     throw validation({ fieldErrors: { dueDate: ["برای ساعت، تاریخ هم لازم است."] } });
   }
@@ -26,6 +30,7 @@ export const createWorkItemAction = defineAction({ schema: CreateWorkItemInput, 
     priority: input.priority,
     dueAt,
     recipients: input.recipients,
+    idempotencyKey: input.idempotencyKey ?? null,
   });
 });
 

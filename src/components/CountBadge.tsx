@@ -3,7 +3,7 @@ import { formatNumberFa } from "@/lib/format";
 
 /**
  * A count on a yellow pill with navy text (yellow is a fill, never text): the nav badges. Renders nothing
- * for zero; caps at ۹۹. `floating` pins it to the top-end corner of a `relative` parent with a white ring.
+ * for zero; caps at «۹۹+». `floating` pins it to the top-end corner of a `relative` parent with a white ring.
  */
 export function CountBadge({ count, label, floating = false, className }: { count: number; label: string; floating?: boolean; className?: string }) {
   if (count <= 0) return null;
@@ -16,7 +16,7 @@ export function CountBadge({ count, label, floating = false, className }: { coun
       )}
       aria-label={label}
     >
-      {formatNumberFa(count > 99 ? 99 : count)}
+      {count > 99 ? `${formatNumberFa(99)}+` : formatNumberFa(count)}
     </span>
   );
 }

@@ -22,7 +22,7 @@ export const listInboxQuery = defineQuery({ schema: ListInboxInput, permission: 
   });
   return {
     ...page,
-    tabCounts: await inboxTabCounts(tx, ctx.personId),
+    tabCounts: await inboxTabCounts(tx, ctx.personId, { createdByMe: input.createdByMe, unreadOnly: input.unreadOnly }),
     isStaff: staff,
     canCreate: canAtAnyScope(ctx.assignments, "workspace.work_item.create"),
   };

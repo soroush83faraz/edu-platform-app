@@ -101,7 +101,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                     <span className="truncate">{TAB_LABELS[tab]}</span>
                     {count > 0 ? (
                       <span className={cn("tabular rounded-full px-1.5 text-xs leading-5", current ? "bg-info-soft text-primary-800" : "bg-surface/70 text-text-muted")} aria-label={`${formatNumberFa(count)} کار`}>
-                        {formatNumberFa(count > 99 ? 99 : count)}
+                        {count > 99 ? `${formatNumberFa(99)}+` : formatNumberFa(count)}
                       </span>
                     ) : null}
                   </span>

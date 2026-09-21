@@ -1,9 +1,10 @@
 "use client";
 
-import { Search, X } from "lucide-react";
+import { Search, TriangleAlert, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { v7 as uuidv7 } from "uuid";
 import { cn } from "cn";
 import { PRIORITY_LABELS, type Priority } from "@/components/priority";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SelectNative } from "@/components/ui/select-native";
 import { Textarea } from "@/components/ui/textarea";
-import { formatJalaliNumeric, formatNumberFa } from "@/lib/format";
+import { flatten } from "@/lib/form-errors";
+import { formatJalaliNumeric, formatNumberFa, parseJalaliToInstant } from "@/lib/format";
 import { createWorkItemAction, offeringRosterQuery, searchPersonsQuery } from "../actions";
 import type { OfferingRow, PersonHit, RosterRow } from "../repo";
 
@@ -23,12 +25,16 @@ export interface NewWorkItemFormProps {
 type Mode = "class" | "persons" | "self";
 const PRIORITIES: Priority[] = ["low", "normal", "high", "urgent"];
 const DAY = 86_400_000;
+/** Every field the form renders; a server error on anything else lands on the form-level line (never silent). */
+const RENDERED = ["title", "description", "priority", "dueDate", "dueTime", "recipients"];
 
 export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormProps) {
   const router = useRouter();
   const ids = useId();
   const [pending, start] = useTransition();
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // One key per form mount: a double tap or a retried request returns the item already created (server rule).
+  const [idempotencyKey] = useState(() => uuidv7());
 
   const canClass = offerings.length > 0;
   const [mode, setMode] = useState<Mode>(canClass ? "class" : canPickPersons ? "persons" : "self");
@@ -85,6 +91,9 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
   }, [mode, personQuery, chosen]);
 
   const today = new Date();
+  // A due date already behind us is allowed (back-dating a task is legitimate) but flagged inline.
+  const dueInstant = dueDate.trim() ? parseJalaliToInstant(dueDate, dueTime || null) : null;
+  const duePast = dueInstant !== null && dueInstant.getTime() < today.getTime();
   const dueChips: [string, string][] = [
     ["امروز", formatJalaliNumeric(today)],
     ["فردا", formatJalaliNumeric(new Date(today.getTime() + DAY))],
@@ -119,22 +128,22 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
         dueDate: dueDate || undefined,
         dueTime: dueTime || undefined,
         recipients,
+        idempotencyKey,
       });
       if (r.ok) {
-        toast.success("کار ایجاد شد");
+        toast.success(r.data.duplicate ? "این کار قبلاً ایجاد شده بود" : "کار ایجاد شد");
         router.push(`/inbox/${r.data.id}`);
         return;
       }
-      const fe: Record<string, string> = {};
-      for (const [k, v] of Object.entries(r.fieldErrors ?? {})) fe[k.split(".")[0]] = v[0];
-      if (Object.keys(fe).length === 0) fe.form = r.message;
-      setErrors(fe);
+      setErrors(flatten(r.fieldErrors, r.message, RENDERED));
     });
   };
 
   const field = (name: string) => ({ id: `${ids}-${name}`, error: errors[name], describedBy: errors[name] ? `${ids}-${name}-err` : undefined });
   const titleF = field("title");
+  const descF = field("description");
   const dueF = field("dueDate");
+  const timeF = field("dueTime");
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-6">
@@ -145,10 +154,11 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`${ids}-desc`}>
+        <Label htmlFor={descF.id}>
           توضیح <span className="text-text-faint">(اختیاری)</span>
         </Label>
-        <Textarea id={`${ids}-desc`} name="description" dir="auto" rows={3} maxLength={4000} />
+        <Textarea id={descF.id} name="description" dir="auto" rows={3} maxLength={4000} aria-invalid={descF.error ? true : undefined} aria-describedby={descF.describedBy} />
+        <FieldError id={`${descF.id}-err`} text={descF.error} />
       </div>
 
       <fieldset className="flex flex-col gap-2">
@@ -201,9 +211,27 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
             aria-invalid={dueF.error ? true : undefined}
             aria-describedby={dueF.describedBy}
           />
-          <Input name="dueTime" inputMode="numeric" placeholder="ساعت ۲۳:۵۹" value={dueTime} onChange={(e) => setDueTime(e.target.value)} className="w-28 tabular" aria-label="ساعت مهلت" />
+          <Input
+            id={timeF.id}
+            name="dueTime"
+            inputMode="numeric"
+            placeholder="ساعت ۲۳:۵۹"
+            value={dueTime}
+            onChange={(e) => setDueTime(e.target.value)}
+            className="w-36 tabular"
+            aria-label="ساعت مهلت"
+            aria-invalid={timeF.error ? true : undefined}
+            aria-describedby={timeF.describedBy}
+          />
         </div>
         <FieldError id={`${dueF.id}-err`} text={dueF.error} />
+        <FieldError id={`${timeF.id}-err`} text={timeF.error} />
+        {duePast && !dueF.error && !timeF.error ? (
+          <p role="status" className="flex items-center gap-1.5 text-sm leading-6 text-warning-text">
+            <TriangleAlert className="size-4 shrink-0" aria-hidden />
+            مهلت در گذشته است.
+          </p>
+        ) : null}
       </div>
 
       <fieldset className="flex flex-col gap-3">

@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { addCommentAction } from "../actions";
 
-export function CommentForm({ workItemId, canStaffOnly }: { workItemId: string; canStaffOnly: boolean }) {
+/** `privateToStaff`: the viewer is one of several assignees — their comment reaches the creator and staff only (service rule). */
+export function CommentForm({ workItemId, canStaffOnly, privateToStaff = false }: { workItemId: string; canStaffOnly: boolean; privateToStaff?: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -50,10 +51,12 @@ export function CommentForm({ workItemId, canStaffOnly }: { workItemId: string; 
       />
       <div className="flex flex-wrap items-center justify-between gap-2">
         {canStaffOnly ? (
-          <label className="inline-flex min-h-11 items-center gap-2 text-sm text-text-muted">
-            <input type="checkbox" name="staffOnly" className="size-4 accent-primary-600" />
+          <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 py-2 pe-2 text-sm text-text-muted">
+            <input type="checkbox" name="staffOnly" className="size-5 accent-primary-600" />
             فقط برای کادر مدرسه
           </label>
+        ) : privateToStaff ? (
+          <span className="text-sm leading-6 text-text-muted">نظر شما فقط برای معلم و کادر مدرسه دیده می‌شود.</span>
         ) : (
           <span />
         )}

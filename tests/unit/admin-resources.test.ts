@@ -3,7 +3,7 @@
 // structural check lives in tests/int/admin-resource-form.test.ts (the resource module pulls the DB client).
 import { describe, expect, it } from "vitest";
 import { indefiniteFa, newLabelFa } from "@/lib/admin/defineResource";
-import { flatten } from "@/lib/admin/form-errors";
+import { flatten } from "@/lib/form-errors";
 
 describe("flatten (admin forms)", () => {
   it("errors on rendered fields stay per field; errors on hidden fields become one form-level line", () => {

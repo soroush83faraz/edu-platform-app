@@ -296,7 +296,7 @@ describe("comments", () => {
       const studentView = await getWorkItemDetail(tx, s1.ctx, res.id);
       expect(studentView.comments.map((c) => c.id)).toEqual([pub.id, fromStudent.id]);
       expect(studentView.viewer.isStaff).toBe(false);
-      const teacherView = await listComments(tx, res.id, true);
+      const teacherView = await listComments(tx, res.id, { personId: f.PERSON_A2, isStaff: true });
       expect(teacherView.map((c) => c.id)).toEqual([staffNote.id, pub.id, fromStudent.id]);
 
       // The public comment re-flagged the student's inbox row as unread and notified her; the staff-only one did not.
@@ -305,6 +305,65 @@ describe("comments", () => {
       expect(notifs[1].body).toBe("زهرا کریمی: سؤالی بود بپرسید");
       const mine = await listInbox(tx, s1.personId, { tab: "todo" });
       expect(mine.rows[0]).toMatchObject({ id: res.id, unread: true, commentsCount: 3 - 1 });
+    });
+  });
+});
+
+describe("comments on a multi-assignee item (QA round 1, M3)", () => {
+  it("a student's comment reaches the teacher only: stored staff_only, visible to staff and its author, classmates get no notification and no unread flip", async () => {
+    await rolledBack(async (tx) => {
+      const [s1, s2, s3] = await enrollStudents(tx, 3);
+      const res = await createWorkItem(tx, teacher, { typeCode: "task", title: "تمرین کلاسی", priority: "normal", recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: [] } });
+      for (const s of [s1, s2, s3]) await markInboxRead(tx, s.ctx, { workItemId: res.id });
+      await markInboxRead(tx, teacher, { workItemId: res.id });
+
+      const mine = await addComment(tx, s1.ctx, { workItemId: res.id, body: "انجام دادم" });
+      expect(mine.visibility).toBe("staff_only");
+
+      // Teacher: notified once, inbox row back to unread, sees the comment.
+      const toTeacher = await tx.select({ title: notification.title, body: notification.body }).from(notification).where(eq(notification.recipientPersonId, f.PERSON_A2));
+      expect(toTeacher).toEqual([{ title: "نظر جدید: تمرین کلاسی", body: "دانش‌آموز شمارهٴ ۱: انجام دادم" }]);
+      const entries = await tx.select({ personId: inboxEntry.personId, state: inboxEntry.state }).from(inboxEntry).where(eq(inboxEntry.workItemId, res.id));
+      expect(entries.find((e) => e.personId === f.PERSON_A2)?.state).toBe("unread");
+      expect((await getWorkItemDetail(tx, teacher, res.id)).comments.map((c) => c.id)).toEqual([mine.id]);
+
+      // Classmates: no notification beyond the assignment, still read, and the comment is not in their view or count.
+      for (const s of [s2, s3]) {
+        const notifs = await tx.select({ title: notification.title }).from(notification).where(eq(notification.recipientPersonId, s.personId));
+        expect(notifs.map((n) => n.title)).toEqual(["کار جدید: تمرین کلاسی"]);
+        expect(entries.find((e) => e.personId === s.personId)?.state).toBe("read");
+        expect((await getWorkItemDetail(tx, s.ctx, res.id)).comments).toEqual([]);
+        expect((await listInbox(tx, s.personId, { tab: "todo" })).rows[0]).toMatchObject({ id: res.id, unread: false, commentsCount: 0 });
+      }
+      // The author still sees (and counts) their own comment.
+      expect((await getWorkItemDetail(tx, s1.ctx, res.id)).comments.map((c) => c.id)).toEqual([mine.id]);
+      expect((await listInbox(tx, s1.personId, { tab: "todo" })).rows[0]).toMatchObject({ commentsCount: 1 });
+
+      // The teacher's reply is for everyone: all three students notified and flipped to unread, comment visible to all.
+      const reply = await addComment(tx, teacher, { workItemId: res.id, body: "آفرین" });
+      expect(reply.visibility).toBe("all");
+      const after = await tx.select({ personId: inboxEntry.personId, state: inboxEntry.state }).from(inboxEntry).where(eq(inboxEntry.workItemId, res.id));
+      for (const s of [s1, s2, s3]) {
+        expect(after.find((e) => e.personId === s.personId)?.state).toBe("unread");
+        const notifs = await tx.select({ title: notification.title }).from(notification).where(eq(notification.recipientPersonId, s.personId));
+        expect(notifs.map((n) => n.title)).toEqual(["کار جدید: تمرین کلاسی", "نظر جدید: تمرین کلاسی"]);
+        expect((await getWorkItemDetail(tx, s.ctx, res.id)).comments.map((c) => c.id)).toEqual(s === s1 ? [mine.id, reply.id] : [reply.id]);
+      }
+    });
+  });
+
+  it("idempotency key: the same form submitted twice creates one item and hands the first one back", async () => {
+    await rolledBack(async (tx) => {
+      await enrollStudents(tx, 2);
+      const key = uuid(777);
+      const input = { typeCode: "task" as const, title: "دوبار زده شد", priority: "normal" as const, recipients: { kind: "class_offering" as const, id: f.OFFERING_A1, excludePersonIds: [] }, idempotencyKey: key };
+      const first = await createWorkItem(tx, teacher, input);
+      const second = await createWorkItem(tx, teacher, input);
+      expect(second).toMatchObject({ id: first.id, assigneeCount: 2, notified: 0, duplicate: true });
+      expect(await tx.select({ id: workItem.id }).from(workItem).where(eq(workItem.idempotencyKey, key))).toHaveLength(1);
+      // A different key is a different item.
+      const third = await createWorkItem(tx, teacher, { ...input, idempotencyKey: uuid(778) });
+      expect(third.id).not.toBe(first.id);
     });
   });
 });

@@ -6,7 +6,7 @@
 // watcher) and to holders of a BROAD `workspace.work_item.read` (organization/school/branch scoped roles — admins,
 // principals, vice principals — see all items of the organization; per-school partitioning is a later block).
 // Everyone else gets NOT_FOUND, never FORBIDDEN, so the existence of an item is not leaked.
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
 import { chunk } from "@/lib/collections";
@@ -71,13 +71,19 @@ export interface CreateWorkItemInput {
   priority: Priority;
   dueAt?: Date | null;
   recipients: Recipients;
+  /** Client-generated UUID v7 of one «کار جدید» form; a resubmit within `IDEMPOTENCY_WINDOW_MS` returns the first item. */
+  idempotencyKey?: string | null;
 }
 
 export interface CreateWorkItemResult {
   id: string;
   assigneeCount: number;
   notified: number;
+  /** True when an earlier submit with the same idempotency key was returned instead of a new item. */
+  duplicate?: boolean;
 }
+
+export const IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000;
 
 async function resolveRecipients(tx: Tx, ctx: WorkspaceCtx, recipients: Recipients): Promise<string[]> {
   switch (recipients.kind) {
@@ -107,6 +113,15 @@ async function resolveRecipients(tx: Tx, ctx: WorkspaceCtx, recipients: Recipien
  * («کارهایی که دادم»), the first transition and N `work_item.assigned` notifications (deduped per person).
  */
 export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWorkItemInput): Promise<CreateWorkItemResult> {
+  if (input.idempotencyKey) {
+    // A double tap / retried request: the same person sent this form already — hand back the item it created.
+    const [existing] = await tx
+      .select({ id: workItem.id, n: sql<number>`(select count(*)::int from ${workItemAssignee} a where a.work_item_id = ${workItem.id} and a.role = 'assignee')` })
+      .from(workItem)
+      .where(and(eq(workItem.createdByPersonId, ctx.personId), eq(workItem.idempotencyKey, input.idempotencyKey), gt(workItem.createdAt, new Date(Date.now() - IDEMPOTENCY_WINDOW_MS))))
+      .limit(1);
+    if (existing) return { id: existing.id, assigneeCount: existing.n, notified: 0, duplicate: true };
+  }
   const type = await findTypeWithInitialStatus(tx, input.typeCode);
   if (!type) throw invalidReference("نوع کار یافت نشد.");
   const recipientIds = [...new Set(await resolveRecipients(tx, ctx, input.recipients))];
@@ -124,6 +139,7 @@ export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWor
       dueAt: input.dueAt ?? null,
       createdByPersonId: ctx.personId,
       visibility: "assignees",
+      idempotencyKey: input.idempotencyKey ?? null,
     })
     .returning({ id: workItem.id });
 
@@ -182,15 +198,23 @@ export interface AddCommentInput {
   visibility?: "all" | "staff_only";
 }
 
-/** Everyone attached to the item except the author; for a staff-only comment, only those with a staff profile. */
-async function commentRecipients(tx: Tx, item: WorkItemCore, authorId: string, staffOnly: boolean): Promise<string[]> {
+/**
+ * Who a comment reaches (phase-1 rule, docs/workspace.md «نظرها»):
+ * - an ASSIGNEE's comment on an item with MORE THAN ONE assignee («انجام دادم» on a class task) goes to the creator
+ *   and the watchers only — never to the other assignees (a 25-student class does not get 24 notifications and 24
+ *   unread flips per student comment, and one student's words are not shown to the whole class);
+ * - a creator's / staff comment reaches everyone attached (creator, assignees, watchers);
+ * - `staff_only` narrows either set to people with a staff profile.
+ * The author is never a recipient.
+ */
+async function commentRecipients(tx: Tx, item: WorkItemCore, authorId: string, opts: { staffOnly: boolean; assigneeOnMulti: boolean; assignees: AssigneeRow[] }): Promise<string[]> {
   // Sequential on purpose: one pg client per transaction, and pg@9 drops overlapping queries.
-  const assignees = await listAssignees(tx, item.id);
   const watchers = await listWatchers(tx, item.id);
-  const ids = new Set<string>([item.createdByPersonId, ...assignees.map((a) => a.personId), ...watchers.map((w) => w.personId)]);
+  const ids = new Set<string>([item.createdByPersonId, ...watchers.map((w) => w.personId)]);
+  if (!opts.assigneeOnMulti) for (const a of opts.assignees) ids.add(a.personId);
   ids.delete(authorId);
   if (ids.size === 0) return [];
-  if (!staffOnly) return [...ids];
+  if (!opts.staffOnly) return [...ids];
   const staff = await tx.select({ personId: staffProfile.personId }).from(staffProfile).where(inArray(staffProfile.personId, [...ids]));
   return staff.map((s) => s.personId);
 }
@@ -198,17 +222,22 @@ async function commentRecipients(tx: Tx, item: WorkItemCore, authorId: string, s
 export async function addComment(tx: Tx, ctx: WorkspaceCtx, input: AddCommentInput): Promise<{ id: string; visibility: "all" | "staff_only" }> {
   const item = await canViewWorkItem(tx, ctx, input.workItemId);
   if (!canAtAnyScope(ctx.assignments, "workspace.work_item.comment")) throw forbidden();
-  // staff_only is only meaningful for staff; anyone else silently posts to everyone.
-  const visibility = input.visibility === "staff_only" && (await isStaff(tx, ctx.personId)) ? "staff_only" : "all";
   const body = input.body.trim();
   if (body.length === 0) throw validation({ fieldErrors: { body: ["متن نظر را وارد کنید."] } });
+  const staff = await isStaff(tx, ctx.personId);
+  const assignees = await listAssignees(tx, item.id);
+  // An assignee (who is not the creator) writing on a multi-assignee item: the comment is for the creator and the
+  // staff — stored `staff_only` so the read model hides it from classmates (the author still sees their own).
+  const assigneeOnMulti = assignees.length > 1 && item.createdByPersonId !== ctx.personId && assignees.some((a) => a.personId === ctx.personId);
+  // An explicit staff_only is only meaningful for staff; anyone else's request is ignored (they post to everyone).
+  const visibility = assigneeOnMulti || (input.visibility === "staff_only" && staff) ? "staff_only" : "all";
 
   const [c] = await tx
     .insert(workItemComment)
     .values({ organizationId: ctx.orgId, workItemId: item.id, authorPersonId: ctx.personId, body, visibility })
     .returning({ id: workItemComment.id });
 
-  const recipients = await commentRecipients(tx, item, ctx.personId, visibility === "staff_only");
+  const recipients = await commentRecipients(tx, item, ctx.personId, { staffOnly: visibility === "staff_only" && !assigneeOnMulti, assigneeOnMulti, assignees });
   if (recipients.length > 0) {
     const authorName = (await findPersonName(tx, ctx.personId)) ?? "";
     const excerpt = body.length > 80 ? `${body.slice(0, 80)}…` : body;
@@ -418,7 +447,9 @@ export async function getWorkItemDetail(tx: Tx, ctx: WorkspaceCtx, workItemId: s
   const creatorName = await findPersonName(tx, item.createdByPersonId);
   const assignees = await listAssignees(tx, item.id);
   const watchers = await listWatchers(tx, item.id);
-  const comments = await listComments(tx, item.id, staff);
+  // Staff see every comment; an assignee sees `all` comments plus their own (their «انجام دادم» on a class task is
+  // stored staff_only — see addComment).
+  const comments = await listComments(tx, item.id, { personId: ctx.personId, isStaff: staff });
   const transitions = await listTransitions(tx, item.id);
   const statuses = await listStatusesOfType(tx, item.typeId);
   const myInbox = await findMyInboxEntry(tx, ctx.personId, item.id);

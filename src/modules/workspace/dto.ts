@@ -36,6 +36,8 @@ export const CreateWorkItemInput = z
     /** `HH:mm`; empty = end of the day (23:59 Tehran). */
     dueTime: z.string().trim().max(5).optional(),
     recipients: Recipients,
+    /** UUID v7 minted when the form mounts; a resubmit within 10 minutes returns the item already created. */
+    idempotencyKey: uuid.optional(),
   })
   .strict();
 export type CreateWorkItemInput = z.output<typeof CreateWorkItemInput>;

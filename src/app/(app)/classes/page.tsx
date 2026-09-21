@@ -7,7 +7,9 @@ import { EmptyState } from "@/components/EmptyState";
 import { IconChip } from "@/components/IconChip";
 import { BookClay } from "@/components/illustrations";
 import { Button } from "@/components/ui/button";
+import { requireContext } from "@/lib/ctx";
 import { formatNumberFa } from "@/lib/format";
+import { canAtAnyScope } from "@/modules/iam/can";
 import { hatsQuery } from "@/modules/iam/hats";
 
 export const metadata: Metadata = { title: "کلاس‌های من | سامانهٴ مدرسه" };
@@ -22,6 +24,10 @@ export default async function ClassesPage() {
     if (hats.code === "UNAUTHENTICATED") redirect("/login");
     return <EmptyState title="کلاس‌ها در دسترس نیست" description={hats.message} />;
   }
+  // A student who lands here (typed URL, old link) belongs on «کلاس من»; «کار جدید» only for people who may create.
+  if (hats.data.isStudent && hats.data.teachingOfferings.length === 0) redirect("/my-class");
+  const ctx = await requireContext();
+  const canCreate = canAtAnyScope(ctx.assignments, "workspace.work_item.create");
   const offerings = hats.data.teachingOfferings;
   return (
     <div className="flex flex-col gap-4 px-4 pt-3 pb-8 md:pt-6">
@@ -35,12 +41,14 @@ export default async function ClassesPage() {
           <h2 className="text-xl font-bold leading-8 text-text">کلاس‌های من</h2>
           <p className="text-sm text-text-muted">{offerings.length > 0 ? `${formatNumberFa(offerings.length)} درس در این سال` : "درسی به شما سپرده نشده"}</p>
         </div>
-        <Button asChild className="ms-auto shrink-0">
-          <Link href="/inbox/new">
-            <Plus aria-hidden />
-            کار جدید
-          </Link>
-        </Button>
+        {canCreate ? (
+          <Button asChild className="ms-auto shrink-0">
+            <Link href="/inbox/new">
+              <Plus aria-hidden />
+              کار جدید
+            </Link>
+          </Button>
+        ) : null}
       </div>
 
       {offerings.length === 0 ? (

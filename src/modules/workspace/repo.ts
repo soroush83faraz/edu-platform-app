@@ -7,7 +7,7 @@ import type { Tx } from "@/lib/actions";
 import { type Bucket, type DayBounds, tehranDayBounds } from "@/lib/format";
 import { person, roleAssignment, staffProfile, studentProfile } from "@/modules/iam/schema";
 import { classEnrollment } from "@/modules/academic/schema";
-import { classGroup, classOffering, subject } from "@/modules/tenancy/schema";
+import { classGroup, classOffering, gradeLevel, subject } from "@/modules/tenancy/schema";
 import type { InboxTab } from "./dto";
 import { inboxEntry, workItem, workItemAssignee, workItemComment, workItemStatus, workItemTransition, workItemType, workItemWatcher } from "./schema";
 
@@ -108,15 +108,25 @@ const OFFERING_SELECT = {
   subjectName: subject.name,
   classGroupName: classGroup.name,
   studentCount: sql<number>`(select count(*)::int from ${classEnrollment} ce where ce.class_group_id = ${classOffering.classGroupId} and ce.status = 'active')`,
+  gradeSequence: gradeLevel.sequence,
 };
+
+/** Class pickers read grade first («دهم» before «یازدهم»), then class name, then subject. */
+function sortOfferings(rows: Array<OfferingRow & { gradeSequence: number }>): OfferingRow[] {
+  const collator = new Intl.Collator("fa");
+  return rows
+    .sort((a, b) => a.gradeSequence - b.gradeSequence || collator.compare(a.classGroupName, b.classGroupName) || collator.compare(a.subjectName, b.subjectName))
+    .map(({ id, subjectName, classGroupName, studentCount }) => ({ id, subjectName, classGroupName, studentCount }));
+}
 
 /** Offerings the person teaches: valid `teacher`-style role_assignments scoped to a class_offering. */
 export async function listTaughtOfferings(tx: Tx, personId: string): Promise<OfferingRow[]> {
-  return tx
+  const rows = await tx
     .selectDistinctOn([classOffering.id], OFFERING_SELECT)
     .from(roleAssignment)
     .innerJoin(classOffering, eq(classOffering.id, roleAssignment.classOfferingId))
     .innerJoin(classGroup, eq(classGroup.id, classOffering.classGroupId))
+    .innerJoin(gradeLevel, eq(gradeLevel.id, classGroup.gradeLevelId))
     .innerJoin(subject, eq(subject.id, classOffering.subjectId))
     .where(
       and(
@@ -129,17 +139,20 @@ export async function listTaughtOfferings(tx: Tx, personId: string): Promise<Off
       ),
     )
     .orderBy(asc(classOffering.id));
+  return sortOfferings(rows);
 }
 
 /** Every open offering of the organization (admins/principals — broad `assign_class`). */
 export async function listAllOfferings(tx: Tx): Promise<OfferingRow[]> {
-  return tx
+  const rows = await tx
     .select(OFFERING_SELECT)
     .from(classOffering)
     .innerJoin(classGroup, eq(classGroup.id, classOffering.classGroupId))
+    .innerJoin(gradeLevel, eq(gradeLevel.id, classGroup.gradeLevelId))
     .innerJoin(subject, eq(subject.id, classOffering.subjectId))
     .where(sql`${classOffering.status} <> 'closed' and ${classGroup.status} = 'active'`)
-    .orderBy(asc(classGroup.name), asc(subject.name));
+    .orderBy(asc(gradeLevel.sequence), asc(classGroup.name), asc(subject.name));
+  return sortOfferings(rows);
 }
 
 export interface PersonHit {
@@ -210,7 +223,7 @@ export interface ListInboxOptions {
   cursor?: string | null;
   limit?: number;
   now?: Date;
-  /** Staff see staff-only comments, so their comment counts include them. */
+  /** Staff see staff-only comments, so their comment counts include them (everyone counts their own). */
   viewerIsStaff?: boolean;
 }
 
@@ -313,7 +326,7 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
       ) cnt
       cross join lateral (
         select count(*)::int as n from ${workItemComment} c
-        where c.work_item_id = wi.id and c.deleted_at is null and (${opts.viewerIsStaff ?? false} or c.visibility = 'all')
+        where c.work_item_id = wi.id and c.deleted_at is null and (${opts.viewerIsStaff ?? false} or c.visibility = 'all' or c.author_person_id = ie.person_id)
       ) cm
       cross join lateral (
         select case
@@ -389,8 +402,13 @@ export interface InboxTabCounts {
 /**
  * Rows per کارتابل tab for the segmented control — the same effective category as `listInbox` (own assignee state
  * wins), so the numbers match the lists. `todo` includes `doing`, `done` includes cancelled — like the two tabs.
+ * The «فقط کارهایی که دادم» / «خوانده‌نشده» filters narrow the counts too, so the tabs never promise rows the
+ * filtered list does not show.
  */
-export async function inboxTabCounts(tx: Tx, personId: string): Promise<InboxTabCounts> {
+export async function inboxTabCounts(tx: Tx, personId: string, opts: { createdByMe?: boolean; unreadOnly?: boolean } = {}): Promise<InboxTabCounts> {
+  const filters = [sql`ie.person_id = ${personId}::uuid and ie.state <> 'archived' and wi.archived_at is null`];
+  if (opts.createdByMe) filters.push(sql`wi.created_by_person_id = ie.person_id`);
+  if (opts.unreadOnly) filters.push(sql`ie.state = 'unread'`);
   const res = await tx.execute<{ todo: number; done: number }>(sql`
     select
       (count(*) filter (where eff.category in ('todo', 'doing')))::int as todo,
@@ -406,7 +424,7 @@ export async function inboxTabCounts(tx: Tx, personId: string): Promise<InboxTab
         else s.category
       end as category
     ) eff
-    where ie.person_id = ${personId}::uuid and ie.state <> 'archived' and wi.archived_at is null
+    where ${sql.join(filters, sql` and `)}
   `);
   const r = res.rows[0];
   return { todo: r?.todo ?? 0, done: r?.done ?? 0 };
@@ -507,8 +525,16 @@ export interface CommentRow {
   createdAt: Date;
 }
 
-/** Oldest first. `includeStaffOnly=false` hides staff-only comments (the caller has no staff profile). */
-export async function listComments(tx: Tx, workItemId: string, includeStaffOnly: boolean): Promise<CommentRow[]> {
+export interface CommentViewer {
+  personId: string;
+  isStaff: boolean;
+}
+
+/**
+ * Oldest first. Staff see everything; anyone else sees `all` comments plus the ones they wrote themselves (an
+ * assignee's comment on a multi-assignee item is stored `staff_only` — service `addComment`).
+ */
+export async function listComments(tx: Tx, workItemId: string, viewer: CommentViewer): Promise<CommentRow[]> {
   const rows = await tx
     .select({
       id: workItemComment.id,
@@ -522,7 +548,11 @@ export async function listComments(tx: Tx, workItemId: string, includeStaffOnly:
     .from(workItemComment)
     .innerJoin(person, eq(person.id, workItemComment.authorPersonId))
     .where(
-      and(eq(workItemComment.workItemId, workItemId), isNull(workItemComment.deletedAt), includeStaffOnly ? undefined : eq(workItemComment.visibility, "all")),
+      and(
+        eq(workItemComment.workItemId, workItemId),
+        isNull(workItemComment.deletedAt),
+        viewer.isStaff ? undefined : sql`(${workItemComment.visibility} = 'all' or ${workItemComment.authorPersonId} = ${viewer.personId}::uuid)`,
+      ),
     )
     .orderBy(asc(workItemComment.createdAt), asc(workItemComment.id));
   return rows.map((r) => ({ id: r.id, authorPersonId: r.authorPersonId, authorName: `${r.f} ${r.l}`, body: r.body, visibility: r.visibility as CommentRow["visibility"], createdAt: r.createdAt }));

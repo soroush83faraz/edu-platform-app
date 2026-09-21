@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { SelectNative } from "@/components/ui/select-native";
 import { adminResourceMutate } from "@/lib/admin/actions";
 import { newLabelFa, type FormField, type SelectOption } from "@/lib/admin/defineResource";
-import { flatten } from "@/lib/admin/form-errors";
+import { flatten } from "@/lib/form-errors";
 import { toAsciiDigits } from "@/lib/normalize";
 import { ResponsiveModal } from "./ResponsiveModal";
 

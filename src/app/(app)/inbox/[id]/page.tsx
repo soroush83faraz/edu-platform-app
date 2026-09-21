@@ -151,7 +151,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
             </li>
           ))}
         </ul>
-        {viewer.canComment && !item.archivedAt ? <CommentForm workItemId={item.id} canStaffOnly={viewer.isStaff} /> : null}
+        {viewer.canComment && !item.archivedAt ? <CommentForm workItemId={item.id} canStaffOnly={viewer.isStaff} privateToStaff={myAssigneeState !== null && !viewer.isCreator && assignees.length > 1} /> : null}
       </section>
 
       {watchers.length > 0 ? (

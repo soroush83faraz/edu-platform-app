@@ -4,6 +4,7 @@ import { Archive, Ban, Check, Ellipsis, Pin, PinOff, RotateCcw } from "lucide-re
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { ResponsiveModal } from "@/components/admin/ResponsiveModal";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { archiveInboxAction, changeStatusAction, markInboxReadAction, setPinnedAction } from "../actions";
@@ -23,6 +24,7 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
   const router = useRouter();
   const [pending, start] = useTransition();
   const [pinned, setPinned] = useState(inbox?.isPinned ?? false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   useEffect(() => {
     if (inbox?.state !== "unread") return;
@@ -65,8 +67,9 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
         </Button>,
       );
     } else {
+      // Cancelling closes the item for every assignee — one confirm step (the same modal the admin archive uses).
       buttons.push(
-        <Button key="cancel" variant="ghost" size="lg" className="w-full text-danger hover:text-danger" disabled={pending} onClick={() => run("لغو شد", () => changeStatusAction({ workItemId, toStatusCode: "cancelled" }))}>
+        <Button key="cancel" variant="ghost" size="lg" className="w-full text-danger hover:text-danger" disabled={pending} onClick={() => setConfirmCancel(true)}>
           <Ban aria-hidden />
           لغو
         </Button>,
@@ -77,6 +80,25 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
   // Full-width, stacked on phones (thumb-sized, in reading order: the main action first); two-up from `sm:`.
   return (
     <div className="grid gap-2 sm:grid-cols-2">
+      <ResponsiveModal open={confirmCancel} onOpenChange={setConfirmCancel} title="لغو کار" description="این کار برای همهٴ گیرندگان لغو می‌شود و از فهرست کارهای بازشان برداشته می‌شود. بعداً می‌توانید آن را بازگشایی کنید.">
+        <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" onClick={() => setConfirmCancel(false)}>
+            انصراف
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            className="min-w-28"
+            disabled={pending}
+            onClick={() => {
+              setConfirmCancel(false);
+              run("لغو شد", () => changeStatusAction({ workItemId, toStatusCode: "cancelled" }));
+            }}
+          >
+            لغو کار
+          </Button>
+        </div>
+      </ResponsiveModal>
       {buttons}
       {inbox ? (
         <DropdownMenu>
