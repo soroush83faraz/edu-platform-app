@@ -1,21 +1,23 @@
+import { ClipboardList, ListTodo } from "lucide-react";
 import Link from "next/link";
 import { cn } from "cn";
-import { PriorityStripe } from "@/components/PriorityStripe";
+import { IconChip } from "@/components/IconChip";
+import { priorityChipTone } from "@/components/priority";
 import { RelativeTime } from "@/components/RelativeTime";
 import { formatNumberFa } from "@/lib/format";
 import type { InboxRow } from "@/modules/workspace/repo";
 
 /**
- * One کار in a Home list: title, due (red when overdue) or sender, and — for items I gave — a slim progress bar.
- * Denser than the کارتابل row; the priority stripe stays as the one colour cue.
+ * One کار in a Home list: a small type chip tinted by priority, title, due (red when overdue) or sender, and — for
+ * items I gave — a slim progress bar. Denser than the کارتابل row.
  */
 export function CompactItemRow({ row }: { row: InboxRow }) {
   const overdue = row.bucket === "overdue";
   const showProgress = row.createdByMe && row.assigneesTotal > 0 && !(row.assigneesTotal === 1 && row.myAssigneeState);
   return (
-    <li className="relative">
-      <PriorityStripe priority={row.priority} className="inset-y-3 w-0.75" />
-      <Link href={`/inbox/${row.id}`} className="pressable flex min-h-14 items-center gap-3 ps-4 pe-3 py-2 hover:bg-surface-sunken active:bg-surface-sunken">
+    <li>
+      <Link href={`/inbox/${row.id}`} className="pressable flex min-h-14 items-center gap-3 px-3 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken active:bg-surface-sunken">
+        <IconChip icon={row.typeCode === "todo" ? ListTodo : ClipboardList} tone={priorityChipTone(row.priority)} size="sm" />
         <div className="flex min-w-0 flex-1 flex-col">
           <p className={cn("truncate text-sm leading-6 text-text", row.unread ? "font-semibold" : "font-medium")}>
             <bdi>{row.title}</bdi>

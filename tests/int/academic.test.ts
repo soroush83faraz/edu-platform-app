@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { withTenant } from "@/db/client";
 import { auditLog, classEnrollment, roleAssignment, schoolEnrollment, teacherAssignment } from "@/db/schema";
 import { AppError } from "@/lib/errors";
+import { getMyClass } from "@/modules/academic/repo";
 import { assignTeacher, endTeacherAssignment, enrollStudent, moveEnrollment, type ServiceCtx } from "@/modules/academic/service";
 import * as f from "./fixtures";
 import { Rollback, pgCode } from "./helpers";
@@ -199,6 +200,35 @@ describe("enrollStudent / moveEnrollment", () => {
         expect(old).toEqual({ endsOn: "2027-01-05", status: "transferred" });
         const [next] = await tx.select({ status: classEnrollment.status }).from(classEnrollment).where(eq(classEnrollment.id, moved.classEnrollmentId));
         expect(next.status).toBe("active");
+        throw new Rollback();
+      }),
+    ).rejects.toBeInstanceOf(Rollback);
+  });
+});
+
+describe("getMyClass («کلاس من» read model)", () => {
+  it("null without an enrollment; then class, school, classmates (others only) and the current teacher per offering", async () => {
+    await expect(
+      withTenant(ctxA, async (tx) => {
+        expect(await getMyClass(tx, f.PERSON_A1)).toBeNull();
+
+        await enrollStudent(tx, svcA, { studentProfileId: f.STUDENT_A1, classGroupId: f.CLASS_GROUP_A1 });
+        // No teacher yet: the offering row is there with a null teacher.
+        const alone = await getMyClass(tx, f.PERSON_A1);
+        expect(alone).toEqual({ classGroupName: "اول 1", schoolName: "دبستان", classmates: 0, teachers: [{ offeringId: f.OFFERING_A1, subjectName: "ریاضی", teacherName: null }] });
+
+        // A classmate (written directly) and the teacher assignment of the class's one offering.
+        const classmatePerson = "0199a000-00f3-7000-8000-000000000001";
+        const classmateProfile = "0199a000-00f3-7000-8000-000000000002";
+        await tx.execute(sql`insert into iam.person (id, organization_id, first_name, last_name) values (${classmatePerson}::uuid, ${f.ORG_A}::uuid, 'سارا', 'محمدی')`);
+        await tx.execute(sql`insert into iam.student_profile (id, organization_id, person_id, student_number) values (${classmateProfile}::uuid, ${f.ORG_A}::uuid, ${classmatePerson}::uuid, 'T9001')`);
+        await enrollStudent(tx, svcA, { studentProfileId: classmateProfile, classGroupId: f.CLASS_GROUP_A1 });
+        await assignTeacher(tx, svcA, { staffProfileId: f.STAFF_A2, classOfferingId: f.OFFERING_A1 });
+
+        const mine = await getMyClass(tx, f.PERSON_A1);
+        expect(mine).toEqual({ classGroupName: "اول 1", schoolName: "دبستان", classmates: 1, teachers: [{ offeringId: f.OFFERING_A1, subjectName: "ریاضی", teacherName: "زهرا کریمی" }] });
+        // The classmate sees one classmate too (me), the same teacher.
+        expect((await getMyClass(tx, classmatePerson))?.classmates).toBe(1);
         throw new Rollback();
       }),
     ).rejects.toBeInstanceOf(Rollback);
