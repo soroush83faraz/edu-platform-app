@@ -103,6 +103,8 @@ export const loginAttempt = iam.table(
     outcome: text("outcome"),
     userAgent: text("user_agent"),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    /** Set by «رفع قفل» (unlockAccount): a cleared failure stays in the audit trail but no longer counts for throttling. */
+    clearedAt: timestamp("cleared_at", { withTimezone: true }),
   },
   (t) => [
     index("login_attempt_identifier_at_idx").on(t.identifier, t.at),

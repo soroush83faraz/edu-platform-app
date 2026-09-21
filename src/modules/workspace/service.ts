@@ -4,8 +4,9 @@
 //
 // Visibility rule (phase 1): an item is visible to its creator, to anyone with an inbox_entry for it (assignee,
 // watcher) and to holders of a BROAD `workspace.work_item.read` (organization/school/branch scoped roles — admins,
-// principals, vice principals — see all items of the organization; per-school partitioning is a later block).
-// Everyone else gets NOT_FOUND, never FORBIDDEN, so the existence of an item is not leaked.
+// principals, vice principals — see all items of the organization; per-school partitioning is a later block) —
+// except a personal `todo` (single self-assignee), which only its owner sees. Everyone else gets NOT_FOUND, never
+// FORBIDDEN, so the existence of an item is not leaked.
 import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
@@ -50,14 +51,29 @@ export const INSERT_CHUNK = 500;
 // visibility
 // ---------------------------------------------------------------------------------------------------------------
 
-/** The item when the caller may see it; throws NOT_FOUND (never FORBIDDEN) otherwise. */
+/**
+ * The item when the caller may see it; throws NOT_FOUND (never FORBIDDEN) otherwise. A personal `todo` — type
+ * `todo` whose only assignee is its creator («کار شخصی») — is visible to that person alone: the broad
+ * `workspace.work_item.read` of managers does not reach it, so nobody else can open or reopen it (QA round 1, m5).
+ */
 export async function canViewWorkItem(tx: Tx, ctx: WorkspaceCtx, workItemId: string): Promise<WorkItemCore> {
   const item = await findWorkItemCore(tx, workItemId);
   if (!item) throw notFound();
   if (item.createdByPersonId === ctx.personId) return item;
   if (await findMyInboxEntry(tx, ctx.personId, workItemId)) return item;
-  if (canBroadly(ctx.assignments, "workspace.work_item.read")) return item;
+  if (canBroadly(ctx.assignments, "workspace.work_item.read") && !(await isPersonalTodo(tx, item))) return item;
   throw notFound();
+}
+
+/** `todo` with exactly one assignee row, and that assignee is the creator. */
+async function isPersonalTodo(tx: Tx, item: WorkItemCore): Promise<boolean> {
+  if (item.typeCode !== "todo") return false;
+  const assignees = await tx
+    .select({ personId: workItemAssignee.personId })
+    .from(workItemAssignee)
+    .where(and(eq(workItemAssignee.workItemId, item.id), eq(workItemAssignee.role, "assignee")))
+    .limit(2);
+  return assignees.length === 1 && assignees[0].personId === item.createdByPersonId;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

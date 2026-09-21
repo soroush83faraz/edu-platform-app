@@ -3,13 +3,14 @@
 // one that does not go through defineAction's permission gate; it still parses with a `.strict()` schema, is
 // throttled through iam.login_attempt, always runs exactly one argon2 verify and returns one generic error.
 import { redirect } from "next/navigation";
-import { defineAction, definePublicAction, fail, type Result } from "@/lib/actions";
+import { defineAction, definePublicAction, fail, ok, type Result } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { validation } from "@/lib/errors";
 import { normalizePhoneIR, toAsciiDigits } from "@/lib/normalize";
 import { getClientIp, getUserAgent } from "@/lib/request";
 import { ChangePasswordInput, EmptyInput, LoginInput } from "./dto";
-import { LOGIN_GENERIC_MESSAGE, NO_MEMBERSHIP_MESSAGE } from "./messages";
+import { CURRENT_PASSWORD_REQUIRED_MESSAGE, CURRENT_PASSWORD_WRONG_MESSAGE, LOGIN_GENERIC_MESSAGE, NO_MEMBERSHIP_MESSAGE } from "./messages";
+import { safeNextPath } from "./next-path";
 import { DUMMY_HASH, PASSWORD_POLICY_MESSAGES, hashPassword, validateNewPassword, verifyPassword } from "./password";
 import {
   findAccountById,
@@ -21,7 +22,7 @@ import {
   setPassword,
 } from "./repo";
 import { clearSessionCookie, createSession, revokeAllForUser, revokeSession, setSessionCookie } from "./session";
-import { THROTTLE, countRecentFailures, recordAttempt, throttleDecision, type LoginOutcomeCode } from "./throttle";
+import { THROTTLE, countRecentFailures, recordAttempt, slowDown, throttleDecision, type LoginOutcomeCode } from "./throttle";
 
 /** One field «موبایل یا نام‌کاربری»: phone-looking input → E.164, otherwise a lower-cased username. */
 function normalizeIdentifier(raw: string): string {
@@ -36,6 +37,11 @@ type LoginOutcome = { kind: "failed" } | { kind: "no_membership" } | { kind: "ok
  * The login core: throttle counts + account lookup in one global transaction, exactly ONE argon2 verify
  * (real hash or DUMMY_HASH), then the attempt record / lock escalation / session creation in a second one.
  * Every failure path returns the same `{ kind: "failed" }`; the caller turns it into the one generic message.
+ *
+ * An attempt refused WITHOUT a verdict on the password — throttled identifier or IP, `locked_until` in the future,
+ * `status = 'locked'` — is recorded as `locked` for the audit trail but is neither counted by the throttle nor
+ * added to `failed_login_count`, and never escalates a lock: retrying during a soft lock (even with the right
+ * password) must not turn 15 minutes into an hour (QA round 1, B2).
  */
 const loginCore = definePublicAction({ schema: LoginInput }, async (input, { globalTx, bindAccount }): Promise<LoginOutcome> => {
   const identifier = normalizeIdentifier(input.identifier);
@@ -51,28 +57,30 @@ const loginCore = definePublicAction({ schema: LoginInput }, async (input, { glo
   });
 
   const verified = await verifyPassword(probe.hash ?? DUMMY_HASH, input.password);
+  // A busy IP (a school NAT with many failures) is slowed, not refused: one fixed delay on every path.
+  if (probe.decision.slow) await slowDown();
+
   const account = probe.account;
-  const eligible =
-    account !== null &&
-    probe.hash !== null &&
-    account.status === "active" &&
-    (account.lockedUntil === null || account.lockedUntil.getTime() <= now.getTime());
-  const success = !probe.decision.blocked && eligible && verified;
+  const accountLocked = account !== null && (account.status === "locked" || (account.lockedUntil !== null && account.lockedUntil.getTime() > now.getTime()));
+  const refused = probe.decision.blocked || accountLocked;
+  const eligible = account !== null && probe.hash !== null && account.status === "active" && !accountLocked;
+  const success = !refused && eligible && verified;
   // Human-readable reason for iam.login_attempt.outcome (audit); the response stays identical for every failure.
   const outcome: LoginOutcomeCode = success
     ? "success"
-    : account === null || probe.hash === null
-      ? "unknown"
-      : account.status === "disabled"
-        ? "disabled"
-        : probe.decision.blocked || account.status === "locked" || (account.lockedUntil !== null && account.lockedUntil.getTime() > now.getTime())
-          ? "locked"
+    : refused
+      ? "locked"
+      : account === null || probe.hash === null
+        ? "unknown"
+        : account.status === "disabled"
+          ? "disabled"
           : "bad_password";
 
   return globalTx(async (tx): Promise<LoginOutcome> => {
     await recordAttempt(tx, { identifier, ip, succeeded: success, outcome, userAgent });
     if (!success || account === null) {
-      if (account) {
+      // Only a COUNTED failure (the password was evaluated and was wrong) touches the account's lock state.
+      if (account && outcome !== "locked") {
         await recordLoginFailure(tx, account.id, {
           until: probe.decision.lockForHour ? new Date(now.getTime() + THROTTLE.hardLockMs) : undefined,
           permanent: probe.decision.lockPermanently,
@@ -90,13 +98,14 @@ const loginCore = definePublicAction({ schema: LoginInput }, async (input, { glo
       now,
     );
     await setSessionCookie(token, { isPublicDevice: input.publicDevice, expiresAt: session.expiresAt });
-    return { kind: "ok", destination: account.mustChangePassword ? "/change-password" : "/home" };
+    // The deep link (`/login?next=/inbox/<id>`) is honoured only as a same-origin relative path (`safeNextPath`).
+    return { kind: "ok", destination: account.mustChangePassword ? "/change-password" : (safeNextPath(input.next) ?? "/home") };
   });
 });
 
 /**
  * Login. Returns a Result only on failure — on success it sets the session cookie and redirects
- * (`/change-password` when the account must change its password, `/home` otherwise).
+ * (`/change-password` when the account must change its password, else the validated `next` path or `/home`).
  * Unknown identifier, wrong password, inactive/locked account and throttling all yield a byte-identical Result.
  */
 export async function loginAction(raw: FormData | unknown): Promise<Result<never>> {
@@ -117,28 +126,78 @@ export async function loginFormAction(_prev: Result<never> | null, formData: For
   return loginAction(formData);
 }
 
+type ChangePasswordOutcome = { kind: "changed"; revokedSessions: number } | { kind: "current_rejected" };
+
 /**
- * Forced (or voluntary) password change. Allowed while must_change_password is set. Revokes every OTHER session
- * of the account so a stolen initial password stops working everywhere else.
+ * Password change, forced (`must_change_password`) or voluntary. Both paths: the new-password policy, `confirm`,
+ * and «رمز جدید نباید با رمز قبلی یکی باشد» (the new password is verified against the CURRENT hash — the forced
+ * change used to accept the temporary password itself, QA round 1 M1). The voluntary path additionally requires
+ * «رمز فعلی», verified with argon2 under the LOGIN throttle of the account's identifier: a wrong guess is recorded
+ * and counted like a wrong login password (so an unlocked device cannot brute-force the current password), and a
+ * throttled account is refused with the same message. That refusal is RETURNED, not thrown, so the transaction
+ * commits the failure record. Revokes every OTHER session of the account (the current one stays).
  */
-export const changePasswordAction = defineAction(
+const changePasswordCore = defineAction(
   { schema: ChangePasswordInput, permission: "iam.account.self", allowPasswordChangePending: true },
-  async (tx, input, ctx) => {
+  async (tx, input, ctx): Promise<ChangePasswordOutcome> => {
     const account = await findAccountById(tx, ctx.userId);
     if (!account) throw validation();
+    const forced = account.mustChangePassword;
+    const currentPassword = input.currentPassword ?? "";
+
     const fieldErrors: Record<string, string[]> = {};
     const policy = validateNewPassword(input.newPassword, { identifier: account.loginIdentifier, phoneE164: account.phoneE164 });
     if (!policy.ok) fieldErrors.newPassword = [policy.message];
     if (input.newPassword !== input.confirm) fieldErrors.confirm = [PASSWORD_POLICY_MESSAGES.mismatch];
+    if (!forced && currentPassword === "") fieldErrors.currentPassword = [CURRENT_PASSWORD_REQUIRED_MESSAGE];
     if (Object.keys(fieldErrors).length > 0) throw validation({ fieldErrors });
+
+    const hash = await findPasswordHash(tx, ctx.userId);
+    if (!forced) {
+      const decision = throttleDecision(await countRecentFailures(tx, account.loginIdentifier, ctx.ip));
+      // Exactly one verify whether or not the account is throttled (no timing hint about the lock state).
+      const currentOk = await verifyPassword(hash ?? DUMMY_HASH, currentPassword);
+      if (decision.blocked || !currentOk) {
+        const outcome: LoginOutcomeCode = decision.blocked ? "locked" : "bad_password";
+        await recordAttempt(tx, { identifier: account.loginIdentifier, ip: ctx.ip, succeeded: false, outcome, userAgent: ctx.userAgent });
+        if (outcome === "bad_password") {
+          await recordLoginFailure(tx, ctx.userId, {
+            until: decision.lockForHour ? new Date(Date.now() + THROTTLE.hardLockMs) : undefined,
+            permanent: decision.lockPermanently,
+          });
+        }
+        await audit(
+          ctx,
+          "iam.account.password_change_rejected",
+          { schema: "iam", table: "user_account", id: ctx.userId },
+          null,
+          { reason: outcome === "locked" ? "throttled" : "wrong_current" },
+          tx,
+        );
+        return { kind: "current_rejected" };
+      }
+    }
+    if (hash !== null && (await verifyPassword(hash, input.newPassword))) {
+      throw validation({ fieldErrors: { newPassword: [PASSWORD_POLICY_MESSAGES.sameAsCurrent] } });
+    }
 
     const secretHash = await hashPassword(input.newPassword);
     await setPassword(tx, ctx.userId, secretHash);
     const revoked = await revokeAllForUser(tx, ctx.userId, ctx.sessionId);
-    await audit(ctx, "iam.account.password_changed", { schema: "iam", table: "user_account", id: ctx.userId }, null, { revokedSessions: revoked }, tx);
-    return { revokedSessions: revoked };
+    await audit(ctx, "iam.account.password_changed", { schema: "iam", table: "user_account", id: ctx.userId }, null, { revokedSessions: revoked, forced }, tx);
+    return { kind: "changed", revokedSessions: revoked };
   },
 );
+
+/** Public shape: field errors for the form, `{ revokedSessions }` on success. */
+export async function changePasswordAction(raw: FormData | unknown): Promise<Result<{ revokedSessions: number }>> {
+  const result = await changePasswordCore(raw);
+  if (!result.ok) return result;
+  if (result.data.kind === "current_rejected") {
+    return fail("VALIDATION", CURRENT_PASSWORD_WRONG_MESSAGE, { currentPassword: [CURRENT_PASSWORD_WRONG_MESSAGE] });
+  }
+  return ok({ revokedSessions: result.data.revokedSessions });
+}
 
 /** `useActionState` adapter: redirects to /home once the password is changed. */
 export async function changePasswordFormAction(

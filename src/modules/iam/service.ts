@@ -18,6 +18,7 @@ import { findClassGroup, findCurrentAcademicYear, findSchoolById, schoolIdOfBran
 import { can, canAtAnyScope, resolveScopeChain, type Assignment } from "./can";
 import { generateInitialPassword, hashPassword } from "./password";
 import { findAccountByIdentifier } from "./repo";
+import { clearRecentFailures } from "./throttle";
 import { authIdentity, contactPoint, organizationMembership, person, role, roleAssignment, staffProfile, studentProfile, userAccount, userSession } from "./schema";
 
 /**
@@ -328,16 +329,31 @@ export async function resetInitialPassword(tx: Tx, ctx: IamCtx, input: { userAcc
   return { initialPassword, revokedSessions: revoked.length };
 }
 
-/** «رفع قفل»: status active, failed_login_count 0, locked_until null. */
-export async function unlockAccount(tx: Tx, ctx: IamCtx, input: { userAccountId: string }): Promise<void> {
+/**
+ * «رفع قفل»: status active, failed_login_count 0, locked_until null — AND the identifier's recent failures in
+ * iam.login_attempt are stamped `cleared_at`, so the throttle windows (5 / 15 min, 10 / 1 h, 20 / 24 h) stop
+ * refusing the login too. Without that the unlock only reset the account row while the counters kept the user
+ * out (QA round 1, B2). The rows stay for the audit trail; the count is recorded in the audit `after`.
+ */
+export async function unlockAccount(tx: Tx, ctx: IamCtx, input: { userAccountId: string }): Promise<{ clearedAttempts: number }> {
   const { personId } = await requireAccountInOrg(tx, input.userAccountId);
   const [before] = await tx
-    .select({ status: userAccount.status, failedLoginCount: userAccount.failedLoginCount, lockedUntil: userAccount.lockedUntil })
+    .select({ loginIdentifier: userAccount.loginIdentifier, status: userAccount.status, failedLoginCount: userAccount.failedLoginCount, lockedUntil: userAccount.lockedUntil })
     .from(userAccount)
     .where(eq(userAccount.id, input.userAccountId))
     .limit(1);
+  if (!before) throw notFound();
   await tx.update(userAccount).set({ status: "active", failedLoginCount: 0, lockedUntil: null }).where(eq(userAccount.id, input.userAccountId));
-  await audit(ctx, "iam.account.unlocked", { schema: "iam", table: "user_account", id: input.userAccountId }, before ?? null, { personId, status: "active" }, tx);
+  const clearedAttempts = await clearRecentFailures(tx, before.loginIdentifier);
+  await audit(
+    ctx,
+    "iam.account.unlocked",
+    { schema: "iam", table: "user_account", id: input.userAccountId },
+    { status: before.status, failedLoginCount: before.failedLoginCount, lockedUntil: before.lockedUntil },
+    { personId, status: "active", clearedAttempts },
+    tx,
+  );
+  return { clearedAttempts };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

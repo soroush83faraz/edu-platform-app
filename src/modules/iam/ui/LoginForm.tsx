@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,14 +8,23 @@ import type { Result } from "@/lib/actions";
 import { loginFormAction } from "../actions";
 import { PasswordInput } from "./PasswordInput";
 
-export function LoginForm() {
+interface LoginFormProps {
+  /** Validated (`safeNextPath`) deep link to return to after login; the server re-validates it. */
+  next?: string | null;
+}
+
+export function LoginForm({ next }: LoginFormProps) {
   const [state, action, pending] = useActionState<Result<never> | null, FormData>(loginFormAction, null);
+  // React resets the form's UNCONTROLLED fields after every submission; the identifier is controlled so a failed
+  // attempt keeps «موبایل یا نام‌کاربری» and clears only the password.
+  const [identifier, setIdentifier] = useState("");
   const identifierError = state && !state.ok ? state.fieldErrors?.identifier?.[0] : undefined;
   const passwordError = state && !state.ok ? state.fieldErrors?.password?.[0] : undefined;
   const formError = state && !state.ok && !state.fieldErrors ? state.message : undefined;
 
   return (
     <form action={action} className="flex flex-col gap-4" noValidate>
+      {next ? <input type="hidden" name="next" value={next} /> : null}
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="identifier">موبایل یا نام‌کاربری</Label>
         {/* dir="ltr" is the documented exception for phone inputs (CLAUDE.md). */}
@@ -29,6 +38,8 @@ export function LoginForm() {
           autoFocus
           required
           maxLength={64}
+          value={identifier}
+          onChange={(e) => setIdentifier(e.target.value)}
           className="h-12 rounded-xl bg-surface-sunken px-3 text-base"
           aria-invalid={identifierError ? true : undefined}
           aria-describedby={identifierError ? "identifier-error" : undefined}

@@ -33,8 +33,11 @@ describe("isWeakDigitString", () => {
 });
 
 describe("validateNewPassword", () => {
-  it("enforces the minimum length with a Persian message", () => {
+  it("enforces the minimum length with a Persian message (Persian digit «۸», never «8»)", () => {
     expect(validateNewPassword("abc1234")).toEqual({ ok: false, message: PASSWORD_POLICY_MESSAGES.tooShort });
+    expect(PASSWORD_POLICY_MESSAGES.tooShort).toBe("رمز باید دست‌کم ۸ نویسه باشد.");
+    expect(PASSWORD_POLICY_MESSAGES.tooLong).toContain("۱۲۸");
+    for (const m of Object.values(PASSWORD_POLICY_MESSAGES)) expect(m).not.toMatch(/[0-9]/);
   });
   it("rejects the identifier / phone in every common spelling (incl. Persian digits)", () => {
     const ctx = { identifier: "+989123000001", phoneE164: "+989123000001" };

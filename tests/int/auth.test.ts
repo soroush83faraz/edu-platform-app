@@ -6,13 +6,16 @@ import { z } from "zod";
 
 vi.mock("next/headers", () => import("./next-headers-mock").then((m) => m.nextHeadersMock));
 
+import { withTenant } from "@/db/client";
 import { defineAction, defineQuery } from "@/lib/actions";
 import { getRequestContext } from "@/lib/ctx";
 import { SESSION_COOKIE_NAME } from "@/lib/session-cookie";
 import { changePasswordAction, loginAction, logoutAction, logoutAllAction } from "@/modules/iam/actions";
-import { LOGIN_GENERIC_MESSAGE } from "@/modules/iam/messages";
-import { hashPassword } from "@/modules/iam/password";
+import { CURRENT_PASSWORD_REQUIRED_MESSAGE, CURRENT_PASSWORD_WRONG_MESSAGE, LOGIN_GENERIC_MESSAGE } from "@/modules/iam/messages";
+import { PASSWORD_POLICY_MESSAGES, hashPassword } from "@/modules/iam/password";
+import { unlockAccount, type IamCtx } from "@/modules/iam/service";
 import { hashToken } from "@/modules/iam/session";
+import { THROTTLE } from "@/modules/iam/throttle";
 import * as f from "./fixtures";
 import { asAppOwner } from "./helpers";
 import { requestState } from "./next-headers-mock";
@@ -111,10 +114,58 @@ async function sessionRows(accountId: string) {
 
 async function attempts(identifier: string) {
   return asAppOwner(async (c) => {
-    const r = await c.query<{ succeeded: boolean; ip: string }>("select succeeded, ip from iam.login_attempt where identifier = $1 order by at", [identifier]);
+    const r = await c.query<{ succeeded: boolean; ip: string; outcome: string | null; cleared_at: Date | null }>(
+      "select succeeded, ip, outcome, cleared_at from iam.login_attempt where identifier = $1 order by at, id",
+      [identifier],
+    );
     return r.rows;
   });
 }
+
+/** `n` counted (`outcome` NULL = legacy) failures of `identifier`, `ago` in the past, from a fixed foreign IP. */
+async function insertFailures(identifier: string, n: number, ago: string): Promise<void> {
+  await asAppOwner((c) =>
+    c.query(
+      `insert into iam.login_attempt (id, identifier, ip, succeeded, at)
+       select app.uuid_generate_v7(), $1, '10.9.9.9', false, now() - $2::interval from generate_series(1, $3)`,
+      [identifier, ago, n],
+    ),
+  );
+}
+
+/** `n` failures from `ip` against unknown identifiers (credential spraying), just now. */
+async function insertIpFailures(ip: string, n: number): Promise<void> {
+  await asAppOwner((c) =>
+    c.query(
+      `insert into iam.login_attempt (id, identifier, ip, succeeded, outcome, at)
+       select app.uuid_generate_v7(), '+98912777' || lpad(g::text, 4, '0'), $1::inet, false, 'unknown', now() from generate_series(1, $2) g`,
+      [ip, n],
+    ),
+  );
+}
+
+/** Simulates time passing for the COUNTED failures of an identifier (the refused `locked` rows keep their timestamp). */
+async function ageCountedFailures(identifier: string, by: string): Promise<void> {
+  await asAppOwner((c) =>
+    c.query("update iam.login_attempt set at = at - $2::interval where identifier = $1 and succeeded = false and outcome is distinct from 'locked'", [identifier, by]),
+  );
+}
+
+async function auditActions(accountId: string): Promise<Array<{ action: string; after: Record<string, unknown> | null }>> {
+  return asAppOwner(async (c) => {
+    await c.query("BEGIN");
+    await c.query("SELECT set_config('app.current_org_id', $1, true)", [f.ORG_A]);
+    const r = await c.query<{ action: string; after: Record<string, unknown> | null }>(
+      "select action, after from audit.audit_log where entity_table = 'user_account' and entity_id = $1 order by at, id",
+      [accountId],
+    );
+    await c.query("COMMIT");
+    return r.rows;
+  });
+}
+
+/** An organization admin of A acting through the iam service (what unlockAccountAction does after its own scope checks). */
+const adminCtx: IamCtx = { orgId: f.ORG_A, personId: f.PERSON_A1, userId: null, requestId: "int-test", assignments: [] };
 
 async function accountRow(id: string) {
   return asAppOwner(async (c) => {
@@ -190,6 +241,21 @@ describe("loginAction", () => {
     expect(ctx!.assignments[0]).toMatchObject({ roleCode: "principal", scopeType: "school", scopeId: f.SCHOOL_A, permissions: [PERM] });
   });
 
+  it("honours a same-origin `next` deep link after login and ignores anything else", async () => {
+    const acc = await createAccount(20);
+    expect(await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: PASSWORD, next: "/inbox/0199b000-0000-7000-8000-000000000001?tab=done" })))).toBe(
+      "/inbox/0199b000-0000-7000-8000-000000000001?tab=done",
+    );
+    requestState.cookies.clear();
+    expect(await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: PASSWORD, next: "https://evil.example/inbox" })))).toBe("/home");
+    requestState.cookies.clear();
+    expect(await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: PASSWORD, next: "//evil.example" })))).toBe("/home");
+    requestState.cookies.clear();
+    // A pending forced change always wins over the deep link.
+    const forced = await createAccount(21, { mustChange: true });
+    expect(await expectRedirect(() => loginAction(form({ identifier: forced.phone, password: PASSWORD, next: "/inbox" })))).toBe("/change-password");
+  });
+
   it("public device: 8h expiry, no Max-Age/expires on the cookie", async () => {
     const acc = await createAccount(2);
     await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: PASSWORD, publicDevice: "on" })));
@@ -207,7 +273,7 @@ describe("loginAction", () => {
     const acc = await createAccount(3);
     const res = await loginAction(form({ identifier: acc.phone, password: "nope-nope" }));
     expect(res).toEqual({ ok: false, code: "UNAUTHENTICATED", message: LOGIN_GENERIC_MESSAGE });
-    expect(await attempts(acc.phone)).toEqual([{ succeeded: false, ip: expect.any(String) }]);
+    expect(await attempts(acc.phone)).toEqual([{ succeeded: false, ip: expect.any(String), outcome: "bad_password", cleared_at: null }]);
     expect((await accountRow(acc.id)).failed_login_count).toBe(1);
     expect(await sessionRows(acc.id)).toHaveLength(0);
     expect(requestState.setCookieCalls).toHaveLength(0);
@@ -224,7 +290,7 @@ describe("loginAction", () => {
     expect(await attempts("+989129999999")).toHaveLength(1);
   });
 
-  it("6 failures → soft lock: the 6th attempt with the RIGHT password fails identically and is still recorded", async () => {
+  it("5 failures → soft lock: the 6th attempt with the RIGHT password fails identically, is recorded as `locked` and is NOT counted", async () => {
     const acc = await createAccount(6);
     const results = [];
     for (let i = 0; i < 5; i++) results.push(await loginAction(form({ identifier: acc.phone, password: "bad-password" })));
@@ -232,35 +298,87 @@ describe("loginAction", () => {
     expect(JSON.stringify(sixth)).toBe(JSON.stringify(results[0]));
     expect(await sessionRows(acc.id)).toHaveLength(0);
     const recorded = await attempts(acc.phone);
-    expect(recorded).toHaveLength(6);
+    expect(recorded.map((a) => a.outcome)).toEqual(["bad_password", "bad_password", "bad_password", "bad_password", "bad_password", "locked"]);
     expect(recorded.every((a) => !a.succeeded)).toBe(true);
-    expect((await accountRow(acc.id)).failed_login_count).toBe(6);
+    // The refused attempt did not touch the account: five real failures, no hour lock.
+    expect(await accountRow(acc.id)).toMatchObject({ failed_login_count: 5, locked_until: null, status: "active" });
   });
 
-  it("10 failures within an hour set locked_until; 20 set status = locked", async () => {
+  it("retrying during a soft lock (even with the RIGHT password) does not extend the window or escalate the lock", async () => {
+    const acc = await createAccount(22);
+    for (let i = 0; i < 5; i++) await loginAction(form({ identifier: acc.phone, password: "bad-password" }));
+    for (let i = 0; i < 5; i++) expect(await loginAction(form({ identifier: acc.phone, password: PASSWORD }))).toMatchObject({ ok: false, code: "UNAUTHENTICATED" });
+    // Before the fix these five retries counted: 10 in an hour → locked_until = +1h, and the window kept sliding.
+    expect(await accountRow(acc.id)).toMatchObject({ failed_login_count: 5, locked_until: null, status: "active" });
+    // Sixteen minutes later (simulated for the five counted failures only — the refused rows are still "just now") …
+    await ageCountedFailures(acc.phone, "16 minutes");
+    // … the right password works: the refused attempts never counted.
+    await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: PASSWORD })));
+    expect((await accountRow(acc.id)).failed_login_count).toBe(0);
+  });
+
+  it("«رفع قفل» clears the throttle too: soft-locked → unlock → the right password logs in at once (audit keeps the rows)", async () => {
+    const acc = await createAccount(23);
+    for (let i = 0; i < 5; i++) await loginAction(form({ identifier: acc.phone, password: "bad-password" }));
+    expect(await loginAction(form({ identifier: acc.phone, password: PASSWORD }))).toMatchObject({ ok: false, code: "UNAUTHENTICATED" });
+
+    const unlocked = await withTenant({ orgId: f.ORG_A, personId: f.PERSON_A1 }, (tx) => unlockAccount(tx, adminCtx, { userAccountId: acc.id }));
+    expect(unlocked).toEqual({ clearedAttempts: 6 }); // 5 counted + 1 refused: all stamped, none deleted
+    expect(await accountRow(acc.id)).toMatchObject({ failed_login_count: 0, locked_until: null, status: "active" });
+    const rows = await attempts(acc.phone);
+    expect(rows).toHaveLength(6);
+    expect(rows.every((a) => a.cleared_at instanceof Date)).toBe(true);
+    expect((await auditActions(acc.id)).at(-1)).toMatchObject({ action: "iam.account.unlocked", after: { status: "active", clearedAttempts: 6 } });
+
+    await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: PASSWORD })));
+    expect((await attempts(acc.phone)).at(-1)).toMatchObject({ succeeded: true, outcome: "success", cleared_at: null });
+  });
+
+  it("10 counted failures within an hour set locked_until; 20 within 24 h set status = locked; refused attempts escalate nothing", async () => {
     const acc = await createAccount(7);
-    await asAppOwner((c) =>
-      c.query(
-        `insert into iam.login_attempt (id, identifier, ip, succeeded, at)
-         select app.uuid_generate_v7(), $1, '10.9.9.9', false, now() - interval '30 minutes' from generate_series(1, 9)`,
-        [acc.phone],
-      ),
-    );
-    await loginAction(form({ identifier: acc.phone, password: "bad-password" }));
+    await insertFailures(acc.phone, 9, "30 minutes");
+    await loginAction(form({ identifier: acc.phone, password: "bad-password" })); // the 10th counted failure
     let row = await accountRow(acc.id);
     expect(row.locked_until).toBeInstanceOf(Date);
     expect(row.status).toBe("active");
+    expect(row.failed_login_count).toBe(1);
 
-    await asAppOwner((c) =>
-      c.query(
-        `insert into iam.login_attempt (id, identifier, ip, succeeded, at)
-         select app.uuid_generate_v7(), $1, '10.9.9.9', false, now() - interval '5 hours' from generate_series(1, 9)`,
-        [acc.phone],
-      ),
-    );
+    // Hammering the hour-locked account, right or wrong password: recorded as `locked`, nothing changes.
     await loginAction(form({ identifier: acc.phone, password: "bad-password" }));
+    await loginAction(form({ identifier: acc.phone, password: PASSWORD }));
+    row = await accountRow(acc.id);
+    expect(row.failed_login_count).toBe(1);
+    expect(row.status).toBe("active");
+    expect((await attempts(acc.phone)).slice(-2).map((a) => a.outcome)).toEqual(["locked", "locked"]);
+
+    // Two hours later (simulated): the hour lock is over and the ten failures left the 1 h window but not the 24 h one.
+    await ageCountedFailures(acc.phone, "2 hours");
+    await asAppOwner((c) => c.query("update iam.user_account set locked_until = null where id = $1", [acc.id]));
+    await insertFailures(acc.phone, 9, "5 hours"); // 24 h: 10 + 9 = 19 counted
+    await loginAction(form({ identifier: acc.phone, password: "bad-password" })); // the 20th
     row = await accountRow(acc.id);
     expect(row.status).toBe("locked");
+  });
+
+  it("per IP: 300 failures in 10 min only SLOW logins from that IP (a school NAT keeps working); 1000 refuse them", async () => {
+    const acc = await createAccount(24);
+    const ip = freshIp();
+    requestState.headers.set("x-forwarded-for", ip);
+    await insertIpFailures(ip, THROTTLE.ipSlow10m);
+    const started = Date.now();
+    await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: PASSWORD })));
+    expect(Date.now() - started).toBeGreaterThanOrEqual(THROTTLE.slowDelayMs - 50);
+    requestState.cookies.clear();
+
+    await insertIpFailures(ip, THROTTLE.ipBlock10m - THROTTLE.ipSlow10m);
+    const refused = await loginAction(form({ identifier: acc.phone, password: PASSWORD }));
+    expect(refused).toEqual({ ok: false, code: "UNAUTHENTICATED", message: LOGIN_GENERIC_MESSAGE });
+    expect((await attempts(acc.phone)).at(-1)).toMatchObject({ succeeded: false, outcome: "locked" });
+    // The identifier is innocent: no failure is charged to the account.
+    expect(await accountRow(acc.id)).toMatchObject({ failed_login_count: 0, locked_until: null, status: "active" });
+    // From another IP the same account logs in immediately.
+    requestState.headers.set("x-forwarded-for", freshIp());
+    await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: PASSWORD })));
   });
 
   it("rejects unknown fields and empty input with VALIDATION (strict schema) without touching the DB", async () => {
@@ -302,6 +420,10 @@ describe("must_change_password gate", () => {
     if (!mismatch.ok) expect(mismatch.fieldErrors?.confirm?.[0]).toBe("تکرار رمز با رمز جدید یکی نیست.");
     const asPhone = await changePasswordAction(form({ newPassword: acc.phone, confirm: acc.phone }));
     expect(asPhone.ok).toBe(false);
+    // M1: re-entering the temporary password as the "new" one is refused (verified against the current hash).
+    const same = await changePasswordAction(form({ newPassword: PASSWORD, confirm: PASSWORD }));
+    expect(same).toMatchObject({ ok: false, code: "VALIDATION", fieldErrors: { newPassword: [PASSWORD_POLICY_MESSAGES.sameAsCurrent] } });
+    expect((await accountRow(acc.id)).must_change_password).toBe(true);
 
     const changed = await changePasswordAction(form({ newPassword: "Kh0rshid-1405", confirm: "Kh0rshid-1405" }));
     expect(changed).toEqual({ ok: true, data: { revokedSessions: 1 } });
@@ -319,6 +441,61 @@ describe("must_change_password gate", () => {
     requestState.headers.set("x-forwarded-for", freshIp());
     expect(await loginAction(form({ identifier: acc.phone, password: PASSWORD }))).toMatchObject({ ok: false, code: "UNAUTHENTICATED" });
     await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: "Kh0rshid-1405" })));
+  });
+});
+
+describe("voluntary password change (must_change_password = false)", () => {
+  it("requires and verifies «رمز فعلی» under the login throttle; wrong guesses are counted login failures; success revokes the other sessions", async () => {
+    const acc = await createAccount(25);
+    await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: PASSWORD })));
+    const otherCookie = requestState.cookies.get(SESSION_COOKIE_NAME)!;
+    requestState.cookies.clear();
+    await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: PASSWORD })));
+    const NEW = "Kh0rshid-1405";
+
+    const missing = await changePasswordAction(form({ newPassword: NEW, confirm: NEW }));
+    expect(missing).toMatchObject({ ok: false, code: "VALIDATION", fieldErrors: { currentPassword: [CURRENT_PASSWORD_REQUIRED_MESSAGE] } });
+    expect((await attempts(acc.phone)).filter((a) => !a.succeeded)).toHaveLength(0); // nothing to count: no guess was made
+
+    const wrong = await changePasswordAction(form({ currentPassword: "not-my-password", newPassword: NEW, confirm: NEW }));
+    expect(wrong).toEqual({ ok: false, code: "VALIDATION", message: CURRENT_PASSWORD_WRONG_MESSAGE, fieldErrors: { currentPassword: [CURRENT_PASSWORD_WRONG_MESSAGE] } });
+    expect((await attempts(acc.phone)).at(-1)).toMatchObject({ succeeded: false, outcome: "bad_password" });
+    expect((await accountRow(acc.id)).failed_login_count).toBe(1);
+    expect((await auditActions(acc.id)).at(-1)).toMatchObject({ action: "iam.account.password_change_rejected", after: { reason: "wrong_current" } });
+    expect((await accountRow(acc.id)).must_change_password).toBe(false);
+
+    // Four more guesses reach the login soft lock: now even the RIGHT current password is refused (same message) …
+    for (let i = 0; i < 4; i++) await changePasswordAction(form({ currentPassword: `guess-${i}`, newPassword: NEW, confirm: NEW }));
+    const throttled = await changePasswordAction(form({ currentPassword: PASSWORD, newPassword: NEW, confirm: NEW }));
+    expect(throttled).toEqual(wrong);
+    expect((await attempts(acc.phone)).at(-1)).toMatchObject({ succeeded: false, outcome: "locked" });
+    expect((await auditActions(acc.id)).at(-1)).toMatchObject({ action: "iam.account.password_change_rejected", after: { reason: "throttled" } });
+    expect((await accountRow(acc.id)).failed_login_count).toBe(5);
+    // … and so is the login form (one throttle for both doors).
+    const cookie = requestState.cookies.get(SESSION_COOKIE_NAME)!;
+    requestState.cookies.clear();
+    expect(await loginAction(form({ identifier: acc.phone, password: PASSWORD }))).toMatchObject({ ok: false, code: "UNAUTHENTICATED" });
+    requestState.cookies.set(SESSION_COOKIE_NAME, cookie);
+    // The password never changed.
+    expect((await attempts(acc.phone)).filter((a) => a.succeeded)).toHaveLength(2);
+
+    await ageCountedFailures(acc.phone, "16 minutes");
+    // New == current is refused even with the right current password.
+    const same = await changePasswordAction(form({ currentPassword: PASSWORD, newPassword: PASSWORD, confirm: PASSWORD }));
+    expect(same).toMatchObject({ ok: false, code: "VALIDATION", fieldErrors: { newPassword: [PASSWORD_POLICY_MESSAGES.sameAsCurrent] } });
+
+    const changed = await changePasswordAction(form({ currentPassword: PASSWORD, newPassword: NEW, confirm: NEW }));
+    expect(changed).toEqual({ ok: true, data: { revokedSessions: 1 } });
+    expect((await auditActions(acc.id)).at(-1)).toMatchObject({ action: "iam.account.password_changed", after: { revokedSessions: 1, forced: false } });
+    const rows = await sessionRows(acc.id);
+    expect(rows.filter((r) => r.revoked_at === null)).toHaveLength(1);
+    expect(rows.find((r) => r.token_hash === hashToken(otherCookie))?.revoked_at).toBeInstanceOf(Date);
+    expect(await getRequestContext()).not.toBeNull(); // the current session survives
+
+    requestState.cookies.clear();
+    requestState.headers.set("x-forwarded-for", freshIp());
+    expect(await loginAction(form({ identifier: acc.phone, password: PASSWORD }))).toMatchObject({ ok: false, code: "UNAUTHENTICATED" });
+    await expectRedirect(() => loginAction(form({ identifier: acc.phone, password: NEW })));
   });
 });
 

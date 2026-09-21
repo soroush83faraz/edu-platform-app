@@ -82,13 +82,18 @@ export interface PolicyContext {
   phoneE164?: string | null;
 }
 
+/** UI text carries Persian digits (CLAUDE.md): «۸», not «8». */
+const faDigits = (n: number) => n.toLocaleString("fa-IR", { useGrouping: false });
+
 export const PASSWORD_POLICY_MESSAGES = {
-  tooShort: `رمز باید دست‌کم ${PASSWORD_MIN_LENGTH} نویسه باشد.`,
-  tooLong: `رمز نمی‌تواند بیش از ${PASSWORD_MAX_LENGTH} نویسه باشد.`,
+  tooShort: `رمز باید دست‌کم ${faDigits(PASSWORD_MIN_LENGTH)} نویسه باشد.`,
+  tooLong: `رمز نمی‌تواند بیش از ${faDigits(PASSWORD_MAX_LENGTH)} نویسه باشد.`,
   equalsIdentifier: "رمز نمی‌تواند همان شمارهٴ موبایل یا نام‌کاربری شما باشد.",
   common: "این رمز بسیار رایج است؛ رمز دیگری انتخاب کنید.",
   weak: "رمز نباید تکراری یا ترتیبی باشد (مثل ۱۱۱۱۱۱۱۱ یا ۱۲۳۴۵۶۷۸).",
   mismatch: "تکرار رمز با رمز جدید یکی نیست.",
+  /** The new password verifies against the CURRENT hash (forced change: the temporary password re-entered). */
+  sameAsCurrent: "رمز جدید نباید با رمز قبلی یکی باشد.",
 } as const;
 
 /** Policy for a NEW password. Pure; the caller compares `newPassword === confirm` with `PASSWORD_POLICY_MESSAGES.mismatch`. */

@@ -19,11 +19,12 @@ export default async function ChangePasswordPage() {
         <CardDescription>
           {ctx.mustChangePassword
             ? "برای اولین ورود باید رمز اولیه را با رمزی که فقط خودتان می‌دانید جایگزین کنید."
-            : "رمز جدید را دو بار وارد کنید."}
+            : "رمز فعلی را وارد کنید و رمز جدید را دو بار بنویسید."}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <ChangePasswordForm />
+        {/* Voluntary change asks for the current password; the forced first-login change does not (the server enforces both). */}
+        <ChangePasswordForm requireCurrent={!ctx.mustChangePassword} />
       </CardContent>
       <CardFooter className="justify-between">
         <form action={logoutAction}>
