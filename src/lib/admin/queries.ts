@@ -1,11 +1,11 @@
-// Read side of the generic admin resources (Server Components). Same gate as the action; lists are filtered by the
-// admin scope inside each resource's `list`. `canWrite` tells the page whether to render the form/archive buttons.
+// Read side of the generic admin resources (Server Components). Same gate as the action (`resourceOpGate`); lists
+// are filtered by the admin scope inside each resource's `list`. `canWrite` tells the page whether to render the
+// edit/archive buttons, `canCreate` the «… جدید» form (a resource may demand a stronger permission for new rows).
 import { z } from "zod";
 import { defineQuery } from "@/lib/actions";
 import { notFound } from "@/lib/errors";
-import { canAtAnyScope } from "@/modules/iam/can";
 import { getAdminScope, type AdminScope } from "@/modules/iam/service";
-import { PAGE_SIZE, type SelectOption } from "./defineResource";
+import { PAGE_SIZE, resourceOpGate, type SelectOption } from "./defineResource";
 import { RESOURCES, RESOURCE_KEYS } from "./resources";
 
 const ListInput = z
@@ -25,16 +25,18 @@ export interface ResourceListData {
   options: Record<string, SelectOption[]>;
   scope: AdminScope;
   canWrite: boolean;
+  canCreate: boolean;
 }
 
 export const adminResourceList = defineQuery<ResourceListData, typeof ListInput>({ schema: ListInput, permission: "iam.admin.access", scope: "any" }, async (tx, input, ctx) => {
   const def = RESOURCES[input.resource];
   if (!def) throw notFound();
   const scope = await getAdminScope(tx, ctx);
-  const canWrite = canAtAnyScope(ctx.assignments, def.permission.write) && (!def.orgOnly || scope.kind === "organization");
+  const canWrite = resourceOpGate(def, "update", ctx.assignments, scope).ok;
+  const canCreate = resourceOpGate(def, "create", ctx.assignments, scope).ok;
   const { rows, total } = await def.list(tx, ctx, scope, { q: input.q, page: input.page, pageSize: PAGE_SIZE, parent: input.parent });
-  const options = canWrite && def.loadOptions ? await def.loadOptions(tx, ctx, scope, input.parent) : {};
-  return { rows, total, page: input.page, pageSize: PAGE_SIZE, options, scope, canWrite };
+  const options = (canWrite || canCreate) && def.loadOptions ? await def.loadOptions(tx, ctx, scope, input.parent) : {};
+  return { rows, total, page: input.page, pageSize: PAGE_SIZE, options, scope, canWrite, canCreate };
 });
 
 /** The admin scope of the caller (for pages that are not generic resources). */

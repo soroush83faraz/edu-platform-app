@@ -27,7 +27,9 @@ export async function ResourceListPage({ def, sp, parent, basePath, back }: { de
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     notFound();
   }
-  const { rows, total, pageSize, options, canWrite, scope } = result.data;
+  // `canWrite` (edit/archive) and `canCreate` («… جدید») come from the same server-side gate as the mutation action:
+  // a principal edits schools but never creates one, a vice principal edits offerings (main teacher) but defines none.
+  const { rows, total, pageSize, options, canWrite, canCreate } = result.data;
   const fixed = def.parentParam ? { [def.parentParam.field]: parentId } : undefined;
   const hrefFor = (p: number) => {
     const params = new URLSearchParams();
@@ -36,8 +38,6 @@ export async function ResourceListPage({ def, sp, parent, basePath, back }: { de
     params.set("page", String(p));
     return `${basePath ?? `/admin/${def.key}`}?${params.toString()}`;
   };
-  const canCreate = canWrite && !(def.createNeedsOrgScope && scope.kind !== "organization");
-
   return (
     <div className="flex flex-col gap-4">
       <AdminHeader

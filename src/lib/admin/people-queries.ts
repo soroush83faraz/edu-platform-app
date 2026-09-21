@@ -39,7 +39,7 @@ export const peopleFormOptionsQuery = defineQuery({ permission: "iam.person.read
 
 export const personDetailQuery = defineQuery({ schema: PersonIdInput, permission: "iam.person.read", scope: "any" }, async (tx, input, ctx) => {
   const scope = await getAdminScope(tx, ctx);
-  const detail = await getPersonDetail(tx, scope, input.personId);
+  const detail = await getPersonDetail(tx, scope, input.personId, ctx.assignments);
   const schools = (await listSchools(tx)).filter((s) => scope.kind === "organization" || scope.schoolIds.includes(s.id)).map((s) => ({ value: s.id, label: s.name }));
   return { detail, scope, classes: detail.student ? await classOptionsInScope(tx, scope) : [], schools, roleGrant: roleGrantOptions(ctx.assignments, schools) };
 });

@@ -85,12 +85,14 @@ interface SystemRole {
 /** System role templates (doc 03 §7). Custom roles are out of phase 1. */
 export const SYSTEM_ROLES: SystemRole[] = [
   { code: "org_admin", name: "مدیر سازمان", description: "همهٴ دسترسی‌ها در سطح سازمان", allowedScopeTypes: ["organization"], permissions: ALL_ROLE_PERMS },
-  // Holds `iam.role_assignment.write` too, but the service only lets a school-scoped admin grant school-scoped roles.
+  // Holds `iam.role_assignment.write` too, but the service only lets a school-scoped admin grant/revoke `vice_principal`
+  // at their own schools (owner's matrix: principals are appointed by the organization admin only), and
+  // `tenancy.structure.write` never creates schools outside the organization scope (docs/admin.md).
   { code: "school_principal", name: "مدیر مدرسه", description: "همهٴ دسترسی‌ها در سطح یک مدرسه", allowedScopeTypes: ["school"], permissions: ALL_ROLE_PERMS },
   {
     code: "vice_principal",
     name: "معاون",
-    description: "کارتابل، افراد، ثبت‌نام و حساب‌ها در سطح مدرسه یا شعبه",
+    description: "کارتابل، افراد، ثبت‌نام، حساب‌ها و تعیین دبیر در سطح مدرسه یا شعبه",
     allowedScopeTypes: ["school", "branch"],
     permissions: [
       "iam.admin.access",
@@ -98,6 +100,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       "iam.person.read",
       "iam.person.write",
       "academic.enrollment.write",
+      // Owner's matrix: a vice principal defines teachers — sets/changes the main teacher of EXISTING offerings and ends
+      // teaching (the derived `teacher` role follows); defining offerings/structure stays `tenancy.structure.write`.
+      "academic.teacher_assignment.write",
       "iam.account.reset_password",
       "iam.account.unlock",
       ...WORK_ITEM_ALL,

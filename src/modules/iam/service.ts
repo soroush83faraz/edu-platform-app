@@ -55,6 +55,8 @@ export const MESSAGES = {
   roleSchoolRequired: "برای این نقش، مدرسه را انتخاب کنید.",
   orgRoleForbidden: "فقط مدیر سازمان می‌تواند نقش سطح سازمان بدهد.",
   orgRoleRevokeForbidden: "فقط مدیر سازمان می‌تواند نقش سطح سازمان را لغو کند.",
+  principalRoleForbidden: "فقط مدیر سازمان می‌تواند نقش مدیر مدرسه بدهد.",
+  principalRoleRevokeForbidden: "فقط مدیر سازمان می‌تواند نقش مدیر مدرسه را لغو کند.",
   roleGrantForbidden: "شما اجازهٴ دادن نقش مدیریتی در این مدرسه را ندارید.",
   roleRevokeForbidden: "شما اجازهٴ لغو این نقش را ندارید.",
   derivedRoleNotRevocable: "این نقش از تخصیص درس مشتق شده و از این‌جا لغو نمی‌شود.",
@@ -344,8 +346,28 @@ export async function unlockAccount(tx: Tx, ctx: IamCtx, input: { userAccountId:
 
 export const ASSIGNABLE_ROLES = ["org_admin", "school_principal", "vice_principal"] as const;
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
-/** Manager roles a school-scoped grantor may hand out (inside their schools), in picker order. */
+/** Manager roles scoped to a school (they need a `schoolId`), in picker order. */
 export const SCHOOL_ROLES: readonly AssignableRole[] = ["school_principal", "vice_principal"];
+/**
+ * Owner's matrix (docs/admin.md «ماتریس اعطای نقش»): `org_admin` AND `school_principal` are granted and revoked by
+ * an ORGANIZATION-scoped holder of `iam.role_assignment.write` only — a principal cannot mint or unseat a principal.
+ */
+export const ORG_GRANTED_ROLES: readonly AssignableRole[] = ["org_admin", "school_principal"];
+/** What a SCHOOL-scoped holder of `iam.role_assignment.write` (a principal) may grant/revoke, at their own schools. */
+export const SCHOOL_GRANTABLE_ROLES: readonly AssignableRole[] = ["vice_principal"];
+
+/**
+ * Pure mirror of the permission step of `resolveRoleGrant` / `revokeRoleAssignment` for the UI (pickers, «لغو»
+ * buttons) — the server re-runs the real check. `schoolId` is the role's school (`null` for organization roles).
+ * Organization-scoped holders manage every role everywhere; a school-scoped holder manages `vice_principal` at the
+ * schools of the assignments that carry the permission; anyone else (vice principals) manages nothing.
+ */
+export function canManageRole(assignments: readonly Assignment[], roleCode: string, schoolId: string | null): boolean {
+  const holders = assignments.filter((a) => a.permissions.includes("iam.role_assignment.write"));
+  if (holders.some((a) => a.scopeType === "organization")) return true;
+  if (!(SCHOOL_GRANTABLE_ROLES as readonly string[]).includes(roleCode) || !schoolId) return false;
+  return holders.some((a) => a.scopeType === "school" && a.scopeId === schoolId);
+}
 
 /** The only role codes `assignRole` writes; `teacher` is derived by `assignTeacher`, guardian roles are phase 2. */
 const MANUAL_ROLE_CODES: ReadonlySet<string> = new Set<string>([...ASSIGNABLE_ROLES, "student"]);
@@ -367,17 +389,16 @@ export interface RoleGrantOptions<S> {
 /**
  * Which manager roles the caller may grant and where — the picker-side mirror of the `can(iam.role_assignment.write)`
  * check `assignRole` enforces (docs/admin.md «ماتریس اعطای نقش»): an organization-scoped holder grants every role
- * at every school; a school-scoped holder grants `school_principal` / `vice_principal` at the schools of the
+ * at every school; a school-scoped holder (a principal) grants `vice_principal` only, at the schools of the
  * assignments that carry the permission; anyone else (vice principals) grants nothing. `schools` are the scope's
  * schools, so an option here is never a school the caller cannot see.
  */
 export function roleGrantOptions<S extends { value: string }>(assignments: readonly Assignment[], schools: readonly S[]): RoleGrantOptions<S> {
   const holders = assignments.filter((a) => a.permissions.includes("iam.role_assignment.write"));
   if (holders.some((a) => a.scopeType === "organization")) return { roles: [...SCHOOL_ROLES, "org_admin"], schools: [...schools] };
-  const schoolIds = new Set(holders.filter((a) => a.scopeType === "school" && a.scopeId !== null).map((a) => a.scopeId as string));
-  const grantable = schools.filter((s) => schoolIds.has(s.value));
+  const grantable = schools.filter((s) => canManageRole(assignments, SCHOOL_GRANTABLE_ROLES[0], s.value));
   if (grantable.length === 0) return { roles: [], schools: [] };
-  return { roles: [...SCHOOL_ROLES], schools: grantable };
+  return { roles: [...SCHOOL_GRANTABLE_ROLES], schools: grantable };
 }
 
 async function findSystemRole(tx: Tx, code: string): Promise<{ id: string; allowedScopeTypes: string[] }> {
@@ -406,10 +427,11 @@ interface ResolvedRoleGrant {
  *   3. a school role's school exists here (NOT_FOUND) and, for a school-scoped caller, is one of theirs
  *      (NOT_FOUND — another school's id must look nonexistent, whether or not it exists);
  *   4. the caller holds the permission the grant needs (FORBIDDEN — the caller is known and the permission is a
- *      declared capability): `iam.role_assignment.write` at the organization for `org_admin`, at the school for
- *      `school_principal` / `vice_principal`; for the `student` role `iam.person.write` at any scope (the role is
- *      the marker of a registered student, not an admin capability — the person must additionally be in scope,
- *      which `assignRole` checks once the person exists). docs/admin.md «ماتریس اعطای نقش».
+ *      declared capability): `iam.role_assignment.write` at the ORGANIZATION for `org_admin` and `school_principal`
+ *      (owner's rule: only the organization admin appoints principals — a principal may not mint a principal), at
+ *      the school for `vice_principal`; for the `student` role `iam.person.write` at any scope (the role is the
+ *      marker of a registered student, not an admin capability — the person must additionally be in scope, which
+ *      `assignRole` checks once the person exists). docs/admin.md «ماتریس اعطای نقش».
  */
 async function resolveRoleGrant(tx: Tx, ctx: IamCtx, input: Omit<AssignRoleInput, "personId">): Promise<ResolvedRoleGrant> {
   const adminScope = await getAdminScope(tx, ctx);
@@ -430,9 +452,12 @@ async function resolveRoleGrant(tx: Tx, ctx: IamCtx, input: Omit<AssignRoleInput
   if (!tpl.allowedScopeTypes.includes(target.scopeType)) throw validation(undefined, MESSAGES.roleScopeNotAllowed);
   if (target.scopeType === "student") {
     if (!canAtAnyScope(ctx.assignments, "iam.person.write")) throw forbidden(MESSAGES.roleGrantForbidden);
+  } else if ((ORG_GRANTED_ROLES as readonly string[]).includes(input.roleCode)) {
+    // Organization-level permission only (no school ref): a school-scoped principal fails here even at their own school.
+    if (!(await can(tx, ctx, "iam.role_assignment.write"))) throw forbidden(input.roleCode === "org_admin" ? MESSAGES.orgRoleForbidden : MESSAGES.principalRoleForbidden);
   } else {
-    const ref = target.scopeType === "school" ? ({ scopeType: "school", id: target.schoolId } as const) : undefined;
-    if (!(await can(tx, ctx, "iam.role_assignment.write", ref))) throw forbidden(target.scopeType === "organization" ? MESSAGES.orgRoleForbidden : MESSAGES.roleGrantForbidden);
+    if (target.scopeType !== "school") throw validation(undefined, MESSAGES.roleScopeNotAllowed);
+    if (!(await can(tx, ctx, "iam.role_assignment.write", { scopeType: "school", id: target.schoolId }))) throw forbidden(MESSAGES.roleGrantForbidden);
   }
   return { roleId: tpl.id, target, adminScope };
 }
@@ -495,8 +520,10 @@ async function roleAssignmentSchoolId(
  * Revokes a MANUAL assignment. Order matters (no existence oracle): a school-scoped caller must have the person in
  * scope AND the assignment's school inside their schools (`school` / `branch` / derived `class_*` scopes; `student`
  * is covered by the person check) — anything else is NOT_FOUND before the row's nature is mentioned; organization
- * roles stay FORBIDDEN for them. Every caller needs `iam.role_assignment.write` at the assignment's scope
- * (FORBIDDEN). Only then a derived teacher role is refused with its explanation (it ends with the teaching).
+ * roles stay FORBIDDEN for them. Every caller needs `iam.role_assignment.write` at the scope the role is GRANTED
+ * from (FORBIDDEN) — the revoke rules mirror the grant rules: `org_admin` and `school_principal` roles need the
+ * organization-level permission (a principal cannot unseat a principal), `vice_principal` the school's. Only then
+ * a derived teacher role is refused with its explanation (it ends with the teaching).
  */
 export async function revokeRoleAssignment(tx: Tx, ctx: IamCtx, input: { roleAssignmentId: string }): Promise<void> {
   const [ra] = await tx
@@ -504,6 +531,7 @@ export async function revokeRoleAssignment(tx: Tx, ctx: IamCtx, input: { roleAss
       id: roleAssignment.id,
       personId: roleAssignment.personId,
       roleId: roleAssignment.roleId,
+      roleCode: role.code,
       scopeType: roleAssignment.scopeType,
       schoolId: roleAssignment.schoolId,
       branchId: roleAssignment.branchId,
@@ -512,6 +540,7 @@ export async function revokeRoleAssignment(tx: Tx, ctx: IamCtx, input: { roleAss
       sourceType: roleAssignment.sourceType,
     })
     .from(roleAssignment)
+    .innerJoin(role, eq(role.id, roleAssignment.roleId))
     .where(and(eq(roleAssignment.id, input.roleAssignmentId), isNull(roleAssignment.revokedAt)))
     .limit(1);
   if (!ra) throw notFound();
@@ -520,11 +549,14 @@ export async function revokeRoleAssignment(tx: Tx, ctx: IamCtx, input: { roleAss
   await requirePersonInScope(tx, adminScope, ra.personId);
   const schoolId = await roleAssignmentSchoolId(tx, ctx.orgId, ra);
   if (adminScope.kind === "school" && ra.scopeType !== "student") assertSchoolInScope(adminScope, schoolId);
+  const orgLevel = ra.scopeType === "organization" || (ORG_GRANTED_ROLES as readonly string[]).includes(ra.roleCode);
   const permitted =
     ra.scopeType === "student"
       ? canAtAnyScope(ctx.assignments, "iam.role_assignment.write")
-      : await can(tx, ctx, "iam.role_assignment.write", schoolId ? { scopeType: "school", id: schoolId } : undefined);
-  if (!permitted) throw forbidden(ra.scopeType === "organization" ? MESSAGES.orgRoleRevokeForbidden : MESSAGES.roleRevokeForbidden);
+      : await can(tx, ctx, "iam.role_assignment.write", !orgLevel && schoolId ? { scopeType: "school", id: schoolId } : undefined);
+  if (!permitted) {
+    throw forbidden(ra.scopeType === "organization" ? MESSAGES.orgRoleRevokeForbidden : ra.roleCode === "school_principal" ? MESSAGES.principalRoleRevokeForbidden : MESSAGES.roleRevokeForbidden);
+  }
   if (ra.sourceType !== "manual") throw validation(undefined, MESSAGES.derivedRoleNotRevocable);
   if (ra.personId === ctx.personId && ra.scopeType === "organization") throw validation(undefined, "نمی‌توانید نقش سازمانی خودتان را لغو کنید.");
   await tx.update(roleAssignment).set({ revokedAt: sql`now()` }).where(eq(roleAssignment.id, ra.id));

@@ -5,8 +5,9 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { Tx } from "@/lib/actions";
 import { notFound } from "@/lib/errors";
 import { classEnrollment, schoolEnrollment, teacherAssignment } from "@/modules/academic/schema";
+import type { Assignment } from "@/modules/iam/can";
 import { authIdentity, contactPoint, organizationMembership, person, role, roleAssignment, staffProfile, studentProfile, userAccount } from "@/modules/iam/schema";
-import { assertSchoolInScope, liveSchoolEnrollmentSql, type AdminScope } from "@/modules/iam/service";
+import { assertSchoolInScope, canManageRole, liveSchoolEnrollmentSql, type AdminScope } from "@/modules/iam/service";
 import { findClassGroup } from "@/modules/tenancy/repo";
 import { academicYear, branch, classGroup, classOffering, gradeLevel, school, subject } from "@/modules/tenancy/schema";
 import { roleLabel } from "./labels";
@@ -186,13 +187,18 @@ export interface PersonDetail {
   guardianPhone: string | null;
   account: AccountFacts | null;
   enrollment: { classEnrollmentId: string; classGroupId: string; className: string; schoolId: string; schoolName: string; gradeName: string; yearName: string } | null;
-  roles: Array<{ roleAssignmentId: string; roleCode: string; roleName: string; scopeType: string; schoolId: string | null; schoolName: string | null; sourceType: string }>;
+  /**
+   * Manual + organization/school/branch roles. `schoolId` is the school the role lives under (a branch role's school);
+   * `revocable` mirrors `revokeRoleAssignment`'s permission step for the caller's `assignments` (the «لغو» button —
+   * a principal may revoke vice principals of their schools only; the server re-checks).
+   */
+  roles: Array<{ roleAssignmentId: string; roleCode: string; roleName: string; scopeType: string; schoolId: string | null; schoolName: string | null; sourceType: string; revocable: boolean }>;
   teaching: Array<{ teacherAssignmentId: string; classOfferingId: string; className: string; subjectName: string }>;
   /** Schools the person is anchored to (class, primary school, manual roles, live school enrollments); picks the credential sheet's school name. */
   schoolIds: string[];
 }
 
-export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: string): Promise<PersonDetail> {
+export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: string, assignments: readonly Assignment[] = []): Promise<PersonDetail> {
   const rows = await tx
     .select({
       id: person.id,
@@ -247,21 +253,23 @@ export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: strin
     enrollment = ce ?? null;
   }
 
-  const roles = await tx
+  const roleRows = await tx
     .select({
       roleAssignmentId: roleAssignment.id,
       roleCode: role.code,
       roleName: role.name,
       scopeType: roleAssignment.scopeType,
-      schoolId: roleAssignment.schoolId,
-      schoolName: school.name,
+      schoolId: sql<string | null>`coalesce(${roleAssignment.schoolId}, ${branch.schoolId})`,
+      schoolName: sql<string | null>`coalesce(${school.name}, (select s2.name from tenancy.school s2 where s2.id = ${branch.schoolId}))`,
       sourceType: roleAssignment.sourceType,
     })
     .from(roleAssignment)
     .innerJoin(role, eq(role.id, roleAssignment.roleId))
     .leftJoin(school, eq(school.id, roleAssignment.schoolId))
+    .leftJoin(branch, eq(branch.id, roleAssignment.branchId))
     .where(and(eq(roleAssignment.personId, personId), isNull(roleAssignment.revokedAt), sql`${roleAssignment.scopeType} in ('organization', 'school', 'branch')`))
     .orderBy(asc(role.code));
+  const roles = roleRows.map((r) => ({ ...r, revocable: canManageRole(assignments, r.roleCode, r.schoolId) }));
 
   const teaching = st
     ? await tx

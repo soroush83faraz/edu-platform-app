@@ -6,6 +6,7 @@
 import type { z } from "zod";
 import type { Tx } from "@/lib/actions";
 import type { Ctx } from "@/lib/ctx";
+import { canAtAnyScope, type Assignment } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
 import type { AdminScope } from "@/modules/iam/service";
 
@@ -68,7 +69,12 @@ export interface ResourceDef<TRow extends { id: string }, TInput> {
   labelFaPlural: string;
   /** One line under the title. */
   descriptionFa?: string;
-  permission: { read: Permission; write: Permission };
+  /**
+   * `write` gates update/archive (and create unless `create` is set). `create` lets a resource demand a stronger
+   * permission for NEW rows than for edits — offerings: a vice principal (`academic.teacher_assignment.write`) edits
+   * the main teacher of existing rows, only `tenancy.structure.write` defines new ones.
+   */
+  permission: { read: Permission; write: Permission; create?: Permission };
   /** Organization-level catalog (levels, grades, subjects): school-scoped admins see it read-only. */
   orgOnly?: boolean;
   /** Creating needs an organization-scoped admin even though rows are school-owned (schools themselves). */
@@ -100,4 +106,29 @@ export type AnyResourceDef = ResourceDef<any, any>;
 /** Identity helper that keeps `TRow` / `TInput` inferred from the definition. */
 export function defineResource<TRow extends { id: string }, TInput>(def: ResourceDef<TRow, TInput>): ResourceDef<TRow, TInput> {
   return def;
+}
+
+export type ResourceOp = "create" | "update" | "archive";
+
+export const GATE_MESSAGES = {
+  orgOnly: "این بخش را فقط مدیر سازمان می‌تواند ویرایش کند.",
+  /** «ساختن مدرسهٴ جدید…» — the written ezafe (ٴ) only after a final heh. */
+  createNeedsOrgScope: (labelFa: string) => `ساختن ${labelFa}${labelFa.endsWith("ه") ? "ٴ" : ""} جدید فقط با مدیر سازمان است.`,
+} as const;
+
+/** `ok: false` = refuse with FORBIDDEN (the action throws it, the list page hides the button); `message` when there is one worth showing. */
+export type GateVerdict = { ok: true } | { ok: false; message?: string };
+
+/**
+ * The ONE decision «may this caller perform `op` on `def`?» shared by the mutation action (throws) and the list
+ * query (hides buttons), BEFORE any row is read: the op's permission at any scope (`permission.create` for new rows
+ * when set, else `write`), then the organization-scope requirements (`orgOnly`, `createNeedsOrgScope`). The
+ * resource's own handler applies the row-level scope rule afterwards (out of scope = NOT_FOUND, never FORBIDDEN).
+ */
+export function resourceOpGate(def: AnyResourceDef, op: ResourceOp, assignments: readonly Assignment[], scope: AdminScope): GateVerdict {
+  const needed: Permission = op === "create" ? (def.permission.create ?? def.permission.write) : def.permission.write;
+  if (!canAtAnyScope(assignments, needed)) return { ok: false };
+  if (def.orgOnly && scope.kind !== "organization") return { ok: false, message: GATE_MESSAGES.orgOnly };
+  if (op === "create" && def.createNeedsOrgScope && scope.kind !== "organization") return { ok: false, message: GATE_MESSAGES.createNeedsOrgScope(def.labelFa) };
+  return { ok: true };
 }

@@ -4,10 +4,8 @@ import { notFound, redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/AdminPage";
 import { RevokeRoleButton } from "@/components/admin/RevokeRoleButton";
 import { Chip } from "@/components/Chip";
-import { requireContext } from "@/lib/ctx";
 import { formatNumberFa, isoDateToJalali } from "@/lib/format";
 import { rolesPageQuery } from "@/lib/admin/roles-queries";
-import { canAtAnyScope } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "نقش‌ها | مدیریت" };
 
@@ -15,14 +13,12 @@ const SCOPE_LABELS: Record<string, string> = { organization: "سازمان", sch
 
 /** /admin/roles — system roles (read-only) and the manual manager assignments of the scope. */
 export default async function RolesPage() {
-  const ctx = await requireContext();
   const result = await rolesPageQuery();
   if (!result.ok) {
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     notFound();
   }
   const { templates, assignments } = result.data;
-  const canRevoke = canAtAnyScope(ctx.assignments, "iam.role_assignment.write");
   return (
     <div className="flex flex-col gap-5">
       <AdminHeader title="نقش‌ها" description="نقش‌های سیستمی ثابت‌اند. نقش مدیر/معاون از صفحهٴ هر همکار داده می‌شود؛ نقش معلم و دانش‌آموز خودکار است." />
@@ -49,7 +45,7 @@ export default async function RolesPage() {
                     {a.validFrom ? ` · از ${isoDateToJalali(a.validFrom)}` : ""}
                   </span>
                 </span>
-                {canRevoke ? <RevokeRoleButton roleAssignmentId={a.roleAssignmentId} /> : null}
+                {a.revocable ? <RevokeRoleButton roleAssignmentId={a.roleAssignmentId} /> : null}
               </li>
             ))}
           </ul>

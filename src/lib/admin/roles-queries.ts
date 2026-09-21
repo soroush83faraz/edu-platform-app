@@ -1,9 +1,10 @@
 // /admin/roles: the system role templates (read-only) and who holds a manual manager role in the caller's scope.
+// `revocable` mirrors `revokeRoleAssignment`'s permission step for the «لغو» button (the server re-checks).
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { defineQuery } from "@/lib/actions";
 import { person, role, roleAssignment, rolePermission } from "@/modules/iam/schema";
-import { getAdminScope } from "@/modules/iam/service";
-import { school } from "@/modules/tenancy/schema";
+import { canManageRole, getAdminScope } from "@/modules/iam/service";
+import { branch, school } from "@/modules/tenancy/schema";
 
 export const rolesPageQuery = defineQuery({ permission: "iam.person.read", scope: "any" }, async (tx, _input, ctx) => {
   const scope = await getAdminScope(tx, ctx);
@@ -27,14 +28,16 @@ export const rolesPageQuery = defineQuery({ permission: "iam.person.read", scope
       roleCode: role.code,
       roleName: role.name,
       scopeType: roleAssignment.scopeType,
-      schoolId: roleAssignment.schoolId,
-      schoolName: school.name,
+      // The school the role lives under: the row's school, or the branch's school for branch-scoped roles.
+      schoolId: sql<string | null>`coalesce(${roleAssignment.schoolId}, ${branch.schoolId})`,
+      schoolName: sql<string | null>`coalesce(${school.name}, (select s2.name from tenancy.school s2 where s2.id = ${branch.schoolId}))`,
       validFrom: roleAssignment.validFrom,
     })
     .from(roleAssignment)
     .innerJoin(role, eq(role.id, roleAssignment.roleId))
     .innerJoin(person, eq(person.id, roleAssignment.personId))
     .leftJoin(school, eq(school.id, roleAssignment.schoolId))
+    .leftJoin(branch, eq(branch.id, roleAssignment.branchId))
     .where(
       and(
         isNull(roleAssignment.revokedAt),
@@ -48,5 +51,5 @@ export const rolesPageQuery = defineQuery({ permission: "iam.person.read", scope
       ),
     )
     .orderBy(asc(role.code), asc(person.lastName));
-  return { scope, templates, assignments };
+  return { scope, templates, assignments: assignments.map((a) => ({ ...a, revocable: canManageRole(ctx.assignments, a.roleCode, a.schoolId) })) };
 });

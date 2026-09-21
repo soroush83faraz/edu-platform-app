@@ -253,7 +253,7 @@ export function RolesCard({ detail, caps, roleGrant }: { detail: PersonDetail; c
                 {roleLabel(r.roleCode)}
                 {r.schoolName ? <span className="text-text-muted"> — {r.schoolName}</span> : r.scopeType === "organization" ? <span className="text-text-muted"> — سازمان</span> : null}
               </span>
-              {caps.canRoles && r.sourceType === "manual" ? (
+              {caps.canRoles && r.sourceType === "manual" && r.revocable ? (
                 <Button type="button" variant="ghost" size="sm" className="text-danger" onClick={() => revoke(r.roleAssignmentId)} disabled={pending}>
                   لغو
                 </Button>

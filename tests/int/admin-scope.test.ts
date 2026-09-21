@@ -15,6 +15,11 @@
 //   N3 only LIVE school enrollments anchor a student — a student transferred out is NOT_FOUND for the old school;
 //   F3' revoking another school's DERIVED role is NOT_FOUND (the explanation is reserved for roles in scope);
 //   F4' the `student` role is scope-checked too and its profile must belong to the person.
+// Owner's role matrix (docs/decisions.md «2026-09-21 — owner's role matrix»):
+//   M1 only the organization admin creates schools (principals edit their own);
+//   M2 a principal grants/revokes `vice_principal` at their own schools only — never `school_principal` (FORBIDDEN);
+//   M3 a vice principal grants nothing, but registers staff and students and sets/changes/ends the main teacher of
+//      EXISTING offerings of their school (`academic.teacher_assignment.write`); defining offerings stays structure.
 // Everything runs inside withTenant transactions that end with Rollback; the catalog roles are seeded in beforeAll
 // and the fixture database is re-created in afterAll (later files assert exact template lists).
 import fs from "node:fs";
@@ -27,13 +32,15 @@ import { withTenant, type Tx } from "@/db/client";
 import * as schema from "@/db/schema";
 import { roleAssignment, schoolEnrollment, staffProfile, userAccount } from "@/db/schema";
 import { AppError } from "@/lib/errors";
-import { classResource, offeringResource, staffOptions } from "@/lib/admin/resources";
+import { GATE_MESSAGES, resourceOpGate } from "@/lib/admin/defineResource";
+import { classResource, offeringResource, RESOURCE_MESSAGES, schoolResource, staffOptions } from "@/lib/admin/resources";
 import { getPersonDetail, listStaff, listStudents, personCredential } from "@/lib/admin/people";
 import { assignTeacher } from "@/modules/academic/service";
 import { adminCreateStaff, adminCreateStudent, adminPlaceStudent, adminResetInitialPassword, adminUnlockAccount, adminUpdatePerson, type AdminCtx } from "@/modules/iam/admin";
 import type { Assignment } from "@/modules/iam/can";
 import { PERMISSIONS } from "@/modules/iam/permissions";
-import { assignRole, createStaff, createStudent, getAdminScope, requirePersonInScope, requireStaffAssignable, revokeRoleAssignment, roleGrantOptions, MESSAGES } from "@/modules/iam/service";
+import { assignRole, canManageRole, createStaff, createStudent, getAdminScope, requirePersonInScope, requireStaffAssignable, revokeRoleAssignment, roleGrantOptions, MESSAGES } from "@/modules/iam/service";
+import { findSchoolByCode, findSchoolById } from "@/modules/tenancy/repo";
 import { createAcademicYear, createClassGroup, createClassOffering, createSchool, MESSAGES as TENANCY_MESSAGES } from "@/modules/tenancy/service";
 import { runMigrations } from "../../scripts/migrate";
 import { seedCatalog } from "../../scripts/seed";
@@ -43,8 +50,18 @@ import { dropAppSchemas, seed } from "./global-setup";
 import { Rollback } from "./helpers";
 
 const ALL = PERMISSIONS.map((p) => p.code);
-/** What the seeded `vice_principal` role grants (scripts/seed.ts SYSTEM_ROLES) — enough for /admin, no structure/role writes. */
-const VICE_PERMS = ["iam.admin.access", "tenancy.structure.read", "iam.person.read", "iam.person.write", "academic.enrollment.write", "iam.account.reset_password", "iam.account.unlock", "notif.notification.read"];
+/** What the seeded `vice_principal` role grants (scripts/seed.ts SYSTEM_ROLES) — enough for /admin and teacher assignment, no structure/role writes. */
+const VICE_PERMS = [
+  "iam.admin.access",
+  "tenancy.structure.read",
+  "iam.person.read",
+  "iam.person.write",
+  "academic.enrollment.write",
+  "academic.teacher_assignment.write",
+  "iam.account.reset_password",
+  "iam.account.unlock",
+  "notif.notification.read",
+];
 
 const orgAdminRole: Assignment = { roleCode: "org_admin", roleId: "r-admin", scopeType: "organization", scopeId: f.ORG_A, permissions: ALL };
 const principalOf = (schoolId: string): Assignment => ({ roleCode: "school_principal", roleId: "r-principal", scopeType: "school", scopeId: schoolId, permissions: ALL });
@@ -362,17 +379,19 @@ describe("admin scope hardening", () => {
       const w = await buildWorld(tx);
       const vice = w.ctx.s2Vice;
       const intruder = { firstName: "نفوذی", lastName: "ناشناس", phone: "09127200030", schoolId: w.s2.schoolId };
+      // The principal role is the organization admin's to give (M2), the vice role needs the school's permission the vice lacks.
+      const refusal = { school_principal: MESSAGES.principalRoleForbidden, vice_principal: MESSAGES.roleGrantForbidden } as const;
       for (const roleCode of ["school_principal", "vice_principal"] as const) {
-        await expect(sub(tx, (sp) => adminCreateStaff(sp, vice, { ...intruder, roles: [{ roleCode, schoolId: w.s2.schoolId }] }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.roleGrantForbidden));
+        await expect(sub(tx, (sp) => adminCreateStaff(sp, vice, { ...intruder, roles: [{ roleCode, schoolId: w.s2.schoolId }] }))).rejects.toSatisfy(isError("FORBIDDEN", refusal[roleCode]));
         // Service level (importer/CLI path) refuses BEFORE writing the person.
         await sub(tx, async (sp) => {
           const err = await createStaff(sp, vice, { ...intruder, roles: [{ roleCode, schoolId: w.s2.schoolId }] }).catch((e: unknown) => e);
-          expect(err).toSatisfy(isError("FORBIDDEN", MESSAGES.roleGrantForbidden));
+          expect(err).toSatisfy(isError("FORBIDDEN", refusal[roleCode]));
           const people = await sp.execute<{ n: number }>(sql`select count(*)::int as n from iam.person where first_name = ${"نفوذی"}`);
           expect(Number(people.rows[0].n)).toBe(0);
         });
         // …and cannot promote an existing colleague either.
-        await expect(sub(tx, (sp) => assignRole(sp, vice, { personId: w.s2Principal.personId, roleCode, schoolId: w.s2.schoolId }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.roleGrantForbidden));
+        await expect(sub(tx, (sp) => assignRole(sp, vice, { personId: w.s2Principal.personId, roleCode, schoolId: w.s2.schoolId }))).rejects.toSatisfy(isError("FORBIDDEN", refusal[roleCode]));
       }
       await expect(sub(tx, (sp) => adminCreateStaff(sp, vice, { ...intruder, roles: [{ roleCode: "org_admin" }] }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.orgRoleForbidden));
       await expect(sub(tx, (sp) => assignRole(sp, vice, { personId: w.s2Principal.personId, roleCode: "org_admin" }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.orgRoleForbidden));
@@ -415,7 +434,7 @@ describe("admin scope hardening", () => {
         { value: w.s2.schoolId, label: "دبیرستان دوم" },
       ];
       expect(roleGrantOptions(vice.assignments, schools)).toEqual({ roles: [], schools: [] });
-      expect(roleGrantOptions(principal.assignments, schools)).toEqual({ roles: ["school_principal", "vice_principal"], schools: [schools[1]] });
+      expect(roleGrantOptions(principal.assignments, schools)).toEqual({ roles: ["vice_principal"], schools: [schools[1]] });
       expect(roleGrantOptions(orgAdmin.assignments, schools)).toEqual({ roles: ["school_principal", "vice_principal", "org_admin"], schools });
       throw new Rollback();
     });
@@ -475,10 +494,13 @@ describe("admin scope hardening", () => {
       await expect(sub(tx, (sp) => revokeRoleAssignment(sp, w.ctx.s1Principal, { roleAssignmentId: s2ViceRole }))).rejects.toSatisfy(isError("NOT_FOUND"));
       await expect(sub(tx, (sp) => revokeRoleAssignment(sp, w.ctx.s1Principal, { roleAssignmentId: s1TeacherRole }))).rejects.toSatisfy(isError("VALIDATION", MESSAGES.derivedRoleNotRevocable));
       await expect(sub(tx, (sp) => revokeRoleAssignment(sp, orgAdmin, { roleAssignmentId: s2ViceRole }))).rejects.toSatisfy(isError("VALIDATION", MESSAGES.derivedRoleNotRevocable));
-      // The vice principal (no iam.role_assignment.write) is FORBIDDEN on a manual role of their own school, NOT_FOUND elsewhere.
-      await expect(sub(tx, (sp) => revokeRoleAssignment(sp, w.ctx.s2Vice, { roleAssignmentId: w.s2Principal.roleAssignmentId }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.roleRevokeForbidden));
+      // The vice principal (no iam.role_assignment.write) is FORBIDDEN on a manual role of their own school (a principal's
+      // role names the organization admin as the only revoker — M2; a vice role the generic refusal), NOT_FOUND elsewhere.
+      await expect(sub(tx, (sp) => revokeRoleAssignment(sp, w.ctx.s2Vice, { roleAssignmentId: w.s2Principal.roleAssignmentId }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.principalRoleRevokeForbidden));
+      const otherVice = await createStaff(tx, orgAdmin, { firstName: "مهسا", lastName: "رحیمی", phone: "09127200060", roles: [{ roleCode: "vice_principal", schoolId: w.s2.schoolId }] });
+      await expect(sub(tx, (sp) => revokeRoleAssignment(sp, w.ctx.s2Vice, { roleAssignmentId: otherVice.roleAssignmentIds[0] }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.roleRevokeForbidden));
       await expect(sub(tx, (sp) => revokeRoleAssignment(sp, w.ctx.s2Vice, { roleAssignmentId: w.s1Principal.roleAssignmentId }))).rejects.toSatisfy(isError("NOT_FOUND"));
-      for (const id of [s1TeacherRole, s2ViceRole, w.s2Principal.roleAssignmentId, w.s1Principal.roleAssignmentId]) {
+      for (const id of [s1TeacherRole, s2ViceRole, w.s2Principal.roleAssignmentId, w.s1Principal.roleAssignmentId, otherVice.roleAssignmentIds[0]]) {
         const [row] = await tx.select({ revokedAt: roleAssignment.revokedAt }).from(roleAssignment).where(eq(roleAssignment.id, id));
         expect(row.revokedAt).toBeNull();
       }
@@ -505,6 +527,142 @@ describe("admin scope hardening", () => {
         const r = await tx.select({ scopeType: roleAssignment.scopeType, scopeId: roleAssignment.scopeId }).from(roleAssignment).where(and(eq(roleAssignment.personId, st.personId), isNull(roleAssignment.revokedAt)));
         expect(r).toEqual([{ scopeType: "student", scopeId: st.studentProfileId }]);
       }
+      throw new Rollback();
+    });
+  });
+
+  it("M1: only the organization admin creates schools — the gate refuses a principal with the message, the resource with NOT_FOUND, nothing is written; principals still edit their own school (other school NOT_FOUND)", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const principal = w.ctx.s2Principal;
+      const s2Scope = await getAdminScope(tx, principal);
+      const input = { name: "مدرسهٴ چهارم", code: "S4", genderPolicy: "girls" as const, isDefault: false };
+      // Action-level gate (adminResourceMutate; the list page hides «مدرسهٴ جدید» on the same verdict).
+      expect(resourceOpGate(schoolResource, "create", principal.assignments, s2Scope)).toEqual({ ok: false, message: GATE_MESSAGES.createNeedsOrgScope("مدرسه") });
+      expect(GATE_MESSAGES.createNeedsOrgScope("مدرسه")).toBe("ساختن مدرسهٴ جدید فقط با مدیر سازمان است.");
+      expect(resourceOpGate(schoolResource, "create", w.ctx.s2Vice.assignments, s2Scope)).toEqual({ ok: false }); // no structure.write at all
+      expect(resourceOpGate(schoolResource, "update", principal.assignments, s2Scope)).toEqual({ ok: true });
+      expect(resourceOpGate(schoolResource, "update", w.ctx.s2Vice.assignments, s2Scope)).toEqual({ ok: false });
+      // Resource level (second line): NOT_FOUND for a school scope, nothing written.
+      await expect(sub(tx, (sp) => schoolResource.create(sp, resourceCtx(principal), s2Scope, input))).rejects.toSatisfy(isError("NOT_FOUND"));
+      expect(await findSchoolByCode(tx, "S4")).toBeNull();
+      // The organization admin creates it, default branch included.
+      const orgScope = await getAdminScope(tx, orgAdmin);
+      expect(resourceOpGate(schoolResource, "create", orgAdmin.assignments, orgScope)).toEqual({ ok: true });
+      const created = await schoolResource.create(tx, resourceCtx(orgAdmin), orgScope, input);
+      expect(await tx.select({ id: schema.branch.id }).from(schema.branch).where(eq(schema.branch.schoolId, created.id))).toHaveLength(1);
+      // Principals edit their own school's details, never another's.
+      await schoolResource.update(tx, resourceCtx(principal), s2Scope, w.s2.schoolId, { name: "دبیرستان دوم (ویرایش)", genderPolicy: "boys", isDefault: false });
+      expect((await findSchoolById(tx, w.s2.schoolId))?.name).toBe("دبیرستان دوم (ویرایش)");
+      await expect(sub(tx, (sp) => schoolResource.update(sp, resourceCtx(principal), s2Scope, f.SCHOOL_A, { name: "تغییر", genderPolicy: "boys", isDefault: false }))).rejects.toSatisfy(isError("NOT_FOUND"));
+      throw new Rollback();
+    });
+  });
+
+  it("M2: a principal appoints vice principals of their own schools only — granting `school_principal` is FORBIDDEN (nothing written), revoking a principal's role too; the organization admin does both; pickers and «لغو» mirror the rule", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const principal = w.ctx.s2Principal;
+      const newcomer = { firstName: "پریسا", lastName: "نادری", phone: "09127200040", schoolId: w.s2.schoolId };
+      // Principal → principal at own school: FORBIDDEN with the principal message — through createStaff (nothing written) and assignRole.
+      await expect(sub(tx, (sp) => adminCreateStaff(sp, principal, { ...newcomer, roles: [{ roleCode: "school_principal", schoolId: w.s2.schoolId }] }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.principalRoleForbidden));
+      await sub(tx, async (sp) => {
+        const err = await createStaff(sp, principal, { ...newcomer, roles: [{ roleCode: "school_principal", schoolId: w.s2.schoolId }] }).catch((e: unknown) => e);
+        expect(err).toSatisfy(isError("FORBIDDEN", MESSAGES.principalRoleForbidden));
+        expect(await sp.select({ id: userAccount.id }).from(userAccount).where(eq(userAccount.loginIdentifier, "+989127200040"))).toHaveLength(0);
+      });
+      await expect(sub(tx, (sp) => assignRole(sp, principal, { personId: w.s2Vice.personId, roleCode: "school_principal", schoolId: w.s2.schoolId }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.principalRoleForbidden));
+      // …at another school the school is invisible first (NOT_FOUND, no oracle).
+      await expect(sub(tx, (sp) => assignRole(sp, principal, { personId: w.s2Vice.personId, roleCode: "school_principal", schoolId: f.SCHOOL_A }))).rejects.toSatisfy(isError("NOT_FOUND"));
+      // Vice principal at own school: OK; at another school: NOT_FOUND.
+      const staff = await adminCreateStaff(tx, principal, newcomer);
+      expect((await assignRole(tx, principal, { personId: staff.personId, roleCode: "vice_principal", schoolId: w.s2.schoolId })).created).toBe(true);
+      await expect(sub(tx, (sp) => assignRole(sp, principal, { personId: staff.personId, roleCode: "vice_principal", schoolId: f.SCHOOL_A }))).rejects.toSatisfy(isError("NOT_FOUND"));
+      // Revoke mirrors grant: a second S2 principal (appointed by the organization admin) cannot be unseated by the first…
+      const second = await adminCreateStaff(tx, orgAdmin, { firstName: "شیرین", lastName: "توکلی", phone: "09127200041", roles: [{ roleCode: "school_principal", schoolId: w.s2.schoolId }] });
+      await expect(sub(tx, (sp) => revokeRoleAssignment(sp, principal, { roleAssignmentId: second.roleAssignmentIds[0] }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.principalRoleRevokeForbidden));
+      // …nor their own principal role; the vice principal's role at their school they do revoke.
+      await expect(sub(tx, (sp) => revokeRoleAssignment(sp, principal, { roleAssignmentId: w.s2Principal.roleAssignmentId }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.principalRoleRevokeForbidden));
+      await revokeRoleAssignment(tx, principal, { roleAssignmentId: w.s2Vice.roleAssignmentId });
+      for (const [id, revoked] of [
+        [second.roleAssignmentIds[0], false],
+        [w.s2Principal.roleAssignmentId, false],
+        [w.s2Vice.roleAssignmentId, true],
+      ] as const) {
+        const [row] = await tx.select({ revokedAt: roleAssignment.revokedAt }).from(roleAssignment).where(eq(roleAssignment.id, id));
+        expect(row.revokedAt !== null).toBe(revoked);
+      }
+      // The organization admin appoints and unseats principals.
+      await revokeRoleAssignment(tx, orgAdmin, { roleAssignmentId: second.roleAssignmentIds[0] });
+      expect((await assignRole(tx, orgAdmin, { personId: staff.personId, roleCode: "school_principal", schoolId: w.s2.schoolId })).created).toBe(true);
+      // The UI mirrors (role pickers, «لغو» buttons) are computed from the same rule.
+      expect(canManageRole(principal.assignments, "school_principal", w.s2.schoolId)).toBe(false);
+      expect(canManageRole(principal.assignments, "vice_principal", w.s2.schoolId)).toBe(true);
+      expect(canManageRole(principal.assignments, "vice_principal", f.SCHOOL_A)).toBe(false);
+      expect(canManageRole(principal.assignments, "org_admin", null)).toBe(false);
+      expect(canManageRole(w.ctx.s2Vice.assignments, "vice_principal", w.s2.schoolId)).toBe(false);
+      expect(canManageRole(orgAdmin.assignments, "school_principal", w.s2.schoolId)).toBe(true);
+      expect(canManageRole(orgAdmin.assignments, "org_admin", null)).toBe(true);
+      const detail = await getPersonDetail(tx, await getAdminScope(tx, principal), staff.personId, principal.assignments);
+      expect(detail.roles.map((r) => [r.roleCode, r.schoolId, r.revocable])).toEqual([
+        ["school_principal", w.s2.schoolId, false],
+        ["vice_principal", w.s2.schoolId, true],
+      ]);
+      throw new Rollback();
+    });
+  });
+
+  it("M3: a vice principal grants no manager role but registers staff and students and sets, changes and ends the main teacher of an EXISTING offering of their school (derived teacher role follows); defining offerings or editing their hours/status stays structure.write", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const vice = w.ctx.s2Vice;
+      const s2Scope = await getAdminScope(tx, vice);
+      // Nothing managerial (own school: FORBIDDEN; the picker is empty).
+      await expect(sub(tx, (sp) => assignRole(sp, vice, { personId: w.s2Principal.personId, roleCode: "vice_principal", schoolId: w.s2.schoolId }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.roleGrantForbidden));
+      expect(roleGrantOptions(vice.assignments, [{ value: w.s2.schoolId }])).toEqual({ roles: [], schools: [] });
+      // Plain staff at own school: OK, anchored there and offered in the teacher picker.
+      const teacher = await adminCreateStaff(tx, vice, { firstName: "بهرام", lastName: "شریفی", phone: "09127200050", schoolId: w.s2.schoolId });
+      expect(teacher.roleAssignmentIds).toEqual([]);
+      expect((await staffOptions(tx, s2Scope)).map((o) => o.value)).toContain(teacher.staffProfileId);
+      // Gate: the offerings page offers the vice principal «ویرایش» but not «ارائهٴ درس جدید»; the principal gets both.
+      expect(resourceOpGate(offeringResource, "update", vice.assignments, s2Scope)).toEqual({ ok: true });
+      expect(resourceOpGate(offeringResource, "create", vice.assignments, s2Scope)).toEqual({ ok: false });
+      expect(resourceOpGate(offeringResource, "create", w.ctx.s2Principal.assignments, s2Scope)).toEqual({ ok: true });
+      // Defining an offering: FORBIDDEN for a class the vice principal can see (structure), NOT_FOUND for another school's.
+      const offeringInput = (classGroupId: string, termId: string, mainTeacherStaffProfileId: string | null) => ({ classGroupId, subjectId: f.SUBJECT_A, termId, mainTeacherStaffProfileId, weeklyHours: null, status: "active" as const });
+      await expect(sub(tx, (sp) => offeringResource.create(sp, resourceCtx(vice), s2Scope, offeringInput(w.s2.classGroupId, w.s2.termId, null)))).rejects.toSatisfy(isError("FORBIDDEN", RESOURCE_MESSAGES.offeringCreateForbidden));
+      await expect(sub(tx, (sp) => offeringResource.create(sp, resourceCtx(vice), s2Scope, offeringInput(f.CLASS_GROUP_A1, f.TERM_A, null)))).rejects.toSatisfy(isError("NOT_FOUND"));
+      expect(await tx.select({ id: schema.classOffering.id }).from(schema.classOffering).where(eq(schema.classOffering.classGroupId, w.s2.classGroupId))).toHaveLength(1);
+      // Setting the main teacher of the EXISTING offering: OK → teacher_assignment + the derived `teacher` role on that offering.
+      await offeringResource.update(tx, resourceCtx(vice), s2Scope, w.s2.offeringId, offeringInput(w.s2.classGroupId, w.s2.termId, teacher.staffProfileId));
+      const derived = () =>
+        tx
+          .select({ scopeType: roleAssignment.scopeType, classOfferingId: roleAssignment.classOfferingId, sourceType: roleAssignment.sourceType })
+          .from(roleAssignment)
+          .innerJoin(schema.role, eq(schema.role.id, roleAssignment.roleId))
+          .where(and(eq(roleAssignment.personId, teacher.personId), eq(schema.role.code, "teacher"), isNull(roleAssignment.revokedAt)));
+      expect(await derived()).toEqual([{ scopeType: "class_offering", classOfferingId: w.s2.offeringId, sourceType: "teacher_assignment" }]);
+      // Hours/status are structure: FORBIDDEN and untouched for the vice principal; the same submit by the principal passes.
+      const withTeacher = offeringInput(w.s2.classGroupId, w.s2.termId, teacher.staffProfileId);
+      await expect(sub(tx, (sp) => offeringResource.update(sp, resourceCtx(vice), s2Scope, w.s2.offeringId, { ...withTeacher, weeklyHours: 3 }))).rejects.toSatisfy(isError("FORBIDDEN", RESOURCE_MESSAGES.offeringStructureForbidden));
+      await expect(sub(tx, (sp) => offeringResource.update(sp, resourceCtx(vice), s2Scope, w.s2.offeringId, { ...withTeacher, status: "closed" }))).rejects.toSatisfy(isError("FORBIDDEN", RESOURCE_MESSAGES.offeringStructureForbidden));
+      const offeringRow = () => tx.select({ weeklyHours: schema.classOffering.weeklyHours, status: schema.classOffering.status }).from(schema.classOffering).where(eq(schema.classOffering.id, w.s2.offeringId));
+      expect(await offeringRow()).toEqual([{ weeklyHours: null, status: "active" }]);
+      await offeringResource.update(tx, resourceCtx(w.ctx.s2Principal), s2Scope, w.s2.offeringId, { ...withTeacher, weeklyHours: 3 });
+      expect((await offeringRow())[0].status).toBe("active");
+      // The vice principal resubmits the form with the hours untouched and swaps the teacher: OK, the first teacher's derived role ends.
+      await offeringResource.update(tx, resourceCtx(vice), s2Scope, w.s2.offeringId, { ...offeringInput(w.s2.classGroupId, w.s2.termId, w.s2Vice.staffProfileId), weeklyHours: 3 });
+      expect(await derived()).toEqual([]);
+      // Another school's staff still cannot be placed (F2); clearing the field ends the teaching.
+      await expect(sub(tx, (sp) => offeringResource.update(sp, resourceCtx(vice), s2Scope, w.s2.offeringId, { ...offeringInput(w.s2.classGroupId, w.s2.termId, w.s1Teacher.staffProfileId), weeklyHours: 3 }))).rejects.toSatisfy(isError("NOT_FOUND"));
+      await offeringResource.update(tx, resourceCtx(vice), s2Scope, w.s2.offeringId, { ...offeringInput(w.s2.classGroupId, w.s2.termId, null), weeklyHours: 3 });
+      expect(await tx.select({ id: schema.teacherAssignment.id }).from(schema.teacherAssignment).where(and(eq(schema.teacherAssignment.classOfferingId, w.s2.offeringId), isNull(schema.teacherAssignment.validTo)))).toHaveLength(0);
+      // Another school's offering is NOT_FOUND even with the permission.
+      await expect(sub(tx, (sp) => offeringResource.update(sp, resourceCtx(vice), s2Scope, f.OFFERING_A1, offeringInput(f.CLASS_GROUP_A1, f.TERM_A, teacher.staffProfileId)))).rejects.toSatisfy(isError("NOT_FOUND"));
+      // Students: registered by the vice principal, with a class (the `student` role rides on iam.person.write).
+      const student = await adminCreateStudent(tx, vice, { firstName: "رها", lastName: "نیکو", studentNumber: "S2-300", enrollment: { classGroupId: w.s2.classGroupId }, login: { createAccount: true } });
+      expect(student.loginIdentifier).toBe("s2-s2-300");
+      expect((await getPersonDetail(tx, s2Scope, student.personId)).enrollment?.classGroupId).toBe(w.s2.classGroupId);
       throw new Rollback();
     });
   });

@@ -5,10 +5,11 @@
 import { and, asc, count, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import type { Tx } from "@/lib/actions";
-import { notFound, validation } from "@/lib/errors";
+import { forbidden, notFound, validation } from "@/lib/errors";
 import { formatNumberFa, isoDateToJalali, jalaliToIsoDate } from "@/lib/format";
 import { assignTeacher, endTeacherAssignment } from "@/modules/academic/service";
 import { classEnrollment, teacherAssignment } from "@/modules/academic/schema";
+import { can } from "@/modules/iam/can";
 import { person, staffProfile } from "@/modules/iam/schema";
 import { assertSchoolInScope, isInScope, requireStaffAssignable, staffAssignableSql, type AdminScope } from "@/modules/iam/service";
 import { findClassGroup, listSchools, listTerms, schoolIdOfAcademicYear, schoolIdOfBranch, schoolIdOfClassOffering, schoolIdOfTerm } from "@/modules/tenancy/repo";
@@ -73,6 +74,12 @@ function requireOrgScope(scope: AdminScope): void {
   if (scope.kind !== "organization") throw notFound();
 }
 
+export const RESOURCE_MESSAGES = {
+  offeringCreateForbidden: "تعریف ارائهٴ درس جدید فقط با مدیر مدرسه یا مدیر سازمان است.",
+  offeringStructureForbidden: "تغییر ساعت یا وضعیت ارائهٴ درس فقط با مدیر مدرسه یا مدیر سازمان است.",
+  teacherAssignForbidden: "شما اجازهٴ تعیین دبیر در این مدرسه را ندارید.",
+} as const;
+
 const GENDER_LABELS: Record<string, string> = { girls: "دخترانه", boys: "پسرانه", mixed: "مختلط" };
 const GENDER_OPTIONS: SelectOption[] = [
   { value: "girls", label: "دخترانه" },
@@ -111,6 +118,12 @@ const SchoolInput = z
   })
   .strict();
 
+/**
+ * Owner's rule: ONLY the organization admin creates schools (`createNeedsOrgScope` — the action refuses a principal
+ * with FORBIDDEN before the form data is read, the list page hides «مدرسهٴ جدید», and `create` below is NOT_FOUND
+ * for a school scope as a second line). Principals edit their own schools' details (`update`, scope-checked).
+ * There is no archive for schools in phase 1; when one is added it must be organization-only too.
+ */
 export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolInput>>({
   key: "schools",
   labelFa: "مدرسه",
@@ -793,12 +806,18 @@ export async function staffOptions(tx: Tx, scope: AdminScope): Promise<SelectOpt
   return rows.map((r) => ({ value: r.id, label: `${r.firstName} ${r.lastName}` }));
 }
 
+/**
+ * Two permissions on one form (owner's matrix, docs/admin.md): defining an offering (`create`) and changing its
+ * hours/status are STRUCTURE (`tenancy.structure.write` — principal, organization admin); setting, changing or
+ * removing the main teacher of an EXISTING offering is `academic.teacher_assignment.write` (the vice principal
+ * holds it too). Both are checked at the offering's school with `can()`, after the scope rule (NOT_FOUND first).
+ */
 export const offeringResource = defineResource<OfferingRow, z.output<typeof OfferingInput>>({
   key: "offerings",
   labelFa: "ارائهٴ درس",
   labelFaPlural: "ارائهٴ درس‌ها",
   descriptionFa: "درس × نوبت × دبیر اصلی. تخصیص دبیر همین‌جا نقش «معلم» را برای همان کلاس‌درس می‌سازد.",
-  permission: { read: "tenancy.structure.read", write: "academic.teacher_assignment.write" },
+  permission: { read: "tenancy.structure.read", write: "academic.teacher_assignment.write", create: "tenancy.structure.write" },
   parentParam: { name: "class", field: "classGroupId", labelFa: "کلاس", backHref: (parent) => `/admin/classes/${parent}` },
   columns: [
     { key: "subjectName", labelFa: "درس" },
@@ -834,6 +853,8 @@ export const offeringResource = defineResource<OfferingRow, z.output<typeof Offe
     const cg = await findClassGroup(tx, input.classGroupId);
     if (!cg) throw notFound();
     assertSchoolInScope(scope, cg.schoolId);
+    // Structure: a vice principal (teacher_assignment.write only) may not define offerings — FORBIDDEN for a class they can see.
+    if (!(await can(tx, ctx, "tenancy.structure.write", { scopeType: "school", id: cg.schoolId }))) throw forbidden(RESOURCE_MESSAGES.offeringCreateForbidden);
     // Unknown term and another school's term are both NOT_FOUND (no existence oracle); the service then checks the year.
     assertSchoolInScope(scope, await schoolIdOfTerm(tx, input.termId));
     // A school admin may only hand a class to staff anchored in / already teaching at their schools (scope widening).
@@ -849,8 +870,18 @@ export const offeringResource = defineResource<OfferingRow, z.output<typeof Offe
     return { id: res.classOfferingId };
   },
   async update(tx, ctx, scope, id, input) {
-    assertSchoolInScope(scope, await schoolIdOfClassOffering(tx, id));
-    await updateClassOffering(tx, ctx, id, { weeklyHours: input.weeklyHours ?? null, status: input.status });
+    const schoolId = await schoolIdOfClassOffering(tx, id);
+    assertSchoolInScope(scope, schoolId);
+    if (!schoolId) throw notFound();
+    const school = { scopeType: "school", id: schoolId } as const;
+    const [before] = await tx.select({ weeklyHours: classOffering.weeklyHours, status: classOffering.status }).from(classOffering).where(eq(classOffering.id, id)).limit(1);
+    if (!before) throw notFound();
+    // The form always resubmits hours + status; only a CHANGE to them is a structure edit (a vice principal leaves them as they are).
+    const weeklyHours = input.weeklyHours ?? null;
+    if (weeklyHours !== (before.weeklyHours === null ? null : Number(before.weeklyHours)) || input.status !== before.status) {
+      if (!(await can(tx, ctx, "tenancy.structure.write", school))) throw forbidden(RESOURCE_MESSAGES.offeringStructureForbidden);
+      await updateClassOffering(tx, ctx, id, { weeklyHours, status: input.status });
+    }
     const [current] = await tx
       .select({ id: teacherAssignment.id, staffProfileId: teacherAssignment.staffProfileId })
       .from(teacherAssignment)
@@ -858,6 +889,8 @@ export const offeringResource = defineResource<OfferingRow, z.output<typeof Offe
       .limit(1);
     const next = input.mainTeacherStaffProfileId ?? null;
     if ((current?.staffProfileId ?? null) === next) return;
+    if (!(await can(tx, ctx, "academic.teacher_assignment.write", school))) throw forbidden(RESOURCE_MESSAGES.teacherAssignForbidden);
+    // A school admin may only hand a class to staff anchored in / already teaching at their schools (scope widening).
     if (next) await requireStaffAssignable(tx, scope, next);
     if (current) await endTeacherAssignment(tx, ctx, { teacherAssignmentId: current.id });
     if (next) await assignTeacher(tx, ctx, { staffProfileId: next, classOfferingId: id, role: "main" });

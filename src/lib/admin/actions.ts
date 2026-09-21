@@ -1,13 +1,15 @@
 "use server";
 // The ONE server action of the generic admin resources. Gate: session → must-change → strict input → the caller
-// holds `iam.admin.access` somewhere → (inside) the resource's write permission at any scope + the admin scope
-// rule (getAdminScope; school-owned rows must be in the caller's schools, org catalogs need an organization-scoped
-// admin) → the resource's strict Zod schema on `data` → the tenancy/academic services → audit, all in one tx.
+// holds `iam.admin.access` somewhere → (inside) `resourceOpGate`: the op's permission at any scope (`permission.create`
+// for new rows when the resource sets one, else `write`) + the organization-scope rules (`orgOnly` catalogs,
+// `createNeedsOrgScope` — new schools are the organization admin's) → the resource's strict Zod schema on `data` →
+// the resource handler (row-level scope rule: out of scope = NOT_FOUND) → the tenancy/academic services → audit,
+// all in one tx.
 import { z } from "zod";
 import { defineAction } from "@/lib/actions";
 import { forbidden, notFound } from "@/lib/errors";
-import { canAtAnyScope } from "@/modules/iam/can";
 import { getAdminScope } from "@/modules/iam/service";
+import { resourceOpGate } from "./defineResource";
 import { RESOURCES, RESOURCE_KEYS } from "./resources";
 
 const MutateInput = z
@@ -22,9 +24,9 @@ const MutateInput = z
 export const adminResourceMutate = defineAction({ schema: MutateInput, permission: "iam.admin.access", scope: "any" }, async (tx, input, ctx) => {
   const def = RESOURCES[input.resource];
   if (!def) throw notFound();
-  if (!canAtAnyScope(ctx.assignments, def.permission.write)) throw forbidden();
   const scope = await getAdminScope(tx, ctx);
-  if (def.orgOnly && scope.kind !== "organization") throw forbidden("این بخش را فقط مدیر سازمان می‌تواند ویرایش کند.");
+  const gate = resourceOpGate(def, input.op, ctx.assignments, scope);
+  if (!gate.ok) throw forbidden(gate.message);
   switch (input.op) {
     case "create": {
       const data = def.schema.parse(input.data ?? {});
