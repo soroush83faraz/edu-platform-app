@@ -4,7 +4,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { cn } from "cn";
 import { EmptyState } from "@/components/EmptyState";
-import { Fab } from "@/components/Fab";
 import { EmptyClay } from "@/components/illustrations";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Button } from "@/components/ui/button";
@@ -72,7 +71,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       <div className="flex items-center justify-between gap-3 px-4 pt-5 pb-3 md:pt-8">
         <h2 className="text-xl font-bold text-text">پنل من</h2>
         {canCreate ? (
-          <Button asChild className="hidden h-11 rounded-xl px-4 md:inline-flex">
+          <Button asChild className="h-11 rounded-xl px-4">
             <Link href="/inbox/new">
               <Plus aria-hidden />
               کار جدید
@@ -156,7 +155,6 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         </div>
       )}
 
-      {canCreate ? <Fab /> : null}
     </div>
   );
 }

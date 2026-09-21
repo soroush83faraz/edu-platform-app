@@ -10,7 +10,7 @@ export const dynamic = "force-static";
  */
 export default function OfflinePage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface-sunken px-6 text-center">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-canvas px-6 text-center">
       <OfflineClay size={140} />
       <h1 className="text-xl font-bold text-text">اتصال اینترنت برقرار نیست</h1>
       <p className="max-w-xs text-sm text-text-muted">پنل من و اعلان‌ها روی گوشی نگه داشته نمی‌شوند؛ با برقراری اتصال، همه‌چیز دوباره بارگذاری می‌شود.</p>

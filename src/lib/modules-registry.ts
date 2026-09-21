@@ -32,6 +32,7 @@ import {
   Video,
   Wallet,
 } from "lucide-react";
+import type { ClayShade } from "@/components/ClayIcon";
 import type { Permission } from "@/modules/iam/permissions";
 
 /**
@@ -316,6 +317,8 @@ export interface HomeTile {
   labelFa: string;
   href: string;
   icon: LucideIcon;
+  /** The clay mark's shade — every live tile is the one blue; only «کار جدید» (the action) is `yellow`. */
+  shade?: ClayShade;
   role: TileRole;
   /** Shown only when the person holds it at any scope (the hat alone is not enough for admin tiles). */
   permission?: Permission;
@@ -369,6 +372,7 @@ export const HOME_TILES: readonly HomeTile[] = [
   },
   {
     code: "new-item",
+    shade: "yellow",
     labelFa: "کار جدید",
     href: "/inbox/new",
     icon: ClipboardPlus,

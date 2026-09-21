@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, BookOpen, Ellipsis, House, Inbox, Settings2 } from "lucide-react";
+import { Bell, BookOpen, Ellipsis, House, Inbox, type LucideIcon, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "cn";
@@ -12,7 +12,7 @@ import type { InboxSummaryState } from "./useInboxSummary";
 interface Item {
   href: string;
   label: string;
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  icon: LucideIcon;
   badge?: (s: InboxSummaryState) => number;
 }
 
@@ -24,8 +24,9 @@ const ITEMS: Item[] = [
 ];
 
 /**
- * The one navigation component: bottom bar on phones, start-side rail from `md:`. Both renderings read the shell's
- * single summary poller (`InboxSummaryProvider`), as do the Home strip and tile badges.
+ * The one navigation component: bottom bar on phones, start-side rail from `md:`. The current item sits in a solid
+ * persian-blue pill with a white glyph (the bottom bar slides ONE pill between its cells); counts are yellow pills.
+ * Both renderings read the shell's single summary poller (`InboxSummaryProvider`), as do the Home strip and tile badges.
  */
 export function AppNav({ schoolName, showAdmin = false }: { schoolName: string; showAdmin?: boolean }) {
   const pathname = usePathname();
@@ -45,7 +46,7 @@ export function AppNav({ schoolName, showAdmin = false }: { schoolName: string; 
             className="pointer-events-none absolute top-1.5 flex h-7 w-1/4 justify-center transition-[inset-inline-start,opacity] duration-(--duration-base) ease-(--ease-in-out)"
             style={{ insetInlineStart: `${Math.max(activeIndex, 0) * 25}%`, opacity: activeIndex < 0 ? 0 : 1 }}
           >
-            <span className="h-7 w-12 rounded-full bg-info-soft" />
+            <span className="h-7 w-12 rounded-full bg-primary-600 shadow-1" />
           </li>
           {ITEMS.map((item) => (
             <NavLink key={item.href} item={item} current={isCurrent(item.href)} count={item.badge?.(summary) ?? 0} layout="bottom" />
@@ -88,7 +89,7 @@ function NavLink({ item, current, count, layout }: { item: Item; current: boolea
         >
           {/* The sliding pill lives on the <ul>; this span only positions the icon and badge, and darkens on press. */}
           <span className={cn("relative flex h-7 w-12 items-center justify-center rounded-full transition-base", !current && "group-active:bg-surface-sunken")}>
-            <Icon className={cn("size-5 transition-base", current && "text-primary-700")} aria-hidden />
+            <Icon className={cn("size-5 transition-base", current && "text-white")} strokeWidth={2} aria-hidden />
             {badge}
           </span>
           {item.label}
@@ -103,10 +104,10 @@ function NavLink({ item, current, count, layout }: { item: Item; current: boolea
         aria-current={current ? "page" : undefined}
         className={cn(
           "pressable flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm",
-          current ? "bg-info-soft font-semibold text-primary-800" : "text-text-muted hover:bg-surface-sunken hover:text-text",
+          current ? "bg-primary-600 font-semibold text-white shadow-1" : "text-text-muted hover:bg-surface-sunken hover:text-text",
         )}
       >
-        <Icon className={cn("size-5", current ? "text-primary-700" : "text-text-faint")} aria-hidden />
+        <Icon className={cn("size-5", current ? "text-white" : "text-text-faint")} strokeWidth={2} aria-hidden />
         <span className="flex-1">{item.label}</span>
         {badge}
       </Link>

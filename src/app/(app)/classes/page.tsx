@@ -1,12 +1,12 @@
-import { ArrowRight, Presentation } from "lucide-react";
+import { ArrowRight, Plus, Presentation } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { cn } from "cn";
 import { EmptyState } from "@/components/EmptyState";
-import { Fab } from "@/components/Fab";
 import { IconChip } from "@/components/IconChip";
 import { BookClay } from "@/components/illustrations";
+import { Button } from "@/components/ui/button";
 import { formatNumberFa } from "@/lib/format";
 import { hatsQuery } from "@/modules/iam/hats";
 
@@ -35,6 +35,12 @@ export default async function ClassesPage() {
           <h2 className="text-xl font-bold leading-8 text-text">کلاس‌های من</h2>
           <p className="text-sm text-text-muted">{offerings.length > 0 ? `${formatNumberFa(offerings.length)} درس در این سال` : "درسی به شما سپرده نشده"}</p>
         </div>
+        <Button asChild className="ms-auto h-11 shrink-0 rounded-xl px-4">
+          <Link href="/inbox/new">
+            <Plus aria-hidden />
+            کار جدید
+          </Link>
+        </Button>
       </div>
 
       {offerings.length === 0 ? (
@@ -65,7 +71,6 @@ export default async function ClassesPage() {
           ))}
         </ul>
       )}
-      <Fab />
     </div>
   );
 }

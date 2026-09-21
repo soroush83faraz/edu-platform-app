@@ -1,7 +1,7 @@
-import { ChevronLeft, KeyRound, LifeBuoy, type LucideIcon, Map, Rocket, Settings2, ShieldCheck, UserRound } from "lucide-react";
+import { ChevronLeft, LifeBuoy, LockKeyhole, type LucideIcon, Map, Rocket, Settings2, ShieldCheck, UserRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { IconChip } from "@/components/IconChip";
+import { ClayIcon } from "@/components/ClayIcon";
 import { LogoutButton } from "@/components/shell/LogoutButton";
 import { requireContext } from "@/lib/ctx";
 import { formatNumberFa } from "@/lib/format";
@@ -35,7 +35,7 @@ export default async function MorePage() {
   return (
     <div className="reveal-stagger flex flex-col gap-6 px-4 pt-5 pb-6 md:pt-8">
       <section className="flex items-center gap-4 rounded-card bg-surface p-4 shadow-1">
-        <IconChip icon={UserRound} size="lg" />
+        <ClayIcon icon={UserRound} size="lg" />
         <div className="flex min-w-0 flex-col">
           <p className="text-xl font-bold text-text">
             <bdi>
@@ -64,26 +64,29 @@ export default async function MorePage() {
 
       <nav aria-label="حساب">
         <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
-          <MoreLink href="/change-password" icon={KeyRound} label="تغییر رمز" />
+          <MoreLink href="/change-password" icon={LockKeyhole} label="تغییر رمز" />
           <MoreLink href="/help" icon={LifeBuoy} label="راهنما" hint="به‌زودی" />
           <MoreLink href="/privacy" icon={ShieldCheck} label="حریم خصوصی" hint="به‌زودی" />
           <MoreLink href="/roadmap" icon={Map} label="نقشهٴ راه" hint={UPCOMING_HINT} />
         </ul>
       </nav>
 
-      <div className="flex flex-col gap-2">
-        <LogoutButton action={logoutAction} label="خروج" />
-        <LogoutButton action={logoutAllAction} label="خروج از همهٴ دستگاه‌ها" variant="ghost" className="text-text-muted" />
-      </div>
+      <nav aria-label="خروج">
+        <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
+          <LogoutButton action={logoutAction} label="خروج" mark="device" />
+          <LogoutButton action={logoutAllAction} label="خروج از همهٴ دستگاه‌ها" mark="devices" />
+        </ul>
+      </nav>
     </div>
   );
 }
 
+/** One row of a «بیشتر» list: the blue clay mark, label, hint, chevron. */
 function MoreLink({ href, icon, label, hint }: { href: string; icon: LucideIcon; label: string; hint?: string }) {
   return (
     <li>
       <Link href={href} className="pressable flex min-h-14 items-center gap-3 px-3 py-2 text-base text-text first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
-        <IconChip icon={icon} />
+        <ClayIcon icon={icon} />
         <span className="shrink-0">{label}</span>
         <span className="flex min-w-0 flex-1 items-center justify-end gap-2 text-sm text-text-faint">
           <span className="truncate">{hint}</span>

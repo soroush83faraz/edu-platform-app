@@ -1,23 +1,28 @@
 import type { LucideIcon } from "lucide-react";
-import { cn } from "cn";
-
-export type IconChipTone = "primary" | "sky" | "warning" | "danger" | "success" | "muted";
-export type IconChipSize = "sm" | "md" | "lg";
-
-/** Chip box / icon glyph, in px: compact rows 36/18, list rows 40/20, Home tiles and detail facts 48/24. */
-const SIZES: Record<IconChipSize, { box: string; icon: number }> = {
-  sm: { box: "size-9 rounded-xl", icon: 18 },
-  md: { box: "size-10 rounded-[0.875rem]", icon: 20 },
-  lg: { box: "size-12", icon: 24 },
-};
+import { ClayIcon, type ClayShade, type ClaySize } from "@/components/ClayIcon";
 
 /**
- * The one icon material of the product: a soft-3D "clay" chip (top-light gradient, inset highlight, tinted glow —
- * `.icon-chip` in globals.css) around a lucide glyph at stroke 1.75. Decorative by default; pass `label` when the
- * icon is the only thing naming the row. `mirror` flips glyphs that imply reading direction (arrows, send).
+ * Semantic tones for places where the mark carries MEANING rather than a module identity: work-item priority and
+ * status (inbox rows, detail facts), the roadmap's live/upcoming rows. Every tone is the one blue mark except
+ * `warning` (yellow — high priority) and `muted` (grey — low priority, closed, upcoming); urgency's red stays on the
+ * text and the due chip, and the tones remain so callers keep their meaning if the material changes again.
  */
+export type IconChipTone = "primary" | "sky" | "warning" | "danger" | "success" | "violet" | "muted";
+export type IconChipSize = ClaySize;
+
+const SHADES: Record<IconChipTone, ClayShade> = {
+  primary: "blue",
+  sky: "blue",
+  warning: "yellow",
+  danger: "blue",
+  success: "blue",
+  violet: "blue",
+  muted: "grey",
+};
+
+/** A `ClayIcon` addressed by semantic tone (`priorityChipTone`, status facts). Modules with an identity use `ClayIcon` with their own shade. */
 export function IconChip({
-  icon: Icon,
+  icon,
   tone = "primary",
   size = "md",
   label,
@@ -31,14 +36,12 @@ export function IconChip({
   label?: string;
   mirror?: boolean;
   className?: string;
-  /** A badge or tag positioned by the caller (`absolute`) — the chip is `relative`. */
+  /** A badge or tag positioned by the caller (`absolute`) — the mark is `relative`. */
   children?: React.ReactNode;
 }) {
-  const s = SIZES[size];
   return (
-    <span className={cn("icon-chip relative", s.box, className)} data-tone={tone} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
-      <Icon size={s.icon} strokeWidth={1.75} className={cn(mirror && "rtl:-scale-x-100")} aria-hidden />
+    <ClayIcon icon={icon} shade={SHADES[tone]} size={size} label={label} mirror={mirror} className={className}>
       {children}
-    </span>
+    </ClayIcon>
   );
 }

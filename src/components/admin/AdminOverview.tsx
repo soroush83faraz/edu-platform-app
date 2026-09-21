@@ -2,11 +2,11 @@ import { BookOpen, CalendarDays, ChevronLeft, GraduationCap, Layers, type Lucide
 import Link from "next/link";
 import { AdminCounters } from "@/components/admin/AdminCounters";
 import { AdminHeader } from "@/components/admin/AdminPage";
-import { IconChip } from "@/components/IconChip";
+import { ClayIcon } from "@/components/ClayIcon";
 import { formatNumberFa } from "@/lib/format";
 import type { AdminOverviewData } from "@/lib/admin/overview";
 
-/** /admin index: four counters that are also links, then every section with a one-line description. */
+/** /admin index: four counters that are also links, then every section with a one-line description and the blue clay mark. */
 export function AdminOverview({ data }: { data: AdminOverviewData }) {
   const c = data.counts;
   const sections: Array<{ href: string; icon: LucideIcon; title: string; hint: string; count?: number }> = [
@@ -27,7 +27,7 @@ export function AdminOverview({ data }: { data: AdminOverviewData }) {
         {sections.map((s) => (
           <li key={s.href}>
             <Link href={s.href} className="pressable flex min-h-16 items-center gap-3 px-3 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
-              <IconChip icon={s.icon} />
+              <ClayIcon icon={s.icon} />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="text-base text-text">{s.title}</span>
                 <span className="text-xs text-text-muted">{s.hint}</span>

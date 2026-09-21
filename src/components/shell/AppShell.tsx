@@ -18,7 +18,7 @@ export async function AppShell({ ctx, children, wide = false }: { ctx: Ctx; chil
 
   return (
     <InboxSummaryProvider initial={initial}>
-    <div className="flex min-h-full flex-1 bg-surface-sunken">
+    <div className="flex min-h-full flex-1 bg-canvas">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:start-2 focus:z-50 focus:rounded-lg focus:bg-primary-600 focus:px-3 focus:py-2 focus:text-sm focus:text-white"
@@ -28,7 +28,7 @@ export async function AppShell({ ctx, children, wide = false }: { ctx: Ctx; chil
       <h1 className="sr-only">{title}</h1>
       <AppNav schoolName={title} showAdmin={showAdmin} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex h-14 items-center gap-3 bg-surface-sunken/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm md:hidden">
+        <header className="sticky top-0 z-10 flex h-14 items-center gap-3 bg-canvas/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm md:hidden">
           <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-xl bg-hero text-white shadow-1">
             <BookOpen className="size-4" />
           </span>

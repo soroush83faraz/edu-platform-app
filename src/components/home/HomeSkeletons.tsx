@@ -1,13 +1,13 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** Grid placeholder of the same shape as the live tiles: `count` white cards with a chip and a label line. */
+/** Grid placeholder of the same shape as the live tiles: `count` clay-sized squircles with a label line, straight on the canvas. */
 export function GridSkeleton({ count = 6 }: { count?: number }) {
   return (
-    <div aria-busy="true" aria-label="در حال بارگذاری" className="grid grid-cols-3 gap-2.5 md:grid-cols-4 lg:grid-cols-6">
+    <div aria-busy="true" aria-label="در حال بارگذاری" className="grid grid-cols-3 gap-x-2 gap-y-3 md:grid-cols-4 lg:grid-cols-6">
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="flex min-h-27 flex-col items-center justify-center gap-2.5 rounded-card bg-surface shadow-1">
-          <Skeleton className="size-12 rounded-2xl" />
-          <Skeleton className="h-3.5 w-14" />
+        <div key={i} className="flex min-h-28 flex-col items-center justify-start gap-2.5 pt-2.5">
+          <Skeleton className="size-17 rounded-[1.125rem] bg-neutral-200 md:size-20" />
+          <Skeleton className="h-3.5 w-14 bg-neutral-200" />
         </div>
       ))}
     </div>

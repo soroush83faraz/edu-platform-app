@@ -1,47 +1,42 @@
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { cn } from "cn";
-import { IconChip, type IconChipTone } from "@/components/IconChip";
+import { ClayIcon, type ClayShade } from "@/components/ClayIcon";
 
 /**
- * One cell of the Home grid: a white card ≥ 108 px tall with the icon chip on top and a two-line-max label under
- * it. `muted` is the «به‌زودی» variant — flat translucent white, grey chip, a small yellow-fill tag — so the eye
- * lands on what works today. A badge comes in through `children`, positioned on the chip (`absolute`).
+ * One cell of the Home grid — a phone app icon: the persian-blue clay mark (68 px, 80 px from `md:`) straight on
+ * the tinted canvas, no card, and a 13 px semibold label under it; tiles differ by glyph and label only («کار جدید»
+ * alone is yellow). The whole cell (≥ 112 px tall) is
+ * the pressable target. `muted` is the «به‌زودی» variant — the grey mark and a `text-muted` label under the
+ * section's own «به‌زودی» heading (no per-tile tag: fourteen yellow tags fought the real yellow — the FAB and the badge). A badge comes in through `children`, positioned on the mark (`absolute`).
  */
 export function Tile({
   href,
   label,
   icon,
-  tone = "primary",
+  shade = "blue",
   mirror = false,
   muted = false,
-  tag,
   children,
 }: {
   href: string;
   label: string;
   icon: LucideIcon;
-  tone?: IconChipTone;
+  shade?: ClayShade;
   mirror?: boolean;
   muted?: boolean;
-  /** Small tag on the top-end corner (the «به‌زودی» of upcoming tiles). */
-  tag?: string;
   children?: React.ReactNode;
 }) {
   return (
     <li className="flex">
       <Link
         href={href}
-        className={cn(
-          "pressable relative flex min-h-27 w-full flex-col items-center justify-center gap-2.5 rounded-card px-2 pt-3 pb-2.5 text-center",
-          muted ? "bg-surface/60 hover:bg-surface" : "bg-surface shadow-1 hover:bg-info-soft/40",
-        )}
+        className="pressable relative flex min-h-28 w-full flex-col items-center justify-start gap-2.5 rounded-card px-1 pt-2.5 pb-2 text-center hover:bg-surface/50"
       >
-        <IconChip icon={icon} size="lg" tone={muted ? "muted" : tone} mirror={mirror}>
+        <ClayIcon icon={icon} size="tile" shade={muted ? "grey" : shade} mirror={mirror}>
           {children}
-        </IconChip>
-        <span className={cn("text-sm leading-5 font-medium text-balance", muted ? "text-text-muted" : "text-text")}>{label}</span>
-        {tag ? <span className="absolute top-2 end-2 rounded-full bg-warning-soft px-1.5 text-xs leading-5 font-medium text-warning-text">{tag}</span> : null}
+        </ClayIcon>
+        <span className={cn("text-[0.8125rem] leading-5 font-semibold text-balance", muted ? "text-text-muted" : "text-text")}>{label}</span>
       </Link>
     </li>
   );
