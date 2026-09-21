@@ -468,6 +468,11 @@
   .clay-icon[data-shade="grey"] {
     background: linear-gradient(180deg, color-mix(in srgb, var(--color-neutral-500) 70%, var(--color-neutral-400)) 0%, var(--color-neutral-500) 100%);
   }
+  /* The one red action — «خروج» / «خروج از همهٴ دستگاه‌ها» on «بیشتر»: the same calm squircle and shadow, the danger
+     fill (a slightly lighter top stop like the blue), white glyph ≥ 5:1. Nothing else on the product is a red mark. */
+  .clay-icon[data-shade="danger"] {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--color-danger) 84%, white) 0%, var(--color-danger) 100%);
+  }
 }
 
 /* Numbers in lists line up (Vazirmatn ships tnum). */

@@ -5,7 +5,9 @@ import { ClayIcon, type ClayShade, type ClaySize } from "@/components/ClayIcon";
  * Semantic tones for places where the mark carries MEANING rather than a module identity: work-item priority and
  * status (inbox rows, detail facts), the roadmap's live/upcoming rows. Every tone is the one blue mark except
  * `warning` (yellow — high priority) and `muted` (grey — low priority, closed, upcoming); urgency's red stays on the
- * text and the due chip, and the tones remain so callers keep their meaning if the material changes again.
+ * text and the due chip, and the tones remain so callers keep their meaning if the material changes again. The
+ * `danger` TONE therefore stays blue: the red `danger` SHADE of `ClayIcon` is reserved for the «خروج» rows and is
+ * not reachable through a tone (owner's rule — one red action in the product).
  */
 export type IconChipTone = "primary" | "sky" | "warning" | "danger" | "success" | "violet" | "muted";
 export type IconChipSize = ClaySize;

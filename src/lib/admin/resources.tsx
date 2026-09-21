@@ -9,7 +9,7 @@ import { forbidden, notFound, validation } from "@/lib/errors";
 import { formatNumberFa, isoDateToJalali, jalaliToIsoDate } from "@/lib/format";
 import { assignTeacher, endTeacherAssignment } from "@/modules/academic/service";
 import { classEnrollment, teacherAssignment } from "@/modules/academic/schema";
-import { can } from "@/modules/iam/can";
+import { can, isOrganizationAdmin, type Assignment } from "@/modules/iam/can";
 import { person, staffProfile } from "@/modules/iam/schema";
 import { assertSchoolInScope, isInScope, requireStaffAssignable, staffAssignableSql, type AdminScope } from "@/modules/iam/service";
 import { findClassGroup, listSchools, listTerms, schoolIdOfAcademicYear, schoolIdOfBranch, schoolIdOfClassOffering, schoolIdOfTerm } from "@/modules/tenancy/repo";
@@ -43,6 +43,14 @@ import { defineResource, type AnyResourceDef, type ListOptions, type SelectOptio
 const uuid = z.uuid("شناسه نامعتبر است.");
 /** A reference picked in a `<select>` that may be empty («انتخاب کنید…» → `""`/null → undefined); the handler names the missing field. */
 const optionalRef = z.preprocess((v) => (v === "" || v === null ? undefined : v), uuid.optional());
+/**
+ * A reference picked in a REQUIRED `<select>` that is on the form in both modes: an empty choice («انتخاب کنید…»
+ * sends `""`) is reported as «<label> را انتخاب کنید.» under that field instead of the generic «شناسه نامعتبر است.»
+ * (QA round 2: a class saved without a grade). Create-only references keep `optionalRef` + a named message in `create`.
+ */
+const requiredRef = (label: string) => z.string(`${label} را انتخاب کنید.`).min(1, `${label} را انتخاب کنید.`).pipe(uuid);
+/** The message a required reference reports when nothing is picked — one wording everywhere (also used by `create`). */
+export const pickMessage = (label: string) => `${label} را انتخاب کنید.`;
 const name = (label: string) => z.string().trim().min(1, `${label} را وارد کنید.`).max(120, `${label} حداکثر ۱۲۰ نویسه است.`);
 const code = z.string().trim().min(1, "کد را وارد کنید.").max(20, "کد حداکثر ۲۰ نویسه است.");
 const jalaliDate = (label: string) =>
@@ -240,7 +248,7 @@ export const branchResource = defineResource<BranchRow, z.output<typeof BranchIn
     return { rows, total: n };
   },
   async create(tx, ctx, scope, input) {
-    if (!input.schoolId) throw validation({ fieldErrors: { schoolId: ["مدرسه را انتخاب کنید."] } }, "مدرسه را انتخاب کنید.");
+    if (!input.schoolId) throw validation({ fieldErrors: { schoolId: [pickMessage("مدرسه")] } }, pickMessage("مدرسه"));
     assertSchoolInScope(scope, input.schoolId);
     const res = await createBranch(tx, ctx, { schoolId: input.schoolId, name: input.name, address: input.address ?? null, isDefault: input.isDefault });
     return { id: res.branchId };
@@ -341,7 +349,7 @@ export const yearResource = defineResource<YearRow, z.output<typeof YearInput>>(
     return { rows, total: n };
   },
   async create(tx, ctx, scope, input) {
-    if (!input.schoolId) throw validation({ fieldErrors: { schoolId: ["مدرسه را انتخاب کنید."] } }, "مدرسه را انتخاب کنید.");
+    if (!input.schoolId) throw validation({ fieldErrors: { schoolId: [pickMessage("مدرسه")] } }, pickMessage("مدرسه"));
     assertSchoolInScope(scope, input.schoolId);
     const mid = midpoint(input.startsOn, input.endsOn);
     const res = await createAcademicYear(tx, ctx, {
@@ -515,7 +523,7 @@ interface GradeRow {
   classes: number;
 }
 
-const GradeInput = z.object({ educationLevelId: uuid, name: name("نام پایه"), code: code.optional(), sequence }).strict();
+const GradeInput = z.object({ educationLevelId: requiredRef("مقطع"), name: name("نام پایه"), code: code.optional(), sequence }).strict();
 
 export const gradeResource = defineResource<GradeRow, z.output<typeof GradeInput>>({
   key: "grades",
@@ -646,7 +654,7 @@ const ClassInput = z
   .object({
     branchId: optionalRef,
     academicYearId: optionalRef,
-    gradeLevelId: uuid,
+    gradeLevelId: requiredRef("پایه"),
     name: name("نام کلاس"),
     capacity: optionalInt(1, 200, "ظرفیت"),
   })
@@ -706,7 +714,10 @@ export const classResource = defineResource<ClassRow, z.output<typeof ClassInput
   list: (tx, _ctx, scope, opts) => listClassRows(tx, scope, opts),
   async create(tx, ctx, scope, input) {
     if (!input.branchId || !input.academicYearId) {
-      throw validation({ fieldErrors: { [input.branchId ? "academicYearId" : "branchId"]: ["انتخاب کنید."] } }, "مدرسه/شعبه و سال تحصیلی را انتخاب کنید.");
+      const fieldErrors: Record<string, string[]> = {};
+      if (!input.branchId) fieldErrors.branchId = [pickMessage("مدرسه / شعبه")];
+      if (!input.academicYearId) fieldErrors.academicYearId = [pickMessage("سال تحصیلی")];
+      throw validation({ fieldErrors }, fieldErrors.branchId?.[0] ?? fieldErrors.academicYearId[0]);
     }
     assertSchoolInScope(scope, await schoolIdOfBranch(tx, input.branchId));
     // The year is checked against the scope as well: an unknown id and another school's year look the same (NOT_FOUND).
@@ -806,7 +817,7 @@ const OfferingInput = z
   })
   .strict();
 
-const OFFERING_FIELD_MESSAGES = { subjectId: "درس را انتخاب کنید.", termId: "نوبت را انتخاب کنید." } as const;
+const OFFERING_FIELD_MESSAGES = { subjectId: pickMessage("درس"), termId: pickMessage("نوبت") } as const;
 
 const OFFERING_STATUS: Record<string, string> = { active: "فعال", planned: "برنامه‌ریزی‌شده", closed: "پایان‌یافته" };
 
@@ -957,8 +968,15 @@ export const RESOURCES: Record<string, AnyResourceDef> = Object.fromEntries(
 
 export const RESOURCE_KEYS = Object.keys(RESOURCES) as [string, ...string[]];
 
-/** Admin sub-navigation, in onboarding order. */
-export const ADMIN_NAV: Array<{ href: string; labelFa: string }> = [
+export interface AdminNavItem {
+  href: string;
+  labelFa: string;
+  /** Organization admins only («راه‌اندازی»: school setup belongs to whoever defines schools — the owner's rule). */
+  orgOnly?: boolean;
+}
+
+/** Admin sub-navigation, in onboarding order. `adminNavFor` filters it for the caller. */
+export const ADMIN_NAV: readonly AdminNavItem[] = [
   { href: "/admin", labelFa: "نمای کلی" },
   { href: "/admin/schools", labelFa: "مدرسه‌ها" },
   { href: "/admin/years", labelFa: "سال‌ها" },
@@ -969,5 +987,11 @@ export const ADMIN_NAV: Array<{ href: string; labelFa: string }> = [
   { href: "/admin/students", labelFa: "دانش‌آموزان" },
   { href: "/admin/staff", labelFa: "کارکنان" },
   { href: "/admin/roles", labelFa: "نقش‌ها" },
-  { href: "/admin/onboarding", labelFa: "راه‌اندازی" },
+  { href: "/admin/onboarding", labelFa: "راه‌اندازی", orgOnly: true },
 ];
+
+/** The sub-navigation a caller sees: school-scoped admins (principal, vice principal) lose the organization-only entries. */
+export function adminNavFor(assignments: readonly Assignment[]): AdminNavItem[] {
+  const org = isOrganizationAdmin(assignments);
+  return ADMIN_NAV.filter((item) => !item.orgOnly || org);
+}

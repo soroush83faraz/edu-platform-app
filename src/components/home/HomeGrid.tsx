@@ -22,14 +22,15 @@ export async function HomeGrid({ ctx }: { ctx: Ctx }) {
   const hats = await hatsQuery();
   const isStudent = hats.ok && hats.data.isStudent;
   const isTeacher = hats.ok && hats.data.teachingOfferings.length > 0;
-  const isAdmin = hats.ok && hats.data.adminScope !== null;
-  const tiles = homeTilesFor({ isStudent, isTeacher, isAdmin }, has);
+  const adminScope = hats.ok ? hats.data.adminScope : null;
+  const isAdmin = adminScope !== null;
+  const tiles = homeTilesFor({ isStudent, isTeacher, isAdmin, adminScope }, has);
 
-  // One admin read serves both the onboarding badge and the «مدرسه در یک نگاه» card.
+  // One admin read serves both the onboarding badge (organization admins only) and the «مدرسه در یک نگاه» card.
   const counts = isAdmin
     ? await adminOverviewQuery().then((r) => (r.ok ? r.data.counts : null))
     : null;
-  const onboarding = counts ? onboardingProgress(counts) : null;
+  const onboarding = counts && adminScope === "organization" ? onboardingProgress(counts) : null;
 
   return (
     <>

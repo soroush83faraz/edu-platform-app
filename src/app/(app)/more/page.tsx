@@ -7,8 +7,8 @@ import { requireContext } from "@/lib/ctx";
 import { formatLoginIdentifierFa, formatNumberFa } from "@/lib/format";
 import { UPCOMING_MODULES } from "@/lib/modules-registry";
 import { myLoginIdentifierQuery } from "@/lib/profile-queries";
-import { logoutAction, logoutAllAction } from "@/modules/iam/actions";
-import { canAtAnyScope } from "@/modules/iam/can";
+import { logoutAction } from "@/modules/iam/actions";
+import { canAtAnyScope, isOrganizationAdmin } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "بیشتر | سامانهٴ مدرسه" };
 
@@ -35,6 +35,8 @@ export default async function MorePage() {
   const loginIdentifier = login.ok ? login.data : null;
   const teaching = ctx.assignments.filter((a) => a.roleCode === "teacher").length;
   const isAdmin = canAtAnyScope(ctx.assignments, "iam.admin.access");
+  // School setup belongs to whoever defines schools — the organization admin (owner's rule, docs/admin.md).
+  const isOrgAdmin = isOrganizationAdmin(ctx.assignments);
 
   return (
     <div className="reveal-stagger flex flex-col gap-6 px-4 pt-5 pb-6 md:pt-8">
@@ -69,7 +71,7 @@ export default async function MorePage() {
         <nav aria-label="مدیریت">
           <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
             <MoreLink href="/admin" icon={Settings2} label="مدیریت مدرسه" hint="ساختار، افراد، حساب‌ها" />
-            <MoreLink href="/admin/onboarding" icon={Rocket} label="راه‌اندازی مدرسه" />
+            {isOrgAdmin ? <MoreLink href="/admin/onboarding" icon={Rocket} label="راه‌اندازی مدرسه" /> : null}
           </ul>
         </nav>
       ) : null}
@@ -83,10 +85,11 @@ export default async function MorePage() {
         </ul>
       </nav>
 
+      {/* Only «خروج» for now (owner, QA round 2): «خروج از همهٴ دستگاه‌ها» is unmounted; `logoutAllAction` /
+          `revokeAllForUser` stay for the service paths (password change, admin reset, `pnpm sessions:revoke`). */}
       <nav aria-label="خروج">
         <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
           <LogoutButton action={logoutAction} label="خروج" mark="device" />
-          <LogoutButton action={logoutAllAction} label="خروج از همهٴ دستگاه‌ها" mark="devices" />
         </ul>
       </nav>
     </div>

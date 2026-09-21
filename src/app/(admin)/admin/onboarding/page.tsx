@@ -1,7 +1,7 @@
 import { Check, ChevronLeft, CircleDashed } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { cn } from "cn";
 import { AdminHeader } from "@/components/admin/AdminPage";
 import { onboardingSteps } from "@/lib/admin/onboarding";
@@ -10,13 +10,19 @@ import { formatNumberFa } from "@/lib/format";
 
 export const metadata: Metadata = { title: "راه‌اندازی مدرسه | سامانهٴ مدرسه" };
 
-/** /admin/onboarding — what is done and what is missing before students can log in on ۱ مهر. */
+/**
+ * /admin/onboarding — what is done and what is missing before students can log in on ۱ مهر. Organization admins
+ * only (owner's rule: whoever defines schools sets them up); a school-scoped admin who types the URL gets the
+ * Persian not-found page like every other organization-only page — the scope comes from the database
+ * (`adminOverviewQuery().scope`), not from the hidden tile or nav entry.
+ */
 export default async function OnboardingPage() {
   const result = await adminOverviewQuery();
   if (!result.ok) {
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     redirect("/home");
   }
+  if (result.data.scope.kind !== "organization") notFound();
   const list = onboardingSteps(result.data.counts);
   const done = list.filter((s) => s.done).length;
   return (

@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { SelectNative } from "@/components/ui/select-native";
 import { Textarea } from "@/components/ui/textarea";
 import { flatten } from "@/lib/form-errors";
-import { formatJalaliNumeric, formatNumberFa, parseJalaliToInstant } from "@/lib/format";
+import { formatJalaliNumeric, formatNumberFa, parseJalaliToInstant, toFaDigits } from "@/lib/format";
 import { createWorkItemAction, offeringRosterQuery, searchPersonsQuery } from "../actions";
 import type { OfferingRow, PersonHit, RosterRow } from "../repo";
 
@@ -299,7 +299,7 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
                             </bdi>
                           </span>
                           <bdi dir="ltr" className="tabular text-xs text-text-faint">
-                            {s.studentNumber}
+                            {toFaDigits(s.studentNumber)}
                           </bdi>
                         </label>
                       </li>

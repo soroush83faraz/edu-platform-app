@@ -2,7 +2,7 @@
 
 import { Pencil, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useId, useState, useTransition } from "react";
+import { useId, useReducer, useTransition } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
@@ -12,10 +12,10 @@ import { SelectNative } from "@/components/ui/select-native";
 import { adminResourceMutate } from "@/lib/admin/actions";
 import { newLabelFa, type FormField, type SelectOption } from "@/lib/admin/defineResource";
 import { flatten } from "@/lib/form-errors";
-import { toAsciiDigits } from "@/lib/normalize";
+import { CLOSED_SESSION, formSessionReducer, serialize, type FormValue } from "./resource-form-state";
 import { ResponsiveModal } from "./ResponsiveModal";
 
-export type FormValue = string | number | boolean | null;
+export type { FormValue };
 
 export { flatten };
 
@@ -33,20 +33,22 @@ export interface ResourceFormProps {
   trigger?: "button" | "icon";
 }
 
-/** Generic create/edit form driven by `formFields`; submits through the one admin action and refreshes the page. */
+/**
+ * Generic create/edit form driven by `formFields`; submits through the one admin action and refreshes the page.
+ * State lives in `formSessionReducer` (resource-form-state.ts): the values are seeded from `initial` when the
+ * dialog OPENS, so after a save (close → `router.refresh()` → fresh props) the next open shows the saved row, and
+ * «انصراف» / Escape / the overlay drop edits and errors alike (QA round 2, MAJOR).
+ */
 export function ResourceForm({ resource, labelFa, fields, options, mode, id, initial, fixed, trigger = "button" }: ResourceFormProps) {
   const router = useRouter();
   const ids = useId();
-  const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [{ open, values, errors }, dispatch] = useReducer(formSessionReducer, CLOSED_SESSION);
   const visible = fields.filter((f) => mode === "create" || !f.createOnly);
-  const [values, setValues] = useState<Record<string, FormValue>>(() => defaults(visible, initial));
 
-  const reset = () => {
-    setValues(defaults(visible, initial));
-    setErrors({});
-  };
+  // `initial` is read HERE, from the props of the render that handles the click — never from a stale closure.
+  const openForm = () => dispatch({ type: "open", fields: visible, initial });
+  const closeForm = () => dispatch({ type: "close" });
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -56,12 +58,11 @@ export function ResourceForm({ resource, labelFa, fields, options, mode, id, ini
       const r = await adminResourceMutate({ resource, op: mode === "create" ? "create" : "update", id, data });
       if (r.ok) {
         toast.success(mode === "create" ? `${labelFa} ثبت شد.` : "تغییرات ذخیره شد.");
-        setOpen(false);
-        reset();
+        closeForm();
         router.refresh();
         return;
       }
-      setErrors(flatten(r.fieldErrors, r.message, visible.map((f) => f.name)));
+      dispatch({ type: "errors", errors: flatten(r.fieldErrors, r.message, visible.map((f) => f.name)) });
     });
   };
 
@@ -69,32 +70,25 @@ export function ResourceForm({ resource, labelFa, fields, options, mode, id, ini
   return (
     <>
       {trigger === "icon" ? (
-        <Button type="button" variant="ghost" size="icon" aria-label={title} onClick={() => setOpen(true)} className="size-11 md:size-9">
+        <Button type="button" variant="ghost" size="icon" aria-label={title} onClick={openForm} className="size-11 md:size-9">
           <Pencil className="size-4" aria-hidden />
         </Button>
       ) : (
-        <Button type="button" onClick={() => setOpen(true)}>
+        <Button type="button" onClick={openForm}>
           <Plus className="size-4" aria-hidden />
           {title}
         </Button>
       )}
-      <ResponsiveModal
-        open={open}
-        onOpenChange={(o) => {
-          setOpen(o);
-          if (!o) reset();
-        }}
-        title={title}
-      >
+      <ResponsiveModal open={open} onOpenChange={(o) => (o ? openForm() : closeForm())} title={title}>
         <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
           {visible.map((f) => (
-            <Field key={f.name} field={f} id={`${ids}-${f.name}`} value={values[f.name]} error={errors[f.name]} options={f.options ?? (f.optionsKey ? options[f.optionsKey] ?? [] : [])} onChange={(v) => setValues((prev) => ({ ...prev, [f.name]: v }))} />
+            <Field key={f.name} field={f} id={`${ids}-${f.name}`} value={values[f.name]} error={errors[f.name]} options={f.options ?? (f.optionsKey ? options[f.optionsKey] ?? [] : [])} onChange={(v) => dispatch({ type: "change", name: f.name, value: v })} />
           ))}
           <p role="alert" className={cn("text-sm text-danger", !errors.form && "hidden")}>
             {errors.form}
           </p>
           <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={closeForm}>
               انصراف
             </Button>
             <Button type="submit" className="min-w-28" disabled={pending}>
@@ -105,35 +99,6 @@ export function ResourceForm({ resource, labelFa, fields, options, mode, id, ini
       </ResponsiveModal>
     </>
   );
-}
-
-function defaults(fields: FormField[], initial?: Record<string, FormValue>): Record<string, FormValue> {
-  const out: Record<string, FormValue> = {};
-  for (const f of fields) {
-    const v = initial?.[f.name];
-    if (v !== undefined) out[f.name] = v;
-    else if (f.type === "toggle") out[f.name] = f.name === "withTerms";
-    else if (f.type === "select") out[f.name] = f.options?.[0]?.value ?? "";
-    else out[f.name] = "";
-  }
-  return out;
-}
-
-/** Form value → what the strict Zod schema expects: trimmed strings, real numbers (null when empty), booleans. */
-function serialize(field: FormField, value: FormValue): unknown {
-  switch (field.type) {
-    case "toggle":
-      return value === true;
-    case "number": {
-      if (value === null || value === undefined || value === "") return null;
-      const n = Number(toAsciiDigits(String(value)).replace(/[٬,\s]/g, ""));
-      return Number.isFinite(n) ? n : String(value);
-    }
-    case "select":
-      return value === "" || value === null ? (field.required ? "" : null) : String(value);
-    default:
-      return value === null ? "" : String(value).trim();
-  }
 }
 
 export function Field({

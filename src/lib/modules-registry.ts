@@ -309,6 +309,18 @@ export const UPCOMING_MODULES = MODULES.filter((m) => m.phase > 1);
 /** Who sees a tile: a hat derived by `getHats` (student profile, teaching offerings, admin scope). */
 export type TileRole = "student" | "teacher" | "admin";
 
+/** The admin hat's reach (`getAdminScope().kind`): the whole organization, or the caller's schools. */
+export type TileAdminScope = "organization" | "school";
+
+/** What `homeTilesFor` needs to know about the person — computed once by `HomeGrid` from `getHats`. */
+export interface TileHats {
+  isStudent: boolean;
+  isTeacher: boolean;
+  isAdmin: boolean;
+  /** null when the person wears no admin hat. */
+  adminScope: TileAdminScope | null;
+}
+
 /** Live numbers a tile may carry — today only the school-onboarding progress (unread counts live on the nav). */
 export type TileBadge = "onboarding";
 
@@ -322,6 +334,11 @@ export interface HomeTile {
   role: TileRole;
   /** Shown only when the person holds it at any scope (the hat alone is not enough for admin tiles). */
   permission?: Permission;
+  /**
+   * Admin tiles only: shown to this admin scope alone. «راه‌اندازی مدرسه» is `organization` — the owner's rule: only
+   * the organization admin defines schools, so school setup is theirs; principals and vice principals never see it.
+   */
+  adminScope?: TileAdminScope;
   badge?: TileBadge;
   /** The glyph implies a direction (send, arrows) and must flip in RTL. */
   mirror?: boolean;
@@ -419,6 +436,7 @@ export const HOME_TILES: readonly HomeTile[] = [
     icon: Rocket,
     role: "admin",
     permission: "iam.admin.access",
+    adminScope: "organization",
     badge: "onboarding",
   },
   {
@@ -431,9 +449,12 @@ export const HOME_TILES: readonly HomeTile[] = [
   },
 ];
 
-/** The tiles a person with these hats sees, in grid order. `has` answers «holds this permission at any scope?». */
+/**
+ * The tiles a person with these hats sees, in grid order. `has` answers «holds this permission at any scope?»;
+ * a tile with `adminScope` additionally needs the admin hat to reach that far (`hats.adminScope`).
+ */
 export function homeTilesFor(
-  hats: { isStudent: boolean; isTeacher: boolean; isAdmin: boolean },
+  hats: TileHats,
   has: (p: Permission) => boolean,
 ): HomeTile[] {
   const wears = (role: TileRole) =>
@@ -441,7 +462,10 @@ export function homeTilesFor(
     (role === "teacher" && hats.isTeacher) ||
     (role === "admin" && hats.isAdmin);
   return HOME_TILES.filter(
-    (t) => wears(t.role) && (!t.permission || has(t.permission)),
+    (t) =>
+      wears(t.role) &&
+      (!t.permission || has(t.permission)) &&
+      (!t.adminScope || hats.adminScope === t.adminScope),
   );
 }
 

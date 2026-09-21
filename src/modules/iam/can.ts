@@ -143,3 +143,13 @@ export const BROAD_SCOPE_TYPES: readonly ScopeType[] = ["organization", "school"
 export function canBroadly(assignments: readonly Assignment[], permission: Permission): boolean {
   return assignments.some((a) => BROAD_SCOPE_TYPES.includes(a.scopeType) && a.permissions.includes(permission));
 }
+
+/**
+ * The organization admin hat: an ORGANIZATION-scoped assignment carrying `iam.admin.access` — the pure half of
+ * `getAdminScope` (`{ kind: "organization" }`), for surfaces that must not query: the Home tile registry, the admin
+ * sub-navigation and the «بیشتر» rows hide the organization-only entries («راه‌اندازی مدرسه») from principals and
+ * vice principals with it. Pages still decide from the database-derived scope (`adminOverviewQuery().scope`).
+ */
+export function isOrganizationAdmin(assignments: readonly Assignment[]): boolean {
+  return assignments.some((a) => a.scopeType === "organization" && a.permissions.includes("iam.admin.access"));
+}

@@ -4,9 +4,11 @@ import { cn } from "cn";
 /**
  * Shades of the clay mark (`.clay-icon[data-shade]` in globals.css): `blue` — the one persian blue of every live
  * mark; `yellow` — the one action («کار جدید», high priority; navy glyph); `grey` — a cool navy-tinted grey for
- * «به‌زودی» and closed / low-priority rows. Marks differ by glyph and label, never by a different blue.
+ * «به‌زودی» and closed / low-priority rows; `danger` — the ONE red action, the two «خروج» rows of «بیشتر»
+ * (owner's rule: red marks nothing else — urgency stays on text and chips). Marks differ by glyph and label,
+ * never by a different blue.
  */
-export type ClayShade = "blue" | "yellow" | "grey";
+export type ClayShade = "blue" | "yellow" | "grey" | "danger";
 
 /**
  * Mark sizes: compact rows 36, list rows and the «امروز» strip 40, detail facts 48, 56, and the Home tile — 68 px on

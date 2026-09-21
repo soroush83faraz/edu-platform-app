@@ -12,7 +12,7 @@ import { staffProfile, teacherAssignment } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import type { ResourceCtx } from "@/lib/admin/defineResource";
 import { mutateResource } from "@/lib/admin/mutate";
-import { RESOURCES } from "@/lib/admin/resources";
+import { ADMIN_NAV, RESOURCES, adminNavFor } from "@/lib/admin/resources";
 import type { Assignment } from "@/modules/iam/can";
 import { PERMISSIONS } from "@/modules/iam/permissions";
 import * as f from "./fixtures";
@@ -72,6 +72,19 @@ describe("B1 — offering edit through the mutation path", () => {
   });
 });
 
+describe("admin sub-navigation (owner's rule, QA round 2): «راه‌اندازی» is for the organization admin only", () => {
+  const orgAdmin: Assignment = { roleCode: "org_admin", roleId: "r-org", scopeType: "organization", scopeId: f.ORG_A, permissions: ALL };
+  it("school-scoped admins lose the organization-only entries; the organization admin keeps the whole list", () => {
+    expect(adminNavFor([orgAdmin]).map((i) => i.href)).toEqual(ADMIN_NAV.map((i) => i.href));
+    for (const assignments of [[principalOf(f.SCHOOL_A)], [viceOf(f.SCHOOL_A)]]) {
+      const hrefs = adminNavFor(assignments).map((i) => i.href);
+      expect(hrefs).not.toContain("/admin/onboarding");
+      expect(hrefs).toEqual(ADMIN_NAV.filter((i) => !i.orgOnly).map((i) => i.href));
+    }
+    expect(ADMIN_NAV.filter((i) => i.orgOnly).map((i) => i.href)).toEqual(["/admin/onboarding"]);
+  });
+});
+
 /** Required top-level keys of a strict object schema (a key is optional when `undefined` parses). */
 function requiredKeys(schema: z.ZodType): string[] {
   const shape = (schema as unknown as { shape?: Record<string, z.ZodType> }).shape;
@@ -102,5 +115,40 @@ describe("every admin resource: edit payload ⊆ schema (no required key the edi
     expect(messages(null)).toEqual([]);
     const r = RESOURCES.offerings!.schema.safeParse({ ...editPayload(null), weeklyHours: "abc" });
     expect(r.success ? [] : r.error.issues.map((i) => i.message)).toEqual(["ساعت در هفته باید عدد باشد."]);
+  });
+
+  /** What a required `<select>` left on «انتخاب کنید…» sends (`serialize`: `""` for a required select). */
+  const issuesFor = (resource: string, data: Record<string, unknown>) => {
+    const r = RESOURCES[resource]!.schema.safeParse(data);
+    return r.success ? {} : Object.fromEntries(r.error.issues.map((i) => [i.path.join("."), i.message]));
+  };
+
+  it("QA round 2: every required select on an edit form names itself when left empty — «پایه را انتخاب کنید.», «مقطع را انتخاب کنید.»", () => {
+    expect(issuesFor("classes", { gradeLevelId: "", name: "۱۰/۳", capacity: null })).toEqual({ gradeLevelId: "پایه را انتخاب کنید." });
+    expect(issuesFor("classes", { gradeLevelId: null, name: "۱۰/۳", capacity: null })).toEqual({ gradeLevelId: "پایه را انتخاب کنید." });
+    expect(issuesFor("classes", { gradeLevelId: "not-a-uuid", name: "۱۰/۳", capacity: null })).toEqual({ gradeLevelId: "شناسه نامعتبر است." });
+    expect(issuesFor("grades", { educationLevelId: "", name: "دهم", code: "G10", sequence: 1 })).toEqual({ educationLevelId: "مقطع را انتخاب کنید." });
+    // Every required select that the schema itself validates (not create-only) refuses "" with a «… را انتخاب کنید.» message.
+    for (const def of Object.values(RESOURCES)) {
+      for (const field of def.formFields.filter((x) => x.type === "select" && x.required && !x.createOnly && !x.options)) {
+        const r = def.schema.safeParse({ [field.name]: "" });
+        const issue = r.success ? undefined : r.error.issues.find((i) => i.path[0] === field.name);
+        expect(issue?.message, `${def.key}.${field.name}`).toBe(`${field.labelFa} را انتخاب کنید.`);
+      }
+    }
+  });
+
+  it("QA round 2: the empty class create names the create-only selects too («مدرسه / شعبه», «سال تحصیلی»)", async () => {
+    await rolledBack(async (tx) => {
+      const principal = ctxOf(principalOf(f.SCHOOL_A));
+      const base = { gradeLevelId: f.GRADE_A, name: "۱۰/۹", capacity: null };
+      await expect(mutateResource(tx, principal, { resource: "classes", op: "create", data: { ...base, branchId: "", academicYearId: "" } })).rejects.toSatisfy(
+        (e: unknown) => AppError.is(e) && e.code === "VALIDATION" && JSON.stringify(e.details) === JSON.stringify({ fieldErrors: { branchId: ["مدرسه / شعبه را انتخاب کنید."], academicYearId: ["سال تحصیلی را انتخاب کنید."] } }),
+      );
+      await expect(mutateResource(tx, principal, { resource: "classes", op: "create", data: { ...base, branchId: f.BRANCH_A, academicYearId: "" } })).rejects.toSatisfy(
+        (e: unknown) => AppError.is(e) && e.code === "VALIDATION" && e.message === "سال تحصیلی را انتخاب کنید.",
+      );
+      throw new Rollback();
+    });
   });
 });
