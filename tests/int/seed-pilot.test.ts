@@ -11,7 +11,7 @@ import * as schema from "@/db/schema";
 import { withTenant } from "@/db/client";
 import { runMigrations } from "../../scripts/migrate";
 import { seedCatalog } from "../../scripts/seed";
-import { ALLAMEH, FARZANEGAN, expectedCounts, pilotCounts, pilotId, pilotPhone, seedPilot } from "../../scripts/seed-pilot";
+import { ALLAMEH, FARZANEGAN, expectedCounts, pilotCounts, pilotId, pilotPhone, resetPilot, seedPilot } from "../../scripts/seed-pilot";
 import { OWNER_URL } from "./env";
 import { dropAppSchemas, seed } from "./global-setup";
 import { asAppRw } from "./helpers";
@@ -61,6 +61,23 @@ describe("seed:pilot", () => {
         [pilotPhone(ALLAMEH.phoneBlock, 1)],
       );
       expect(admin.rows).toEqual([{ must_change_password: false, n: "0" }]);
+
+      // --reset removes exactly the three pilot organizations (tenant rows, organizations, orphaned global accounts);
+      // the fixture organizations A/B stay; a fresh seed afterwards rebuilds identical counts.
+      const before = await pool.query<{ n: string }>("select count(*) as n from tenancy.organization");
+      const reset = await resetPilot(db);
+      expect(reset.organizations).toBe(3);
+      expect(reset.deleted["tenancy.organization"]).toBe(3);
+      expect(reset.deleted["iam.user_account"]).toBe(first.accounts);
+      expect(await pilotCounts(db)).toMatchObject({ organizations: 0, students: 0, workItems: 0, notifications: 0 });
+      const after = await pool.query<{ n: string }>("select count(*) as n from tenancy.organization");
+      expect(Number(after.rows[0].n)).toBe(Number(before.rows[0].n) - 3);
+      const gone = await pool.query<{ n: string }>("select count(*) as n from iam.user_account where login_identifier like '+98935%'");
+      expect(gone.rows[0].n).toBe("0");
+      expect(await resetPilot(db)).toEqual({ organizations: 0, deleted: {} });
+      const run3 = await seedPilot(db, { scale: SCALE, password: "Pilot-test-pass" });
+      expect(run3.summaries.reduce((n, s) => n + s.counts.createdAccounts, 0)).toBe(first.accounts);
+      expect(await pilotCounts(db)).toEqual(first);
     } finally {
       await pool.end();
     }

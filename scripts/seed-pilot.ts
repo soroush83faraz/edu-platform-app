@@ -3,6 +3,9 @@
 // staff todos, admin tasks) — so the product can be exercised with many users and cross-tenant isolation.
 //
 //   pnpm seed:pilot                      (runs the catalog seed first; refuses in production unless SEED_ALLOW=1)
+//   pnpm seed:pilot --reset              (deletes ONLY the three pilot organizations — every tenant row of
+//                                         allameh/farzanegan/helli plus their global accounts, identities and
+//                                         sessions — prints the counts, then re-seeds; other organizations untouched)
 //   PILOT_PASSWORD=…  one shared password for every pilot account (default Pilot-1405-pass; must_change_password = false)
 //   PILOT_SCALE=0.2   fewer students per class / tasks per teacher (the int test uses it)
 //
@@ -846,6 +849,97 @@ export async function pilotCounts(db: Db): Promise<PilotCounts> {
   return totals;
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// reset (--reset): wipe the three pilot organizations and nothing else
+// ---------------------------------------------------------------------------------------------------------------
+
+export interface PilotResetResult {
+  /** Pilot organizations found and removed (0–3). */
+  organizations: number;
+  /** Rows deleted per `schema.table`, tenant tables first, then the global account rows. Zero-count tables omitted. */
+  deleted: Record<string, number>;
+}
+
+/**
+ * Tenant tables of the app schemas (every table with an `organization_id` column), ordered so that a table is
+ * deleted before any table it references — Kahn's algorithm over the FK graph, self-references ignored (phase 1
+ * never sets `work_item.parent_work_item_id`).
+ */
+async function tenantTablesInDeleteOrder(db: Db): Promise<string[]> {
+  const tables = await db.execute<{ t: string }>(sql`
+    select c.table_schema || '.' || c.table_name as t
+    from information_schema.columns c
+    join information_schema.tables tb on tb.table_schema = c.table_schema and tb.table_name = c.table_name and tb.table_type = 'BASE TABLE'
+    where c.column_name = 'organization_id'
+      and c.table_schema in ('tenancy','iam','academic','workspace','notif','files','audit','config','integ')
+    order by 1`);
+  const names = new Set(tables.rows.map((r) => r.t));
+  const edges = await db.execute<{ child: string; parent: string }>(sql`
+    select ns.nspname || '.' || cl.relname as child, pns.nspname || '.' || pcl.relname as parent
+    from pg_constraint co
+    join pg_class cl on cl.oid = co.conrelid join pg_namespace ns on ns.oid = cl.relnamespace
+    join pg_class pcl on pcl.oid = co.confrelid join pg_namespace pns on pns.oid = pcl.relnamespace
+    where co.contype = 'f'`);
+  // parent → children that reference it; a table is deletable once every child is gone.
+  const remaining = new Map<string, Set<string>>();
+  for (const t of names) remaining.set(t, new Set());
+  for (const e of edges.rows) if (e.child !== e.parent && names.has(e.child) && names.has(e.parent)) remaining.get(e.parent)!.add(e.child);
+  const order: string[] = [];
+  const done = new Set<string>();
+  while (done.size < names.size) {
+    const ready = [...names].filter((t) => !done.has(t) && [...remaining.get(t)!].every((c) => done.has(c))).sort();
+    if (ready.length === 0) throw new Error(`pilot reset: FK cycle among ${[...names].filter((t) => !done.has(t)).join(", ")}`);
+    for (const t of ready) {
+      order.push(t);
+      done.add(t);
+    }
+  }
+  return order;
+}
+
+/**
+ * Deletes everything of the three pilot organizations: every row with their `organization_id` (children before
+ * parents, under the tenant context so FORCE RLS lets app_owner see them), then the organizations themselves, then
+ * the global `user_session` / `auth_identity` / `user_account` rows of accounts that no longer hold any membership.
+ * Organizations with other slugs (the demo, a real customer) are never touched.
+ */
+export async function resetPilot(db: Db): Promise<PilotResetResult> {
+  const orgs = await db.select({ id: organization.id, slug: organization.slug }).from(organization).where(inArray(organization.slug, PILOT_ORGS.map((o) => o.slug)));
+  const deleted: Record<string, number> = {};
+  const add = (key: string, n: number) => {
+    if (n > 0) deleted[key] = (deleted[key] ?? 0) + n;
+  };
+  if (orgs.length === 0) return { organizations: 0, deleted };
+  const order = await tenantTablesInDeleteOrder(db);
+  const accountIds = new Set<string>();
+  for (const org of orgs) {
+    await withOrg(db, org.id, async (tx) => {
+      const members = await tx.execute<{ id: string }>(sql`select user_account_id as id from iam.organization_membership where organization_id = ${org.id}::uuid`);
+      for (const m of members.rows) accountIds.add(m.id);
+      for (const t of order) {
+        const res = await tx.execute(sql`delete from ${sql.raw(t)} where organization_id = ${org.id}::uuid`);
+        add(t, res.rowCount ?? 0);
+      }
+      const res = await tx.execute(sql`delete from tenancy.organization where id = ${org.id}::uuid`);
+      add("tenancy.organization", res.rowCount ?? 0);
+    });
+  }
+  if (accountIds.size > 0) {
+    const ids = [...accountIds];
+    await db.transaction(async (tx) => {
+      // Only accounts with no membership left anywhere (pilot phones live in their own blocks, so that is all of them).
+      const orphan = sql`id = any(${sql.param(ids, undefined)}::uuid[]) and not exists (select 1 from iam.organization_membership m where m.user_account_id = iam.user_account.id)`;
+      const sessions = await tx.execute(sql`delete from iam.user_session where user_account_id in (select id from iam.user_account where ${orphan})`);
+      add("iam.user_session", sessions.rowCount ?? 0);
+      const identities = await tx.execute(sql`delete from iam.auth_identity where user_account_id in (select id from iam.user_account where ${orphan})`);
+      add("iam.auth_identity", identities.rowCount ?? 0);
+      const accounts = await tx.execute(sql`delete from iam.user_account where ${orphan}`);
+      add("iam.user_account", accounts.rowCount ?? 0);
+    });
+  }
+  return { organizations: orgs.length, deleted };
+}
+
 export interface SeedPilotResult {
   summaries: SchoolSummary[];
   password: string;
@@ -933,9 +1027,15 @@ async function main(): Promise<void> {
   }
   const connectionString = process.env.MIGRATION_DATABASE_URL;
   if (!connectionString) throw new Error("MIGRATION_DATABASE_URL is not set (see .env.example)");
+  const reset = process.argv.includes("--reset");
   const pool = new Pool({ connectionString, max: 1 });
   try {
     const db = drizzle({ client: pool, schema });
+    if (reset) {
+      const r = await resetPilot(db);
+      console.log(`[seed:pilot] --reset: removed ${r.organizations} pilot organization(s)`);
+      for (const [t, n] of Object.entries(r.deleted)) console.log(`  ${t.padEnd(36)} ${n}`);
+    }
     await seedCatalog(db);
     const result = await seedPilot(db);
     printSummary(result);
