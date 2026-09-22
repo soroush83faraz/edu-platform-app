@@ -4,6 +4,8 @@ import Link from "next/link";
 import { cn } from "cn";
 import { IconChip } from "@/components/IconChip";
 import { RocketClay } from "@/components/illustrations";
+import { ContentWidth } from "@/components/layout/ContentWidth";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { PrintButton } from "@/components/admin/PrintButton";
 import { MODULES, PHASES, type ModuleEntry } from "@/lib/modules-registry";
 import { productName } from "@/lib/product";
@@ -16,15 +18,17 @@ const PHASE_ORDER: ModuleEntry["phase"][] = [1, 2, 3, 4];
 export default function RoadmapPage() {
   const name = productName();
   return (
-    <div className="flex flex-col gap-6 px-4 pt-5 pb-8 md:pt-8 print:px-0">
-      <header className="flex items-start gap-4">
-        <RocketClay size={72} className="shrink-0 print:hidden" />
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <h2 className="text-xl font-bold text-text">نقشهٴ راه {name}</h2>
-          <p className="text-sm text-text-muted">این نقشه برای شفافیت مسیر است؛ فاز ۱ اکنون فعال است. نام‌های داخل پرانتز همان واژه‌های برنامهٴ فعلی مدرسه‌اند.</p>
-        </div>
-        <PrintButton className="no-print hidden md:inline-flex" />
-      </header>
+    <ContentWidth size="reading" className="gap-6 print:px-0">
+      <PageHeader
+        title={
+          <span className="flex items-center gap-3">
+            <RocketClay size={56} className="shrink-0 print:hidden" />
+            نقشهٴ راه {name}
+          </span>
+        }
+        description="این نقشه برای شفافیت مسیر است؛ فاز ۱ اکنون فعال است. نام‌های داخل پرانتز همان واژه‌های برنامهٴ فعلی مدرسه‌اند."
+        actions={<PrintButton className="no-print hidden md:inline-flex" />}
+      />
 
       <ol className="flex flex-col gap-5">
         {PHASE_ORDER.map((phase) => {
@@ -62,6 +66,6 @@ export default function RoadmapPage() {
         <Printer className="me-1 inline size-3.5 align-text-bottom" aria-hidden />
         برای چاپ از منوی مرورگر «چاپ» را بزنید؛ صفحه برای کاغذ آماده است.
       </p>
-    </div>
+    </ContentWidth>
   );
 }

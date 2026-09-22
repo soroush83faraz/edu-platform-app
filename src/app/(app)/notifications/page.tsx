@@ -3,6 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/EmptyState";
 import { BellClay } from "@/components/illustrations";
+import { ContentWidth } from "@/components/layout/ContentWidth";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { listNotificationsQuery } from "@/modules/notif/queries";
 import { MarkAllReadButton, NotificationList } from "@/modules/notif/ui/NotificationList";
@@ -21,18 +23,15 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   const hasUnread = rows.some((r) => r.readAt === null);
 
   return (
-    <div className="flex flex-col">
-      <div className="flex items-center justify-between gap-3 px-4 pt-5 pb-3 md:pt-8">
-        <h2 className="text-xl font-bold text-text">اعلان‌ها</h2>
-        {hasUnread ? <MarkAllReadButton disabled={false} /> : null}
-      </div>
+    <ContentWidth className="gap-3">
+      <PageHeader title="اعلان‌ها" actions={hasUnread ? <MarkAllReadButton disabled={false} /> : undefined} />
       {rows.length === 0 ? (
         <EmptyState illustration={<BellClay size={128} />} title="اعلانی ندارید" description="کار جدید، نظر تازه و تغییر وضعیت کارها این‌جا خبر داده می‌شود." />
       ) : (
         <>
           <NotificationList rows={rows} />
           {nextCursor || cursor ? (
-            <div className="flex items-center justify-center gap-3 px-4 py-5">
+            <div className="flex items-center justify-center gap-3 py-5">
               {cursor ? (
                 <Button asChild variant="ghost">
                   <Link href="/notifications">بازگشت به ابتدا</Link>
@@ -47,6 +46,6 @@ export default async function NotificationsPage({ searchParams }: { searchParams
           ) : null}
         </>
       )}
-    </div>
+    </ContentWidth>
   );
 }

@@ -70,21 +70,39 @@
     --color-priority-high: #FFC600;
     --color-priority-urgent: #C0392B;
 
-    /* Type scale 12/14/16/18/22/28/34 with line-heights tuned for Vazirmatn (tall ascenders, generous leading). */
+    /* Type scale (Design v2). Six named roles carry the product — `text-display` 28/34 (desktop page titles, the
+       school name), `text-title` 24/32 (page titles on phones, dashboard numbers), `text-section` 18/28 (section
+       headings), `text-row` 15/24 (list-row titles, table cells), body = `text-sm` 14/24 (the default of `body`),
+       `text-meta` 13/20 (meta lines, hints, table headers). 12 px (`text-xs`) is for pills and badges ONLY.
+       Line-heights are tuned for Vazirmatn (tall ascenders, generous leading). */
     --text-xs: 0.75rem;
     --text-xs--line-height: 1.25rem;
+    --text-meta: 0.8125rem;
+    --text-meta--line-height: 1.25rem;
     --text-sm: 0.875rem;
     --text-sm--line-height: 1.5rem;
+    --text-row: 0.9375rem;
+    --text-row--line-height: 1.5rem;
     --text-base: 1rem;
     --text-base--line-height: 1.75rem;
+    --text-section: 1.125rem;
+    --text-section--line-height: 1.75rem;
     --text-lg: 1.125rem;
     --text-lg--line-height: 1.75rem;
     --text-xl: 1.375rem;
     --text-xl--line-height: 2rem;
+    --text-title: 1.5rem;
+    --text-title--line-height: 2rem;
+    --text-display: 1.75rem;
+    --text-display--line-height: 2.125rem;
     --text-2xl: 1.75rem;
     --text-2xl--line-height: 2.25rem;
     --text-3xl: 2.125rem;
     --text-3xl--line-height: 2.5rem;
+
+    /* Layout: the content column (rail excluded) and the desktop rail. */
+    --container-content: 75rem;
+    --spacing-rail: 16.5rem;
 
     /* Radius family: 12px controls (--radius), 16px cards, 20px the hero; pills for chips. */
     --radius-card: 1rem;
@@ -230,7 +248,9 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-vazir), system-ui, sans-serif;
-    line-height: 1.75;
+    /* Body is 14/24: every unsized run of text (form hints, table cells, paragraphs) reads at the body role. */
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
     -webkit-tap-highlight-color: transparent;
   }
   :where(a, button, [role="button"], input, select, textarea, label) {
@@ -478,6 +498,49 @@
 /* Numbers in lists line up (Vazirmatn ships tnum). */
 @utility tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* ---- Surface roles (Design v2). Three materials say what a block IS, so a page is no longer a stack of identical
+   white cards: `surface-work` — the primary content of the page (a list, a table, a form): white, 16 px, the one
+   blue-tinted shadow. `surface-panel` — a supporting panel (an aside, a stat row, a compact list, the circle behind
+   a row glyph): the sunken tint with a hairline and NO shadow, so it sits IN the page rather than on it.
+   `surface-quiet` — a section that is only a heading and its content: no box at all, a hairline under it (the
+   last one has none). `surface-link` is the hover/press of a whole-surface link on either raised material. ---- */
+@utility surface-work {
+  border-radius: var(--radius-card);
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-1);
+}
+@utility surface-panel {
+  border-radius: var(--radius-card);
+  background-color: var(--color-surface-sunken);
+  border: 1px solid var(--color-line);
+}
+@utility surface-quiet {
+  padding-block-end: 1.25rem;
+  border-block-end: 1px solid var(--color-line);
+  &:last-child {
+    padding-block-end: 0;
+    border-block-end: 0;
+  }
+}
+/* A link that IS a card: lifts one step on hover, settles on press (with `pressable`). Static cards never move. */
+@utility surface-link {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform, translate, scale;
+  transition-duration: var(--duration-base);
+  transition-timing-function: var(--ease-out);
+  @media (hover: hover) {
+    &:hover {
+      box-shadow: 0 1px 2px rgb(7 42 200 / 0.08), 0 12px 28px rgb(7 42 200 / 0.14);
+      translate: 0 -1px;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    &:active {
+      scale: 0.98;
+      translate: 0;
+    }
+  }
 }
 /* Credentials sheets (/admin/…/credentials): A4, RTL, 3×4 cut-out slips per page; the app frame disappears. */
 @media print {

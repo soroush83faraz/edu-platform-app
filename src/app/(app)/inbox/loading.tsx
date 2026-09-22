@@ -1,18 +1,17 @@
+import { ContentWidth } from "@/components/layout/ContentWidth";
 import { ListSkeleton } from "@/components/ListSkeleton";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function InboxLoading() {
   return (
-    <div className="flex flex-col">
-      <div className="px-4 pt-5 pb-3 md:pt-8">
-        <Skeleton className="h-7 w-24" />
+    <ContentWidth className="gap-3">
+      <div className="pt-4 lg:pt-17">
+        <Skeleton className="h-8 w-24" />
       </div>
-      <div className="px-4">
-        <Skeleton className="h-12 w-full rounded-lg" />
-      </div>
-      <div className="mt-6 bg-surface">
+      <Skeleton className="h-14 w-full rounded-2xl sm:h-11" />
+      <div className="surface-work mt-3 overflow-hidden">
         <ListSkeleton rows={6} />
       </div>
-    </div>
+    </ContentWidth>
   );
 }

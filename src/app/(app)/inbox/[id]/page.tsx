@@ -1,10 +1,11 @@
-import { ArrowRight, Ban, CalendarOff, CircleCheck, Clock, Flag, ListTodo, type LucideIcon, Play } from "lucide-react";
+import { Ban, CalendarOff, CircleCheck, Clock, Flag, ListTodo, type LucideIcon, Play } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { cn } from "cn";
 import { Chip, type ChipTone } from "@/components/Chip";
 import { IconChip, type IconChipTone } from "@/components/IconChip";
+import { ContentWidth } from "@/components/layout/ContentWidth";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { PRIORITY_LABELS, priorityChipTone } from "@/components/priority";
 import { RelativeTime } from "@/components/RelativeTime";
 import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
@@ -54,24 +55,23 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
     myAssigneeState && myState && !viewer.isManager ? { ...ASSIGNEE_FACT[myAssigneeState], value: myState.label } : { ...CATEGORY_FACT[item.statusCategory], value: item.statusName };
 
   return (
-    <article className="flex flex-col gap-4 px-4 pt-3 pb-6 md:pt-6">
-      <Link href="/inbox" className="inline-flex min-h-11 items-center gap-1 self-start text-sm text-text-muted hover:text-text">
-        <ArrowRight className="size-4" aria-hidden />
-        پنل من
-      </Link>
-
+    <ContentWidth size="reading" className="gap-4">
+      <PageHeader
+        back={{ href: "/inbox", label: "پنل من" }}
+        title={<bdi>{item.title}</bdi>}
+        description={
+          <>
+            <Chip tone={item.typeCode === "todo" ? "neutral" : "primary"} className="me-1.5 align-middle">
+              {item.typeName}
+            </Chip>
+            از <bdi className="text-text">{creatorName}</bdi>
+            <span aria-hidden> · </span>
+            <RelativeTime at={item.createdAt} mode="time" />
+          </>
+        }
+      />
+      <article className="flex flex-col gap-4">
       <header className="flex flex-col gap-3">
-        <h2 className="text-xl font-bold leading-8 text-text">
-          <bdi>{item.title}</bdi>
-        </h2>
-        <p className="text-sm text-text-muted">
-          <Chip tone={item.typeCode === "todo" ? "neutral" : "primary"} className="me-1.5 align-middle">
-            {item.typeName}
-          </Chip>
-          از <bdi className="text-text">{creatorName}</bdi>
-          <span aria-hidden> · </span>
-          <RelativeTime at={item.createdAt} mode="time" />
-        </p>
 
         {/* The three facts a reader checks before acting — status, priority, due — as chip-led cells in one card. */}
         <dl className="grid grid-cols-3 divide-x divide-line/70 rounded-card bg-surface shadow-1">
@@ -185,7 +185,8 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
           </ol>
         </details>
       ) : null}
-    </article>
+      </article>
+    </ContentWidth>
   );
 }
 

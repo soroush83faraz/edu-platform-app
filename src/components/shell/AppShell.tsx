@@ -7,10 +7,10 @@ import { inboxSummaryQuery } from "@/modules/workspace/queries";
 
 /**
  * The signed-in frame shared by the (app) and (admin) route groups: the summary provider (server-rendered initial
- * counts, one client poller), nav (bottom bar / start rail), the mobile header, and the content column. `wide`
- * widens the column for admin tables.
+ * counts, one client poller), nav (bottom bar / start rail), the mobile header, and the content column; pages cap
+ * their own width with `ContentWidth` (1200 px, or the reading measure).
  */
-export async function AppShell({ ctx, children, wide = false }: { ctx: Ctx; children: React.ReactNode; wide?: boolean }) {
+export async function AppShell({ ctx, children }: { ctx: Ctx; children: React.ReactNode }) {
   const summary = await inboxSummaryQuery();
   const initial = summary.ok ? summary.data : { overdue: 0, dueToday: 0, unread: 0, unreadNotifications: 0 };
   const title = ctx.schoolName ?? ctx.orgName;
@@ -35,7 +35,7 @@ export async function AppShell({ ctx, children, wide = false }: { ctx: Ctx; chil
           </span>
           <p className="truncate text-base font-semibold text-text">{title}</p>
         </header>
-        <main id="main" tabIndex={-1} className={`mx-auto w-full flex-1 pb-24 outline-none md:pb-8 ${wide ? "max-w-5xl" : "max-w-3xl"}`}>
+        <main id="main" tabIndex={-1} className="flex w-full flex-1 flex-col pb-24 outline-none md:pb-8">
           {children}
         </main>
       </div>

@@ -1,29 +1,11 @@
-import { ArrowRight, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatNumberFa } from "@/lib/format";
 
-/** Title row of every admin page: optional back link, title, description, actions on the end side. */
-export function AdminHeader({ title, description, back, actions }: { title: string; description?: string; back?: { href: string; label: string }; actions?: React.ReactNode }) {
-  return (
-    <header className="flex flex-col gap-2">
-      {back ? (
-        <Link href={back.href} className="inline-flex min-h-9 items-center gap-1 self-start text-sm text-text-muted hover:text-text">
-          <ArrowRight className="size-4" aria-hidden />
-          {back.label}
-        </Link>
-      ) : null}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-xl font-bold text-text">{title}</h2>
-          {description ? <p className="mt-1 max-w-prose text-sm text-text-muted">{description}</p> : null}
-        </div>
-        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
-      </div>
-    </header>
-  );
-}
+/** Every admin page's title row is the product's one `PageHeader` (context bar on desktop, title + actions). */
+export { PageHeader as AdminHeader } from "@/components/layout/PageHeader";
 
 /** GET form: `?q=` search that keeps the other query parameters. */
 export function SearchForm({ q, hidden, placeholder = "جست‌وجو…" }: { q: string; hidden?: Record<string, string | undefined>; placeholder?: string }) {

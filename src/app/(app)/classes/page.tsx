@@ -1,11 +1,12 @@
-import { ArrowRight, CalendarDays, Plus, Presentation } from "lucide-react";
+import { CalendarDays, Plus, Presentation } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { cn } from "cn";
 import { EmptyState } from "@/components/EmptyState";
-import { IconChip } from "@/components/IconChip";
 import { BookClay } from "@/components/illustrations";
+import { ContentWidth } from "@/components/layout/ContentWidth";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { TimetableView } from "@/components/timetable/TimetableView";
 import { Button } from "@/components/ui/button";
 import { requireContext } from "@/lib/ctx";
@@ -40,26 +41,21 @@ export default async function ClassesPage() {
     ? [...new Map(teaching.days.flatMap((d) => d.sessions).map((s) => [s.periodNo, { periodNo: s.periodNo, label: s.label, startsAt: s.startsAt, endsAt: s.endsAt }])).values()].sort((a, b) => a.periodNo - b.periodNo)
     : [];
   return (
-    <div className="flex flex-col gap-4 px-4 pt-3 pb-8 md:pt-6">
-      <Link href="/home" className="inline-flex min-h-11 items-center gap-1 self-start text-sm text-text-muted hover:text-text">
-        <ArrowRight className="size-4" aria-hidden />
-        خانه
-      </Link>
-      <div className="flex items-center gap-3">
-        <IconChip icon={Presentation} size="lg" />
-        <div className="flex flex-col">
-          <h2 className="text-xl font-bold leading-8 text-text">کلاس‌های من</h2>
-          <p className="text-sm text-text-muted">{offerings.length > 0 ? `${formatNumberFa(offerings.length)} درس در این سال` : "درسی به شما سپرده نشده"}</p>
-        </div>
-        {canCreate ? (
-          <Button asChild className="ms-auto shrink-0">
-            <Link href="/inbox/new">
-              <Plus aria-hidden />
-              کار جدید
-            </Link>
-          </Button>
-        ) : null}
-      </div>
+    <ContentWidth className="gap-4">
+      <PageHeader
+        title="کلاس‌های من"
+        description={offerings.length > 0 ? `${formatNumberFa(offerings.length)} درس در این سال` : "درسی به شما سپرده نشده"}
+        actions={
+          canCreate ? (
+            <Button asChild>
+              <Link href="/inbox/new">
+                <Plus aria-hidden />
+                کار جدید
+              </Link>
+            </Button>
+          ) : undefined
+        }
+      />
 
       {offerings.length > 0 ? (
         <section aria-labelledby="my-timetable-heading" className="flex flex-col gap-2.5">
@@ -118,6 +114,6 @@ export default async function ClassesPage() {
         </ul>
         </section>
       )}
-    </div>
+    </ContentWidth>
   );
 }

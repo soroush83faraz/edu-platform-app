@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, CalendarDays, School, Users } from "lucide-react";
+import { BookOpen, CalendarDays, School, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -6,6 +6,8 @@ import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { IconChip } from "@/components/IconChip";
 import { SchoolClay } from "@/components/illustrations";
+import { ContentWidth } from "@/components/layout/ContentWidth";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { TimetableView } from "@/components/timetable/TimetableView";
 import { formatNumberFa } from "@/lib/format";
 import { myClassQuery, myTimetableQuery } from "@/modules/academic/queries";
@@ -30,11 +32,17 @@ export default async function MyClassPage() {
   const hasSlots = student ? student.days.some((d) => d.sessions.length > 0) : false;
 
   return (
-    <div className="reveal-stagger flex flex-col gap-5 px-4 pt-3 pb-8 md:pt-6">
-      <Link href="/home" className="inline-flex min-h-11 items-center gap-1 self-start text-sm text-text-muted hover:text-text">
-        <ArrowRight className="size-4" aria-hidden />
-        خانه
-      </Link>
+    <ContentWidth className="reveal-stagger">
+      <PageHeader
+        title="کلاس من"
+        description={
+          cls ? (
+            <>
+              <bdi>{cls.schoolName}</bdi> · کلاس <bdi>{cls.classGroupName}</bdi>
+            </>
+          ) : undefined
+        }
+      />
 
       {cls === null ? (
         <EmptyState illustration={<SchoolClay size={112} />} title="هنوز در کلاسی ثبت نشده‌اید" description="وقتی مدرسه شما را در کلاس ثبت کند، همین‌جا می‌بینید." />
@@ -120,6 +128,6 @@ export default async function MyClassPage() {
           </section>
         </>
       )}
-    </div>
+    </ContentWidth>
   );
 }

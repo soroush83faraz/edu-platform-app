@@ -4,6 +4,7 @@ import { HomeGrid } from "@/components/home/HomeGrid";
 import { GridSkeleton } from "@/components/home/HomeSkeletons";
 import { SchoolBanner } from "@/components/home/SchoolBanner";
 import { TodayStrip } from "@/components/home/TodayStrip";
+import { ContentWidth } from "@/components/layout/ContentWidth";
 import { InstallPrompt } from "@/components/shell/InstallPrompt";
 import { requireContext } from "@/lib/ctx";
 import { canAtAnyScope } from "@/modules/iam/can";
@@ -19,13 +20,13 @@ export const metadata: Metadata = { title: "خانه | سامانهٴ مدرسه
 export default async function HomePage() {
   const ctx = await requireContext(); // the (app) layout already redirected anonymous visitors
   return (
-    <div className="reveal-stagger flex flex-col gap-5 px-4 pt-4 pb-8 md:pt-8">
+    <ContentWidth className="reveal-stagger pt-4 md:pt-8">
       <SchoolBanner schoolName={ctx.schoolName ?? ctx.orgName} firstName={ctx.firstName} />
       {canAtAnyScope(ctx.assignments, "workspace.work_item.read") ? <TodayStrip /> : null}
       <Suspense fallback={<GridSkeleton />}>
         <HomeGrid ctx={ctx} />
       </Suspense>
       <InstallPrompt />
-    </div>
+    </ContentWidth>
   );
 }

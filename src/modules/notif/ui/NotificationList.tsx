@@ -48,7 +48,7 @@ export function NotificationList({ rows }: { rows: NotificationRow[] }) {
     });
 
   return (
-    <ul className="mx-4 divide-y divide-line/70 rounded-card bg-surface shadow-1">
+    <ul className="surface-work divide-y divide-line/70">
       {rows.map((n) => (
         <li key={n.id}>
           <button

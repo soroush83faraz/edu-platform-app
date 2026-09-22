@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { AdminNav } from "@/components/admin/AdminNav";
+import { ContentWidth } from "@/components/layout/ContentWidth";
 import { AppShell } from "@/components/shell/AppShell";
 import { adminNavFor } from "@/lib/admin/resources";
 import { getRequestContext, loginRedirectHref } from "@/lib/ctx";
@@ -21,11 +22,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (ctx.mustChangePassword) redirect("/change-password");
   if (!canAtAnyScope(ctx.assignments, "iam.admin.access")) notFound();
   return (
-    <AppShell ctx={ctx} wide>
-      <div className="flex flex-col gap-4 px-4 pt-4 md:pt-8">
+    <AppShell ctx={ctx}>
+      <ContentWidth className="gap-4 pt-3 lg:pt-0">
         <AdminNav items={adminNavFor(ctx.assignments)} />
         {children}
-      </div>
+      </ContentWidth>
     </AppShell>
   );
 }

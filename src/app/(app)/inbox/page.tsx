@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { cn } from "cn";
 import { EmptyState } from "@/components/EmptyState";
 import { EmptyClay } from "@/components/illustrations";
+import { ContentWidth } from "@/components/layout/ContentWidth";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Button } from "@/components/ui/button";
 import { BUCKET_LABELS, type Bucket, formatNumberFa } from "@/lib/format";
@@ -67,20 +69,22 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const grouped = groupByBucket(rows, f.tab);
 
   return (
-    <div className="flex flex-col">
-      <div className="flex items-center justify-between gap-3 px-4 pt-5 pb-3 md:pt-8">
-        <h2 className="text-xl font-bold text-text">پنل من</h2>
-        {canCreate ? (
-          <Button asChild>
-            <Link href="/inbox/new">
-              <Plus aria-hidden />
-              کار جدید
-            </Link>
-          </Button>
-        ) : null}
-      </div>
+    <ContentWidth className="gap-3">
+      <PageHeader
+        title="پنل من"
+        actions={
+          canCreate ? (
+            <Button asChild>
+              <Link href="/inbox/new">
+                <Plus aria-hidden />
+                کار جدید
+              </Link>
+            </Button>
+          ) : undefined
+        }
+      />
 
-      <nav aria-label="وضعیت کارها" className="px-4">
+      <nav aria-label="وضعیت کارها">
         <ul className="grid grid-cols-2 gap-1 rounded-2xl bg-neutral-200/60 p-1">
           {VISIBLE_TABS.map((tab) => {
             const current = f.tab === tab;
@@ -113,7 +117,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       </nav>
 
       {isStaff || filtered ? (
-        <div className="flex flex-wrap items-center gap-2 px-4 pt-3" aria-label="فیلترها">
+        <div className="flex flex-wrap items-center gap-2" aria-label="فیلترها">
           {isStaff ? <FilterChip href={href({ ...f, mine: !f.mine, cursor: undefined })} active={f.mine} label="فقط کارهایی که دادم" /> : null}
           {f.bucket ? <FilterChip href={href({ ...f, bucket: undefined, cursor: undefined })} active removable label={BUCKET_LABELS[f.bucket]} /> : null}
           {f.unread ? <FilterChip href={href({ ...f, unread: false, cursor: undefined })} active removable label="خوانده‌نشده" /> : null}
@@ -131,7 +135,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
               ) : (
                 <div className="pt-3" />
               )}
-              <ul className="reveal-rows mx-4 divide-y divide-line/70 rounded-card bg-surface shadow-1">
+              <ul className="reveal-rows surface-work divide-y divide-line/70">
                 {items.map((row) => (
                   <InboxRow key={row.id} row={row} />
                 ))}
@@ -139,7 +143,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
             </section>
           ))}
           {nextCursor || f.cursor ? (
-            <div className="flex items-center justify-center gap-3 px-4 py-5">
+            <div className="flex items-center justify-center gap-3 py-5">
               {f.cursor ? (
                 <Button asChild variant="ghost">
                   <Link href={href({ ...f, cursor: undefined })}>بازگشت به ابتدا</Link>
@@ -154,8 +158,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           ) : null}
         </div>
       )}
-
-    </div>
+    </ContentWidth>
   );
 }
 

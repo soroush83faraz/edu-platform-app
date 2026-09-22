@@ -2,6 +2,8 @@ import { ChevronLeft, LifeBuoy, LockKeyhole, type LucideIcon, Map, Rocket, Setti
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ClayIcon } from "@/components/ClayIcon";
+import { ContentWidth } from "@/components/layout/ContentWidth";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { LogoutButton } from "@/components/shell/LogoutButton";
 import { requireContext } from "@/lib/ctx";
 import { formatLoginIdentifierFa, formatNumberFa } from "@/lib/format";
@@ -39,8 +41,9 @@ export default async function MorePage() {
   const isOrgAdmin = isOrganizationAdmin(ctx.assignments);
 
   return (
-    <div className="reveal-stagger flex flex-col gap-6 px-4 pt-5 pb-6 md:pt-8">
-      <section className="flex items-center gap-4 rounded-card bg-surface p-4 shadow-1">
+    <ContentWidth className="reveal-stagger gap-6">
+      <PageHeader title="بیشتر" />
+      <section className="surface-work flex items-center gap-4 p-4">
         <ClayIcon icon={UserRound} size="lg" />
         <div className="flex min-w-0 flex-col">
           <p className="text-xl font-bold text-text">
@@ -92,7 +95,7 @@ export default async function MorePage() {
           <LogoutButton action={logoutAction} label="خروج" mark="device" />
         </ul>
       </nav>
-    </div>
+    </ContentWidth>
   );
 }
 

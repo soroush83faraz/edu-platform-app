@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, CalendarClock, CircleCheck, ListTodo, type LucideIcon, Plus } from "lucide-react";
+import { BookOpen, CalendarClock, CircleCheck, ListTodo, type LucideIcon, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -6,6 +6,8 @@ import { cn } from "cn";
 import { ClayIcon } from "@/components/ClayIcon";
 import { EmptyState } from "@/components/EmptyState";
 import { EmptyClay } from "@/components/illustrations";
+import { ContentWidth } from "@/components/layout/ContentWidth";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { formatNumberFa } from "@/lib/format";
 import { formatSessionFa, formatTimeRangeFa, WEEKDAY_LABELS } from "@/lib/timetable";
@@ -45,19 +47,17 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
   const backLabel = viewer.isStudent ? "کلاس من" : viewer.isTeacher ? "کلاس‌های من" : "خانه";
 
   return (
-    <div className="reveal-stagger flex flex-col gap-5 px-4 pt-3 pb-8 md:pt-6">
-      <Link href={backHref} className="inline-flex min-h-11 items-center gap-1 self-start text-sm text-text-muted hover:text-text">
-        <ArrowRight className="size-4" aria-hidden />
-        {backLabel}
-      </Link>
-
-      <header className="flex items-start gap-3">
-        <ClayIcon icon={BookOpen} size="xl" />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <h2 className="text-xl font-bold leading-8 text-text">
+    <ContentWidth className="reveal-stagger">
+      <PageHeader
+        back={{ href: backHref, label: backLabel }}
+        title={
+          <span className="flex items-center gap-3">
+            <ClayIcon icon={BookOpen} size="lg" className="lg:[--ic-size:3.5rem]" />
             <bdi>{offering.subjectName}</bdi>
-          </h2>
-          <p className="text-sm text-text-muted">
+          </span>
+        }
+        description={
+          <>
             کلاس <bdi>{offering.classGroupName}</bdi>
             {viewer.isTeacher ? null : offering.teacherName ? (
               <>
@@ -67,7 +67,22 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
             ) : (
               " · معلم هنوز مشخص نشده"
             )}
-          </p>
+          </>
+        }
+        actions={
+          viewer.canCreate ? (
+            <Button asChild>
+              <Link href={`/inbox/new?offering=${offering.id}`}>
+                <Plus aria-hidden />
+                کار جدید برای این درس
+              </Link>
+            </Button>
+          ) : undefined
+        }
+      />
+
+      <header className="flex items-start gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <p className="flex items-center gap-1.5 text-sm text-primary-800">
             <CalendarClock className="size-4 shrink-0 text-sky-strong" aria-hidden />
             {nextSession ? (
@@ -95,19 +110,9 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
       ) : null}
 
       <section aria-labelledby="items-heading" className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
-          <h3 id="items-heading" className="px-1 text-sm font-semibold text-text-muted">
-            کارهای این درس
-          </h3>
-          {viewer.canCreate ? (
-            <Button asChild size="sm">
-              <Link href={`/inbox/new?offering=${offering.id}`}>
-                <Plus aria-hidden />
-                کار جدید برای این درس
-              </Link>
-            </Button>
-          ) : null}
-        </div>
+        <h3 id="items-heading" className="px-1 text-section font-semibold text-text">
+          کارهای این درس
+        </h3>
         <nav aria-label="وضعیت کارها">
           <ul className="grid grid-cols-2 gap-1 rounded-2xl bg-neutral-200/60 p-1">
             {TABS.map(({ tab: t, label, icon: Icon }) => {
@@ -144,6 +149,6 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
           </ul>
         )}
       </section>
-    </div>
+    </ContentWidth>
   );
 }
