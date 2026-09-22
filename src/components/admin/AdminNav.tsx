@@ -4,12 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "cn";
 
-/** Horizontal, scrollable sub-navigation of /admin (chips). Active = exact match or a sub-path. */
+/** Horizontal, scrollable sub-navigation of /admin (chips) on phones and tablets; from `lg:` the rail nests the same links under «مدیریت». Active = exact match or a sub-path. */
 export function AdminNav({ items }: { items: Array<{ href: string; labelFa: string }> }) {
   const pathname = usePathname();
   const active = (href: string) => (href === "/admin" ? pathname === "/admin" : pathname === href || pathname.startsWith(`${href}/`) || pathname.startsWith(`${href}?`));
   return (
-    <nav aria-label="بخش‌های مدیریت" className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <nav aria-label="بخش‌های مدیریت" className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] lg:hidden [&::-webkit-scrollbar]:hidden">
       <ul className="flex w-max gap-2 py-1">
         {items.map((it) => (
           <li key={it.href}>

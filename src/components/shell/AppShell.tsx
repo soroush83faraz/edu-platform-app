@@ -3,6 +3,8 @@ import { AppNav } from "@/components/shell/AppNav";
 import { InboxSummaryProvider } from "@/components/shell/InboxSummaryProvider";
 import type { Ctx } from "@/lib/ctx";
 import { navRoleFor } from "@/modules/iam/can";
+import { adminNavFor } from "@/lib/admin/resources";
+import { productName } from "@/lib/product";
 import { inboxSummaryQuery } from "@/modules/workspace/queries";
 
 /**
@@ -27,15 +29,15 @@ export async function AppShell({ ctx, children }: { ctx: Ctx; children: React.Re
         پرش به محتوا
       </a>
       <h1 className="sr-only">{title}</h1>
-      <AppNav schoolName={title} role={navRole} />
+      <AppNav schoolName={title} productName={productName()} role={navRole} adminItems={navRole === "admin" ? adminNavFor(ctx.assignments) : undefined} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex h-14 items-center gap-3 bg-canvas/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm md:hidden">
+        <header className="sticky top-0 z-10 flex h-14 items-center gap-3 bg-canvas/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm lg:hidden">
           <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-xl bg-hero text-white shadow-1">
             <BookOpen className="size-4" />
           </span>
           <p className="truncate text-base font-semibold text-text">{title}</p>
         </header>
-        <main id="main" tabIndex={-1} className="flex w-full flex-1 flex-col pb-24 outline-none md:pb-8">
+        <main id="main" tabIndex={-1} className="flex w-full flex-1 flex-col pb-24 outline-none lg:pb-8">
           {children}
         </main>
       </div>

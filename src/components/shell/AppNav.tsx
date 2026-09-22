@@ -11,6 +11,12 @@ import type { NavRole } from "@/modules/iam/can";
 import { useInboxSummaryContext } from "./InboxSummaryProvider";
 import type { InboxSummaryState } from "./useInboxSummary";
 
+/** One admin section under «مدیریت» in the rail (`adminNavFor`). */
+export interface AdminSubItem {
+  href: string;
+  labelFa: string;
+}
+
 interface Item {
   href: string;
   label: string;
@@ -41,14 +47,17 @@ const COLUMNS = 5;
  * size as the rest; it reads as the primary item only by its glyph sitting in a small filled persian-blue squircle
  * (owner's rule: no raised tab, no notch, no lift). The current item is a WHOLE tinted cell — a `primary-50`
  * rounded-lg block inset 4 px, glyph and label in `primary-700` — and the bottom bar slides ONE such cell between its
- * five columns; counts are yellow pills. The rail lists the same five, Home first. Both renderings read the shell's
- * single summary poller (`InboxSummaryProvider`), as do the Home strip and tile badges.
+ * five columns; counts are yellow pills. The rail (264 px from `lg:`) opens with the product mark and name, lists the
+ * same five with Home first and, inside /admin, nests the admin sections under «مدیریت». Both renderings read the
+ * shell's single summary poller (`InboxSummaryProvider`), as do the Home strip and tile badges.
  */
-export function AppNav({ schoolName, role }: { schoolName: string; role: NavRole | null }) {
+export function AppNav({ schoolName, productName, role, adminItems }: { schoolName: string; productName?: string; role: NavRole | null; adminItems?: readonly AdminSubItem[] }) {
   const pathname = usePathname();
   const summary = useInboxSummaryContext();
   const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
   const roleItem = ROLE_ITEMS[role ?? "none"];
+  // Inside /admin the rail opens the admin sections under «مدیریت» (phones keep the chip sub-nav in the content).
+  const nested = role === "admin" && adminItems && isCurrent("/admin") ? adminItems : null;
   const bottomItems: Item[] = [INBOX, NOTIFICATIONS, HOME, roleItem, MORE];
   const sideItems: Item[] = [HOME, INBOX, NOTIFICATIONS, roleItem, MORE];
   // The bottom bar has ONE tinted cell that slides between the five columns; off-tab routes (/change-password) hide
@@ -57,7 +66,7 @@ export function AppNav({ schoolName, role }: { schoolName: string; role: NavRole
 
   return (
     <>
-      <nav aria-label="پیمایش اصلی" className="fixed inset-x-0 bottom-0 z-20 border-t border-line/70 bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm md:hidden">
+      <nav aria-label="پیمایش اصلی" className="fixed inset-x-0 bottom-0 z-20 border-t border-line/70 bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm lg:hidden">
         <ul className="relative grid grid-cols-5">
           <li
             aria-hidden
@@ -74,17 +83,47 @@ export function AppNav({ schoolName, role }: { schoolName: string; role: NavRole
           ))}
         </ul>
       </nav>
-      <aside className="hidden w-60 shrink-0 flex-col border-e border-line bg-surface md:sticky md:top-0 md:flex md:h-screen">
-        <div className="flex h-16 items-center gap-3 px-5">
-          <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-xl bg-hero text-white shadow-1">
-            <BookOpen className="size-4" />
+      <aside className="hidden w-rail shrink-0 flex-col border-e border-line bg-surface lg:sticky lg:top-0 lg:flex lg:h-screen">
+        {/* The product mark and name, the school under it — the one place the product introduces itself. */}
+        <div className="flex min-h-20 items-center gap-3 px-5 pt-1">
+          <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-xl bg-hero text-white shadow-1">
+            <BookOpen className="size-5" strokeWidth={2} />
           </span>
-          <span className="truncate text-base font-semibold text-text">{schoolName}</span>
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-row font-bold text-text">{productName ?? schoolName}</span>
+            {productName ? (
+              <span className="truncate text-meta text-text-muted">
+                <bdi>{schoolName}</bdi>
+              </span>
+            ) : null}
+          </span>
         </div>
-        <nav aria-label="پیمایش اصلی" className="flex-1 px-3 py-2">
+        <nav aria-label="پیمایش اصلی" className="flex-1 overflow-y-auto px-3 py-2">
           <ul className="flex flex-col gap-1">
             {sideItems.map((item) => (
-              <NavLink key={item.href} item={item} current={isCurrent(item.href)} count={item.badge?.(summary) ?? 0} layout="side" />
+              <NavLink key={item.href} item={item} current={isCurrent(item.href)} count={item.badge?.(summary) ?? 0} layout="side">
+                {nested && item.href === "/admin" ? (
+                  <ul className="mt-0.5 mb-1 ms-6.5 flex flex-col gap-0.5 border-s border-line ps-3">
+                    {nested.map((sub) => {
+                      const current = sub.href === "/admin" ? pathname === "/admin" : isCurrent(sub.href);
+                      return (
+                        <li key={sub.href}>
+                          <Link
+                            href={sub.href}
+                            aria-current={current ? "page" : undefined}
+                            className={cn(
+                              "pressable flex min-h-9 items-center rounded-lg px-2.5 text-sm",
+                              current ? "bg-primary-50 font-semibold text-primary-700" : "text-text-muted hover:bg-surface-sunken hover:text-text",
+                            )}
+                          >
+                            {sub.labelFa}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </NavLink>
             ))}
           </ul>
         </nav>
@@ -93,7 +132,7 @@ export function AppNav({ schoolName, role }: { schoolName: string; role: NavRole
   );
 }
 
-function NavLink({ item, current, count, layout }: { item: Item; current: boolean; count: number; layout: "bottom" | "side" }) {
+function NavLink({ item, current, count, layout, children }: { item: Item; current: boolean; count: number; layout: "bottom" | "side"; children?: React.ReactNode }) {
   const Icon = item.icon;
   const badge = <CountBadge count={count} label={`${formatNumberFa(count)} مورد خوانده‌نشده`} floating={layout === "bottom"} />;
 
@@ -135,7 +174,7 @@ function NavLink({ item, current, count, layout }: { item: Item; current: boolea
         href={item.href}
         aria-current={current ? "page" : undefined}
         className={cn(
-          "pressable flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm",
+          "pressable flex min-h-11 items-center gap-2 rounded-lg px-2 text-row",
           current ? "bg-primary-50 font-semibold text-primary-700" : "text-text-muted hover:bg-surface-sunken hover:text-text active:bg-primary-50 active:text-primary-700",
         )}
       >
@@ -146,6 +185,7 @@ function NavLink({ item, current, count, layout }: { item: Item; current: boolea
         <span className="flex-1">{item.label}</span>
         {badge}
       </Link>
+      {children}
     </li>
   );
 }
