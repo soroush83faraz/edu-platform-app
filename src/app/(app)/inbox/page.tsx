@@ -77,14 +77,14 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
             <Button asChild>
               <Link href="/inbox/new">
                 <Plus aria-hidden />
-                کار جدید
+                تکلیف جدید
               </Link>
             </Button>
           ) : undefined
         }
       />
 
-      <nav aria-label="وضعیت کارها">
+      <nav aria-label="وضعیت تکالیف">
         <ul className="grid grid-cols-2 gap-1 rounded-2xl bg-neutral-200/60 p-1">
           {VISIBLE_TABS.map((tab) => {
             const current = f.tab === tab;
@@ -104,7 +104,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   <span className="flex items-center gap-1.5">
                     <span className="truncate">{TAB_LABELS[tab]}</span>
                     {count > 0 ? (
-                      <span className={cn("tabular rounded-full px-1.5 text-xs leading-5", current ? "bg-info-soft text-primary-800" : "bg-surface/70 text-text-muted")} aria-label={`${formatNumberFa(count)} کار`}>
+                      <span className={cn("tabular rounded-full px-1.5 text-xs leading-5", current ? "bg-info-soft text-primary-800" : "bg-surface/70 text-text-muted")} aria-label={`${formatNumberFa(count)} تکلیف`}>
                         {count > 99 ? `${formatNumberFa(99)}+` : formatNumberFa(count)}
                       </span>
                     ) : null}
@@ -118,7 +118,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
 
       {isStaff || filtered ? (
         <div className="flex flex-wrap items-center gap-2" aria-label="فیلترها">
-          {isStaff ? <FilterChip href={href({ ...f, mine: !f.mine, cursor: undefined })} active={f.mine} label="فقط کارهایی که دادم" /> : null}
+          {isStaff ? <FilterChip href={href({ ...f, mine: !f.mine, cursor: undefined })} active={f.mine} label="فقط تکالیف داده‌شده" /> : null}
           {f.bucket ? <FilterChip href={href({ ...f, bucket: undefined, cursor: undefined })} active removable label={BUCKET_LABELS[f.bucket]} /> : null}
           {f.unread ? <FilterChip href={href({ ...f, unread: false, cursor: undefined })} active removable label="خوانده‌نشده" /> : null}
         </div>
@@ -190,7 +190,7 @@ function Empty({ tab, filtered, canCreate, clearHref }: { tab: InboxTab; filtere
     return (
       <EmptyState
         illustration={<EmptyClay size={96} />}
-        title="با این فیلتر کاری پیدا نشد"
+        title="با این فیلتر تکلیفی پیدا نشد"
         action={
           <Button asChild variant="outline">
             <Link href={clearHref}>حذف فیلتر</Link>
@@ -203,17 +203,17 @@ function Empty({ tab, filtered, canCreate, clearHref }: { tab: InboxTab; filtere
     return (
       <EmptyState
         illustration={<EmptyClay size={128} />}
-        title="کاری در انتظار شما نیست"
-        description={canCreate ? "وقتی کاری به شما سپرده شود یا خودتان کاری بسازید، همین‌جا می‌آید." : "وقتی کاری به شما سپرده شود، همین‌جا می‌آید."}
+        title="تکلیفی در انتظار شما نیست"
+        description={canCreate ? "وقتی تکلیفی به شما داده شود یا خودتان تکلیفی بدهید، همین‌جا می‌آید." : "وقتی دبیر یا مدرسه تکلیفی بدهد، همین‌جا می‌آید."}
         action={
           canCreate ? (
             <Button asChild>
-              <Link href="/inbox/new">کار جدید</Link>
+              <Link href="/inbox/new">تکلیف جدید</Link>
             </Button>
           ) : undefined
         }
       />
     );
   }
-  return <EmptyState illustration={<EmptyClay size={96} />} title="هنوز کاری انجام‌شده علامت نخورده" description="کارهای تمام‌شده این‌جا نگه داشته می‌شوند." />;
+  return <EmptyState illustration={<EmptyClay size={96} />} title="هنوز تکلیفی انجام‌شده علامت نخورده" description="تکالیف تمام‌شده این‌جا نگه داشته می‌شوند." />;
 }

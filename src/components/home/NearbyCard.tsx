@@ -13,10 +13,10 @@ export async function NearbyCard() {
     <section aria-labelledby="nearby-heading" className="flex flex-col gap-2.5">
       <div className="flex items-baseline justify-between gap-3 px-1">
         <h3 id="nearby-heading" className="text-sm font-semibold text-text-muted">
-          کارهای نزدیک
+          تکالیف نزدیک
         </h3>
         <Link href="/inbox" className="pressable inline-flex min-h-11 items-center gap-0.5 rounded-lg px-1 text-sm font-medium text-sky-strong hover:text-primary-700">
-          همهٴ کارها
+          همهٴ تکالیف
           <ChevronLeft className="size-4" aria-hidden />
         </Link>
       </div>
@@ -25,8 +25,8 @@ export async function NearbyCard() {
           <div className="flex items-center gap-4 px-4 py-5">
             <EmptyClay size={72} />
             <div className="flex flex-col gap-1">
-              <p className="text-sm font-medium text-text">کار بازی ندارید.</p>
-              <p className="text-xs text-text-muted">کار تازه همین‌جا می‌آید.</p>
+              <p className="text-sm font-medium text-text">تکلیف بازی ندارید.</p>
+              <p className="text-meta text-text-muted">تکلیف تازه همین‌جا می‌آید.</p>
             </div>
           </div>
         ) : (

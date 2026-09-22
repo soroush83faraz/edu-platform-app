@@ -57,7 +57,7 @@ export function LoginForm({ next }: LoginFormProps) {
         <input type="checkbox" name="publicDevice" className="size-5 rounded accent-primary" />
         <span>
           این دستگاه عمومی است
-          <span className="block text-xs text-text-muted">ورود پس از ۸ ساعت خودبه‌خود پایان می‌گیرد.</span>
+          <span className="block text-meta text-text-muted">ورود پس از ۸ ساعت خودبه‌خود پایان می‌گیرد.</span>
         </span>
       </label>
 

@@ -145,7 +145,7 @@ describe("createWorkItem for a class offering", () => {
         .from(notification)
         .where(eq(notification.sourceId, res.id));
       expect(notifs).toHaveLength(3);
-      expect(notifs[0]).toMatchObject({ title: "کار جدید: تمرین صفحهٴ ۴۲", body: "زهرا کریمی", deepLink: `/inbox/${res.id}` });
+      expect(notifs[0]).toMatchObject({ title: "تکلیف جدید: تمرین صفحهٴ ۴۲", body: "زهرا کریمی", deepLink: `/inbox/${res.id}` });
       expect(notifs.map((n) => n.dedupeKey)).toEqual(expect.arrayContaining(students.map((s) => `wi:${res.id}:assigned:${s.personId}`)));
 
       // Re-running the same fan-out inserts nothing (dedupe key per recipient).
@@ -301,7 +301,7 @@ describe("comments", () => {
 
       // The public comment re-flagged the student's inbox row as unread and notified her; the staff-only one did not.
       const notifs = await tx.select({ title: notification.title, body: notification.body }).from(notification).where(eq(notification.recipientPersonId, s1.personId));
-      expect(notifs.map((n) => n.title)).toEqual(["کار جدید: تمرین", "نظر جدید: تمرین"]);
+      expect(notifs.map((n) => n.title)).toEqual(["تکلیف جدید: تمرین", "نظر جدید: تمرین"]);
       expect(notifs[1].body).toBe("زهرا کریمی: سؤالی بود بپرسید");
       const mine = await listInbox(tx, s1.personId, { tab: "todo" });
       expect(mine.rows[0]).toMatchObject({ id: res.id, unread: true, commentsCount: 3 - 1 });
@@ -330,7 +330,7 @@ describe("comments on a multi-assignee item (QA round 1, M3)", () => {
       // Classmates: no notification beyond the assignment, still read, and the comment is not in their view or count.
       for (const s of [s2, s3]) {
         const notifs = await tx.select({ title: notification.title }).from(notification).where(eq(notification.recipientPersonId, s.personId));
-        expect(notifs.map((n) => n.title)).toEqual(["کار جدید: تمرین کلاسی"]);
+        expect(notifs.map((n) => n.title)).toEqual(["تکلیف جدید: تمرین کلاسی"]);
         expect(entries.find((e) => e.personId === s.personId)?.state).toBe("read");
         expect((await getWorkItemDetail(tx, s.ctx, res.id)).comments).toEqual([]);
         expect((await listInbox(tx, s.personId, { tab: "todo" })).rows[0]).toMatchObject({ id: res.id, unread: false, commentsCount: 0 });
@@ -346,7 +346,7 @@ describe("comments on a multi-assignee item (QA round 1, M3)", () => {
       for (const s of [s1, s2, s3]) {
         expect(after.find((e) => e.personId === s.personId)?.state).toBe("unread");
         const notifs = await tx.select({ title: notification.title }).from(notification).where(eq(notification.recipientPersonId, s.personId));
-        expect(notifs.map((n) => n.title)).toEqual(["کار جدید: تمرین کلاسی", "نظر جدید: تمرین کلاسی"]);
+        expect(notifs.map((n) => n.title)).toEqual(["تکلیف جدید: تمرین کلاسی", "نظر جدید: تمرین کلاسی"]);
         expect((await getWorkItemDetail(tx, s.ctx, res.id)).comments.map((c) => c.id)).toEqual(s === s1 ? [mine.id, reply.id] : [reply.id]);
       }
     });

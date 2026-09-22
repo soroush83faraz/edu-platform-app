@@ -27,7 +27,7 @@ export async function UrgentItems() {
       }
     >
       {rows.length === 0 ? (
-        <p className="px-4 py-6 text-center text-sm text-text-muted">کار سررسیده یا امروزی ندارید.</p>
+        <p className="px-4 py-6 text-center text-sm text-text-muted">تکلیف سررسیده یا امروزی ندارید.</p>
       ) : (
         <ul className="divide-y divide-line/70">
           {rows.map((row) => (

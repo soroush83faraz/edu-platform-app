@@ -22,7 +22,7 @@ export async function WeekProgress() {
   return (
     <PageSection id="week-progress" title="این هفته" icon={CalendarRange} surface="panel">
       {total === 0 ? (
-        <p className="text-sm text-text-muted">کاری با مهلت این هفته ندارید.</p>
+        <p className="text-sm text-text-muted">تکلیفی با مهلت این هفته ندارید.</p>
       ) : (
         <div className="flex items-center gap-4">
           <span className="tabular text-title font-bold text-text">
@@ -30,7 +30,7 @@ export async function WeekProgress() {
             <span className="text-section font-normal text-text-muted">/{formatNumberFa(total)}</span>
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-            <span className="text-sm text-text-muted">{done === total ? "همهٴ کارهای این هفته انجام شده." : `${formatNumberFa(total - done)} کار تا پایان هفته مانده.`}</span>
+            <span className="text-sm text-text-muted">{done === total ? "همهٴ تکالیف این هفته انجام شده." : `${formatNumberFa(total - done)} تکلیف تا پایان هفته مانده.`}</span>
             <div className="h-2 overflow-hidden rounded-full bg-neutral-200" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done} aria-label="پیشرفت این هفته">
               <div className={cn("h-full rounded-full", pct === 100 ? "bg-success" : "bg-sky")} style={{ width: `${pct}%` }} />
             </div>

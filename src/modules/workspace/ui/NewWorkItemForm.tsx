@@ -133,7 +133,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
         idempotencyKey,
       });
       if (r.ok) {
-        toast.success(r.data.duplicate ? "این کار قبلاً ایجاد شده بود" : "کار ایجاد شد");
+        toast.success(r.data.duplicate ? "این تکلیف قبلاً ایجاد شده بود" : mode === "self" ? "یادداشت شخصی ثبت شد" : "تکلیف ایجاد شد");
         router.push(`/inbox/${r.data.id}`);
         return;
       }
@@ -300,7 +300,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
                               {s.firstName} {s.lastName}
                             </bdi>
                           </span>
-                          <bdi dir="ltr" className="tabular text-xs text-text-faint">
+                          <bdi dir="ltr" className="tabular text-meta text-text-faint">
                             {toFaDigits(s.studentNumber)}
                           </bdi>
                         </label>
@@ -354,7 +354,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
                       <bdi>
                         {h.firstName} {h.lastName}
                       </bdi>
-                      <span className="text-xs text-text-faint">{h.kind === "student" ? "دانش‌آموز" : h.kind === "staff" ? "کادر" : ""}</span>
+                      <span className="text-meta text-text-faint">{h.kind === "student" ? "دانش‌آموز" : h.kind === "staff" ? "کادر" : ""}</span>
                     </button>
                   </li>
                 ))}
@@ -363,7 +363,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
           </div>
         ) : null}
 
-        {mode === "self" ? <p className="text-sm text-text-muted">یک کار شخصی فقط در پنل خودتان می‌ماند.</p> : null}
+        {mode === "self" ? <p className="text-sm text-text-muted">یک یادداشت شخصی فقط در پنل خودتان می‌ماند.</p> : null}
         <FieldError id={`${ids}-recipients-err`} text={errors.recipients} />
       </fieldset>
 
@@ -371,7 +371,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
         {errors.form}
       </p>
       <Button type="submit" size="lg" disabled={pending || (mode === "class" && roster === null)}>
-        {pending ? "در حال ایجاد…" : mode === "class" && roster ? `ارسال به ${formatNumberFa(selectedCount)} نفر` : "ایجاد کار"}
+        {pending ? "در حال ایجاد…" : mode === "class" && roster ? `ارسال به ${formatNumberFa(selectedCount)} نفر` : mode === "self" ? "ثبت یادداشت شخصی" : "ایجاد تکلیف"}
       </Button>
     </form>
   );

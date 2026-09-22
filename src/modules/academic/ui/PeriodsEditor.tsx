@@ -56,7 +56,7 @@ export function PeriodsEditor({ schoolId, initial, canEdit }: { schoolId: string
 
   return (
     <div className="flex flex-col gap-4">
-      <ol className="flex flex-col divide-y divide-line/70 rounded-card bg-surface shadow-1">
+      <ol className="flex flex-col divide-y divide-line/70 surface-work">
         {rows.map((p, i) => (
           <li key={p.periodNo} className="grid grid-cols-[2rem_1fr_5.5rem_5.5rem] items-center gap-2 px-3 py-2 sm:grid-cols-[2.5rem_1fr_7rem_7rem]">
             <span className="tabular text-sm text-text-faint">{formatNumberFa(p.periodNo)}</span>
@@ -79,7 +79,7 @@ export function PeriodsEditor({ schoolId, initial, canEdit }: { schoolId: string
               <Trash2 aria-hidden />
               حذف آخرین زنگ
             </Button>
-            <span className="ms-auto text-xs text-text-muted">
+            <span className="ms-auto text-meta text-text-muted">
               {formatNumberFa(rows.length)} از {formatNumberFa(MAX_PERIODS)} زنگ
             </span>
           </div>
@@ -91,7 +91,7 @@ export function PeriodsEditor({ schoolId, initial, canEdit }: { schoolId: string
           </Button>
         </>
       ) : (
-        <p className="px-1 text-xs text-text-muted">زنگ‌بندی را فقط مدیر مدرسه یا مدیر سازمان تغییر می‌دهد.</p>
+        <p className="px-1 text-meta text-text-muted">زنگ‌بندی را فقط مدیر مدرسه یا مدیر سازمان تغییر می‌دهد.</p>
       )}
     </div>
   );

@@ -22,7 +22,7 @@ export function CredentialsSheet({ title, schoolName, rows }: { title: string; s
         </p>
         <PrintButton />
       </div>
-      {rows.length === 0 ? <p className="rounded-card bg-surface shadow-1 p-6 text-center text-sm text-text-muted">حسابی برای چاپ وجود ندارد.</p> : null}
+      {rows.length === 0 ? <p className="surface-work p-6 text-center text-sm text-text-muted">حسابی برای چاپ وجود ندارد.</p> : null}
       {pages.map((page, i) => (
         <section key={i} className="print-page grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 print:grid-cols-3 print:gap-2">
           {page.map((r) => (
@@ -37,14 +37,14 @@ export function CredentialsSheet({ title, schoolName, rows }: { title: string; s
 function Slip({ row, schoolName }: { row: CredentialRow; schoolName: string }) {
   const password = row.mustChangePassword ? decryptInitialPassword(row.initialPasswordEnc) : null;
   return (
-    <article className="print-slip flex min-h-44 flex-col gap-1.5 rounded-card bg-surface shadow-1 p-3 text-sm text-text print:min-h-[60mm] print:rounded-none">
-      <p className="text-xs text-text-muted">{schoolName}</p>
+    <article className="print-slip flex min-h-44 flex-col gap-1.5 surface-work p-3 text-sm text-text print:min-h-[60mm] print:rounded-none">
+      <p className="text-meta text-text-muted">{schoolName}</p>
       <p className="text-base font-bold">
         <bdi>
           {row.firstName} {row.lastName}
         </bdi>
       </p>
-      <p className="text-xs text-text-muted">
+      <p className="text-meta text-text-muted">
         {row.className ? <bdi>کلاس {row.className}</bdi> : null}
         {row.studentNumber ? (
           <>

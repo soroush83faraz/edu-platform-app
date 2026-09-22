@@ -22,7 +22,7 @@ const TOPICS: Topic[] = [
   { id: "login", icon: LogIn, title: "ورود به سامانه", audience: "همه" },
   { id: "password", icon: KeyRound, title: "تغییر رمز در اولین ورود", audience: "همه" },
   { id: "inbox", icon: Inbox, title: "پنل من", audience: "دانش‌آموزان و کادر" },
-  { id: "new-item", icon: ClipboardPlus, title: "کار جدید", audience: "دبیران و مدیران" },
+  { id: "new-item", icon: ClipboardPlus, title: "تکلیف جدید", audience: "دبیران و مدیران" },
   { id: "notifications", icon: Bell, title: "اعلان‌ها", audience: "همه" },
   { id: "admin", icon: Settings2, title: "مدیریت مدرسه", audience: "مدیر و معاون" },
   { id: "install", icon: Smartphone, title: "نصب روی گوشی", audience: "همه" },
@@ -94,20 +94,20 @@ export default async function HelpPage() {
           <Link href="/inbox" className="font-semibold text-primary-700 hover:underline">
             پنل من
           </Link>{" "}
-          فهرست کارهای شماست: تکلیف‌هایی که دبیر داده، کارهایی که کادر مدرسه سپرده، و کارهای شخصی خودتان.
+          فهرست تکالیف شماست: تکلیف‌هایی که دبیر یا کادر مدرسه داده، و یادداشت‌های شخصی خودتان.
         </p>
         <ul className="list-disc space-y-1 ps-5">
           <li>
-            دو تب دارد: <strong className="font-semibold">انجام‌نشده</strong> و <strong className="font-semibold">انجام‌شده</strong>. کارهای انجام‌نشده بر پایهٴ مهلت گروه می‌شوند: سررسیده، امروز، این هفته، بعداً، بدون مهلت.
+            دو تب دارد: <strong className="font-semibold">انجام‌نشده</strong> و <strong className="font-semibold">انجام‌شده</strong>. تکالیف انجام‌نشده بر پایهٴ مهلت گروه می‌شوند: سررسیده، امروز، این هفته، بعداً، بدون مهلت.
           </li>
-          <li>روی هر کار بزنید تا جزئیات، توضیح، مهلت و گفت‌وگو را ببینید. کار خوانده‌شده حساب می‌شود و نشان عدد روی «پنل من» کم می‌شود.</li>
+          <li>روی هر تکلیف بزنید تا جزئیات، توضیح، مهلت و گفت‌وگو را ببینید. تکلیف خوانده‌شده حساب می‌شود و نشان عدد روی «پنل من» کم می‌شود.</li>
           <li>
-            وقتی کاری را انجام دادید دکمهٴ <strong className="font-semibold">«انجام شد»</strong> را بزنید؛ دبیر همان لحظه اعلان می‌گیرد و پیشرفت کلاس را می‌بیند.
+            وقتی تکلیفی را انجام دادید دکمهٴ <strong className="font-semibold">«انجام شد»</strong> را بزنید؛ دبیر همان لحظه اعلان می‌گیرد و پیشرفت کلاس را می‌بیند.
           </li>
           <li>در بخش «گفت‌وگو» می‌توانید نظر بنویسید — مثلاً «انجام دادم، فقط سؤال ۳ را نفهمیدم». نظر شما روی تکلیف کلاسی فقط برای دبیر و کادر مدرسه دیده می‌شود، نه هم‌کلاسی‌ها.</li>
-          <li>از «گزینه‌های بیشتر» می‌توانید کاری را به بالای فهرست سنجاق کنید یا از پنل خودتان بایگانی کنید؛ کار برای دیگران دست‌نخورده می‌ماند.</li>
+          <li>از «گزینه‌های بیشتر» می‌توانید تکلیفی را به بالای فهرست سنجاق کنید یا از پنل خودتان بایگانی کنید؛ تکلیف برای دیگران دست‌نخورده می‌ماند.</li>
         </ul>
-        <Note>دبیران زیر فهرست، فیلتر «فقط کارهایی که دادم» را دارند و برای هر کار می‌بینند چند نفر آن را انجام داده‌اند.</Note>
+        <Note>دبیران زیر فهرست، فیلتر «فقط تکالیف داده‌شده» را دارند و برای هر تکلیف می‌بینند چند نفر آن را انجام داده‌اند.</Note>
       </Topic>
 
       {canCreate ? (
@@ -115,7 +115,7 @@ export default async function HelpPage() {
           <p>
             از دکمهٴ زردِ{" "}
             <Link href="/inbox/new" className="font-semibold text-primary-700 hover:underline">
-              «کار جدید»
+              «تکلیف جدید»
             </Link>{" "}
             در خانه یا بالای پنل من.
           </p>
@@ -126,11 +126,11 @@ export default async function HelpPage() {
               مهلت را با دکمه‌های «امروز / فردا / هفتهٴ بعد» یا به شکل <bdi dir="ltr">۱۴۰۵/۰۷/۰۵</bdi> بدهید؛ بدون ساعت، پایان همان روز (۲۳:۵۹) حساب می‌شود. مهلتِ گذشته مجاز است اما هشدار می‌گیرد.
             </li>
             <li>
-              گیرندگان: <strong className="font-semibold">کلاس</strong> (درسِ خودتان؛ می‌توانید تیک چند نفر را بردارید)، <strong className="font-semibold">اشخاص</strong> (فقط مدیران: جست‌وجوی نام) یا <strong className="font-semibold">خودم</strong> (کار شخصی که فقط در پنل خودتان می‌ماند).
+              گیرندگان: <strong className="font-semibold">کلاس</strong> (درسِ خودتان؛ می‌توانید تیک چند نفر را بردارید)، <strong className="font-semibold">اشخاص</strong> (فقط مدیران: جست‌وجوی نام) یا <strong className="font-semibold">خودم</strong> (یادداشت شخصی که فقط در پنل خودتان می‌ماند).
             </li>
-            <li>«ارسال» بزنید. هر گیرنده یک اعلان و یک ردیف در پنلش می‌گیرد؛ شما کار را زیر «فقط کارهایی که دادم» با پیشرفت هر نفر می‌بینید.</li>
+            <li>«ارسال» بزنید. هر گیرنده یک اعلان و یک ردیف در پنلش می‌گیرد؛ شما تکلیف را زیر «فقط تکالیف داده‌شده» با پیشرفت هر نفر می‌بینید.</li>
           </Steps>
-          <Note>روی صفحهٴ کار می‌توانید آن را «لغو» کنید (با تأیید) یا کار انجام‌شده را «بازگشایی» کنید. با تیک «فقط برای کادر مدرسه» نظری می‌نویسید که دانش‌آموزان نمی‌بینند.</Note>
+          <Note>روی صفحهٴ تکلیف می‌توانید آن را «لغو» کنید (با تأیید) یا تکلیف انجام‌شده را «بازگشایی» کنید. با تیک «فقط برای کادر مدرسه» نظری می‌نویسید که دانش‌آموزان نمی‌بینند.</Note>
         </Topic>
       ) : null}
 
@@ -139,7 +139,7 @@ export default async function HelpPage() {
           <Link href="/notifications" className="font-semibold text-primary-700 hover:underline">
             اعلان‌ها
           </Link>{" "}
-          خبرِ هر تغییر روی کارهای شماست: کار جدید، نظر تازه، تغییر وضعیت. روی هر اعلان بزنید تا به همان کار بروید؛ «همه را خوانده‌شده کن» فقط وقتی اعلان نخوانده دارید نشان داده می‌شود. اعلان‌ها فقط درون برنامه‌اند — پیامک یا نوتیفیکیشن گوشی در فاز ۱ نیست، پس هر روز یک بار سر بزنید.
+          خبرِ هر تغییر روی تکالیف شماست: تکلیف جدید، نظر تازه، تغییر وضعیت. روی هر اعلان بزنید تا به همان تکلیف بروید؛ «همه را خوانده‌شده کن» فقط وقتی اعلان نخوانده دارید نشان داده می‌شود. اعلان‌ها فقط درون برنامه‌اند — پیامک یا نوتیفیکیشن گوشی در فاز ۱ نیست، پس هر روز یک بار سر بزنید.
         </p>
       </Topic>
 
@@ -187,14 +187,14 @@ export default async function HelpPage() {
 
 function Topic({ topic, children }: { topic: Topic; children: React.ReactNode }) {
   return (
-    <section id={topic.id} aria-labelledby={`${topic.id}-title`} className="flex scroll-mt-20 flex-col gap-3 rounded-card bg-surface p-4 shadow-1">
+    <section id={topic.id} aria-labelledby={`${topic.id}-title`} className="flex scroll-mt-20 flex-col gap-3 surface-work p-4">
       <div className="flex items-center gap-3">
         <RowMark icon={topic.icon} />
         <div className="flex flex-col">
           <h3 id={`${topic.id}-title`} className="text-base font-semibold text-text">
             {topic.title}
           </h3>
-          <span className="text-xs text-text-muted">{topic.audience}</span>
+          <span className="text-meta text-text-muted">{topic.audience}</span>
         </div>
       </div>
       <div className="flex flex-col gap-2 text-sm leading-7 text-text">{children}</div>

@@ -80,7 +80,7 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
   // Full-width, stacked on phones (thumb-sized, in reading order: the main action first); two-up from `sm:`.
   return (
     <div className="grid gap-2 sm:grid-cols-2">
-      <ResponsiveModal open={confirmCancel} onOpenChange={setConfirmCancel} title="لغو کار" description="این کار برای همهٴ گیرندگان لغو می‌شود و از فهرست کارهای بازشان برداشته می‌شود. بعداً می‌توانید آن را بازگشایی کنید.">
+      <ResponsiveModal open={confirmCancel} onOpenChange={setConfirmCancel} title="لغو تکلیف" description="این تکلیف برای همهٴ گیرندگان لغو می‌شود و از فهرست تکالیف بازشان برداشته می‌شود. بعداً می‌توانید آن را بازگشایی کنید.">
         <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
           <Button type="button" variant="outline" onClick={() => setConfirmCancel(false)}>
             انصراف
@@ -95,7 +95,7 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
               run("لغو شد", () => changeStatusAction({ workItemId, toStatusCode: "cancelled" }));
             }}
           >
-            لغو کار
+            لغو تکلیف
           </Button>
         </div>
       </ResponsiveModal>

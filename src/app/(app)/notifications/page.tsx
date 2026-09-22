@@ -26,7 +26,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
     <ContentWidth className="gap-3">
       <PageHeader title="اعلان‌ها" actions={hasUnread ? <MarkAllReadButton disabled={false} /> : undefined} />
       {rows.length === 0 ? (
-        <EmptyState illustration={<BellClay size={128} />} title="اعلانی ندارید" description="کار جدید، نظر تازه و تغییر وضعیت کارها این‌جا خبر داده می‌شود." />
+        <EmptyState illustration={<BellClay size={128} />} title="اعلانی ندارید" description="تکلیف جدید، نظر تازه و تغییر وضعیت تکالیف این‌جا خبر داده می‌شود." />
       ) : (
         <>
           <NotificationList rows={rows} />

@@ -61,7 +61,7 @@ export default async function MyClassPage() {
           </section>
 
           <section aria-labelledby="timetable-heading" className="flex flex-col gap-2.5">
-            <h3 id="timetable-heading" className="flex items-center gap-1.5 px-1 text-sm font-semibold text-text-muted">
+            <h3 id="timetable-heading" className="flex items-center gap-1.5 px-1 text-section font-semibold text-text">
               <CalendarDays className="size-4" strokeWidth={1.75} aria-hidden />
               برنامهٴ هفتگی
             </h3>
@@ -71,7 +71,7 @@ export default async function MyClassPage() {
               <EmptyState
                 title="برنامهٴ هفتگی هنوز تنظیم نشده"
                 description="وقتی مدرسه برنامهٴ کلاس را ثبت کند، زنگ‌های هر روز همین‌جا می‌آیند."
-                className="rounded-card bg-surface py-10 shadow-1"
+                className="surface-work py-10"
               />
             )}
           </section>
@@ -92,12 +92,12 @@ export default async function MyClassPage() {
           </Card>
 
           <section aria-labelledby="teachers-heading" className="flex flex-col gap-2.5">
-            <h3 id="teachers-heading" className="px-1 text-sm font-semibold text-text-muted">
-              درس‌ها و معلم‌ها
+            <h3 id="teachers-heading" className="px-1 text-section font-semibold text-text">
+              درس‌ها و دبیران
             </h3>
             <Card>
               {cls.teachers.length === 0 ? (
-                <p className="px-4 py-5 text-sm text-text-muted">هنوز درسی برای این کلاس تعریف نشده.</p>
+                <p className="px-4 py-5 text-sm text-text-muted">هنوز درسی برای این کلاس تعریف نشده؛ وقتی مدرسه درس و دبیر ثبت کند، همین‌جا می‌آید.</p>
               ) : (
                 <ul className="divide-y divide-line/70">
                   {cls.teachers.map((t) => (

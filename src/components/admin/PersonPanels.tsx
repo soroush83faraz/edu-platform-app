@@ -64,7 +64,7 @@ export function AccountCard({ detail, caps }: { detail: PersonDetail; caps: Caps
     });
 
   return (
-    <section aria-labelledby="account-heading" className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-4">
+    <section aria-labelledby="account-heading" className="flex flex-col gap-3 surface-work p-4">
       <h3 id="account-heading" className="text-sm font-semibold text-text-muted">
         حساب کاربری
       </h3>
@@ -154,7 +154,7 @@ export function EnrollmentCard({ detail, classes, canEnroll }: { detail: PersonD
   const groups = [...new Set(classes.map((c) => c.group).filter((g): g is string => !!g))];
   const options = classes.filter((c) => c.value !== detail.enrollment?.classGroupId);
   return (
-    <section aria-labelledby="enroll-heading" className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-4">
+    <section aria-labelledby="enroll-heading" className="flex flex-col gap-3 surface-work p-4">
       <h3 id="enroll-heading" className="text-sm font-semibold text-text-muted">
         کلاس
       </h3>
@@ -240,7 +240,7 @@ export function RolesCard({ detail, caps, roleGrant }: { detail: PersonDetail; c
     });
   const roleOptions = roleGrant.roles.map((code) => ({ value: code, label: roleLabel(code) }));
   return (
-    <section aria-labelledby="roles-heading" className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-4">
+    <section aria-labelledby="roles-heading" className="flex flex-col gap-3 surface-work p-4">
       <h3 id="roles-heading" className="text-sm font-semibold text-text-muted">
         نقش‌ها و تدریس
       </h3>
@@ -267,7 +267,7 @@ export function RolesCard({ detail, caps, roleGrant }: { detail: PersonDetail; c
           {detail.teaching.map((t) => (
             <li key={t.teacherAssignmentId} className="flex min-h-11 items-center justify-between gap-2 px-3 py-1 text-sm">
               <span className="text-text">
-                معلم {t.subjectName} <bdi>{t.className}</bdi>
+                دبیر {t.subjectName} <bdi>{t.className}</bdi>
               </span>
               {caps.canTeaching ? (
                 <Button type="button" variant="ghost" size="sm" className="text-danger" onClick={() => endTeaching(t.teacherAssignmentId)} disabled={pending}>

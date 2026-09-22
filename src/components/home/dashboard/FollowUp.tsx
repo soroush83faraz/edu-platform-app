@@ -7,7 +7,7 @@ import { formatNumberFa } from "@/lib/format";
 import { homeOpenItemsQuery } from "@/modules/workspace/queries";
 
 /**
- * «نیاز به پیگیری» (teachers): the open tasks I gave, ranked by how far they are from done — overdue first, then
+ * «نیاز به پیگیری» (teachers): the open تکالیف I gave, ranked by how far they are from done — overdue first, then
  * the lowest completion — the top five with «n/m انجام شد» and a slim bar. Reads the same Home query as the
  * phone's «کارهای نزدیک» with `createdByMe`.
  */
@@ -27,13 +27,13 @@ export async function FollowUp() {
       flush
       trailing={
         <Link href="/inbox?mine=1" className="pressable inline-flex min-h-9 items-center gap-0.5 rounded-lg px-2 text-sm font-medium text-sky-strong hover:text-primary-700">
-          کارهایی که دادم
+          تکالیف داده‌شده
           <ChevronLeft className="size-4" aria-hidden />
         </Link>
       }
     >
       {rows.length === 0 ? (
-        <p className="px-4 py-6 text-center text-sm text-text-muted">کار بازی نداده‌اید؛ با «کار جدید» تکلیف یا کاری به کلاس بدهید.</p>
+        <p className="px-4 py-6 text-center text-sm text-text-muted">تکلیف بازی نداده‌اید؛ با «تکلیف جدید» به کلاس تکلیف بدهید.</p>
       ) : (
         <ul className="divide-y divide-line/70">
           {rows.map((row) => {

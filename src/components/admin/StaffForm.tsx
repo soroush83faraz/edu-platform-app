@@ -133,9 +133,9 @@ export function StaffForm({ schools, detail, roleGrant }: { schools: SchoolOptio
       </div>
 
       {!detail && roleGrant.roles.length > 0 ? (
-        <fieldset className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-4">
+        <fieldset className="flex flex-col gap-3 surface-work p-4">
           <legend className="px-1 text-sm font-semibold text-text-muted">نقش مدیریتی (اختیاری)</legend>
-          <p className="text-xs text-text-muted">نقش «معلم» این‌جا داده نمی‌شود؛ با تخصیص دبیر به ارائهٴ درس در صفحهٴ کلاس ساخته می‌شود.</p>
+          <p className="text-meta text-text-muted">نقش «معلم» این‌جا داده نمی‌شود؛ با تخصیص دبیر به ارائهٴ درس در صفحهٴ کلاس ساخته می‌شود.</p>
           {roles.length > 0 ? (
             <ul className="flex flex-wrap gap-2">
               {roles.map((r, i) => (

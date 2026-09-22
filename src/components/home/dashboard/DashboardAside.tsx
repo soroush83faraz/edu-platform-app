@@ -119,7 +119,7 @@ export function MyClassesCompact({ offerings }: { offerings: TeachingOffering[] 
                     کلاس <bdi>{o.classGroupName}</bdi> · {formatNumberFa(o.activeStudents)} دانش‌آموز
                   </span>
                 </span>
-                {o.openItems > 0 ? <span className="tabular shrink-0 rounded-full bg-info-soft px-2 text-xs font-medium leading-5 text-primary-800">{formatNumberFa(o.openItems)} کار باز</span> : null}
+                {o.openItems > 0 ? <span className="tabular shrink-0 rounded-full bg-info-soft px-2 text-xs font-medium leading-5 text-primary-800">{formatNumberFa(o.openItems)} تکلیف باز</span> : null}
               </Link>
             </li>
           ))}

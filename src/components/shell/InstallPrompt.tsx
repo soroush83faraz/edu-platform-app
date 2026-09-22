@@ -89,7 +89,7 @@ export function InstallPrompt() {
           <h3 id="install-heading" className="text-sm font-semibold text-primary-900">
             نصب برنامه روی گوشی
           </h3>
-          <p className="text-xs text-primary-800">بدون فروشگاه؛ یک آیکون روی صفحهٴ اصلی و باز شدن سریع.</p>
+          <p className="text-meta text-primary-800">بدون فروشگاه؛ یک آیکون روی صفحهٴ اصلی و باز شدن سریع.</p>
           <div className="mt-2 flex items-center gap-1">
             <Button type="button" size="sm" className="font-semibold" onClick={install}>
               {mode === "ios" ? "راهنمای نصب" : "نصب"}

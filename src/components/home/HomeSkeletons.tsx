@@ -19,7 +19,7 @@ export function CardSkeleton({ rows = 3 }: { rows?: number }) {
   return (
     <div aria-busy="true" aria-label="در حال بارگذاری" className="flex flex-col gap-2.5">
       <Skeleton className="h-4 w-24" />
-      <div className="rounded-card bg-surface shadow-1">
+      <div className="surface-work">
         {Array.from({ length: rows }, (_, i) => (
           <div key={i} className="flex min-h-14 items-center gap-3 px-4 py-2">
             <Skeleton className="size-9 rounded-xl" />

@@ -24,22 +24,22 @@ export default async function RolesPage() {
       <AdminHeader title="نقش‌ها" description="نقش‌های سیستمی ثابت‌اند. نقش مدیر/معاون از صفحهٴ هر همکار داده می‌شود؛ نقش معلم و دانش‌آموز خودکار است." />
 
       <section aria-labelledby="assignments-heading" className="flex flex-col gap-2">
-        <h3 id="assignments-heading" className="text-sm font-semibold text-text-muted">
+        <h3 id="assignments-heading" className="text-section font-semibold text-text">
           تخصیص‌های مدیریتی <span className="tabular">({formatNumberFa(assignments.length)})</span>
         </h3>
         {assignments.length === 0 ? (
-          <p className="rounded-card bg-surface shadow-1 px-4 py-6 text-center text-sm text-text-muted">هنوز نقشی داده نشده.</p>
+          <p className="surface-work px-4 py-6 text-center text-sm text-text-muted">هنوز نقش مدیر یا معاونی داده نشده؛ از صفحهٴ هر همکار می‌دهید.</p>
         ) : (
-          <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
+          <ul className="surface-work divide-y divide-line/70">
             {assignments.map((a) => (
               <li key={a.roleAssignmentId} className="flex min-h-12 items-center justify-between gap-3 px-4 py-1.5">
                 <span className="flex min-w-0 flex-col">
-                  <Link href={`/admin/people/${a.personId}`} className="truncate text-base font-medium text-primary-700 hover:underline">
+                  <Link href={`/admin/people/${a.personId}`} className="truncate text-row font-medium text-primary-700 hover:underline">
                     <bdi>
                       {a.firstName} {a.lastName}
                     </bdi>
                   </Link>
-                  <span className="text-xs text-text-muted">
+                  <span className="text-meta text-text-muted">
                     {a.roleName}
                     {a.schoolName ? ` — ${a.schoolName}` : a.scopeType === "organization" ? " — سازمان" : ""}
                     {a.validFrom ? ` · از ${isoDateToJalali(a.validFrom)}` : ""}
@@ -53,20 +53,20 @@ export default async function RolesPage() {
       </section>
 
       <section aria-labelledby="templates-heading" className="flex flex-col gap-2">
-        <h3 id="templates-heading" className="text-sm font-semibold text-text-muted">
+        <h3 id="templates-heading" className="text-section font-semibold text-text">
           نقش‌های سیستمی
         </h3>
-        <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
+        <ul className="surface-panel divide-y divide-line">
           {templates.map((t) => (
             <li key={t.code} className="flex flex-col gap-1 px-4 py-3">
               <span className="flex flex-wrap items-center gap-2">
-                <span className="text-base font-medium text-text">{t.name}</span>
+                <span className="text-row font-medium text-text">{t.name}</span>
                 <Chip tone="neutral">
                   <bdi dir="ltr">{t.code}</bdi>
                 </Chip>
-                <span className="tabular text-xs text-text-muted">{formatNumberFa(t.permissions)} مجوز</span>
+                <span className="tabular text-meta text-text-muted">{formatNumberFa(t.permissions)} مجوز</span>
               </span>
-              <span className="text-xs text-text-muted">
+              <span className="text-meta text-text-muted">
                 {t.description}
                 {" · دامنه: "}
                 {t.allowedScopeTypes.map((s) => SCOPE_LABELS[s] ?? s).join("، ")}

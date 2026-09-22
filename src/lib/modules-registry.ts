@@ -92,7 +92,7 @@ export const MODULES: readonly ModuleEntry[] = [
     permission: "workspace.work_item.read",
     phase: 1,
     descriptionFa:
-      "کارهایی که به شما سپرده شده یا خودتان داده‌اید، با مهلت و پیشرفت.",
+      "تکالیفی که به شما داده شده یا خودتان داده‌اید، با مهلت و پیشرفت؛ و یادداشت‌های شخصی.",
   },
   {
     code: "notifications",
@@ -101,7 +101,7 @@ export const MODULES: readonly ModuleEntry[] = [
     icon: Bell,
     permission: "notif.notification.read",
     phase: 1,
-    descriptionFa: "خبرِ هر تغییر روی کارهای شما، درون برنامه.",
+    descriptionFa: "خبرِ هر تغییر روی تکالیف شما، درون برنامه.",
   },
   {
     code: "admin",
@@ -122,7 +122,7 @@ export const MODULES: readonly ModuleEntry[] = [
     permission: "academic.timetable.read",
     phase: 1,
     competitorTerm: "برنامهٴ کلاسی",
-    descriptionFa: "برنامهٴ هفتگی هر کلاس، زنگ به زنگ، برای دانش‌آموز و معلم؛ زنگ‌بندی و برنامه را مدیر تنظیم می‌کند.",
+    descriptionFa: "برنامهٴ هفتگی هر کلاس، زنگ به زنگ، برای دانش‌آموز و دبیر؛ زنگ‌بندی و برنامه را مدیر تنظیم می‌کند.",
   },
 
   {
@@ -174,7 +174,7 @@ export const MODULES: readonly ModuleEntry[] = [
     phase: 2,
     month: "آبان",
     competitorTerm: "والدین",
-    descriptionFa: "حساب ولی با دیدِ فقط‌خواندنی به کارها، حضور و نمره‌ها.",
+    descriptionFa: "حساب ولی با دیدِ فقط‌خواندنی به تکالیف، حضور و نمره‌ها.",
   },
   {
     code: "board",
@@ -194,7 +194,7 @@ export const MODULES: readonly ModuleEntry[] = [
     phase: 2,
     month: "آبان",
     competitorTerm: "گزارش‌ها",
-    descriptionFa: "خروجی اکسل و چاپ از حضور، نمره و کارها.",
+    descriptionFa: "خروجی اکسل و چاپ از حضور، نمره و تکالیف.",
   },
   {
     code: "requests",
@@ -235,7 +235,7 @@ export const MODULES: readonly ModuleEntry[] = [
     phase: 3,
     month: "آذر",
     competitorTerm: "محتوای آموزشی",
-    descriptionFa: "جزوه، فیلم و لینک درس، درس به درس، از معلم برای کلاس.",
+    descriptionFa: "جزوه، فیلم و لینک درس، درس به درس، از دبیر برای کلاس.",
   },
   {
     code: "messages",
@@ -245,7 +245,7 @@ export const MODULES: readonly ModuleEntry[] = [
     phase: 3,
     month: "آذر",
     competitorTerm: "همکلاسی",
-    descriptionFa: "گفت‌وگوی معلم با کلاس و با خانواده، زیر نظر مدرسه.",
+    descriptionFa: "گفت‌وگوی دبیر با کلاس و با خانواده، زیر نظر مدرسه.",
   },
   {
     code: "counseling",
@@ -275,7 +275,7 @@ export const MODULES: readonly ModuleEntry[] = [
     phase: 3,
     month: "دی",
     competitorTerm: "اعتراض نمره",
-    descriptionFa: "درخواست بازبینی نمره با پاسخ معلم.",
+    descriptionFa: "درخواست بازبینی نمره با پاسخ دبیر.",
   },
 
   {
@@ -353,7 +353,7 @@ export interface HomeTile {
 export const HOME_TILES: readonly HomeTile[] = [
   {
     code: "my-todo",
-    labelFa: "کارهای من",
+    labelFa: "تکالیف من",
     href: "/inbox?tab=todo",
     icon: ListTodo,
     role: "student",
@@ -398,7 +398,7 @@ export const HOME_TILES: readonly HomeTile[] = [
   },
   {
     code: "given",
-    labelFa: "کارهایی که دادم",
+    labelFa: "تکالیف داده‌شده",
     href: "/inbox?mine=1",
     icon: Send,
     role: "teacher",
@@ -407,7 +407,7 @@ export const HOME_TILES: readonly HomeTile[] = [
   {
     code: "new-item",
     shade: "yellow",
-    labelFa: "کار جدید",
+    labelFa: "تکلیف جدید",
     href: "/inbox/new",
     icon: ClipboardPlus,
     role: "teacher",

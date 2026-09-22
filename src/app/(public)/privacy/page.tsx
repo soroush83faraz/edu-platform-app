@@ -33,7 +33,7 @@ export default function PrivacyPage() {
           <li>شمارهٴ دانش‌آموزی (برای دانش‌آموزان) یا شمارهٴ کارمندی (برای همکاران، اختیاری)</li>
           <li>یک شمارهٴ موبایل یا نام‌کاربری برای ورود، و رمز ورود که فقط به شکل هش‌شده نگه داشته می‌شود</li>
           <li>شمارهٴ تماس ولی (در صورت وجود)</li>
-          <li>آنچه خودتان در سامانه می‌نویسید: کارها، نظرها و وضعیت انجام آن‌ها</li>
+          <li>آنچه خودتان در سامانه می‌نویسید: تکالیف، یادداشت‌ها، نظرها و وضعیت انجام آن‌ها</li>
           <li>زمان و دستگاه ورود (برای امنیت حساب و رفع قفل)</li>
         </ul>
         <p>هیچ اطلاعات دیگری — مثل کد ملی، تاریخ تولد، نشانی خانه یا عکس — در فاز ۱ ثبت نمی‌شود.</p>
@@ -46,10 +46,10 @@ export default function PrivacyPage() {
       <Section icon={Eye} title="چه کسی می‌بیند">
         <ul className="list-disc space-y-1 ps-5">
           <li>
-            <strong className="font-semibold text-text">خودِ شما</strong>: مشخصات، کارها و نظرهای خودتان.
+            <strong className="font-semibold text-text">خودِ شما</strong>: مشخصات، تکالیف و نظرهای خودتان.
           </li>
           <li>
-            <strong className="font-semibold text-text">دبیران کلاس شما</strong>: نام و کلاس شما، وضعیت انجام کارهایی که خودشان داده‌اند و نظرهایتان روی آن‌ها.
+            <strong className="font-semibold text-text">دبیران کلاس شما</strong>: نام و کلاس شما، وضعیت انجام تکالیفی که خودشان داده‌اند و نظرهایتان روی آن‌ها.
           </li>
           <li>
             <strong className="font-semibold text-text">مدیریت مدرسه</strong> (مدیر و معاون): مشخصات، حساب کاربری و ثبت‌نام‌های افراد همان مدرسه.
@@ -80,7 +80,7 @@ export default function PrivacyPage() {
 
 function Section({ icon, title, children }: { icon: LucideIcon; title: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 rounded-card bg-surface p-4 shadow-1">
+    <section className="flex flex-col gap-3 surface-work p-4">
       <h3 className="flex items-center gap-3 text-base font-semibold text-text">
         <RowMark icon={icon} />
         {title}

@@ -68,7 +68,7 @@ export function NotificationList({ rows }: { rows: NotificationRow[] }) {
                 </span>
               ) : null}
             </span>
-            <RelativeTime at={n.createdAt} mode="time" className="shrink-0 pt-1 text-xs text-text-faint" />
+            <RelativeTime at={n.createdAt} mode="time" className="shrink-0 pt-1 text-meta text-text-faint" />
           </button>
         </li>
       ))}

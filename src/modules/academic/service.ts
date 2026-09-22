@@ -83,7 +83,7 @@ export async function assignTeacher(tx: Tx, ctx: ServiceCtx, input: AssignTeache
       ),
     )
     .limit(1);
-  if (existing) throw conflict("این معلم هم‌اکنون به این درس تخصیص دارد.");
+  if (existing) throw conflict("این دبیر هم‌اکنون به این درس تخصیص دارد.");
 
   const [ta] = await tx
     .insert(teacherAssignment)

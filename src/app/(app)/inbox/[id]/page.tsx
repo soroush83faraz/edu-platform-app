@@ -14,7 +14,7 @@ import type { StatusCategory } from "@/modules/workspace/repo";
 import { CommentForm } from "@/modules/workspace/ui/CommentForm";
 import { WorkItemActions } from "@/modules/workspace/ui/WorkItemActions";
 
-export const metadata: Metadata = { title: "کار | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "تکلیف | سامانهٴ مدرسه" };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -74,7 +74,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
       <header className="flex flex-col gap-3">
 
         {/* The three facts a reader checks before acting — status, priority, due — as chip-led cells in one card. */}
-        <dl className="grid grid-cols-3 divide-x divide-line/70 rounded-card bg-surface shadow-1">
+        <dl className="surface-panel grid grid-cols-3 divide-x divide-line">
           <Fact icon={statusFact.icon} label="وضعیت" value={statusFact.value} />
           <Fact icon={Flag} label="اولویت" value={<Chip tone={priorityTone(item.priority)}>{PRIORITY_LABELS[item.priority]}</Chip>} />
           {item.dueAt ? (
@@ -94,7 +94,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
       </header>
 
       {item.description ? (
-        <section className="rounded-card bg-surface p-4 shadow-1">
+        <section className="surface-work p-4">
           <p className="whitespace-pre-wrap text-base leading-7 text-text">
             <bdi>{item.description}</bdi>
           </p>
@@ -102,7 +102,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
       ) : null}
 
       {showProgress ? (
-        <section aria-labelledby="progress-heading" className="rounded-card bg-surface shadow-1">
+        <section aria-labelledby="progress-heading" className="surface-work">
           <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
             <h3 id="progress-heading" className="text-sm font-semibold text-text-muted">
               گیرندگان
@@ -119,7 +119,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
               <li key={a.personId} className="flex min-h-11 items-center justify-between gap-3 px-4 py-2 text-sm">
                 <bdi className="text-text">{a.name}</bdi>
                 <span className="flex items-center gap-2 text-text-muted">
-                  {a.respondedAt ? <RelativeTime at={a.respondedAt} mode="time" className="text-xs" /> : null}
+                  {a.respondedAt ? <RelativeTime at={a.respondedAt} mode="time" className="text-meta" /> : null}
                   <Chip tone={ASSIGNEE_STATE[a.state].tone}>{ASSIGNEE_STATE[a.state].label}</Chip>
                 </span>
               </li>
@@ -135,8 +135,8 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
         {comments.length === 0 ? <p className="text-sm text-text-faint">هنوز نظری ثبت نشده.</p> : null}
         <ul className="flex flex-col gap-2">
           {comments.map((c) => (
-            <li key={c.id} className={cn("rounded-card bg-surface px-4 py-3 shadow-1", c.visibility === "staff_only" && "bg-warning-soft/50 ring-1 ring-warning/50")}>
-              <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-text-muted">
+            <li key={c.id} className={cn("surface-work px-4 py-3", c.visibility === "staff_only" && "bg-warning-soft/50 ring-1 ring-warning/50")}>
+              <div className="flex flex-wrap items-baseline justify-between gap-2 text-meta text-text-muted">
                 <span className="font-medium text-text">
                   <bdi>{c.authorName}</bdi>
                 </span>
@@ -166,7 +166,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
       ) : null}
 
       {transitions.length > 1 ? (
-        <details className="rounded-card bg-surface shadow-1">
+        <details className="surface-panel">
           <summary className="flex min-h-11 cursor-pointer items-center px-4 text-sm font-medium text-text-muted">تاریخچهٴ وضعیت</summary>
           <ol className="divide-y divide-line/70 border-t border-line/70">
             {transitions.map((t) => (
@@ -179,7 +179,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
                     <bdi>{t.byName}</bdi>
                   </span>
                 </span>
-                <RelativeTime at={t.at} mode="time" className="text-xs text-text-muted" />
+                <RelativeTime at={t.at} mode="time" className="text-meta text-text-muted" />
               </li>
             ))}
           </ol>

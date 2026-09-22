@@ -149,7 +149,7 @@ function NavLink({ item, current, count, layout, children }: { item: Item; curre
           href={item.href}
           aria-current={current ? "page" : undefined}
           className={cn(
-            "group pressable relative flex min-h-14 flex-col px-1 text-xs",
+            "group pressable relative flex min-h-14 flex-col px-1 text-meta",
             // The 36 px primary mark takes the cell's vertical padding and the glyph box's 8 px of padding/gap: every
             // cell stays 60 px and the label lands within 2 px of its neighbours'.
             item.primary ? "py-0" : "py-1",

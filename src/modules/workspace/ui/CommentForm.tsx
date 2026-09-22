@@ -56,7 +56,7 @@ export function CommentForm({ workItemId, canStaffOnly, privateToStaff = false }
             فقط برای کادر مدرسه
           </label>
         ) : privateToStaff ? (
-          <span className="text-sm leading-6 text-text-muted">نظر شما فقط برای معلم و کادر مدرسه دیده می‌شود.</span>
+          <span className="text-sm leading-6 text-text-muted">نظر شما فقط برای دبیر و کادر مدرسه دیده می‌شود.</span>
         ) : (
           <span />
         )}

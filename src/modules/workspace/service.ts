@@ -139,7 +139,7 @@ export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWor
     if (existing) return { id: existing.id, assigneeCount: existing.n, notified: 0, duplicate: true };
   }
   const type = await findTypeWithInitialStatus(tx, input.typeCode);
-  if (!type) throw invalidReference("نوع کار یافت نشد.");
+  if (!type) throw invalidReference("نوع تکلیف یافت نشد.");
   const recipientIds = [...new Set(await resolveRecipients(tx, ctx, input.recipients))];
   const creatorName = (await findPersonName(tx, ctx.personId)) ?? "";
 
@@ -187,7 +187,7 @@ export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWor
 
   const notified = await notifyMany(tx, ctx, others, {
     typeCode: "work_item.assigned",
-    title: `کار جدید: ${input.title}`,
+    title: `تکلیف جدید: ${input.title}`,
     body: creatorName,
     sourceKind: "work_item",
     sourceId: wi.id,
@@ -308,11 +308,11 @@ async function setItemStatus(tx: Tx, ctx: WorkspaceCtx, item: WorkItemCore, to: 
  */
 export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatusInput): Promise<ChangeStatusResult> {
   const item = await canViewWorkItem(tx, ctx, input.workItemId);
-  if (item.archivedAt) throw validation(undefined, "این کار بایگانی شده است.");
+  if (item.archivedAt) throw validation(undefined, "این تکلیف بایگانی شده است.");
   if (!canAtAnyScope(ctx.assignments, "workspace.work_item.update")) throw forbidden();
   const statuses = await listStatusesOfType(tx, item.typeId);
   const target = statuses.find((s) => s.code === input.toStatusCode);
-  if (!target) throw validation(undefined, "این وضعیت برای این نوع کار وجود ندارد.");
+  if (!target) throw validation(undefined, "این وضعیت برای این نوع تکلیف وجود ندارد.");
   const note = input.note?.trim() ? input.note.trim() : null;
 
   const mine = await findMyAssigneeRow(tx, ctx.personId, item.id);
@@ -336,9 +336,9 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
     recipients = (await listAssignees(tx, item.id)).map((a) => a.personId).filter((id) => id !== ctx.personId);
   } else {
     if (!mine) throw forbidden();
-    if (item.statusCategory === "cancelled" || item.statusCategory === "done") throw validation(undefined, "این کار بسته شده است.");
+    if (item.statusCategory === "cancelled" || item.statusCategory === "done") throw validation(undefined, "این تکلیف بسته شده است.");
     if (target.category === "doing") {
-      if (mine.state !== "pending") throw validation(undefined, "این کار را قبلاً شروع کرده‌اید.");
+      if (mine.state !== "pending") throw validation(undefined, "این تکلیف را قبلاً شروع کرده‌اید.");
       await tx
         .update(workItemAssignee)
         .set({ state: "accepted" })
@@ -348,7 +348,7 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
         itemChanged = true;
       }
     } else if (target.category === "done") {
-      if (mine.state === "done") throw validation(undefined, "این کار را قبلاً انجام‌شده علامت زده‌اید.");
+      if (mine.state === "done") throw validation(undefined, "این تکلیف را قبلاً انجام‌شده علامت زده‌اید.");
       await tx
         .update(workItemAssignee)
         .set({ state: "done", respondedAt: sql`now()` })
@@ -363,7 +363,7 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
       }
       if (item.createdByPersonId !== ctx.personId) recipients = [item.createdByPersonId];
     } else {
-      throw forbidden("فقط سازندهٴ کار می‌تواند آن را بازگشایی یا لغو کند.");
+      throw forbidden("فقط دهندهٴ تکلیف می‌تواند آن را بازگشایی یا لغو کند.");
     }
   }
 

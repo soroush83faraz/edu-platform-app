@@ -1,4 +1,4 @@
-import { CalendarDays, Plus, Presentation } from "lucide-react";
+import { CalendarDays, ChevronLeft, Plus, Presentation } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -50,7 +50,7 @@ export default async function ClassesPage() {
             <Button asChild>
               <Link href="/inbox/new">
                 <Plus aria-hidden />
-                کار جدید
+                تکلیف جدید
               </Link>
             </Button>
           ) : undefined
@@ -59,14 +59,14 @@ export default async function ClassesPage() {
 
       {offerings.length > 0 ? (
         <section aria-labelledby="my-timetable-heading" className="flex flex-col gap-2.5">
-          <h3 id="my-timetable-heading" className="flex items-center gap-1.5 px-1 text-sm font-semibold text-text-muted">
+          <h3 id="my-timetable-heading" className="flex items-center gap-1.5 px-1 text-section font-semibold text-text">
             <CalendarDays className="size-4" strokeWidth={1.75} aria-hidden />
             برنامهٴ هفتگی من
           </h3>
           {teaching && tt ? (
             <WeekTimetable days={teaching.days} periods={periods} today={tt.today} currentPeriodNo={tt.currentPeriodNo} secondary="class" />
           ) : (
-            <EmptyState title="برنامهٴ هفتگی هنوز تنظیم نشده" description="وقتی مدرسه برنامهٴ کلاس‌ها را ثبت کند، زنگ‌های شما همین‌جا می‌آیند." className="rounded-card bg-surface py-10 shadow-1" />
+            <EmptyState title="برنامهٴ هفتگی هنوز تنظیم نشده" description="وقتی مدرسه برنامهٴ کلاس‌ها را ثبت کند، زنگ‌های شما همین‌جا می‌آیند." className="surface-work py-10" />
           )}
         </section>
       ) : null}
@@ -75,28 +75,31 @@ export default async function ClassesPage() {
         <EmptyState illustration={<BookClay size={112} />} title="هنوز درسی به شما سپرده نشده" description="وقتی مدیر درسی را به شما بدهد، کلاس‌ها همین‌جا می‌آیند." />
       ) : (
         <section aria-labelledby="offerings-heading" className="flex flex-col gap-2.5">
-        <h3 id="offerings-heading" className="flex items-center gap-1.5 px-1 text-sm font-semibold text-text-muted">
+        <h3 id="offerings-heading" className="flex items-center gap-1.5 px-1 text-section font-semibold text-text">
           <Presentation className="size-4" strokeWidth={1.75} aria-hidden />
           درس‌های من
         </h3>
         <ul className="reveal-grid grid grid-cols-2 gap-2.5 md:grid-cols-3">
           {offerings.map((o) => (
             <li key={o.offeringId} className="flex">
-              <Link href={`/subjects/${o.offeringId}`} className="pressable flex w-full flex-col gap-3 rounded-card bg-surface p-4 shadow-1 hover:bg-info-soft/40">
-                <div className="flex flex-col">
-                  <span className="truncate text-base font-semibold text-text">
-                    <bdi>{o.subjectName}</bdi>
+              <Link href={`/subjects/${o.offeringId}`} className="surface-work surface-link flex w-full flex-col gap-3 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-row font-semibold text-text">
+                      <bdi>{o.subjectName}</bdi>
+                    </span>
+                    <span className="text-meta text-text-muted">
+                      کلاس <bdi>{o.classGroupName}</bdi>
+                    </span>
                   </span>
-                  <span className="text-sm text-text-muted">
-                    کلاس <bdi>{o.classGroupName}</bdi>
-                  </span>
+                  <ChevronLeft className="mt-1 size-4 shrink-0 text-text-faint" aria-hidden />
                 </div>
-                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-meta">
                   <span className="text-text-muted">
                     <span className="tabular font-medium text-text">{formatNumberFa(o.activeStudents)}</span> دانش‌آموز
                   </span>
                   <span className={cn("tabular rounded-full px-2 py-0.5 font-medium", o.openItems > 0 ? "bg-info-soft text-primary-800" : "bg-surface-sunken text-text-muted")}>
-                    {formatNumberFa(o.openItems)} کار باز
+                    {formatNumberFa(o.openItems)} تکلیف باز
                   </span>
                 </div>
               </Link>

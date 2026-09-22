@@ -65,7 +65,7 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
                 <bdi>{offering.teacherName}</bdi>
               </>
             ) : (
-              " · معلم هنوز مشخص نشده"
+              " · دبیر هنوز مشخص نشده"
             )}
           </>
         }
@@ -74,7 +74,7 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
             <Button asChild>
               <Link href={`/inbox/new?offering=${offering.id}`}>
                 <Plus aria-hidden />
-                کار جدید برای این درس
+                تکلیف جدید برای این درس
               </Link>
             </Button>
           ) : undefined
@@ -99,7 +99,7 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
       {sessions.length > 0 ? (
         <ul className="flex flex-wrap gap-2" aria-label="جلسه‌های هفته">
           {sessions.map((s) => (
-            <li key={`${s.weekday}-${s.periodNo}`} className={cn("rounded-full border px-3 py-1 text-xs", nextSession && nextSession.weekday === s.weekday && nextSession.periodNo === s.periodNo ? "border-info bg-info-soft text-primary-800" : "border-line bg-surface text-text-muted")}>
+            <li key={`${s.weekday}-${s.periodNo}`} className={cn("rounded-full border px-3 py-1 text-meta", nextSession && nextSession.weekday === s.weekday && nextSession.periodNo === s.periodNo ? "border-info bg-info-soft text-primary-800" : "border-line bg-surface text-text-muted")}>
               {WEEKDAY_LABELS[s.weekday]}{" "}
               <bdi dir="ltr" className="tabular">
                 {formatTimeRangeFa(s.startsAt, s.endsAt)}
@@ -111,9 +111,9 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
 
       <section aria-labelledby="items-heading" className="flex flex-col gap-3">
         <h3 id="items-heading" className="px-1 text-section font-semibold text-text">
-          کارهای این درس
+          تکالیف این درس
         </h3>
-        <nav aria-label="وضعیت کارها">
+        <nav aria-label="وضعیت تکالیف">
           <ul className="grid grid-cols-2 gap-1 rounded-2xl bg-neutral-200/60 p-1">
             {TABS.map(({ tab: t, label, icon: Icon }) => {
               const current = tab === t;
@@ -137,12 +137,12 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
         {rows.length === 0 ? (
           <EmptyState
             illustration={<EmptyClay size={96} />}
-            title={tab === "todo" ? "کاری برای این درس در انتظار نیست" : "هنوز کاری از این درس انجام‌شده علامت نخورده"}
-            description={viewer.canCreate && tab === "todo" ? "با «کار جدید برای این درس» تکلیف یا کاری به کلاس بدهید." : undefined}
-            className="rounded-card bg-surface shadow-1"
+            title={tab === "todo" ? "تکلیفی برای این درس در انتظار نیست" : "هنوز تکلیفی از این درس انجام‌شده علامت نخورده"}
+            description={viewer.canCreate && tab === "todo" ? "با «تکلیف جدید برای این درس» به کلاس تکلیف بدهید." : undefined}
+            className="surface-work"
           />
         ) : (
-          <ul className="reveal-rows divide-y divide-line/70 rounded-card bg-surface shadow-1">
+          <ul className="reveal-rows divide-y divide-line/70 surface-work">
             {rows.map((row) => (
               <InboxRow key={row.id} row={row} />
             ))}

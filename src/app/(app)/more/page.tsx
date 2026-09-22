@@ -18,7 +18,7 @@ const ROLE_NAMES: Record<string, string> = {
   org_admin: "مدیر سازمان",
   school_principal: "مدیر مدرسه",
   vice_principal: "معاون",
-  teacher: "معلم",
+  teacher: "دبیر",
   student: "دانش‌آموز",
   principal: "مدیر",
 };

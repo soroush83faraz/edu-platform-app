@@ -70,7 +70,7 @@ export function WeekTimetable({ days, periods, today, currentPeriodNo, secondary
               <tr key={p.periodNo}>
                 <th scope="row" className={cn("sticky start-0 z-10 bg-surface px-2 py-1.5 text-start font-normal", i > 0 && "border-t border-line/70")}>
                   <span className="block text-text">{p.label}</span>
-                  <bdi dir="ltr" className="tabular block text-xs whitespace-nowrap text-text-faint">
+                  <bdi dir="ltr" className="tabular block text-meta whitespace-nowrap text-text-faint">
                     {formatTimeFa(p.startsAt)}–{formatTimeFa(p.endsAt)}
                   </bdi>
                 </th>
@@ -92,7 +92,7 @@ export function WeekTimetable({ days, periods, today, currentPeriodNo, secondary
                                 )}
                               >
                                 <bdi className={cn("line-clamp-1 text-sm font-medium", now ? "text-primary-900" : "text-text")}>{s.subjectName}</bdi>
-                                <bdi className={cn("line-clamp-1 text-xs", now ? "text-primary-800/80" : "text-text-muted")}>{secondary === "class" ? `کلاس ${s.classGroupName}` : (s.teacherName ?? "بدون دبیر")}</bdi>
+                                <bdi className={cn("line-clamp-1 text-meta", now ? "text-primary-800/80" : "text-text-muted")}>{secondary === "class" ? `کلاس ${s.classGroupName}` : (s.teacherName ?? "بدون دبیر")}</bdi>
                                 {now ? (
                                   <span className="absolute top-1 end-1 inline-flex items-center gap-0.5 text-[0.625rem] leading-none font-semibold text-primary-700">
                                     <span aria-hidden className="size-1.5 rounded-full bg-primary-600" />

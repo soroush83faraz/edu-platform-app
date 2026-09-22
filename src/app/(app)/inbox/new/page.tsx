@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { newWorkItemOptionsQuery } from "@/modules/workspace/queries";
 import { NewWorkItemForm } from "@/modules/workspace/ui/NewWorkItemForm";
 
-export const metadata: Metadata = { title: "کار جدید | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "تکلیف جدید | سامانهٴ مدرسه" };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -20,8 +20,8 @@ export default async function NewWorkItemPage({ searchParams }: { searchParams: 
     if (options.code === "UNAUTHENTICATED") redirect("/login");
     return (
       <EmptyState
-        title="شما نمی‌توانید کار جدید بسازید"
-        description="ایجاد کار برای معلمان و کادر مدرسه است."
+        title="شما نمی‌توانید تکلیف بدهید"
+        description="دادن تکلیف با دبیران و کادر مدرسه است."
         action={
           <Button asChild variant="outline">
             <Link href="/inbox">بازگشت به پنل من</Link>
@@ -32,7 +32,7 @@ export default async function NewWorkItemPage({ searchParams }: { searchParams: 
   }
   return (
     <ContentWidth size="reading" className="gap-4">
-      <PageHeader back={{ href: "/inbox", label: "پنل من" }} title="کار جدید" />
+      <PageHeader back={{ href: "/inbox", label: "پنل من" }} title="تکلیف جدید" />
       <NewWorkItemForm
         offerings={options.data.offerings}
         canPickPersons={options.data.canPickPersons}

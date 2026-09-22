@@ -150,7 +150,7 @@ export function TimetableEditor({ data, today, currentPeriodNo }: { data: ClassT
               <tr key={p.periodNo}>
                 <th scope="row" className={cn("sticky start-0 z-10 bg-surface px-3 py-2 text-start align-top font-normal", i > 0 && "border-t border-line/70")}>
                   <span className="block text-sm text-text">{p.label}</span>
-                  <bdi dir="ltr" className="tabular block text-xs text-text-faint">
+                  <bdi dir="ltr" className="tabular block text-meta text-text-faint">
                     {formatTimeRangeFa(p.startsAt, p.endsAt)}
                   </bdi>
                 </th>
