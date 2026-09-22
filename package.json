@@ -7,6 +7,7 @@
     "build": "tsx scripts/build-sw.ts && tsx scripts/build-seed-catalog.ts && next build",
     "build:sw": "tsx scripts/build-sw.ts",
     "build:seed-catalog": "tsx scripts/build-seed-catalog.ts",
+    "package:release": "node scripts/package-release.mjs",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

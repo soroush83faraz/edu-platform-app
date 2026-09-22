@@ -46,3 +46,7 @@ next-env.d.ts
 
 # import CLI: pre-commit dumps and credential CSVs (plaintext!) — never commit
 /backups
+
+# cPanel release packaging output (scripts/package-release.mjs) — never committed
+/release
+/release-test

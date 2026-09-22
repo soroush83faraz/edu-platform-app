@@ -3,6 +3,12 @@ import type { NextConfig } from "next";
 const buildCpus = Number(process.env.NEXT_BUILD_CPUS);
 const isDev = process.env.NODE_ENV === "development";
 
+// The cPanel/Passenger deployment may be mounted on a sub-path of the domain (e.g. https://3d-ul.ir/extra/66/school)
+// instead of its own subdomain, and Next must know that at BUILD time so every route and asset URL carries the prefix.
+// Set by the CI build (`BASE_PATH` repository variable, docs/ops/cpanel-deploy.md); unset or empty = served from the
+// domain root, which is the Docker/Caddy path and the default.
+const basePath = (process.env.BASE_PATH ?? "").trim().replace(/\/+$/, "");
+
 // Content Security Policy. Next's inline bootstrap scripts need 'unsafe-inline' (nonces are deferred: they force
 // every page dynamic and the app already is); dev additionally needs 'unsafe-eval' for React Refresh. Everything
 // is same-origin by design — no fonts, analytics or CDNs. HSTS is Caddy's job (deploy/Caddyfile).
@@ -32,6 +38,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // Required by the Dockerfile: copies .next/standalone + .next/static + public into the runner image.
   output: "standalone",
+  ...(basePath ? { basePath, assetPrefix: basePath } : {}),
   poweredByHeader: false,
   reactStrictMode: true,
   // Never load anything from a third-party host (fonts, analytics, CDNs) — self-host everything.

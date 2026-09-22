@@ -1,0 +1,247 @@
+name: Deploy to cPanel (Passenger)
+
+# Builds the Next.js standalone bundle on GitHub's runners and ships it over FTPS to the cPanel account,
+# where Phusion Passenger runs it through deploy/cpanel/app.js. The shared host has no build toolchain,
+# not enough RAM for `next build`, and no SSH — so the runner is the only place the build can happen.
+#
+# THIS PIPELINE NEVER TOUCHES THE DATABASE. No migration, no seed, no psql, no drizzle-kit step is allowed
+# here: schema changes are applied by hand from a developer machine (docs/ops/cpanel-deploy.md).
+
+on:
+  workflow_dispatch:
+    inputs:
+      restart_only:
+        description: "Only restart the app on the server (touch tmp/restart.txt); no build, no upload"
+        type: boolean
+        required: false
+        default: false
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+
+concurrency:
+  group: deploy-cpanel
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      FTP_HOST: ${{ secrets.FTP_HOST }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      FTP_SERVER_DIR: ${{ vars.FTP_SERVER_DIR }}
+      # Explicit FTPS (AUTH TLS) only — lftp fails rather than falling back to plaintext.
+      # FTP_TLS_VERIFY=false is the escape hatch for shared hosts whose FTP certificate does not match the host name.
+      LFTP_SETTINGS: >-
+        set cmd:fail-exit true;
+        set ftp:ssl-force true;
+        set ftp:ssl-protect-data true;
+        set ssl:verify-certificate ${{ vars.FTP_TLS_VERIFY || 'true' }};
+        set ftp:passive-mode true;
+        set net:timeout 30;
+        set net:max-retries 3;
+        set net:reconnect-interval-base 5;
+        set mirror:parallel-transfer-count 4
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Check required secrets and variables
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "${FTP_HOST}" ]       || missing+=("secret FTP_HOST")
+          [ -n "${FTP_USERNAME}" ]   || missing+=("secret FTP_USERNAME")
+          [ -n "${FTP_PASSWORD}" ]   || missing+=("secret FTP_PASSWORD")
+          [ -n "${FTP_SERVER_DIR}" ] || missing+=("variable FTP_SERVER_DIR")
+          [ -n "${HEALTH_URL}" ]     || missing+=("variable HEALTH_URL")
+          if [ ${#missing[@]} -gt 0 ]; then
+            printf 'Missing configuration: %s\n' "${missing[*]}"
+            echo "See docs/ops/cpanel-deploy.md — Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+        env:
+          HEALTH_URL: ${{ vars.HEALTH_URL }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+
+      - name: Install dependencies
+        if: ${{ !inputs.restart_only }}
+        run: pnpm install --frozen-lockfile
+
+      # Fail fast before anything is uploaded. Integration tests are NOT run here: they need a PostgreSQL
+      # instance and this workflow must stay away from databases.
+      - name: Typecheck
+        if: ${{ !inputs.restart_only }}
+        run: pnpm typecheck
+
+      - name: Lint
+        if: ${{ !inputs.restart_only }}
+        run: pnpm lint
+
+      - name: Build
+        if: ${{ !inputs.restart_only }}
+        env:
+          # Empty = the app is served from the domain root (subdomain). Set it to e.g. /extra/66/school
+          # when the cPanel application is mounted on a sub-path.
+          BASE_PATH: ${{ vars.BASE_PATH }}
+          NEXT_BUILD_CPUS: 2
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm build
+
+      - name: Package release
+        if: ${{ !inputs.restart_only }}
+        id: pack
+        env:
+          BASE_PATH: ${{ vars.BASE_PATH }}
+        run: |
+          set -euo pipefail
+          RELEASE_NAME="$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_SHA::7}"
+          echo "name=$RELEASE_NAME" >> "$GITHUB_OUTPUT"
+          node scripts/package-release.mjs release
+          # Stage the upload tree so a single `mirror -R` creates releases/<name>/ on the server.
+          mkdir -p .deploy/upload/releases .deploy/restart/tmp
+          mv release ".deploy/upload/releases/$RELEASE_NAME"
+          printf '%s\n' "$RELEASE_NAME" > .deploy/current.txt
+          : > .deploy/restart/tmp/restart.txt
+          echo "Release: $RELEASE_NAME"
+
+      - name: Install lftp
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lftp
+
+      # Keep the release name that is live right now, so a failed health check can put it back.
+      - name: Read the currently live release (for rollback)
+        id: prev
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$FTP_PASSWORD"
+          DIR="${FTP_SERVER_DIR%/}"
+          mkdir -p .deploy
+          set +e
+          lftp <<EOF
+          $LFTP_SETTINGS
+          open "ftp://$FTP_HOST"
+          user "$FTP_USERNAME" "$FTP_PASSWORD"
+          get "$DIR/current.txt" -o .deploy/prev-current.txt
+          bye
+          EOF
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ] && [ -s .deploy/prev-current.txt ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Currently live: $(cat .deploy/prev-current.txt)"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No readable current.txt on the server (first deploy?) — automatic rollback is disabled for this run."
+          fi
+
+      # 1/3 — the release itself. No --delete: existing releases and app.js are never removed by the pipeline.
+      - name: Upload release
+        if: ${{ !inputs.restart_only }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$FTP_PASSWORD"
+          DIR="${FTP_SERVER_DIR%/}"
+          lftp <<EOF
+          $LFTP_SETTINGS
+          open "ftp://$FTP_HOST"
+          user "$FTP_USERNAME" "$FTP_PASSWORD"
+          mirror -R --no-perms .deploy/upload "$DIR/"
+          bye
+          EOF
+
+      # 2/3 — flip the pointer. app.js reads this file on boot.
+      - name: Upload current.txt
+        if: ${{ !inputs.restart_only }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$FTP_PASSWORD"
+          DIR="${FTP_SERVER_DIR%/}"
+          lftp <<EOF
+          $LFTP_SETTINGS
+          open "ftp://$FTP_HOST"
+          user "$FTP_USERNAME" "$FTP_PASSWORD"
+          put .deploy/current.txt -o "$DIR/current.txt"
+          bye
+          EOF
+
+      # 3/3 — Passenger restarts the app when tmp/restart.txt changes.
+      - name: Restart the application
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$FTP_PASSWORD"
+          DIR="${FTP_SERVER_DIR%/}"
+          mkdir -p .deploy/restart/tmp
+          : > .deploy/restart/tmp/restart.txt
+          lftp <<EOF
+          $LFTP_SETTINGS
+          open "ftp://$FTP_HOST"
+          user "$FTP_USERNAME" "$FTP_PASSWORD"
+          mirror -R --no-perms .deploy/restart "$DIR/"
+          bye
+          EOF
+
+      # Passenger spawns the app on the first request after the restart; a cold start on shared hosting is slow,
+      # hence the generous retry window (10 × 6 s).
+      - name: Health check
+        id: health
+        env:
+          HEALTH_URL: ${{ vars.HEALTH_URL }}
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS --retry 10 --retry-delay 6 --retry-connrefused --retry-all-errors --max-time 40 "$HEALTH_URL")"
+          echo "$body"
+          echo "$body" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'
+          echo "$body" | grep -Eq '"db"[[:space:]]*:[[:space:]]*"up"' || echo "::warning::health reports the database as not up"
+
+      # Put the previous release back and restart. The job still fails — this only limits the outage.
+      - name: Roll back to the previous release
+        if: ${{ always() && steps.health.outcome == 'failure' && steps.prev.outputs.found == 'true' && !inputs.restart_only }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$FTP_PASSWORD"
+          DIR="${FTP_SERVER_DIR%/}"
+          echo "::error::Health check failed for release ${{ steps.pack.outputs.name }} — rolling back to $(cat .deploy/prev-current.txt)"
+          mkdir -p .deploy/restart/tmp
+          : > .deploy/restart/tmp/restart.txt
+          lftp <<EOF
+          $LFTP_SETTINGS
+          open "ftp://$FTP_HOST"
+          user "$FTP_USERNAME" "$FTP_PASSWORD"
+          put .deploy/prev-current.txt -o "$DIR/current.txt"
+          mirror -R --no-perms .deploy/restart "$DIR/"
+          bye
+          EOF
+          echo "Rolled back. The failed release is still in releases/ — delete it in the cPanel File Manager."
+
+      - name: Summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### cPanel deploy"
+            echo ""
+            echo "- release: \`${{ steps.pack.outputs.name || 'restart only' }}\`"
+            echo "- health: \`${{ steps.health.outcome }}\`"
+            echo "- previous release kept for rollback: \`${{ steps.prev.outputs.found }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
