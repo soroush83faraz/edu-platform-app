@@ -118,7 +118,7 @@ const STANDARD_STATUSES: SystemStatus[] = [
   { code: "open", name: "باز", category: "todo", sequence: 1 },
   { code: "in_progress", name: "در حال انجام", category: "doing", sequence: 2 },
   { code: "done", name: "انجام‌شده", category: "done", sequence: 3, isTerminal: true },
-  { code: "cancelled", name: "لغوشده", category: "cancelled", sequence: 4, isTerminal: true },
+  { code: "cancelled", name: "کنسل‌شده", category: "cancelled", sequence: 4, isTerminal: true },
 ];
 
 /** System work item types (organization_id NULL). Statuses are authoritative: stale codes of a type are removed. */
@@ -162,6 +162,7 @@ export const NOTIFICATION_TYPES: SystemNotificationType[] = [
   { code: "work_item.assigned", module: "workspace", name: "کار جدید به شما سپرده شد" },
   { code: "work_item.comment", module: "workspace", name: "نظر جدید روی کار" },
   { code: "work_item.status_changed", module: "workspace", name: "وضعیت کار تغییر کرد" },
+  { code: "work_item.due_extended", module: "workspace", name: "مهلت تکلیف تمدید شد" },
   { code: "work_item.due_soon", module: "workspace", name: "مهلت کار نزدیک است", urgency: "high" },
   { code: "account.password_reset", module: "iam", name: "رمز حساب بازنشانی شد", urgency: "high", userCanDisable: false },
   { code: "system.announcement", module: "system", name: "اطلاعیهٴ سامانه", userCanDisable: false },

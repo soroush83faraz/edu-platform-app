@@ -64,6 +64,16 @@ export type ChangeStatusInput = z.output<typeof ChangeStatusInput>;
 
 export const SetPinnedInput = z.object({ workItemId: uuid, pinned: z.boolean() }).strict();
 
+/** «تمدید»: the same date/time strings as the create form; the action parses them into the new `dueAt`. */
+export const ExtendDueInput = z
+  .object({
+    workItemId: uuid,
+    dueDate: z.string().trim().min(1, "تاریخ جدید را انتخاب کنید.").max(12),
+    dueTime: z.string().trim().max(5).optional(),
+  })
+  .strict();
+export type ExtendDueInput = z.output<typeof ExtendDueInput>;
+
 export const ListInboxInput = z
   .object({
     tab: z.enum(INBOX_TABS).default("todo"),

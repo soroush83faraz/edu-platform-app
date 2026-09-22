@@ -12,7 +12,7 @@ import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
 import { chunk } from "@/lib/collections";
 import { forbidden, invalidReference, notFound, validation } from "@/lib/errors";
-import { formatNumberFa } from "@/lib/format";
+import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
 import { can, canAtAnyScope, canBroadly, type CanContext } from "@/modules/iam/can";
 import { staffProfile } from "@/modules/iam/schema";
 import { notifyMany } from "@/modules/notif/service";
@@ -396,6 +396,55 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
     tx,
   );
   return { statusCode: itemChanged ? target.code : item.statusCode, itemChanged, assigneesDone: done, assigneesTotal: assignees.length };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// due date
+// ---------------------------------------------------------------------------------------------------------------
+
+export interface ExtendDueAtInput {
+  workItemId: string;
+  dueAt: Date;
+}
+
+/**
+ * «تمدید»: the creator (or a broad `update` holder) moves the due date of an OPEN item to a later moment. The new
+ * due must lie in the future — anything else is a back-date, which is not an extension. Every assignee is told
+ * («مهلت تکلیف «…» تا … تمدید شد», deduped per new due) and their inbox rows flip back to unread; one audit row.
+ */
+export async function extendDueAt(tx: Tx, ctx: WorkspaceCtx, input: ExtendDueAtInput): Promise<{ dueAt: Date; notified: number }> {
+  const item = await canViewWorkItem(tx, ctx, input.workItemId);
+  if (item.archivedAt) throw validation(undefined, "این تکلیف بایگانی شده است.");
+  if (!canAtAnyScope(ctx.assignments, "workspace.work_item.update")) throw forbidden();
+  const manager = item.createdByPersonId === ctx.personId || canBroadly(ctx.assignments, "workspace.work_item.update");
+  if (!manager) throw forbidden("فقط دهندهٴ تکلیف می‌تواند مهلت را تمدید کند.");
+  if (item.statusCategory === "done" || item.statusCategory === "cancelled") throw validation(undefined, "این تکلیف بسته شده است؛ برای تمدید اول بازگشایی کنید.");
+  if (input.dueAt.getTime() <= Date.now()) throw validation({ fieldErrors: { dueDate: ["مهلت جدید باید بعد از اکنون باشد."] } });
+  if (item.dueAt && input.dueAt.getTime() === item.dueAt.getTime()) throw validation({ fieldErrors: { dueDate: ["مهلت تغییری نکرده است."] } });
+
+  await tx.update(workItem).set({ dueAt: input.dueAt }).where(eq(workItem.id, item.id));
+
+  const recipients = (await listAssignees(tx, item.id)).map((a) => a.personId).filter((id) => id !== ctx.personId);
+  let notified = 0;
+  if (recipients.length > 0) {
+    const when = formatJalaliDateTime(input.dueAt);
+    notified = await notifyMany(tx, ctx, recipients, {
+      typeCode: "work_item.due_extended",
+      title: `مهلت تکلیف «${item.title}» تا ${when} تمدید شد`,
+      body: null,
+      sourceKind: "work_item",
+      sourceId: item.id,
+      deepLink: `/inbox/${item.id}`,
+      dedupeKey: (personId) => `wi:${item.id}:due:${input.dueAt.toISOString()}:${personId}`,
+    });
+    await tx
+      .update(inboxEntry)
+      .set({ state: "unread" })
+      .where(and(eq(inboxEntry.workItemId, item.id), inArray(inboxEntry.personId, recipients), eq(inboxEntry.state, "read")));
+  }
+
+  await audit(ctx, "workspace.work_item.due_extended", { schema: "workspace", table: "work_item", id: item.id }, { dueAt: item.dueAt }, { dueAt: input.dueAt }, tx);
+  return { dueAt: input.dueAt, notified };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

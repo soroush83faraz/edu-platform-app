@@ -7,22 +7,27 @@ import { defineAction, defineQuery } from "@/lib/actions";
 import { forbidden, validation } from "@/lib/errors";
 import { canBroadly } from "@/modules/iam/can";
 import { parseJalaliToInstant } from "@/lib/format";
-import { AddCommentInput, ChangeStatusInput, CreateWorkItemInput, OfferingIdInput, SearchPersonsInput, SetPinnedInput, WorkItemIdInput } from "./dto";
+import { AddCommentInput, ChangeStatusInput, CreateWorkItemInput, ExtendDueInput, OfferingIdInput, SearchPersonsInput, SetPinnedInput, WorkItemIdInput } from "./dto";
 import { listOfferingRoster, searchPersons } from "./repo";
-import { addComment, archiveInbox, changeStatus, createWorkItem, markInboxRead, setPinned } from "./service";
+import { addComment, archiveInbox, changeStatus, createWorkItem, extendDueAt, markInboxRead, setPinned } from "./service";
 
-export const createWorkItemAction = defineAction({ schema: CreateWorkItemInput, permission: "workspace.work_item.create", scope: "any" }, async (tx, input, ctx) => {
-  let dueAt: Date | null = null;
-  if (input.dueDate && input.dueDate.trim() !== "") {
-    dueAt = parseJalaliToInstant(input.dueDate, input.dueTime);
+/** The pickers' strings («۱۴۰۵/۰۷/۰۵», `HH:mm` or empty = end of day) → the UTC instant; field errors point at the right control. */
+function parseDue(dueDate: string | undefined, dueTime: string | undefined): Date | null {
+  if (dueDate && dueDate.trim() !== "") {
+    const dueAt = parseJalaliToInstant(dueDate, dueTime);
     if (!dueAt) {
       // The date alone parses → the time is what is wrong; point at the right field (m3).
-      const dateOk = parseJalaliToInstant(input.dueDate, null) !== null;
+      const dateOk = parseJalaliToInstant(dueDate, null) !== null;
       throw validation({ fieldErrors: dateOk ? { dueTime: ["ساعت را به شکل ۲۳:۵۹ وارد کنید."] } : { dueDate: ["تاریخ را به شکل ۱۴۰۵/۰۷/۰۵ وارد کنید."] } });
     }
-  } else if (input.dueTime && input.dueTime.trim() !== "") {
-    throw validation({ fieldErrors: { dueDate: ["برای ساعت، تاریخ هم لازم است."] } });
+    return dueAt;
   }
+  if (dueTime && dueTime.trim() !== "") throw validation({ fieldErrors: { dueDate: ["برای ساعت، تاریخ هم لازم است."] } });
+  return null;
+}
+
+export const createWorkItemAction = defineAction({ schema: CreateWorkItemInput, permission: "workspace.work_item.create", scope: "any" }, async (tx, input, ctx) => {
+  const dueAt = parseDue(input.dueDate, input.dueTime);
   return createWorkItem(tx, ctx, {
     typeCode: input.typeCode,
     title: input.title,
@@ -41,6 +46,12 @@ export const addCommentAction = defineAction({ schema: AddCommentInput, permissi
 export const changeStatusAction = defineAction({ schema: ChangeStatusInput, permission: "workspace.work_item.update", scope: "any" }, async (tx, input, ctx) =>
   changeStatus(tx, ctx, { workItemId: input.workItemId, toStatusCode: input.toStatusCode, note: input.note ?? null }),
 );
+
+export const extendDueAtAction = defineAction({ schema: ExtendDueInput, permission: "workspace.work_item.update", scope: "any" }, async (tx, input, ctx) => {
+  const dueAt = parseDue(input.dueDate, input.dueTime);
+  if (!dueAt) throw validation({ fieldErrors: { dueDate: ["تاریخ جدید را انتخاب کنید."] } });
+  return extendDueAt(tx, ctx, { workItemId: input.workItemId, dueAt });
+});
 
 export const markInboxReadAction = defineAction({ schema: WorkItemIdInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) =>
   markInboxRead(tx, ctx, { workItemId: input.workItemId }),

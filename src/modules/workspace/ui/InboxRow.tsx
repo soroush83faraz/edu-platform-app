@@ -60,7 +60,7 @@ export function InboxRow({ row }: { row: Row }) {
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           {showProgress ? <ProgressBar done={row.assigneesDone} total={row.assigneesTotal} /> : null}
           {row.unread ? <span className="size-2.5 rounded-full bg-sky" aria-label="خوانده‌نشده" /> : null}
-          {row.category === "done" ? <Chip tone="success">انجام‌شده</Chip> : row.category === "cancelled" ? <Chip tone="neutral">لغوشده</Chip> : null}
+          {row.category === "done" ? <Chip tone="success">انجام‌شده</Chip> : row.category === "cancelled" ? <Chip tone="neutral">کنسل‌شده</Chip> : null}
         </div>
       </Link>
     </li>

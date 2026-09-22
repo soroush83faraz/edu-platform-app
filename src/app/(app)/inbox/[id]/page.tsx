@@ -85,7 +85,10 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
         </dl>
         <WorkItemActions
           workItemId={item.id}
+          title={item.title}
           statusCategory={item.statusCategory}
+          dueAt={item.dueAt}
+          assigneeCount={assignees.length}
           myAssigneeState={myAssigneeState}
           isManager={viewer.isManager}
           canUpdate={viewer.canUpdate}

@@ -1,30 +1,45 @@
 "use client";
 
-import { Archive, Ban, Check, Ellipsis, Pin, PinOff, RotateCcw } from "lucide-react";
+import { Archive, Ban, CalendarPlus, Check, CheckCheck, Ellipsis, Pin, PinOff, RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { cn } from "cn";
 import { ResponsiveModal } from "@/components/admin/ResponsiveModal";
+import { JalaliDatePicker } from "@/components/pickers/JalaliDatePicker";
+import { TimePicker, formatTimeFa } from "@/components/pickers/TimePicker";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { archiveInboxAction, changeStatusAction, markInboxReadAction, setPinnedAction } from "../actions";
+import { flatten } from "@/lib/form-errors";
+import { formatJalaliDateTime, parseJalaliToInstant, tehranNow } from "@/lib/format";
+import { formatHm, formatJalaliDay, formatJalaliDayLong, parseJalaliDay, tehranToday } from "@/lib/jalali-grid";
+import { archiveInboxAction, changeStatusAction, extendDueAtAction, markInboxReadAction, setPinnedAction } from "../actions";
 import type { StatusCategory } from "../repo";
 
 export interface WorkItemActionsProps {
   workItemId: string;
+  title: string;
   statusCategory: StatusCategory;
+  dueAt: Date | null;
+  assigneeCount: number;
   myAssigneeState: "pending" | "accepted" | "done" | null;
   isManager: boolean;
   canUpdate: boolean;
   inbox: { state: string; isPinned: boolean } | null;
 }
 
-/** Status buttons per role + the «گزینه‌های بیشتر» menu (pin / archive). Marks my inbox row read once on mount. */
-export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, isManager, canUpdate, inbox }: WorkItemActionsProps) {
+/**
+ * The action row of a تکلیف. An assignee gets «انجام شد». Its creator (or a broad admin) gets the three creator
+ * actions — «اتمام» (primary: closes it for everyone), «تمدید» (secondary: a later due date), «کنسل» (ghost, red)
+ * — or «بازگشایی» once it is closed. Pin / archive stay in the personal «بیشتر» menu. Full-width and stacked on
+ * phones, one inline row from `sm:`, every target 44 px. Marks my inbox row read once on mount.
+ */
+export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assigneeCount, myAssigneeState, isManager, canUpdate, inbox }: WorkItemActionsProps) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [pinned, setPinned] = useState(inbox?.isPinned ?? false);
-  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirm, setConfirm] = useState<"done" | "cancel" | null>(null);
+  const [extending, setExtending] = useState(false);
 
   useEffect(() => {
     if (inbox?.state !== "unread") return;
@@ -44,68 +59,58 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
 
   const closed = statusCategory === "done" || statusCategory === "cancelled";
   const isAssignee = myAssigneeState !== null;
+  const manager = canUpdate && isManager;
+  const buttonClass = "w-full sm:w-auto";
   const buttons: React.ReactNode[] = [];
 
-  // «شروع کردم» (in_progress) is hidden with the «در جریان» tab (owner decision); the status machine and the
-  // `changeStatus` transition stay intact — only «انجام شد» is offered to an assignee.
-  if (canUpdate && isAssignee && !closed) {
-    if (myAssigneeState !== "done") {
-      buttons.push(
-        <Button key="done" size="lg" className="w-full" disabled={pending} onClick={() => run("انجام شد", () => changeStatusAction({ workItemId, toStatusCode: "done" }))}>
-          <Check aria-hidden />
-          انجام شد
-        </Button>,
-      );
-    }
+  // «شروع کردم» (in_progress) is hidden with the «در جریان» tab (owner decision); an assignee only marks «انجام شد».
+  if (canUpdate && isAssignee && !closed && myAssigneeState !== "done") {
+    buttons.push(
+      <Button key="done" className={buttonClass} disabled={pending} onClick={() => run("انجام شد", () => changeStatusAction({ workItemId, toStatusCode: "done" }))}>
+        <Check aria-hidden />
+        انجام شد
+      </Button>,
+    );
   }
-  if (canUpdate && isManager) {
-    if (closed) {
+  if (manager && closed) {
+    buttons.push(
+      <Button key="reopen" variant="outline" className={buttonClass} disabled={pending} onClick={() => run("بازگشایی شد", () => changeStatusAction({ workItemId, toStatusCode: "open" }))}>
+        <RotateCcw aria-hidden />
+        بازگشایی
+      </Button>,
+    );
+  }
+  if (manager && !closed) {
+    // A creator who is also the (only) assignee already has «انجام شد» above — «اتمام» would be the same click twice.
+    if (!isAssignee) {
       buttons.push(
-        <Button key="reopen" variant="outline" size="lg" className="w-full" disabled={pending} onClick={() => run("بازگشایی شد", () => changeStatusAction({ workItemId, toStatusCode: "open" }))}>
-          <RotateCcw aria-hidden />
-          بازگشایی
-        </Button>,
-      );
-    } else {
-      // Cancelling closes the item for every assignee — one confirm step (the same modal the admin archive uses).
-      buttons.push(
-        <Button key="cancel" variant="ghost" size="lg" className="w-full text-danger hover:text-danger" disabled={pending} onClick={() => setConfirmCancel(true)}>
-          <Ban aria-hidden />
-          لغو
+        <Button key="finish" className={buttonClass} disabled={pending} onClick={() => setConfirm("done")}>
+          <CheckCheck aria-hidden />
+          اتمام
         </Button>,
       );
     }
+    buttons.push(
+      <Button key="extend" variant="outline" className={buttonClass} disabled={pending} onClick={() => setExtending(true)}>
+        <CalendarPlus aria-hidden />
+        تمدید
+      </Button>,
+      <Button key="cancel" variant="ghost" className={cn(buttonClass, "text-danger hover:bg-danger-soft hover:text-danger")} disabled={pending} onClick={() => setConfirm("cancel")}>
+        <Ban aria-hidden />
+        کنسل
+      </Button>,
+    );
   }
 
-  // Full-width, stacked on phones (thumb-sized, in reading order: the main action first); two-up from `sm:`.
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
-      <ResponsiveModal open={confirmCancel} onOpenChange={setConfirmCancel} title="لغو تکلیف" description="این تکلیف برای همهٴ گیرندگان لغو می‌شود و از فهرست تکالیف بازشان برداشته می‌شود. بعداً می‌توانید آن را بازگشایی کنید.">
-        <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="outline" onClick={() => setConfirmCancel(false)}>
-            انصراف
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            className="min-w-28"
-            disabled={pending}
-            onClick={() => {
-              setConfirmCancel(false);
-              run("لغو شد", () => changeStatusAction({ workItemId, toStatusCode: "cancelled" }));
-            }}
-          >
-            لغو تکلیف
-          </Button>
-        </div>
-      </ResponsiveModal>
+    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
       {buttons}
       {inbox ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="lg" className="w-full text-text-muted">
+            <Button variant="outline" className={cn(buttonClass, "text-text-muted sm:ms-auto")} aria-label="گزینه‌های بیشتر">
               <Ellipsis aria-hidden />
-              گزینه‌های بیشتر
+              بیشتر
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -142,6 +147,143 @@ export function WorkItemActions({ workItemId, statusCategory, myAssigneeState, i
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
+
+      {/* «اتمام» — closes the item for everyone: the creator-authoritative `done` transition. */}
+      <ResponsiveModal
+        open={confirm === "done"}
+        onOpenChange={(o) => setConfirm(o ? "done" : null)}
+        title="اتمام تکلیف"
+        description={assigneeCount > 1 ? "همهٴ دانش‌آموزان انجام‌شده ثبت می‌شوند؟ تکلیف برای همه بسته می‌شود و بعداً می‌توانید آن را بازگشایی کنید." : "گیرنده انجام‌شده ثبت می‌شود و تکلیف بسته می‌شود. بعداً می‌توانید آن را بازگشایی کنید."}
+      >
+        <ConfirmRow
+          pending={pending}
+          onCancel={() => setConfirm(null)}
+          confirm={
+            <Button
+              type="button"
+              className="min-w-28"
+              disabled={pending}
+              onClick={() => {
+                setConfirm(null);
+                run("تکلیف تمام شد", () => changeStatusAction({ workItemId, toStatusCode: "done" }));
+              }}
+            >
+              <CheckCheck aria-hidden />
+              اتمام تکلیف
+            </Button>
+          }
+        />
+      </ResponsiveModal>
+
+      {/* «کنسل» — the existing cancel transition. */}
+      <ResponsiveModal
+        open={confirm === "cancel"}
+        onOpenChange={(o) => setConfirm(o ? "cancel" : null)}
+        title="کنسل کردن تکلیف"
+        description="این تکلیف برای همهٴ گیرندگان کنسل می‌شود و از فهرست تکالیف بازشان برداشته می‌شود. بعداً می‌توانید آن را بازگشایی کنید."
+      >
+        <ConfirmRow
+          pending={pending}
+          onCancel={() => setConfirm(null)}
+          confirm={
+            <Button
+              type="button"
+              variant="destructive"
+              className="min-w-28"
+              disabled={pending}
+              onClick={() => {
+                setConfirm(null);
+                run("تکلیف کنسل شد", () => changeStatusAction({ workItemId, toStatusCode: "cancelled" }));
+              }}
+            >
+              <Ban aria-hidden />
+              کنسل کردن
+            </Button>
+          }
+        />
+      </ResponsiveModal>
+
+      <ResponsiveModal open={extending} onOpenChange={setExtending} title="تمدید مهلت" description={`مهلت فعلی: ${dueAt ? formatJalaliDateTime(dueAt) : "بدون مهلت"}`}>
+        {extending ? <ExtendForm workItemId={workItemId} title={title} dueAt={dueAt} onClose={() => setExtending(false)} onDone={() => router.refresh()} /> : null}
+      </ResponsiveModal>
+    </div>
+  );
+}
+
+function ConfirmRow({ pending, onCancel, confirm }: { pending: boolean; onCancel: () => void; confirm: React.ReactNode }) {
+  return (
+    <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+      <Button type="button" variant="outline" onClick={onCancel} disabled={pending}>
+        انصراف
+      </Button>
+      {confirm}
+    </div>
+  );
+}
+
+/** The extend dialog's body: the calendar inline (today onward), the time toggle, the new due in one line, submit. */
+function ExtendForm({ workItemId, title, dueAt, onClose, onDone }: { workItemId: string; title: string; dueAt: Date | null; onClose: () => void; onDone: () => void }) {
+  const [pending, start] = useTransition();
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  // Prefill with the current due (day + a specific time when it is not the end of the day) so «one week more» is two taps.
+  const [dueDate, setDueDate] = useState(() => {
+    if (!dueAt) return "";
+    const local = tehranNow(dueAt);
+    return local.getTime() >= tehranToday().getTime() ? formatJalaliDay(local) : "";
+  });
+  const [dueTime, setDueTime] = useState(() => {
+    if (!dueAt) return "";
+    const local = tehranNow(dueAt);
+    const minutes = local.getHours() * 60 + local.getMinutes();
+    return minutes === 23 * 60 + 59 ? "" : formatHm(minutes);
+  });
+  const day = dueDate ? parseJalaliDay(dueDate) : null;
+  const instant = dueDate ? parseJalaliToInstant(dueDate, dueTime || null) : null;
+  const inPast = instant !== null && instant <= new Date();
+  const unchanged = instant !== null && dueAt !== null && instant.getTime() === dueAt.getTime();
+  const blocked = pending || !instant || inPast || unchanged;
+
+  const submit = () =>
+    start(async () => {
+      const r = await extendDueAtAction({ workItemId, dueDate, dueTime: dueTime || undefined });
+      if (r.ok) {
+        toast.success(`مهلت «${title}» تمدید شد`);
+        onClose();
+        onDone();
+        return;
+      }
+      setErrors(flatten(r.fieldErrors, r.message, ["dueDate", "dueTime"]));
+    });
+
+  return (
+    <div className="flex flex-col gap-4 pt-2">
+      <JalaliDatePicker variant="inline" value={dueDate} onChange={setDueDate} minDate={tehranToday()} />
+      {day ? <TimePicker value={dueTime} onChange={setDueTime} /> : null}
+      <p role="status" className={cn("min-h-6 text-sm leading-6", inPast || unchanged ? "text-warning-text" : "text-text-muted")}>
+        {day ? (
+          <>
+            {inPast ? "این زمان گذشته است: " : unchanged ? "همان مهلت فعلی است: " : "مهلت جدید: "}
+            <span className="tabular text-text">
+              {formatJalaliDayLong(day)}، ساعت {formatTimeFa(dueTime)}
+            </span>
+          </>
+        ) : (
+          "روز مهلت جدید را از تقویم انتخاب کنید."
+        )}
+      </p>
+      <p role="alert" className={cn("text-sm text-danger", !(errors.dueDate || errors.dueTime || errors.form) && "hidden")}>
+        {errors.dueDate ?? errors.dueTime ?? errors.form}
+      </p>
+      <ConfirmRow
+        pending={pending}
+        onCancel={onClose}
+        confirm={
+          <Button type="button" className="min-w-32" disabled={blocked} onClick={submit}>
+            <CalendarPlus aria-hidden />
+            {pending ? "در حال تمدید…" : "تمدید مهلت"}
+          </Button>
+        }
+      />
     </div>
   );
 }
