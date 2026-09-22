@@ -17,6 +17,7 @@ export function Tile({
   shade = "blue",
   mirror = false,
   muted = false,
+  compact = false,
   children,
 }: {
   href: string;
@@ -25,18 +26,23 @@ export function Tile({
   shade?: ClayShade;
   mirror?: boolean;
   muted?: boolean;
+  /** The desktop dashboard's aside grid: a 56 px mark and a tighter cell. */
+  compact?: boolean;
   children?: React.ReactNode;
 }) {
   return (
     <li className="flex justify-center">
       <Link
         href={href}
-        className="pressable relative flex min-h-28 w-full max-w-32 flex-col items-center justify-start gap-2.5 rounded-card px-1 pt-2.5 pb-2 text-center hover:bg-surface/50"
+        className={cn(
+          "pressable relative flex w-full max-w-32 flex-col items-center justify-start rounded-card px-1 text-center hover:bg-surface/50",
+          compact ? "min-h-24 gap-2 pt-2 pb-1.5" : "min-h-28 gap-2.5 pt-2.5 pb-2",
+        )}
       >
-        <ClayIcon icon={icon} size="tile" shade={muted ? "grey" : shade} mirror={mirror}>
+        <ClayIcon icon={icon} size={compact ? "xl" : "tile"} shade={muted ? "grey" : shade} mirror={mirror}>
           {children}
         </ClayIcon>
-        <span className={cn("text-[0.8125rem] leading-5 font-semibold text-balance", muted ? "text-text-muted" : "text-text")}>{label}</span>
+        <span className={cn("text-meta font-semibold text-balance", muted ? "text-text-muted" : "text-text")}>{label}</span>
       </Link>
     </li>
   );

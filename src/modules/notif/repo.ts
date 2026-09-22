@@ -61,6 +61,24 @@ export async function listNotifications(tx: Tx, personId: string, opts: { cursor
   return { rows: page, nextCursor: rows.length > limit && last ? encodeCursor(last.createdAt, last.id) : null };
 }
 
+/** The newest unread notifications of one type — the teacher dashboard's «نظرهای تازه» (`work_item.comment`). */
+export async function listUnreadOfType(tx: Tx, personId: string, typeCode: string, limit = 5): Promise<NotificationRow[]> {
+  return tx
+    .select({
+      id: notification.id,
+      typeCode: notification.typeCode,
+      title: notification.title,
+      body: notification.body,
+      deepLink: notification.deepLink,
+      readAt: notification.readAt,
+      createdAt: notification.createdAt,
+    })
+    .from(notification)
+    .where(and(eq(notification.recipientPersonId, personId), eq(notification.typeCode, typeCode), isNull(notification.readAt), or(isNull(notification.expiresAt), sql`${notification.expiresAt} > now()`)))
+    .orderBy(desc(notification.createdAt), desc(notification.id))
+    .limit(Math.min(Math.max(limit, 1), 20));
+}
+
 export async function unreadCount(tx: Tx, personId: string): Promise<number> {
   const [row] = await tx
     .select({ n: count() })

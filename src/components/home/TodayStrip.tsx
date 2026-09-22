@@ -30,7 +30,7 @@ export function TodayStrip() {
 function Cell({ href, icon, label, value, alert = false }: { href: string; icon: typeof Sun; label: string; value: number; alert?: boolean }) {
   return (
     <li className="md:w-44">
-      <Link href={href} className="pressable flex min-h-14 items-center gap-2 rounded-card bg-surface px-2 shadow-1 hover:bg-primary-50">
+      <Link href={href} className="pressable flex min-h-14 items-center gap-1.5 rounded-card bg-surface px-1.5 shadow-1 hover:bg-primary-50 md:gap-2 md:px-2">
         <ClayIcon icon={icon} size="md" />
         <span className="flex min-w-0 flex-col">
           <span className={cn("tabular text-section leading-6 font-bold", value === 0 && !alert ? "text-text-faint" : alert ? "text-danger" : "text-primary-700")}>{formatNumberFa(value)}</span>

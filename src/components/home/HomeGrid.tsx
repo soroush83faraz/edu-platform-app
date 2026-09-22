@@ -1,13 +1,11 @@
 import { Suspense } from "react";
-import { onboardingProgress } from "@/lib/admin/onboarding";
-import { adminOverviewQuery } from "@/lib/admin/overview";
 import type { Ctx } from "@/lib/ctx";
 import { formatNumberFa } from "@/lib/format";
-import { HOME_UPCOMING, homeTilesFor } from "@/lib/modules-registry";
+import { HOME_UPCOMING } from "@/lib/modules-registry";
 import { canAtAnyScope } from "@/modules/iam/can";
-import { hatsQuery } from "@/modules/iam/hats";
 import type { Permission } from "@/modules/iam/permissions";
 import { AdminGlance } from "./AdminGlance";
+import { resolveHomeTiles } from "./home-data";
 import { CardSkeleton } from "./HomeSkeletons";
 import { NearbyCard } from "./NearbyCard";
 import { Tile } from "./Tile";
@@ -19,18 +17,8 @@ import { Tile } from "./Tile";
  */
 export async function HomeGrid({ ctx }: { ctx: Ctx }) {
   const has = (p: Permission) => canAtAnyScope(ctx.assignments, p);
-  const hats = await hatsQuery();
-  const isStudent = hats.ok && hats.data.isStudent;
-  const isTeacher = hats.ok && hats.data.teachingOfferings.length > 0;
-  const adminScope = hats.ok ? hats.data.adminScope : null;
-  const isAdmin = adminScope !== null;
-  const tiles = homeTilesFor({ isStudent, isTeacher, isAdmin, adminScope }, has);
-
-  // One admin read serves both the onboarding badge (organization admins only) and the «مدرسه در یک نگاه» card.
-  const counts = isAdmin
-    ? await adminOverviewQuery().then((r) => (r.ok ? r.data.counts : null))
-    : null;
-  const onboarding = counts && adminScope === "organization" ? onboardingProgress(counts) : null;
+  // Shared with the desktop dashboard (`home-data.ts`, React cache): hats, tiles and the admin counts read once.
+  const { tiles, counts, onboarding } = await resolveHomeTiles(ctx);
 
   return (
     <>

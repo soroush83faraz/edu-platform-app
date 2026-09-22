@@ -33,3 +33,26 @@ export function CardSkeleton({ rows = 3 }: { rows?: number }) {
     </div>
   );
 }
+
+/** The desktop dashboard's shape while its reads land: a two-column grid, a list card in the main column and a small tile grid in the aside. */
+export function DashboardSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="در حال بارگذاری" className="grid grid-cols-12 gap-6">
+      <div className="col-span-8 flex flex-col gap-5">
+        <CardSkeleton rows={4} />
+        <CardSkeleton rows={3} />
+      </div>
+      <div className="col-span-4 flex flex-col gap-5">
+        <div className="grid grid-cols-4 gap-x-1 gap-y-2">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="flex min-h-24 flex-col items-center gap-2 pt-2">
+              <Skeleton className="size-14 rounded-[0.9rem] bg-neutral-200" />
+              <Skeleton className="h-3 w-12 bg-neutral-200" />
+            </div>
+          ))}
+        </div>
+        <Skeleton className="h-28 w-full rounded-card bg-neutral-200" />
+      </div>
+    </div>
+  );
+}

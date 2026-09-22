@@ -1,0 +1,130 @@
+import { ChevronLeft, Presentation, Rocket } from "lucide-react";
+import Link from "next/link";
+import { cn } from "cn";
+import { PageSection } from "@/components/layout/PageSection";
+import { formatNumberFa } from "@/lib/format";
+import { HOME_UPCOMING } from "@/lib/modules-registry";
+import type { TeachingOffering } from "@/modules/iam/hats";
+import type { HomeTiles } from "../home-data";
+import { Tile } from "../Tile";
+
+/**
+ * The aside of every desktop dashboard: the person's live tiles as a 4-column grid of 56 px marks (the same
+ * tiles as the phone grid, smaller), then «به‌زودی» as one compact panel of grey pills (each opening its roadmap
+ * row). Role extras (`children`) sit between the two.
+ */
+export function DashboardAside({ home, children }: { home: HomeTiles; children?: React.ReactNode }) {
+  const { tiles, onboarding } = home;
+  return (
+    <>
+      {tiles.length > 0 ? (
+        <nav aria-label="بخش‌ها">
+          <ul className="reveal-grid grid grid-cols-4 gap-x-1 gap-y-2">
+            {tiles.map((t) => (
+              <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror} compact>
+                {t.badge === "onboarding" && onboarding && onboarding.done < onboarding.total ? (
+                  <span
+                    className="tabular absolute -top-1.5 -end-2 inline-flex h-5 items-center rounded-full bg-warning px-1.5 text-xs font-semibold leading-none text-primary-900 ring-2 ring-canvas"
+                    aria-label={`${formatNumberFa(onboarding.done)} از ${formatNumberFa(onboarding.total)} گام انجام شده`}
+                  >
+                    {formatNumberFa(onboarding.done)}/{formatNumberFa(onboarding.total)}
+                  </span>
+                ) : null}
+              </Tile>
+            ))}
+          </ul>
+        </nav>
+      ) : null}
+      {children}
+      <PageSection id="upcoming-aside" title="به‌زودی" surface="panel" headingAs="h3">
+        <ul className="flex flex-wrap gap-1.5">
+          {HOME_UPCOMING.map((m) => {
+            const Icon = m.icon;
+            return (
+              <li key={m.code}>
+                <Link href={`/roadmap#${m.code}`} className="pressable inline-flex min-h-9 items-center gap-1.5 rounded-full bg-surface px-2.5 text-meta text-text-muted ring-1 ring-line hover:text-text">
+                  <Icon className="size-4 text-text-faint" strokeWidth={1.75} aria-hidden />
+                  {m.labelFa}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </PageSection>
+    </>
+  );
+}
+
+/** (Organization admin) the setup checklist's progress as one panel with a bar and the link to the steps. */
+export function OnboardingCard({ progress }: { progress: { done: number; total: number } }) {
+  const pct = progress.total === 0 ? 0 : Math.round((progress.done / progress.total) * 100);
+  return (
+    <PageSection
+      id="onboarding-aside"
+      title="راه‌اندازی مدرسه"
+      icon={Rocket}
+      surface="panel"
+      headingAs="h3"
+      trailing={
+        <Link href="/admin/onboarding" className="pressable inline-flex min-h-9 items-center gap-0.5 rounded-lg px-2 text-sm font-medium text-sky-strong hover:text-primary-700">
+          گام‌ها
+          <ChevronLeft className="size-4" aria-hidden />
+        </Link>
+      }
+    >
+      <div className="flex items-center gap-3">
+        <span className="tabular text-title font-bold text-text">
+          {formatNumberFa(progress.done)}
+          <span className="text-section font-normal text-text-muted">/{formatNumberFa(progress.total)}</span>
+        </span>
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-neutral-200" role="progressbar" aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.done} aria-label="پیشرفت راه‌اندازی">
+          <div className={cn("h-full rounded-full", pct === 100 ? "bg-success" : "bg-sky")} style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      <p className="mt-1.5 text-meta text-text-muted">{pct === 100 ? "همهٴ گام‌ها انجام شده." : `${formatNumberFa(progress.total - progress.done)} گام مانده تا دانش‌آموزان بتوانند وارد شوند.`}</p>
+    </PageSection>
+  );
+}
+
+/** (Teacher) «کلاس‌های من» as a compact list: درس، کلاس، the open items I gave that class; each row opens the subject page. */
+export function MyClassesCompact({ offerings }: { offerings: TeachingOffering[] }) {
+  return (
+    <PageSection
+      id="my-classes-aside"
+      title="کلاس‌های من"
+      icon={Presentation}
+      count={offerings.length}
+      surface="panel"
+      headingAs="h3"
+      flush
+      trailing={
+        <Link href="/classes" className="pressable inline-flex min-h-9 items-center gap-0.5 rounded-lg px-2 text-sm font-medium text-sky-strong hover:text-primary-700">
+          همهٴ کلاس‌ها
+          <ChevronLeft className="size-4" aria-hidden />
+        </Link>
+      }
+    >
+      {offerings.length === 0 ? (
+        <p className="px-4 py-5 text-sm text-text-muted">هنوز درسی به شما سپرده نشده.</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {offerings.slice(0, 8).map((o) => (
+            <li key={o.offeringId}>
+              <Link href={`/subjects/${o.offeringId}`} className="pressable flex min-h-12 items-center gap-3 px-4 py-1.5 first:rounded-t-card last:rounded-b-card hover:bg-surface">
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm font-semibold text-text">
+                    <bdi>{o.subjectName}</bdi>
+                  </span>
+                  <span className="truncate text-meta text-text-muted">
+                    کلاس <bdi>{o.classGroupName}</bdi> · {formatNumberFa(o.activeStudents)} دانش‌آموز
+                  </span>
+                </span>
+                {o.openItems > 0 ? <span className="tabular shrink-0 rounded-full bg-info-soft px-2 text-xs font-medium leading-5 text-primary-800">{formatNumberFa(o.openItems)} کار باز</span> : null}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </PageSection>
+  );
+}

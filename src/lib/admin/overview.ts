@@ -15,6 +15,10 @@ export interface AdminCounts {
   grades: number;
   subjects: number;
   classes: number;
+  /** Active classes with no open offering — nothing to teach yet («نیازمند توجه»). */
+  classesWithoutOfferings: number;
+  /** Active classes with no timetable slot — the week is empty for their students. */
+  classesWithoutTimetable: number;
   offerings: number;
   offeringsWithoutTeacher: number;
   teachers: number;
@@ -56,6 +60,14 @@ export async function adminCounts(tx: Tx, scope: AdminScope): Promise<AdminCount
     grades: await n(sql`select count(*)::int as n from tenancy.grade_level`),
     subjects: await n(sql`select count(*)::int as n from tenancy.subject where parent_subject_id is null`),
     classes: await n(sql`select count(*)::int as n from tenancy.class_group cg join tenancy.branch b on b.id = cg.branch_id where cg.status = 'active' and ${sch("b.school_id")}`),
+    classesWithoutOfferings: await n(
+      sql`select count(*)::int as n from tenancy.class_group cg join tenancy.branch b on b.id = cg.branch_id where cg.status = 'active' and ${sch("b.school_id")}
+          and not exists (select 1 from tenancy.class_offering o where o.class_group_id = cg.id and o.status <> 'closed')`,
+    ),
+    classesWithoutTimetable: await n(
+      sql`select count(*)::int as n from tenancy.class_group cg join tenancy.branch b on b.id = cg.branch_id where cg.status = 'active' and ${sch("b.school_id")}
+          and not exists (select 1 from academic.timetable_slot ts where ts.class_group_id = cg.id)`,
+    ),
     offerings: await n(
       sql`select count(*)::int as n from tenancy.class_offering o join tenancy.class_group cg on cg.id = o.class_group_id join tenancy.branch b on b.id = cg.branch_id where cg.status = 'active' and o.status <> 'closed' and ${sch("b.school_id")}`,
     ),
