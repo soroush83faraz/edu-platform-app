@@ -4,7 +4,7 @@
 // NOT_FOUND for them, checked in tests/int/admin-scope.test.ts against the database-derived scope).
 import { describe, expect, it } from "vitest";
 import { HOME_TILES, homeTilesFor, type TileHats } from "@/lib/modules-registry";
-import { isOrganizationAdmin, type Assignment } from "@/modules/iam/can";
+import { isOrganizationAdmin, navRoleFor, type Assignment } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
 
 const ADMIN_PERMS: Permission[] = ["iam.admin.access", "tenancy.structure.write", "iam.person.write", "workspace.work_item.read", "workspace.work_item.create"];
@@ -42,5 +42,31 @@ describe("isOrganizationAdmin", () => {
     expect(isOrganizationAdmin([a("school", ["iam.admin.access"]), a("branch", ["iam.admin.access"])])).toBe(false);
     expect(isOrganizationAdmin([a("organization", ["workspace.work_item.read"])])).toBe(false);
     expect(isOrganizationAdmin([])).toBe(false);
+  });
+});
+
+describe("navRoleFor", () => {
+  const r = (roleCode: string, scopeType: Assignment["scopeType"], permissions: string[] = []): Assignment => ({ roleCode, roleId: "r", scopeType, scopeId: "s", permissions });
+  const student = r("student", "student");
+  const teacher = r("teacher", "class_offering", ["workspace.work_item.create"]);
+  const principal = r("school_principal", "school", ["iam.admin.access"]);
+
+  it("one hat → that hat", () => {
+    expect(navRoleFor([student])).toBe("student");
+    expect(navRoleFor([teacher, teacher])).toBe("teacher");
+    expect(navRoleFor([principal])).toBe("admin");
+    expect(navRoleFor([r("org_admin", "organization", ["iam.admin.access"])])).toBe("admin");
+  });
+
+  it("several hats → the highest of admin > teacher > student", () => {
+    expect(navRoleFor([student, teacher])).toBe("teacher");
+    expect(navRoleFor([teacher, principal])).toBe("admin");
+    expect(navRoleFor([student, principal])).toBe("admin");
+  });
+
+  it("the admin hat is the permission, not the role name; no hat → null", () => {
+    expect(navRoleFor([r("vice_principal", "branch", ["iam.admin.access"])])).toBe("admin");
+    expect(navRoleFor([r("guardian_full", "family")])).toBeNull();
+    expect(navRoleFor([])).toBeNull();
   });
 });

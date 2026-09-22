@@ -153,3 +153,19 @@ export function canBroadly(assignments: readonly Assignment[], permission: Permi
 export function isOrganizationAdmin(assignments: readonly Assignment[]): boolean {
   return assignments.some((a) => a.scopeType === "organization" && a.permissions.includes("iam.admin.access"));
 }
+
+/** The hat the navigation's role item speaks for — the highest of admin > teacher > student, null when none applies. */
+export type NavRole = "admin" | "teacher" | "student";
+
+/**
+ * Which hat the fourth bottom-nav item («مدیریت» / «کلاس‌ها» / «کلاس من») is for, decided from the session alone —
+ * no query: the admin hat is `iam.admin.access` at any scope (the same gate as `/admin`), the teacher and student
+ * hats are the `teacher` / `student` role assignments. A multi-hat person gets the highest of admin > teacher >
+ * student; a person with none (an edge — a guardian, an unassigned account) gets null and the nav shows «راهنما».
+ */
+export function navRoleFor(assignments: readonly Assignment[]): NavRole | null {
+  if (canAtAnyScope(assignments, "iam.admin.access")) return "admin";
+  if (assignments.some((a) => a.roleCode === "teacher")) return "teacher";
+  if (assignments.some((a) => a.roleCode === "student")) return "student";
+  return null;
+}

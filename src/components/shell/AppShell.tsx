@@ -2,7 +2,7 @@ import { BookOpen } from "lucide-react";
 import { AppNav } from "@/components/shell/AppNav";
 import { InboxSummaryProvider } from "@/components/shell/InboxSummaryProvider";
 import type { Ctx } from "@/lib/ctx";
-import { canAtAnyScope } from "@/modules/iam/can";
+import { navRoleFor } from "@/modules/iam/can";
 import { inboxSummaryQuery } from "@/modules/workspace/queries";
 
 /**
@@ -14,7 +14,8 @@ export async function AppShell({ ctx, children, wide = false }: { ctx: Ctx; chil
   const summary = await inboxSummaryQuery();
   const initial = summary.ok ? summary.data : { overdue: 0, dueToday: 0, unread: 0, unreadNotifications: 0 };
   const title = ctx.schoolName ?? ctx.orgName;
-  const showAdmin = canAtAnyScope(ctx.assignments, "iam.admin.access");
+  // The nav's role item («مدیریت» / «کلاس‌ها» / «کلاس من»), decided once here from the session — no query.
+  const navRole = navRoleFor(ctx.assignments);
 
   return (
     <InboxSummaryProvider initial={initial}>
@@ -26,7 +27,7 @@ export async function AppShell({ ctx, children, wide = false }: { ctx: Ctx; chil
         پرش به محتوا
       </a>
       <h1 className="sr-only">{title}</h1>
-      <AppNav schoolName={title} showAdmin={showAdmin} />
+      <AppNav schoolName={title} role={navRole} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-14 items-center gap-3 bg-canvas/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm md:hidden">
           <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-xl bg-hero text-white shadow-1">
