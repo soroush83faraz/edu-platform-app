@@ -2,6 +2,7 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { cn } from "cn";
 import { formatJalaliLong } from "@/lib/format";
+import { SchoolsMenu } from "@/components/layout/SchoolsMenu";
 import { getShellContext } from "@/lib/shell-context";
 
 /**
@@ -30,7 +31,8 @@ export async function PageHeader({
   titleAs?: "h1" | "h2";
 }) {
   const shell = await getShellContext();
-  const context = [shell.schoolName, shell.yearName, shell.termName].filter(Boolean);
+  // More than one school in the caller's scope: the chip replaces the name and opens the list (`SchoolsMenu`).
+  const context: React.ReactNode[] = [shell.schools.length > 1 ? <SchoolsMenu key="schools" schools={shell.schools} /> : shell.schoolName, shell.yearName, shell.termName].filter(Boolean);
   return (
     <header
       className={cn(
@@ -42,11 +44,11 @@ export async function PageHeader({
     >
       <p className="hidden min-h-12 items-center gap-2 border-b border-line/80 text-meta text-text-muted [grid-area:context] lg:flex">
         {context.length > 0 ? (
-          <span className="truncate">
+          <span className="flex min-w-0 items-center">
             {context.map((part, i) => (
-              <span key={i}>
-                {i > 0 ? <span aria-hidden> · </span> : null}
-                <bdi>{part}</bdi>
+              <span key={i} className="flex min-w-0 items-center">
+                {i > 0 ? <span aria-hidden className="px-1.5">·</span> : null}
+                {typeof part === "string" ? <bdi className="truncate">{part}</bdi> : part}
               </span>
             ))}
           </span>

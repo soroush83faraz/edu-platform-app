@@ -19,7 +19,7 @@ export default async function AdminIndexPage() {
   const counts = shell.counts;
   const onboarding = shell.scope.kind === "organization" ? onboardingProgress(counts) : null;
   return (
-    <AdminOverview data={{ scope: shell.scope, counts }} items={adminNavItems(ctx.assignments, shell)}>
+    <AdminOverview data={{ scope: shell.scope, counts, schools: shell.schools }} items={adminNavItems(ctx.assignments, shell)}>
       <Attention counts={counts} />
       {onboarding ? <OnboardingProgress progress={onboarding} /> : null}
     </AdminOverview>

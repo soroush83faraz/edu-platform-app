@@ -5,6 +5,7 @@ import type { AdminNavItem } from "@/lib/admin/nav";
 import type { Ctx } from "@/lib/ctx";
 import { navRoleFor } from "@/modules/iam/can";
 import { productName } from "@/lib/product";
+import { getShellContext } from "@/lib/shell-context";
 import { inboxSummaryQuery } from "@/modules/workspace/queries";
 
 /**
@@ -16,7 +17,10 @@ import { inboxSummaryQuery } from "@/modules/workspace/queries";
 export async function AppShell({ ctx, children, adminItems }: { ctx: Ctx; children: React.ReactNode; adminItems?: readonly AdminNavItem[] }) {
   const summary = await inboxSummaryQuery();
   const initial = summary.ok ? summary.data : { overdue: 0, dueToday: 0, unread: 0, unreadNotifications: 0 };
-  const title = ctx.schoolName ?? ctx.orgName;
+  // An admin whose scope holds more than one school is introduced by the ORGANIZATION, never by whichever school
+  // sorts first (owner, QA round 3); the cached shell context already knows (`getShellContext`, no extra query).
+  const shell = await getShellContext();
+  const title = (shell.schools.length > 1 ? ctx.orgName : ctx.schoolName) ?? ctx.orgName;
   // The nav's role item («مدیریت» / «کلاس‌ها» / «کلاس من»), decided once here from the session — no query.
   const navRole = navRoleFor(ctx.assignments);
 

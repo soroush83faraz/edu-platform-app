@@ -3,7 +3,7 @@
 import { sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { defineQuery } from "@/lib/actions";
-import { getAdminScope, personInScopeSql, type AdminScope } from "@/modules/iam/service";
+import { getAdminScope, liveSchoolEnrollmentSql, personInScopeSql, type AdminScope } from "@/modules/iam/service";
 
 export interface AdminCounts {
   schools: number;
@@ -100,12 +100,44 @@ export async function adminCounts(tx: Tx, scope: AdminScope): Promise<AdminCount
   };
 }
 
+export interface SchoolCounts {
+  id: string;
+  name: string;
+  classes: number;
+  students: number;
+  staff: number;
+}
+
+/**
+ * The same three numbers as the counters, per school — what a principal of two schools or an organization admin
+ * needs before the aggregate means anything (owner, QA round 3). Read only when the scope holds more than one
+ * school; one statement, explicit columns, every sub-count narrowed to that school.
+ */
+export async function schoolCounts(tx: Tx, scope: AdminScope): Promise<SchoolCounts[]> {
+  const res = await tx.execute<{ id: string; name: string; classes: number; students: number; staff: number }>(sql`
+    select s.id, s.name,
+      (select count(*)::int from tenancy.class_group cg join tenancy.branch b on b.id = cg.branch_id where b.school_id = s.id and cg.status = 'active') as classes,
+      (select count(*)::int from academic.school_enrollment se
+         join iam.student_profile sp on sp.id = se.student_profile_id
+         join iam.person p on p.id = sp.person_id
+        where se.school_id = s.id and p.status = 'active' and sp.status = 'active' and ${liveSchoolEnrollmentSql("se")}) as students,
+      (select count(*)::int from iam.staff_profile st join iam.person p2 on p2.id = st.person_id
+        where st.school_id = s.id and p2.status = 'active' and st.left_on is null) as staff
+    from tenancy.school s
+    where ${schoolFilter(scope, "s.id")}
+    order by s.is_default desc, s.name asc`);
+  return res.rows.map((r) => ({ id: r.id, name: r.name, classes: Number(r.classes), students: Number(r.students), staff: Number(r.staff) }));
+}
+
 export interface AdminOverviewData {
   scope: AdminScope;
   counts: AdminCounts;
+  /** Per-school rows when the scope spans two or more schools; empty (or absent) otherwise — one school IS the aggregate. */
+  schools?: SchoolCounts[];
 }
 
 export const adminOverviewQuery = defineQuery({ permission: "iam.admin.access", scope: "any" }, async (tx, _input, ctx): Promise<AdminOverviewData> => {
   const scope = await getAdminScope(tx, ctx);
-  return { scope, counts: await adminCounts(tx, scope) };
+  const counts = await adminCounts(tx, scope);
+  return { scope, counts, schools: counts.schools > 1 ? await schoolCounts(tx, scope) : [] };
 });

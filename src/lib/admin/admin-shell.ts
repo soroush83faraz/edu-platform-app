@@ -6,16 +6,18 @@ import type { Assignment } from "@/modules/iam/can";
 import { isOrganizationAdmin } from "@/modules/iam/can";
 import type { AdminScope } from "@/modules/iam/service";
 import { adminSectionsFor, type AdminNavItem } from "./nav";
-import { adminOverviewQuery, type AdminCounts } from "./overview";
+import { adminOverviewQuery, type AdminCounts, type SchoolCounts } from "./overview";
 
 export interface AdminShell {
   scope: AdminScope | null;
   counts: AdminCounts | null;
+  /** One row per school when the scope holds more than one (the /admin breakdown); empty otherwise. */
+  schools: SchoolCounts[];
 }
 
 export const getAdminShell = cache(async (): Promise<AdminShell> => {
   const r = await adminOverviewQuery();
-  return r.ok ? { scope: r.data.scope, counts: r.data.counts } : { scope: null, counts: null };
+  return r.ok ? { scope: r.data.scope, counts: r.data.counts, schools: r.data.schools ?? [] } : { scope: null, counts: null, schools: [] };
 });
 
 /**
@@ -26,9 +28,11 @@ export const getAdminShell = cache(async (): Promise<AdminShell> => {
  */
 export function adminNavItems(assignments: readonly Assignment[], shell: AdminShell): AdminNavItem[] {
   const org = isOrganizationAdmin(assignments);
-  const singleSchool = shell.scope?.kind === "school" && shell.scope.schoolIds.length === 1;
+  // A principal of exactly ONE school has no list to browse: «مدرسه» opens that school's hub directly.
+  const onlySchoolId = shell.scope?.kind === "school" && shell.scope.schoolIds.length === 1 ? shell.scope.schoolIds[0] : null;
   const c = shell.counts;
-  return adminSectionsFor({ org, singleSchool })
+  return adminSectionsFor({ org, singleSchool: onlySchoolId !== null })
     .filter((item) => item.key !== "overview")
+    .map((item) => (item.key === "schools" && onlySchoolId ? { ...item, href: `/admin/schools/${onlySchoolId}` } : item))
     .map((item) => (c && (item.key === "students" || item.key === "staff" || item.key === "classes") ? { ...item, count: c[item.key] } : item));
 }
