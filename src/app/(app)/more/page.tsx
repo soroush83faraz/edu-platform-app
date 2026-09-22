@@ -1,4 +1,4 @@
-import { ChevronLeft, LifeBuoy, LockKeyhole, type LucideIcon, Map, Rocket, Settings2, ShieldCheck, UserRound } from "lucide-react";
+import { ChevronLeft, LifeBuoy, LockKeyhole, type LucideIcon, Map, Rocket, ShieldCheck, UserRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ClayIcon } from "@/components/ClayIcon";
@@ -10,7 +10,7 @@ import { formatLoginIdentifierFa, formatNumberFa } from "@/lib/format";
 import { UPCOMING_MODULES } from "@/lib/modules-registry";
 import { myLoginIdentifierQuery } from "@/lib/profile-queries";
 import { logoutAction } from "@/modules/iam/actions";
-import { canAtAnyScope, isOrganizationAdmin } from "@/modules/iam/can";
+import { isOrganizationAdmin } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "بیشتر | سامانهٴ مدرسه" };
 
@@ -36,7 +36,6 @@ export default async function MorePage() {
   const login = await myLoginIdentifierQuery();
   const loginIdentifier = login.ok ? login.data : null;
   const teaching = ctx.assignments.filter((a) => a.roleCode === "teacher").length;
-  const isAdmin = canAtAnyScope(ctx.assignments, "iam.admin.access");
   // School setup belongs to whoever defines schools — the organization admin (owner's rule, docs/admin.md).
   const isOrgAdmin = isOrganizationAdmin(ctx.assignments);
 
@@ -70,11 +69,12 @@ export default async function MorePage() {
         </div>
       </section>
 
-      {isAdmin ? (
-        <nav aria-label="مدیریت">
-          <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
-            <MoreLink href="/admin" icon={Settings2} label="مدیریت مدرسه" hint="ساختار، افراد، حساب‌ها" />
-            {isOrgAdmin ? <MoreLink href="/admin/onboarding" icon={Rocket} label="راه‌اندازی مدرسه" /> : null}
+      {/* «مدیریت» is NOT listed here (owner): the nav's role item and the Home tile already lead there. Only the
+          organization admin's setup checklist keeps a row, because nothing in the nav points at it. */}
+      {isOrgAdmin ? (
+        <nav aria-label="راه‌اندازی">
+          <ul className="surface-work divide-y divide-line/70">
+            <MoreLink href="/admin/onboarding" icon={Rocket} label="راه‌اندازی مدرسه" hint="گام‌های باقی‌مانده" />
           </ul>
         </nav>
       ) : null}

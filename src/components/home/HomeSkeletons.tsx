@@ -3,9 +3,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 /** Grid placeholder of the same shape as the live tiles: `count` clay-sized squircles with a label line, straight on the canvas. */
 export function GridSkeleton({ count = 6 }: { count?: number }) {
   return (
-    <div aria-busy="true" aria-label="در حال بارگذاری" className="grid grid-cols-3 gap-x-2 gap-y-3 md:grid-cols-4 lg:grid-cols-6">
+    <div aria-busy="true" aria-label="در حال بارگذاری" className="grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7">
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="flex min-h-28 flex-col items-center justify-start gap-2.5 pt-2.5">
+        <div key={i} className="mx-auto flex min-h-28 w-full max-w-32 flex-col items-center justify-start gap-2.5 pt-2.5">
           <Skeleton className="size-17 rounded-[1.125rem] bg-neutral-200 md:size-20" />
           <Skeleton className="h-3.5 w-14 bg-neutral-200" />
         </div>

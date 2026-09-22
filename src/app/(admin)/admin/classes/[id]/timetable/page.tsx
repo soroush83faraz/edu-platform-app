@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/AdminPage";
+import { currentPeriodOf, tehranClock } from "@/lib/timetable";
 import { classTimetableQuery } from "@/modules/academic/queries";
 import { TimetableEditor } from "@/modules/academic/ui/TimetableEditor";
 
@@ -17,6 +18,8 @@ export default async function ClassTimetablePage({ params }: { params: Promise<{
     notFound();
   }
   const data = result.data;
+  const clock = tehranClock(new Date());
+  const { currentPeriodNo } = currentPeriodOf(data.periods, clock.minutes);
   return (
     <div className="flex flex-col gap-4">
       <AdminHeader
@@ -24,7 +27,7 @@ export default async function ClassTimetablePage({ params }: { params: Promise<{
         description={`${data.classGroup.schoolName} · هر خانه یک زنگ؛ درس را انتخاب کنید تا همان لحظه ذخیره شود. دانش‌آموزان همین برنامه را در «کلاس من» می‌بینند.`}
         back={{ href: `/admin/classes/${id}`, label: `کلاس ${data.classGroup.name}` }}
       />
-      <TimetableEditor data={data} />
+      <TimetableEditor data={data} today={clock.weekday} currentPeriodNo={currentPeriodNo} />
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { BookClay } from "@/components/illustrations";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { TimetableView } from "@/components/timetable/TimetableView";
+import { WeekTimetable } from "@/components/timetable/WeekTimetable";
 import { Button } from "@/components/ui/button";
 import { requireContext } from "@/lib/ctx";
 import { formatNumberFa } from "@/lib/format";
@@ -18,8 +18,8 @@ import { hatsQuery } from "@/modules/iam/hats";
 export const metadata: Metadata = { title: "کلاس‌های من | سامانهٴ مدرسه" };
 
 /**
- * «کلاس‌های من» for a teacher: first «برنامهٴ هفتگی من» — the teaching sessions across classes with today
- * selected — then one card per offering (درس, کلاس, students, open items I gave that class), each opening the
+ * «کلاس‌های من» for a teacher: first «برنامهٴ هفتگی من» — the week of teaching sessions across classes, today's
+ * column tinted — then one card per offering (درس, کلاس, students, open items I gave that class), each opening the
  * subject page. Reads the same `hatsQuery` as Home plus the personal timetable.
  */
 export default async function ClassesPage() {
@@ -64,16 +64,7 @@ export default async function ClassesPage() {
             برنامهٴ هفتگی من
           </h3>
           {teaching && tt ? (
-            <TimetableView
-              days={teaching.days}
-              periods={periods}
-              today={tt.today}
-              nowMinutes={tt.nowMinutes}
-              currentPeriodNo={tt.currentPeriodNo}
-              secondary="class"
-              emptyTitle="این روز کلاسی ندارید"
-              emptyDescription="روز دیگری را انتخاب کنید یا «کل هفته» را ببینید."
-            />
+            <WeekTimetable days={teaching.days} periods={periods} today={tt.today} currentPeriodNo={tt.currentPeriodNo} secondary="class" />
           ) : (
             <EmptyState title="برنامهٴ هفتگی هنوز تنظیم نشده" description="وقتی مدرسه برنامهٴ کلاس‌ها را ثبت کند، زنگ‌های شما همین‌جا می‌آیند." className="rounded-card bg-surface py-10 shadow-1" />
           )}

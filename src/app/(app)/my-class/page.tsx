@@ -8,16 +8,16 @@ import { IconChip } from "@/components/IconChip";
 import { SchoolClay } from "@/components/illustrations";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { TimetableView } from "@/components/timetable/TimetableView";
+import { WeekTimetable } from "@/components/timetable/WeekTimetable";
 import { formatNumberFa } from "@/lib/format";
 import { myClassQuery, myTimetableQuery } from "@/modules/academic/queries";
 
 export const metadata: Metadata = { title: "کلاس من | سامانهٴ مدرسه" };
 
 /**
- * «کلاس من»: the class and school, then the weekly timetable — today selected, the ringing زنگ raised, each
- * session opening its درس — and, under it, the class facts and who teaches what. Two reads (the class card and
- * the timetable), both personal.
+ * «کلاس من»: the class and school, then the weekly timetable — the whole week, today's column tinted, the
+ * ringing زنگ live, each session opening its درس — and, under it, the class facts and who teaches what. Two reads
+ * (the class card and the timetable), both personal.
  */
 export default async function MyClassPage() {
   const result = await myClassQuery();
@@ -66,16 +66,7 @@ export default async function MyClassPage() {
               برنامهٴ هفتگی
             </h3>
             {student && tt && hasSlots ? (
-              <TimetableView
-                days={student.days}
-                periods={student.periods}
-                today={tt.today}
-                nowMinutes={tt.nowMinutes}
-                currentPeriodNo={tt.currentPeriodNo}
-                secondary="teacher"
-                emptyTitle="این روز زنگی ندارید"
-                emptyDescription="روز دیگری را انتخاب کنید یا «کل هفته» را ببینید."
-              />
+              <WeekTimetable days={student.days} periods={student.periods} today={tt.today} currentPeriodNo={tt.currentPeriodNo} secondary="teacher" />
             ) : (
               <EmptyState
                 title="برنامهٴ هفتگی هنوز تنظیم نشده"

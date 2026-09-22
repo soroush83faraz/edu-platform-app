@@ -36,7 +36,7 @@ export async function HomeGrid({ ctx }: { ctx: Ctx }) {
     <>
       {tiles.length > 0 ? (
         <nav aria-label="بخش‌ها">
-          <ul className="reveal-grid grid grid-cols-3 gap-x-2 gap-y-3 md:grid-cols-4 lg:grid-cols-6">
+          <ul className="reveal-grid grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7">
             {tiles.map((t) => (
               <Tile
                 key={t.code}
@@ -73,7 +73,7 @@ export async function HomeGrid({ ctx }: { ctx: Ctx }) {
         >
           به‌زودی
         </h3>
-        <ul className="grid grid-cols-3 gap-x-2 gap-y-3 md:grid-cols-4 lg:grid-cols-6">
+        <ul className="grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7">
           {HOME_UPCOMING.map((m) => (
             <Tile
               key={m.code}
