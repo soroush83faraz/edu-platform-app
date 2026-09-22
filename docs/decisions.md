@@ -641,9 +641,15 @@ structural destination becomes **its own tile on Home**, where an admin reaches 
   gated queries — only their way back changed: a structure list page that is no longer a SECTION backs out to
   «خانه», the place its tile is on (`backOutOfAdmin` in `ResourceListPage`, `ADMIN_SECTION_KEYS` in `nav.ts`),
   and so does /admin/onboarding. Nested pages keep their parent (نوبت‌ها → سال تحصیلی, زنگ‌بندی → the school hub).
-- **One narrowing, on purpose.** پایه‌ها / درس‌ها / مقطع‌ها were in the nav for school-scoped admins as read-only
-  organization catalogs; they now have no tile there. They stay reachable — the school hub's «کاتالوگ سازمان»
-  row — and the pages themselves are unchanged, so nothing is lost but the advertisement.
+- **One narrowing, on purpose — and the one thing to watch.** پایه‌ها / درس‌ها / مقطع‌ها were in the nav for
+  school-scoped admins as read-only organization catalogs. Their tiles are organization-only, and the school hub's
+  «کاتالوگ سازمان» panel is organization-only too, so a principal or vice principal now has NO advertised way to
+  the catalog — the pages still answer by URL, read-only and scope-checked as before. That is the owner's
+  «org-only for پایه‌ها/درس‌ها», and it is right as long as a school admin never needs to look the catalog up; the
+  cheap fix if they do is to render `Catalog` on the hub for every admin, not to put the rows back in the nav.
+- **A vice principal keeps what they can act on:** the «حضور و غیاب» report and «مدرسه» (both `read`-level),
+  never سال تحصیلی or زنگ‌بندی, which are `tenancy.structure.write`. The school hub still shows them the year and
+  the bells read-only, which is the same access they had.
 - **«خانه» is drawn with `LayoutGrid`, not `House`** (owner: the house looked dated). Home IS the tile launcher,
   so its mark is the grid of tiles it opens; it sits with the role item's glyph and «بیشتر»'s dots without adding
   a hue or a shape the product does not already use.
