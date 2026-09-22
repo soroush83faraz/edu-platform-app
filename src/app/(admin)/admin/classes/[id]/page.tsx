@@ -1,4 +1,4 @@
-import { BookOpen, CalendarDays, Plus, Printer } from "lucide-react";
+import { BookOpen, CalendarDays, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -25,7 +25,6 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
     notFound();
   }
   const { cls, roster, offerings } = result.data;
-  const canPrint = canAtAnyScope(ctx.assignments, "iam.account.reset_password");
   const canAddStudent = canAtAnyScope(ctx.assignments, "iam.person.write");
   const pendingAccounts = roster.filter((r) => r.mustChangePassword).length;
   const withoutAccount = roster.filter((r) => r.loginIdentifier === null).length;
@@ -50,14 +49,6 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
                 برنامهٴ هفتگی
               </Link>
             </Button>
-            {canPrint ? (
-              <Button asChild variant="ghost">
-                <Link href={`/admin/classes/${id}/credentials`}>
-                  <Printer className="size-4" aria-hidden />
-                  چاپ اعتبارنامه‌ها
-                </Link>
-              </Button>
-            ) : null}
             {canAddStudent ? (
               <Button asChild>
                 <Link href="/admin/students/new">

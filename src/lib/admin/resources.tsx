@@ -693,7 +693,7 @@ export const classResource = defineResource<ClassRow, z.output<typeof ClassInput
   key: "classes",
   labelFa: "کلاس",
   labelFaPlural: "کلاس‌ها",
-  descriptionFa: "کلاس = پایه + نام در یک سال تحصیلی و شعبه. روی هر کلاس: دانش‌آموزان، ارائهٴ درس‌ها و چاپ اعتبارنامه.",
+  descriptionFa: "کلاس = پایه + نام در یک سال تحصیلی و شعبه. روی هر کلاس: دانش‌آموزان و ارائهٴ درس‌ها.",
   permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
   columns: [
     { key: "name", labelFa: "کلاس" },
@@ -714,7 +714,6 @@ export const classResource = defineResource<ClassRow, z.output<typeof ClassInput
   ],
   formValues: (r) => ({ branchId: r.branchId, academicYearId: r.academicYearId, gradeLevelId: r.gradeLevelId, name: r.name, capacity: r.capacity }),
   rowHref: (r) => `/admin/classes/${r.id}`,
-  printHref: (r) => `/admin/classes/${r.id}/credentials`,
   loadOptions: (tx, _ctx, scope) => classOptions(tx, scope),
   list: (tx, _ctx, scope, opts) => listClassRows(tx, scope, opts),
   async create(tx, ctx, scope, input) {

@@ -24,7 +24,7 @@ export function onboardingSteps(c: AdminCounts): OnboardingStep[] {
     { href: "/admin/classes", title: "تخصیص دبیر به کلاس‌درس", done: c.teacherAssignments > 0 && c.offeringsWithoutTeacher === 0, detail: `${n(c.teacherAssignments)} تخصیص` },
     { href: "/admin/students", title: "دانش‌آموزان", done: c.students > 0, detail: `${n(c.students)} دانش‌آموز` },
     { href: "/admin/students?noclass=1", title: "ثبت‌نام فعال در کلاس", done: c.students > 0 && c.studentsWithoutClass === 0, detail: `${n(c.activeEnrollments)} ثبت‌نام فعال${c.studentsWithoutClass > 0 ? `، ${n(c.studentsWithoutClass)} بدون کلاس` : ""}`, warn: c.studentsWithoutClass > 0 },
-    { href: "/admin/students?pending=1", title: "حساب‌های فعال‌نشده (رمز اولیه)", done: c.accountsPending === 0, detail: c.accountsPending > 0 ? `${n(c.accountsPending)} حساب هنوز رمز اولیه دارد — اعتبارنامه‌ها را چاپ و توزیع کنید` : "همه رمز خود را تغییر داده‌اند", warn: c.accountsPending > 0 },
+    { href: "/admin/students?pending=1", title: "حساب‌های فعال‌نشده (رمز اولیه)", done: c.accountsPending === 0, detail: c.accountsPending > 0 ? `${n(c.accountsPending)} حساب هنوز رمز اولیه دارد — رمزها را به صاحبانشان برسانید` : "همه رمز خود را تغییر داده‌اند", warn: c.accountsPending > 0 },
   ];
 }
 

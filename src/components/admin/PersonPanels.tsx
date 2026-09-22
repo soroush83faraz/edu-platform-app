@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRound, LockOpen, Printer, UserPlus } from "lucide-react";
+import { KeyRound, LockOpen, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
@@ -26,7 +26,7 @@ interface Caps {
   canTeaching: boolean;
 }
 
-/** Account state + «تعیین رمز موقت» / «رفع قفل» / «ساخت حساب» / «چاپ اعتبارنامه». */
+/** Account state + «تعیین رمز موقت» / «رفع قفل» / «ساخت حساب». */
 export function AccountCard({ detail, caps }: { detail: PersonDetail; caps: Caps }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -97,14 +97,6 @@ export function AccountCard({ detail, caps }: { detail: PersonDetail; caps: Caps
               <Button type="button" variant="outline" className="gap-2" onClick={unlock} disabled={pending}>
                 <LockOpen className="size-4" aria-hidden />
                 رفع قفل
-              </Button>
-            ) : null}
-            {caps.canReset && acct.mustChangePassword && acct.hasInitialPassword ? (
-              <Button asChild variant="ghost" className="gap-2">
-                <Link href={`/admin/people/${detail.id}/credentials`}>
-                  <Printer className="size-4" aria-hidden />
-                  چاپ اعتبارنامه
-                </Link>
               </Button>
             ) : null}
           </div>
