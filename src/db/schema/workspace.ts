@@ -17,7 +17,7 @@ import {
 import { id, timestamps } from "./_common";
 import { fileObject } from "./files";
 import { person } from "./iam";
-import { orgFk, organization } from "./tenancy";
+import { classOffering, orgFk, organization } from "./tenancy";
 
 export const workspace = pgSchema("workspace");
 
@@ -89,10 +89,13 @@ export const workItem = workspace.table(
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     /** Client-generated UUID v7 of the «کار جدید» form; a resubmit within 10 minutes returns the existing item. */
     idempotencyKey: uuid("idempotency_key"),
+    /** The درس the item belongs to — set by `createWorkItem` for `class_offering` recipients (migration 0015); null otherwise. */
+    classOfferingId: uuid("class_offering_id"),
     ...timestamps(),
   },
   (t) => [
     unique("work_item_org_id_uq").on(t.organizationId, t.id),
+    index("work_item_org_offering_idx").on(t.organizationId, t.classOfferingId).where(sql`${t.classOfferingId} IS NOT NULL`),
     uniqueIndex("work_item_idempotency_uq")
       .on(t.organizationId, t.createdByPersonId, t.idempotencyKey)
       .where(sql`${t.idempotencyKey} IS NOT NULL`),
@@ -112,6 +115,11 @@ export const workItem = workspace.table(
       name: "work_item_parent_fk",
       columns: [t.organizationId, t.parentWorkItemId],
       foreignColumns: [t.organizationId, t.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "work_item_offering_fk",
+      columns: [t.organizationId, t.classOfferingId],
+      foreignColumns: [classOffering.organizationId, classOffering.id],
     }).onDelete("restrict"),
   ],
 );

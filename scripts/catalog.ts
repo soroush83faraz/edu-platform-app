@@ -66,6 +66,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // Owner's matrix: a vice principal defines teachers — sets/changes the main teacher of EXISTING offerings and ends
       // teaching (the derived `teacher` role follows); defining offerings/structure stays `tenancy.structure.write`.
       "academic.teacher_assignment.write",
+      // Owner: admins (principal + vice) define each class's weekly schedule; the bell schedule itself is structure.
+      "academic.timetable.read",
+      "academic.timetable.write",
       "iam.account.reset_password",
       "iam.account.unlock",
       ...WORK_ITEM_ALL,
@@ -77,21 +80,21 @@ export const SYSTEM_ROLES: SystemRole[] = [
     name: "معلم",
     description: "کارتابل درس‌های خود",
     allowedScopeTypes: ["class_offering", "class_group"],
-    permissions: [...WORK_ITEM_ALL, "notif.notification.read", "iam.person.read"],
+    permissions: [...WORK_ITEM_ALL, "notif.notification.read", "iam.person.read", "academic.timetable.read"],
   },
   {
     code: "student",
     name: "دانش‌آموز",
     description: "کارتابل خود",
     allowedScopeTypes: ["student"],
-    permissions: ["workspace.work_item.read", "workspace.work_item.update", "workspace.work_item.comment", "notif.notification.read"],
+    permissions: ["workspace.work_item.read", "workspace.work_item.update", "workspace.work_item.comment", "notif.notification.read", "academic.timetable.read"],
   },
   {
     code: "guardian_full",
     name: "ولی",
     description: "مشاهدهٴ کارتابل فرزند",
     allowedScopeTypes: ["student", "family"],
-    permissions: ["workspace.work_item.read", "workspace.work_item.comment", "notif.notification.read"],
+    permissions: ["workspace.work_item.read", "workspace.work_item.comment", "notif.notification.read", "academic.timetable.read"],
   },
 ];
 

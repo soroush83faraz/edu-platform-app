@@ -4,4 +4,5 @@ export {
   classEnrollment,
   schoolEnrollment,
   teacherAssignment,
+  timetableSlot,
 } from "@/db/schema/academic";

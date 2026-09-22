@@ -9,6 +9,7 @@ export {
   gradeLevel,
   organization,
   school,
+  schoolPeriod,
   subject,
   term,
 } from "@/db/schema/tenancy";

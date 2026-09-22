@@ -9,7 +9,9 @@ import {
   jsonb,
   numeric,
   pgSchema,
+  smallint,
   text,
+  time,
   unique,
   uniqueIndex,
   uuid,
@@ -76,6 +78,39 @@ export const branch = tenancy.table(
     index("branch_org_school_idx").on(t.organizationId, t.schoolId),
     foreignKey({
       name: "branch_school_fk",
+      columns: [t.organizationId, t.schoolId],
+      foreignColumns: [school.organizationId, school.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
+ * The bell schedule («زنگ‌بندی») of a school: one row per period with its wall-clock bounds (school-local, the
+ * school's timezone — Asia/Tehran in phase 1). Pure configuration with a natural key `(school, period_no)`; rows
+ * are edited in place or removed (no status column — docs/decisions.md «برنامهٴ کلاسی»). `createSchool` seeds the
+ * six default periods; migration 0015 backfilled every school that existed before.
+ */
+export const schoolPeriod = tenancy.table(
+  "school_period",
+  {
+    id: id(),
+    organizationId: orgFk(),
+    schoolId: uuid("school_id").notNull(),
+    /** 1..12, the row order of the timetable grid. */
+    periodNo: smallint("period_no").notNull(),
+    /** «زنگ اول» … */
+    label: text("label").notNull(),
+    startsAt: time("starts_at").notNull(),
+    endsAt: time("ends_at").notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique("school_period_school_no_uq").on(t.organizationId, t.schoolId, t.periodNo),
+    unique("school_period_org_id_uq").on(t.organizationId, t.id),
+    check("school_period_no_chk", sql`${t.periodNo} BETWEEN 1 AND 12`),
+    check("school_period_range_chk", sql`${t.startsAt} < ${t.endsAt}`),
+    foreignKey({
+      name: "school_period_school_fk",
       columns: [t.organizationId, t.schoolId],
       foreignColumns: [school.organizationId, school.id],
     }).onDelete("restrict"),

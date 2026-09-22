@@ -135,14 +135,14 @@ describe("RLS meta-checks (catalog)", () => {
         [TENANT_SCHEMAS],
       );
       expect(all.rows).toEqual([
-        { schema: "academic", n: 3 },
+        { schema: "academic", n: 4 },
         { schema: "audit", n: 1 },
         { schema: "config", n: 2 },
         { schema: "files", n: 1 },
         { schema: "iam", n: 13 },
         { schema: "integ", n: 3 },
         { schema: "notif", n: 3 },
-        { schema: "tenancy", n: 10 },
+        { schema: "tenancy", n: 11 },
         { schema: "workspace", n: 9 },
       ]);
     });

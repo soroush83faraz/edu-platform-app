@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, date, foreignKey, index, pgSchema, text, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { check, date, foreignKey, index, pgSchema, smallint, text, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { id, timestamps } from "./_common";
 import { person, staffProfile, studentProfile } from "./iam";
 import { academicYear, classGroup, classOffering, gradeLevel, orgFk, school } from "./tenancy";
@@ -150,6 +150,45 @@ export const teacherAssignment = academic.table(
     }).onDelete("restrict"),
     foreignKey({
       name: "teacher_assignment_offering_fk",
+      columns: [t.organizationId, t.classOfferingId],
+      foreignColumns: [classOffering.organizationId, classOffering.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
+ * The weekly timetable («برنامهٴ هفتگی») of a class group: one row per occupied cell `(weekday, period_no)` pointing
+ * at the offering taught then. `weekday` 0 = شنبه … 5 = پنجشنبه (6 = جمعه allowed by the CHECK, never offered by
+ * the UI); `period_no` refers to the school's bell schedule (`tenancy.school_period`) by number — not by id, so a
+ * re-defined زنگ‌بندی keeps the grid. Pure configuration: clearing a cell DELETES the row (the one table in the
+ * product without soft delete — docs/decisions.md «برنامهٴ کلاسی»); every change is audited on the class group.
+ */
+export const timetableSlot = academic.table(
+  "timetable_slot",
+  {
+    id: id(),
+    organizationId: orgFk(),
+    classGroupId: uuid("class_group_id").notNull(),
+    weekday: smallint("weekday").notNull(),
+    periodNo: smallint("period_no").notNull(),
+    classOfferingId: uuid("class_offering_id").notNull(),
+    room: text("room"),
+    ...timestamps(),
+  },
+  (t) => [
+    unique("timetable_slot_cell_uq").on(t.organizationId, t.classGroupId, t.weekday, t.periodNo),
+    unique("timetable_slot_org_id_uq").on(t.organizationId, t.id),
+    index("timetable_slot_org_offering_idx").on(t.organizationId, t.classOfferingId),
+    check("timetable_slot_weekday_chk", sql`${t.weekday} BETWEEN 0 AND 6`),
+    check("timetable_slot_period_chk", sql`${t.periodNo} BETWEEN 1 AND 12`),
+    check("timetable_slot_room_chk", sql`${t.room} IS NULL OR char_length(${t.room}) BETWEEN 1 AND 40`),
+    foreignKey({
+      name: "timetable_slot_class_group_fk",
+      columns: [t.organizationId, t.classGroupId],
+      foreignColumns: [classGroup.organizationId, classGroup.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "timetable_slot_offering_fk",
       columns: [t.organizationId, t.classOfferingId],
       foreignColumns: [classOffering.organizationId, classOffering.id],
     }).onDelete("restrict"),

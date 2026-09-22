@@ -16,6 +16,8 @@ export const PERMISSIONS = [
   { code: "tenancy.structure.write", module: "tenancy", name: "ویرایش ساختار مدرسه", isSensitive: true },
   { code: "academic.enrollment.write", module: "academic", name: "ثبت‌نام دانش‌آموز در کلاس", isSensitive: false },
   { code: "academic.teacher_assignment.write", module: "academic", name: "تخصیص معلم به درس", isSensitive: false },
+  { code: "academic.timetable.read", module: "academic", name: "مشاهدهٴ برنامهٴ کلاسی", isSensitive: false },
+  { code: "academic.timetable.write", module: "academic", name: "تنظیم برنامهٴ کلاسی", isSensitive: false },
   { code: "workspace.work_item.read", module: "workspace", name: "مشاهدهٴ کارتابل", isSensitive: false },
   { code: "workspace.work_item.create", module: "workspace", name: "ایجاد کار", isSensitive: false },
   { code: "workspace.work_item.update", module: "workspace", name: "ویرایش کار", isSensitive: false },
