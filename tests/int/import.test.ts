@@ -80,7 +80,9 @@ describe("excel import", () => {
     } finally {
       await pool.end();
     }
-  });
+    // The demo seed builds structure, ~40 argon2 accounts, the weekly timetable and the حضور و غیاب history —
+    // well past vitest's 10 s default hook budget on a modest machine.
+  }, 60_000);
   afterAll(async () => {
     await dropAppSchemas();
     await runMigrations({ test: true, connectionString: OWNER_URL });

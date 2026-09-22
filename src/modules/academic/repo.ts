@@ -618,3 +618,28 @@ export async function findClassOfStudentProfile(tx: Tx, studentProfileId: string
   const r = res.rows[0];
   return r ? { classGroupId: r.class_group_id, classGroupName: r.class_group_name } : null;
 }
+
+export interface ClassPickerRow {
+  id: string;
+  name: string;
+  schoolName: string;
+  students: number;
+}
+
+/**
+ * Active classes of `schoolIds` (null = every school of the tenant) with their school and roster size — the class
+ * picker of the admin attendance report. Deliberately NOT the generic admin resource list: the academic module
+ * must not depend on `src/lib/admin`.
+ */
+export async function listClassesForPicker(tx: Tx, schoolIds: readonly string[] | null): Promise<ClassPickerRow[]> {
+  const filter = schoolIds === null ? sql`true` : sql`b.school_id = any(${sql.param([...schoolIds], undefined)}::uuid[])`;
+  const res = await tx.execute<{ id: string; name: string; school_name: string; students: number }>(sql`
+    select cg.id, cg.name, s.name as school_name,
+      (select count(*)::int from academic.class_enrollment ce where ce.class_group_id = cg.id and ce.status = 'active') as students
+    from tenancy.class_group cg
+    join tenancy.branch b on b.id = cg.branch_id
+    join tenancy.school s on s.id = b.school_id
+    where cg.status = 'active' and ${filter}
+    order by s.name, cg.name`);
+  return res.rows.map((r) => ({ id: r.id, name: r.name, schoolName: r.school_name, students: Number(r.students) }));
+}

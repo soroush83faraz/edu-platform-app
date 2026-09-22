@@ -1,13 +1,12 @@
 // Read-only queries for pages (Server Components). Same gate as actions: session → must-change → permission.
 import { defineQuery } from "@/lib/actions";
-import { listClassRows } from "@/lib/admin/resources";
 import { notFound } from "@/lib/errors";
 import { can } from "@/modules/iam/can";
 import { assertSchoolInScope, getAdminScope } from "@/modules/iam/service";
 import { findSchoolById, listSchoolPeriods } from "@/modules/tenancy/repo";
 import { attendanceGaps, classAttendanceReport, defaultRange, getSessionForTaking, studentAttendanceSummary, teacherDay } from "./attendance";
 import { AttendanceCellInput, ClassAttendanceInput, ClassGroupIdInput, MyAttendanceInput, OfferingIdInput, SchoolIdInput, StudentAttendanceInput } from "./dto";
-import { findStudentProfile, getMyClass } from "./repo";
+import { findStudentProfile, getMyClass, listClassesForPicker } from "./repo";
 import { getClassTimetable, getMyTimetable, getOfferingPage } from "./service";
 
 export type { MyClass, MyClassTeacher } from "./repo";
@@ -83,6 +82,5 @@ export const attendanceGapsQuery = defineQuery({ permission: "academic.attendanc
 /** The class picker of `/admin/attendance`: the caller's active classes (the admin scope filters them). */
 export const attendanceClassesQuery = defineQuery({ permission: "academic.attendance.report", scope: "any" }, async (tx, _input, ctx) => {
   const scope = await getAdminScope(tx, ctx);
-  const { rows } = await listClassRows(tx, scope, { q: "", page: 1, pageSize: 300 });
-  return rows.map((r) => ({ id: r.id, name: r.name, schoolName: r.schoolName, students: r.students }));
+  return listClassesForPicker(tx, scope.kind === "organization" ? null : scope.schoolIds);
 });
