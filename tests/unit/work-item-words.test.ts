@@ -1,7 +1,7 @@
 // The visible noun of a کار is a pure function of the viewer's hats — «تکلیف» for a teacher, «تسک» for an admin
 // who does not teach, «تکلیف» for someone wearing both. No I/O.
 import { describe, expect, it } from "vitest";
-import { type AssignmentLike, hasTeachingHat, workItemStatusLabel, workItemVoice, workItemWords } from "@/lib/work-item-words";
+import { type AssignmentLike, NEW_ITEM_TILE_ROLES, hasTeachingHat, newItemLabel, workItemStatusLabel, workItemVoice, workItemWords } from "@/lib/work-item-words";
 
 const WORK_ITEM_ALL = ["workspace.work_item.read", "workspace.work_item.create", "workspace.work_item.update", "workspace.work_item.comment", "workspace.work_item.assign_class"];
 
@@ -68,6 +68,19 @@ describe("workItemWords", () => {
         expect(value).not.toMatch(/[A-Za-z]/);
       }
     }
+  });
+});
+
+describe("newItemLabel (the Home creation tile)", () => {
+  it("follows the same rule as the pages", () => {
+    expect(newItemLabel({ isTeacher: true, isAdmin: false })).toBe("تکلیف جدید");
+    expect(newItemLabel({ isTeacher: true, isAdmin: true })).toBe("تکلیف جدید");
+    expect(newItemLabel({ isTeacher: false, isAdmin: true })).toBe("تسک جدید");
+    expect(newItemLabel({ isTeacher: false, isAdmin: false })).toBe("تکلیف جدید");
+  });
+
+  it("the tile belongs to both hats that may create one", () => {
+    expect([...NEW_ITEM_TILE_ROLES]).toEqual(["teacher", "admin"]);
   });
 });
 

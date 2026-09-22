@@ -88,6 +88,37 @@ export function workItemWords(voice: WorkItemVoice): WorkItemWords {
   return WORDS[voice];
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// the Home grid's creation tile
+// ---------------------------------------------------------------------------------------------------------------
+
+/** The two hats the tile registry already computes from `getHats` (`TileHats` in src/lib/modules-registry). */
+export interface HatsLike {
+  isTeacher: boolean;
+  isAdmin: boolean;
+}
+
+/** The same rule as `workItemVoice`, read off the hats a surface has already resolved. */
+export function voiceForHats(hats: HatsLike): WorkItemVoice {
+  return hats.isTeacher ? "assignment" : hats.isAdmin ? "task" : "assignment";
+}
+
+export function workItemWordsForHats(hats: HatsLike): WorkItemWords {
+  return workItemWords(voiceForHats(hats));
+}
+
+/**
+ * The label of Home's one creation tile: «تکلیف جدید» for a teacher, «تسک جدید» for an admin who does not teach.
+ * (The tile's own audience is `NEW_ITEM_TILE_ROLES` — an admin gives work too, and until round 4 had no door to
+ * the form on Home at all.)
+ */
+export function newItemLabel(hats: HatsLike): string {
+  return workItemWordsForHats(hats).new;
+}
+
+/** Who sees that tile: both hats that may create a کار (the permission check `workspace.work_item.create` stays). */
+export const NEW_ITEM_TILE_ROLES = ["teacher", "admin"] as const;
+
 /**
  * The visible name of a status row. The catalog's «کنسل‌شده» reads «حذف‌شده» in the UI (owner, round 4): the
  * creator action is «حذف» now. Nothing is deleted — the stored status code is still `cancelled`, the transition
