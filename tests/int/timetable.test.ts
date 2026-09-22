@@ -14,6 +14,7 @@ import { DEFAULT_PERIODS } from "@/lib/timetable";
 import { assignTeacher, enrollStudent, getClassTimetable, getMyTimetable, getOfferingPage, setTimetableSlot, type TimetableCtx } from "@/modules/academic/service";
 import type { Assignment } from "@/modules/iam/can";
 import { PERMISSIONS } from "@/modules/iam/permissions";
+import { listSchoolPeriods } from "@/modules/tenancy/repo";
 import { setSchoolPeriods } from "@/modules/tenancy/service";
 import { inboxTabCounts, listInbox } from "@/modules/workspace/repo";
 import { createWorkItem, type WorkspaceCtx } from "@/modules/workspace/service";
@@ -100,6 +101,25 @@ describe("setSchoolPeriods (زنگ‌بندی)", () => {
       ).rejects.toSatisfy((err: unknown) => AppError.is(err) && err.code === "VALIDATION" && err.message === "زنگ ۲ با زنگ قبلی هم‌پوشانی دارد.");
       await expect(setSchoolPeriods(tx, admin, f.SCHOOL_B, DEFAULT_PERIODS.map((p) => ({ ...p })))).rejects.toSatisfy(isCode("NOT_FOUND"));
 
+      const trail = await tx.select({ action: auditLog.action }).from(auditLog).where(and(eq(auditLog.entityId, f.SCHOOL_A), eq(auditLog.action, "tenancy.school_period.replaced")));
+      expect(trail).toHaveLength(2);
+    });
+  });
+
+  // QA round 3: the editor's primary action is «تأیید زنگ‌بندی» when nothing was touched, so the operator whose day
+  // already matches the six seeded defaults can confirm them. That post carries the rows back unchanged.
+  it("confirming the schedule with NO changes succeeds: the six rows stay as they are, and the confirmation is audited", async () => {
+    await rolledBack(async (tx) => {
+      await seedPeriods(tx);
+      const before = await listSchoolPeriods(tx, f.SCHOOL_A);
+      expect(before.map((p) => [p.periodNo, p.startsAt, p.endsAt])).toEqual(DEFAULT_PERIODS.map((p) => [p.periodNo, p.startsAt, p.endsAt]));
+
+      // Exactly what the untouched editor sends: the rows it was given, minus the row id.
+      const resent = before.map((p) => ({ periodNo: p.periodNo, label: p.label, startsAt: p.startsAt, endsAt: p.endsAt }));
+      await expect(setSchoolPeriods(tx, admin, f.SCHOOL_A, resent)).resolves.toEqual({ count: 6 });
+
+      const after = await listSchoolPeriods(tx, f.SCHOOL_A);
+      expect(after.map((p) => ({ id: p.id, periodNo: p.periodNo, label: p.label, startsAt: p.startsAt, endsAt: p.endsAt }))).toEqual(before);
       const trail = await tx.select({ action: auditLog.action }).from(auditLog).where(and(eq(auditLog.entityId, f.SCHOOL_A), eq(auditLog.action, "tenancy.school_period.replaced")));
       expect(trail).toHaveLength(2);
     });

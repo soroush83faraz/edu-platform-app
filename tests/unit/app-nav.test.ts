@@ -1,6 +1,7 @@
-// The five nav items per role, in order, from a static server render of `AppNav` (no DOM environment: the markup
-// is inspected as a string). Bottom bar (RTL, first = start/right): پنل من · اعلان‌ها · خانه · role item · بیشتر;
-// rail: خانه first. The role item follows `navRoleFor`; `aria-current` marks the current route on both renderings.
+// The FOUR nav items per role, in order, from a static server render of `AppNav` (no DOM environment: the markup
+// is inspected as a string). Both renderings read خانه · پنل من · role item · بیشتر (RTL, first = start/right);
+// «اعلان‌ها» left the navigation in QA round 3 — Home's bell is its one door. The role item follows `navRoleFor`;
+// `aria-current` marks the current route on both renderings.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -23,31 +24,31 @@ function render(role: "admin" | "teacher" | "student" | null, at = "/home", admi
     current: /aria-current="page"/.test(m[1] + m[3]),
     label: m[4].replace(/<[^>]+>/g, "").replace(/[۰-۹]+\+?/g, ""),
   }));
-  const bottom = links.slice(0, 5);
-  const side = links.slice(5, 10);
+  const bottom = links.slice(0, 4);
+  const side = links.slice(4, 8);
   return { html, bottom, side };
 }
 
 describe("AppNav items per role", () => {
   it("student: «کلاس من» as the role item", () => {
     const { bottom, side } = render("student");
-    expect(bottom.map((l) => l.href)).toEqual(["/inbox", "/notifications", "/home", "/my-class", "/more"]);
-    expect(bottom.map((l) => l.label)).toEqual(["پنل من", "اعلان‌ها", "خانه", "کلاس من", "بیشتر"]);
-    expect(side.map((l) => l.href)).toEqual(["/home", "/inbox", "/notifications", "/my-class", "/more"]);
+    expect(bottom.map((l) => l.href)).toEqual(["/home", "/inbox", "/my-class", "/more"]);
+    expect(bottom.map((l) => l.label)).toEqual(["خانه", "پنل من", "کلاس من", "بیشتر"]);
+    expect(side.map((l) => l.href)).toEqual(["/home", "/inbox", "/my-class", "/more"]);
   });
 
   it("teacher: «کلاس‌ها»; admin: «مدیریت»; no hat: «راهنما»", () => {
-    expect(render("teacher").bottom[3]).toMatchObject({ href: "/classes", label: "کلاس‌ها" });
-    expect(render("admin").bottom[3]).toMatchObject({ href: "/admin", label: "مدیریت" });
-    expect(render(null).bottom[3]).toMatchObject({ href: "/help", label: "راهنما" });
+    expect(render("teacher").bottom[2]).toMatchObject({ href: "/classes", label: "کلاس‌ها" });
+    expect(render("admin").bottom[2]).toMatchObject({ href: "/admin", label: "مدیریت" });
+    expect(render(null).bottom[2]).toMatchObject({ href: "/help", label: "راهنما" });
   });
 
   it("aria-current follows the route on both renderings, nested routes included", () => {
     const admin = render("admin", "/admin/classes");
-    expect(admin.bottom.map((l) => l.current)).toEqual([false, false, false, true, false]);
-    expect(admin.side.map((l) => l.current)).toEqual([false, false, false, true, false]);
+    expect(admin.bottom.map((l) => l.current)).toEqual([false, false, true, false]);
+    expect(admin.side.map((l) => l.current)).toEqual([false, false, true, false]);
     const home = render("student", "/home");
-    expect(home.bottom.map((l) => l.current)).toEqual([false, false, true, false, false]);
+    expect(home.bottom.map((l) => l.current)).toEqual([true, false, false, false]);
     const off = render("student", "/change-password");
     expect(off.bottom.every((l) => !l.current)).toBe(true);
   });
@@ -60,11 +61,18 @@ describe("AppNav items per role", () => {
     expect(html.match(/۳ مورد خوانده‌نشده/g)?.length).toBe(2);
   });
 
-  it("the four neighbours ease away from «خانه» only while Home is the current tab", () => {
-    const onHome = render("student", "/home").html;
-    expect([...onHome.matchAll(/--nav-drift:\s*(-?\d+px)/g)].map((m) => m[1])).toEqual(["-4px", "-2px", "0px", "2px", "4px"]);
-    const elsewhere = render("student", "/inbox").html;
-    expect([...elsewhere.matchAll(/--nav-drift:\s*(-?\d+px)/g)].map((m) => m[1])).toEqual(["0px", "0px", "0px", "0px", "0px"]);
+  it("«اعلان‌ها» is gone from both renderings, and with it the neighbour drift (four cells have no middle)", () => {
+    for (const at of ["/home", "/inbox", "/notifications"]) {
+      const { html, bottom, side } = render("student", at);
+      expect(html).not.toContain("/notifications");
+      expect(html).not.toContain("اعلان‌ها");
+      expect(html).not.toContain("--nav-drift");
+      expect(bottom).toHaveLength(4);
+      expect(side).toHaveLength(4);
+    }
+    // Four columns, and the sliding cell is a quarter of the bar.
+    expect(render("student").html).toContain("grid-cols-4");
+    expect(render("student").html).toContain("w-1/4");
   });
 });
 

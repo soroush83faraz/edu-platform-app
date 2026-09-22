@@ -25,9 +25,13 @@ describe("homeTilesFor", () => {
     expect(HOME_TILES.some((t) => t.href.startsWith("/admin/"))).toBe(false);
   });
 
-  it("no tile is a second door to a nav destination («کلاس من», «کلاس‌های من», «پنل من», «اعلان‌ها», «بیشتر»)", () => {
-    const navHrefs = ["/my-class", "/classes", "/inbox", "/notifications", "/more", "/home"];
+  it("no tile is a second door to a nav destination («کلاس من», «کلاس‌های من», «پنل من», «بیشتر»)", () => {
+    const navHrefs = ["/my-class", "/classes", "/inbox", "/more", "/home"];
     expect(HOME_TILES.filter((t) => navHrefs.includes(t.href))).toEqual([]);
+  });
+
+  it("«اعلان‌ها» left the nav in QA round 3 and did NOT become a tile — Home's bell is its one door", () => {
+    expect(HOME_TILES.filter((t) => t.href.startsWith("/notifications"))).toEqual([]);
   });
 
   it("every tile href is unique: one home per destination", () => {

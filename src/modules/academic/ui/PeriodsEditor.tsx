@@ -13,8 +13,13 @@ import { setSchoolPeriodsAction } from "../actions";
 
 /**
  * The bell schedule («زنگ‌بندی») editor: one row per زنگ — name, start, end — «زنگ جدید» appends the next one
- * ten minutes after the last, «حذف» removes the last row only (numbers stay 1..n), «ذخیرهٴ زنگ‌بندی» sends the
- * whole list. Validation (order, overlap, ≤ 12) runs on the client first with the same rule as the service.
+ * ten minutes after the last, «حذف» removes the last row only (numbers stay 1..n), and the primary action sends
+ * the whole list. Validation (order, overlap, ≤ 12) runs on the client first with the same rule as the service.
+ *
+ * The primary action is ALWAYS enabled (QA round 3): a new school is seeded with the six default زنگ‌ها, and the
+ * operator whose day already matches them must be able to say so — «تأیید زنگ‌بندی» when nothing was touched,
+ * «ذخیرهٴ زنگ‌بندی» once a row changed. Both post the same rows through the same action; `dirty` only picks the
+ * word (before, it also disabled the button, so the defaults could not be confirmed at all).
  */
 export function PeriodsEditor({ schoolId, initial, canEdit }: { schoolId: string; initial: PeriodInput[]; canEdit: boolean }) {
   const router = useRouter();
@@ -49,13 +54,14 @@ export function PeriodsEditor({ schoolId, initial, canEdit }: { schoolId: string
         setError(r.fieldErrors?.periods?.[0] ?? r.message);
         return;
       }
-      toast.success(`زنگ‌بندی ذخیره شد (${formatNumberFa(r.data.count)} زنگ)`);
+      toast.success(`${dirty ? "زنگ‌بندی ذخیره شد" : "زنگ‌بندی تأیید شد"} (${formatNumberFa(r.data.count)} زنگ)`);
       router.refresh();
     });
   };
 
   return (
     <div className="flex flex-col gap-4">
+      {canEdit ? <p className="px-1 text-meta text-text-muted">زنگ‌بندی پیش‌فرض شش زنگ است. اگر با برنامهٴ مدرسه می‌خواند، تأیید کنید؛ وگرنه ساعت‌ها را تغییر دهید یا زنگ اضافه/کم کنید.</p> : null}
       <ol className="flex flex-col divide-y divide-line/70 surface-work">
         {rows.map((p, i) => (
           <li key={p.periodNo} className="grid grid-cols-[2rem_1fr_5.5rem_5.5rem] items-center gap-2 px-3 py-2 sm:grid-cols-[2.5rem_1fr_7rem_7rem]">
@@ -86,8 +92,8 @@ export function PeriodsEditor({ schoolId, initial, canEdit }: { schoolId: string
           <p role="alert" className="min-h-5 text-sm text-danger">
             {error}
           </p>
-          <Button type="button" size="lg" onClick={save} disabled={pending || !dirty}>
-            {pending ? "در حال ذخیره…" : "ذخیرهٴ زنگ‌بندی"}
+          <Button type="button" size="lg" onClick={save} disabled={pending}>
+            {pending ? "در حال ذخیره…" : dirty ? "ذخیرهٴ زنگ‌بندی" : "تأیید زنگ‌بندی"}
           </Button>
         </>
       ) : (

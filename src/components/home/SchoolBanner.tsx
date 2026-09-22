@@ -1,3 +1,4 @@
+import { NotificationsBell } from "@/components/home/NotificationsBell";
 import { SchoolClay } from "@/components/illustrations";
 import { formatJalaliLong } from "@/lib/format";
 
@@ -10,7 +11,11 @@ import { formatJalaliLong } from "@/lib/format";
  */
 export function SchoolBanner({ schoolName, firstName }: { schoolName: string; firstName: string }) {
   return (
-    <section aria-label="مدرسه" className="on-hero flex flex-col items-center gap-0.5 rounded-hero bg-hero px-4 pt-4 pb-4 text-center text-on-hero shadow-hero lg:hidden">
+    <section aria-label="مدرسه" className="on-hero relative flex flex-col items-center gap-0.5 rounded-hero bg-hero px-4 pt-4 pb-4 text-center text-on-hero shadow-hero lg:hidden">
+      {/* The one door to «اعلان‌ها» on phones (it left the bottom bar): the bell in the banner's start corner. */}
+      <span className="absolute top-2 start-2">
+        <NotificationsBell tone="hero" />
+      </span>
       <span className="grid size-13 place-items-center rounded-2xl bg-surface shadow-1">
         <SchoolClay size={44} />
       </span>
