@@ -429,3 +429,63 @@ rail under «مدیریت»), and Home carried the school counters that /admin c
   A grid tile was the alternative and was not taken — the badge belongs beside the greeting, and a tile would have
   been a second personal door to a page the header already opens. `/notifications`, the poller and the
   `document.title` mirror are unchanged.
+
+## 2026-09-22 — QA round 3 (admin): the school hub, pickers that never repeat a name, scopes that show every school
+
+Three owner asks after living with the admin area: «a school must be editable in one place», «the dropdowns say
+the school's name twice», and «with two schools I am shown only one of them».
+
+- **One page per school (`/admin/schools/[id]`).** Finishing a new school meant six list pages (شعبه‌ها,
+  سال تحصیلی, نوبت‌ها, زنگ‌بندی, کلاس‌ها, کارکنان) reached from three different places. The hub puts them in setup
+  order on one page built from `PageHeader` / `PageSection` / `TwoColumn`: main column شعبه‌ها → سال تحصیلی (with
+  the نوبت‌ها of the current year nested under it) → کلاس‌ها (student counts, each row the class page); aside
+  زنگ‌بندی (a read view of the bells + a link to its editor, which keeps its own page — the grid needs the room),
+  ارائهٴ درس and کارکنان as counts with a way in, and «کاتالوگ سازمان» for organization admins, because پایه‌ها and
+  درس‌ها belong to the organization and must not look school-owned. **Nothing was re-implemented:** every «… جدید»
+  mounts the same `ResourceForm` its list page mounts, with that resource's `formFields` and the same
+  `adminResourceMutate` action, so the strict Zod schema and the scope rule are the ones already tested. The
+  school id rides along as a `fixed` value and its picker leaves the form — on this page the school IS the page.
+  Each section carries a «هنوز تعریف نشده» empty state holding that section's primary action, so a fresh school is
+  filled in top to bottom without leaving. Reachability: the schools list row title (it used to jump straight into
+  زنگ‌بندی, one section of the hub), the /admin breakdown rows, the «۲ مدرسه» header menu, and — for a principal of
+  exactly one school — the nav's «مدرسه» itself, which no longer opens a list of one row. One new gated read
+  (`schoolHubQuery`), explicit columns, `assertSchoolInScope` before anything else (out of scope = NOT_FOUND), and
+  the same `resourceOpGate` the mutation applies decides which «… جدید» is rendered at all.
+- **An option never repeats its group heading, and never repeats what the page already says.** The class form
+  listed «<مدرسه> — <شعبه>» AND grouped those same options under «<مدرسه>»; with the pilot school actually named
+  «علامه طباطبایی — شعبهٴ کارگر» the reader met the name twice per row plus a stray branch word. The rule now:
+  when a list is grouped, the heading carries the parent and the option only its own name. `classOptions`
+  therefore returns either a `schools` set (every school in scope has exactly ONE branch → the branch IS the
+  school, labelled with the school's name, and the word «شعبه» appears nowhere) or a `branches` set (branch names
+  only, grouped by school when the scope spans more than one). The FIELD follows the option set through the new
+  optional `formFieldsFor(options)` on a resource definition (read via `formFieldsOf`): «مدرسه», «شعبه» or
+  «مدرسه / شعبه» over the same `branchId` field and the same payload. Academic years the same way — the heading is
+  the school, the option is «۱۴۰۵-۱۴۰۶ (جاری)».
+- **A required picker with one possible answer is not a question.** `isSettled` / `seedValues`
+  (`resource-form-state.ts`, unit-tested) drop such a field from the form and submit its value, so in a
+  one-school, one-branch, one-year scope «کلاس جدید» asks پایه + نام + ظرفیت and nothing else — the owner's
+  «collapse the control entirely», chosen over a disabled control that can never change. Two exceptions keep
+  their control: an OPTIONAL picker («بدون دبیر» is a real answer) and a lone option that sits under a group
+  heading — the heading names a parent the form also asks for (the single year of one of two schools), and hiding
+  it would let a class be created in school A's branch with school B's year (the service refuses that, but the
+  refusal would land on a field nobody can see). `Field` now renders ungrouped options first and then the
+  `<optgroup>`s instead of dropping the ungrouped ones as soon as any option carried a group.
+- **Two schools are never represented by one.** For an ADMIN the desktop context line follows the admin scope:
+  one school as before, two or more as a «۲ مدرسه» menu listing every school (each row its hub), plus the year
+  when the schools share one name and no نوبت (two schools have two); students and teachers keep the primary
+  school. The phone header and the rail introduce such an admin with the ORGANIZATION's name. /admin keeps the
+  aggregate counters and adds the panel that says where they come from: one row per school with its students,
+  classes and staff, a trailing row for whoever is anchored to no school («۱ همکار بدون مدرسهٴ اصلی») so the rows
+  add up, and «فهرست مدرسه‌ها». That panel REPLACES the «مدرسه‌ها» section row — the same door with the numbers on
+  it, so «one home per destination» still holds. `schoolCounts` runs only when the scope holds more than one
+  school; `getShellContext` is still one cached read per request.
+- **Verified** on the dev server at 390 px and 1280 px as the organization admin of a two-school organization
+  (`09351000001`): «۲ مدرسه» in the header with both names in the menu; /admin showing ۱۷۵/۱۳/۷ with the rows
+  ۱۷۵ + ۰ + «۱ همکار بدون مدرسهٴ اصلی»; a brand-new school set up entirely from its hub (year → its two نوبت‌ها →
+  a class), and «کلاس جدید» on that hub asking only پایه + نام + ظرفیت; the class form of /admin/classes showing
+  «مدرسه» over two school names and «سال تحصیلی» as one group per school with only the year inside.
+- **Deferred.** The offerings page (`/admin/classes/[id]/offerings`) could not be re-opened at the end of the
+  round — the shared dev server's compile worker was being killed by memory pressure from three agents — but its
+  pickers were read and already follow the rule (درس, نوبت and دبیر are plain names inside a page whose header
+  names the class). «افزودن» kept the product's existing «… جدید» wording rather than the owner's literal word,
+  for consistency with every other create button.
