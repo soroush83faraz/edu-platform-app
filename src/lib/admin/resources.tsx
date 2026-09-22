@@ -1003,5 +1003,5 @@ export { ADMIN_SECTIONS as ADMIN_NAV, type AdminNavItem } from "./nav";
 
 /** The sub-navigation a caller sees: school-scoped admins (principal, vice principal) lose the organization-only entries. */
 export function adminNavFor(assignments: readonly Assignment[]): AdminNavItem[] {
-  return adminSectionsFor({ org: isOrganizationAdmin(assignments), singleSchool: false });
+  return adminSectionsFor({ org: isOrganizationAdmin(assignments) });
 }

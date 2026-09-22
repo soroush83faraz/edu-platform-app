@@ -35,6 +35,6 @@ export const resolveHomeTiles = cache(async (ctx: Ctx): Promise<HomeTiles> => {
   const isStudent = hats?.isStudent ?? false;
   const isTeacher = (hats?.teachingOfferings.length ?? 0) > 0;
   const adminScope = hats?.adminScope ?? null;
-  const tiles = homeTilesFor({ isStudent, isTeacher, isAdmin: adminScope !== null, adminScope }, has);
+  const tiles = homeTilesFor({ isStudent, isTeacher, isAdmin: adminScope !== null, adminScope, singleSchoolId: hats?.adminSingleSchoolId ?? null }, has);
   return { tiles, hats, isStudent, isTeacher };
 });

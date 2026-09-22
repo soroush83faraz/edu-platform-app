@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { Pagination, SearchForm, lastPage } from "@/components/admin/AdminPage";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { getAdminShell } from "@/lib/admin/admin-shell";
-import { schoolsLabelFa } from "@/lib/admin/nav";
+import { ADMIN_SECTION_KEYS, schoolsLabelFa } from "@/lib/admin/nav";
 import { ResourceForm } from "@/components/admin/ResourceForm";
 import { ResourceTable } from "@/components/admin/ResourceTable";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,15 @@ import { formatNumberFa } from "@/lib/format";
 export type SearchParams = Record<string, string | string[] | undefined>;
 export const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A structure page still renders inside the admin shell but is no longer one of its SECTIONS (round 5: the admin
+ * nav is people and roles, the structure pages are Home tiles). Its way back is therefore Home — the place its
+ * tile is on — never a section list that no longer contains it. Nested resources keep their parent's back link.
+ */
+function backOutOfAdmin(key: string): { href: string; label: string } | undefined {
+  return ADMIN_SECTION_KEYS.has(key) ? undefined : { href: "/home", label: "خانه" };
+}
 
 /**
  * The generic list page of a resource: header (+ create form), search, table, pagination. `basePath` is where
@@ -51,7 +60,7 @@ export async function ResourceListPage({ def, sp, parent, basePath, back }: { de
         title={title}
         count={`${formatNumberFa(total)} مورد`}
         description={def.descriptionFa}
-        back={back ?? (def.parentParam ? { href: def.parentParam.backHref(parentId), label: def.parentParam.labelFa } : undefined)}
+        back={back ?? (def.parentParam ? { href: def.parentParam.backHref(parentId), label: def.parentParam.labelFa } : backOutOfAdmin(def.key))}
         actions={
           <>
             {def.links?.map((l) => (

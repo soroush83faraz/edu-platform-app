@@ -1,14 +1,17 @@
 import {
   Bell,
+  BookOpen,
   BookOpenCheck,
   CalendarCheck,
   CalendarDays,
   ClipboardCheck,
   ClipboardPlus,
+  Clock,
   FileSpreadsheet,
   Handshake,
   HeartHandshake,
   Inbox,
+  Layers,
   Library,
   ListChecks,
   ListTodo,
@@ -16,7 +19,9 @@ import {
   Megaphone,
   MessagesSquare,
   NotebookPen,
+  Rocket,
   Scale,
+  School,
   Send,
   Settings2,
   ShieldAlert,
@@ -27,6 +32,7 @@ import {
   Wallet,
 } from "lucide-react";
 import type { ClayShade } from "@/components/ClayIcon";
+import { schoolsLabelFa } from "@/lib/admin/nav";
 import type { Permission } from "@/modules/iam/permissions";
 
 /**
@@ -309,6 +315,9 @@ export type TileRole = "student" | "teacher" | "admin";
 /** The admin hat's reach (`getAdminScope().kind`): the whole organization, or the caller's schools. */
 export type TileAdminScope = "organization" | "school";
 
+/** Every signed-in member, hat or no hat («پنل من» is nobody's role — it is everyone's own work). */
+export type TileAudience = TileRole | readonly TileRole[] | "everyone";
+
 /** What `homeTilesFor` needs to know about the person — computed once by `HomeGrid` from `getHats`. */
 export interface TileHats {
   isStudent: boolean;
@@ -316,6 +325,8 @@ export interface TileHats {
   isAdmin: boolean;
   /** null when the person wears no admin hat. */
   adminScope: TileAdminScope | null;
+  /** The one school a school-scoped admin holds (`Hats.adminSingleSchoolId`) — null for org and multi-school scopes. */
+  singleSchoolId?: string | null;
 }
 
 export interface HomeTile {
@@ -330,29 +341,54 @@ export interface HomeTile {
    * for the teacher who takes it and the student who reads it) — the IA rule is one home per DESTINATION, so such
    * a place gets ONE tile, not one per role.
    */
-  role: TileRole | readonly TileRole[];
+  role: TileAudience;
   /** Shown only when the person holds it at any scope (the hat alone is not enough for admin tiles). */
   permission?: Permission;
   /**
-   * Admin tiles only: shown to this admin scope alone. «راه‌اندازی مدرسه» is `organization` — the owner's rule: only
-   * the organization admin defines schools, so school setup is theirs; principals and vice principals never see it.
+   * Admin tiles only: shown to this admin scope alone. «راه‌اندازی مدرسه», «پایه‌ها», «درس‌ها» and «مقطع‌ها» are
+   * `organization` — the owner's rule: whoever defines schools and the shared catalog is the organization admin;
+   * principals and vice principals reach the catalog through their school's hub instead.
    */
   adminScope?: TileAdminScope;
+  /**
+   * An admin tile whose destination is ONE school's own page. `href(schoolId)` replaces the tile's href for an
+   * admin of exactly one school (a list of one row is not a list — owner, QA round 3); `only` means the tile does
+   * not exist for anyone else (زنگ‌بندی belongs to a school and has no organization-wide page); `label` swaps
+   * «مدرسه‌ها» for «مدرسه».
+   */
+  oneSchool?: { href: (schoolId: string) => string; only?: boolean; label?: boolean };
   /** The glyph implies a direction (send, arrows) and must flip in RTL. */
   mirror?: boolean;
 }
 
 /**
- * The live tiles of the Home grid — Home is the person's OWN work, so a tile is ONLY a personal destination the
- * navigation does not already carry. Nothing the bottom nav / side rail offers gets a tile («پنل من», «اعلان‌ها»,
- * «بیشتر» and the role item — a student's «کلاس من», a teacher's «کلاس‌ها», an admin's «مدیریت» page), nothing
- * the «بیشتر» page offers (راهنما, نقشهٴ راه, پروفایل), and — the owner's QA round 3 — no ADMIN SECTION: «دانش‌آموزان»,
- * «کارکنان», «کلاس‌ها», «راه‌اندازی» and the counters live on /admin, the management hub, and there only. The one
- * admin tile is «مدیریت»: the door from personal work into that hub (docs/decisions.md «one home per
- * destination»). `homeTilesFor` picks per person; the order is student → teacher → admin so a multi-hat person
- * reads their most personal tiles first.
+ * The live tiles of the Home grid. Home is where a person's destinations live, and a destination has exactly ONE
+ * door (docs/decisions.md «one home per destination»): nothing the bottom nav / side rail carries gets a tile
+ * («بیشتر» and the role item — a student's «کلاس من», a teacher's «کلاس‌ها», an admin's «مدیریت» page), and
+ * nothing the «بیشتر» page carries (راهنما, نقشهٴ راه, پروفایل).
+ *
+ * Round 5 (owner) settled three things. «پنل من» is a TILE, not a header control: the کارتابل is a place you tap
+ * an icon to reach, and the tile carries the unread badge the control used to. «مدیریت» is now دانش‌آموزان ·
+ * کارکنان · کلاس‌ها · نقش‌ها alone — every STRUCTURE page (مدرسه‌ها، سال تحصیلی، زنگ‌بندی، پایه‌ها، درس‌ها، مقطع‌ها،
+ * راه‌اندازی مدرسه) and the admin's «حضور و غیاب» report left the admin nav and became its own tile here, gated by
+ * the very permission and scope that guard its page, so an admin reaches each of them in one tap and never meets
+ * it twice. And «مدیریت» itself lost its tile: the nav's first cell already opens /admin for an admin, so the
+ * tile was a second door. «اعلان‌ها» stays a header control (the bell).
+ *
+ * Order: «پنل من» first (everyone's own work), then the person's role tiles, then the structure tiles by how
+ * often an admin opens them, setup last. `homeTilesFor` picks per person.
  */
 export const HOME_TILES: readonly HomeTile[] = [
+  {
+    // Home's ONE door to the کارتابل (round 5). The «امروز» strip's three links are FILTERS of it, not a door.
+    code: "inbox",
+    labelFa: "پنل من",
+    href: "/inbox",
+    icon: Inbox,
+    role: "everyone",
+    permission: "workspace.work_item.read",
+  },
+
   {
     code: "my-todo",
     labelFa: "تکالیف من",
@@ -388,7 +424,7 @@ export const HOME_TILES: readonly HomeTile[] = [
 
   {
     // One destination for two hats: the teacher takes today's roll call, the student reads their own month.
-    // /admin/attendance is the ADMIN's door and lives on /admin — the hub lists it, Home never does.
+    // The ADMIN's report is a different page and has its own tile below (`admin-attendance`).
     code: "attendance",
     labelFa: "حضور و غیاب",
     href: "/attendance",
@@ -397,19 +433,92 @@ export const HOME_TILES: readonly HomeTile[] = [
     permission: "academic.attendance.read",
   },
 
+  // No «مدیریت» tile: the nav's first cell IS «مدیریت» for an admin (owner, round 5), so a tile would be a
+  // second door to the people area. The tiles below are the destinations the nav no longer carries.
   {
-    code: "admin",
-    labelFa: "مدیریت",
-    href: "/admin",
-    icon: Settings2,
+    // The admin's OWN «حضور و غیاب»: the class report and «امروز ثبت نشده». A different destination from the
+    // teacher/student tile above (`/attendance`), and a different audience — `academic.attendance.report` is the
+    // permission its queries check, which a teacher does not hold. One tile per audience, one door each.
+    code: "admin-attendance",
+    labelFa: "حضور و غیاب",
+    href: "/admin/attendance",
+    icon: UserCheck,
     role: "admin",
-    permission: "iam.admin.access",
+    permission: "academic.attendance.report",
+  },
+  {
+    // «مدرسه» for an admin of exactly one school — straight to that school's hub, where its structure is edited.
+    code: "schools",
+    labelFa: "مدرسه‌ها",
+    href: "/admin/schools",
+    icon: School,
+    role: "admin",
+    permission: "tenancy.structure.read",
+    oneSchool: { href: (id) => `/admin/schools/${id}`, label: true },
+  },
+  {
+    code: "years",
+    labelFa: "سال تحصیلی",
+    href: "/admin/years",
+    icon: CalendarDays,
+    role: "admin",
+    permission: "tenancy.structure.write",
+  },
+  {
+    // A زنگ‌بندی belongs to ONE school and has no organization-wide page; an admin of several reaches it through
+    // each school's hub («مدرسه‌ها» → the school → زنگ‌بندی).
+    code: "periods",
+    labelFa: "زنگ‌بندی",
+    // Empty on purpose: `oneSchool.only` drops this tile unless `homeTilesFor` rewrites the href with the school
+    // it belongs to, so the placeholder is never rendered (`tests/unit/home-tiles.test.ts` guards it).
+    href: "",
+    icon: Clock,
+    role: "admin",
+    permission: "tenancy.structure.write",
+    oneSchool: { href: (id) => `/admin/schools/${id}/periods`, only: true },
+  },
+  {
+    code: "grades",
+    labelFa: "پایه‌ها",
+    href: "/admin/grades",
+    icon: Layers,
+    role: "admin",
+    permission: "tenancy.structure.write",
+    adminScope: "organization",
+  },
+  {
+    code: "subjects",
+    labelFa: "درس‌ها",
+    href: "/admin/subjects",
+    icon: BookOpen,
+    role: "admin",
+    permission: "tenancy.structure.write",
+    adminScope: "organization",
+  },
+  {
+    code: "levels",
+    labelFa: "مقطع‌ها",
+    href: "/admin/levels",
+    icon: Layers,
+    role: "admin",
+    permission: "tenancy.structure.write",
+    adminScope: "organization",
+  },
+  {
+    code: "onboarding",
+    labelFa: "راه‌اندازی مدرسه",
+    href: "/admin/onboarding",
+    icon: Rocket,
+    role: "admin",
+    permission: "tenancy.structure.write",
+    adminScope: "organization",
   },
 ];
 
 /**
  * The tiles a person with these hats sees, in grid order. `has` answers «holds this permission at any scope?»;
- * a tile with `adminScope` additionally needs the admin hat to reach that far (`hats.adminScope`).
+ * a tile with `adminScope` additionally needs the admin hat to reach that far (`hats.adminScope`), and a tile
+ * with `oneSchool` is rewritten (or dropped) by whether the admin holds exactly one school.
  */
 export function homeTilesFor(
   hats: TileHats,
@@ -419,12 +528,18 @@ export function homeTilesFor(
     (role === "student" && hats.isStudent) ||
     (role === "teacher" && hats.isTeacher) ||
     (role === "admin" && hats.isAdmin);
-  const wears = (role: HomeTile["role"]) => (Array.isArray(role) ? role.some(wearsOne) : wearsOne(role as TileRole));
+  const wears = (role: TileAudience) => role === "everyone" || (Array.isArray(role) ? role.some(wearsOne) : wearsOne(role as TileRole));
+  const schoolId = hats.singleSchoolId ?? null;
   return HOME_TILES.filter(
     (t) =>
       wears(t.role) &&
       (!t.permission || has(t.permission)) &&
-      (!t.adminScope || hats.adminScope === t.adminScope),
+      (!t.adminScope || hats.adminScope === t.adminScope) &&
+      (!t.oneSchool?.only || schoolId !== null),
+  ).map((t) =>
+    t.oneSchool && schoolId
+      ? { ...t, href: t.oneSchool.href(schoolId), ...(t.oneSchool.label ? { labelFa: schoolsLabelFa({ kind: "school", schoolIds: [schoolId] }) } : {}) }
+      : t,
   );
 }
 

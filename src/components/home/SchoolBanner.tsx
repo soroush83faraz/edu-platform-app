@@ -1,4 +1,3 @@
-import { InboxDoor } from "@/components/home/InboxDoor";
 import { NotificationsBell } from "@/components/home/NotificationsBell";
 import { SchoolClay } from "@/components/illustrations";
 import { formatJalaliLong } from "@/lib/format";
@@ -13,10 +12,10 @@ import { formatJalaliLong } from "@/lib/format";
 export function SchoolBanner({ schoolName, firstName }: { schoolName: string; firstName: string }) {
   return (
     <section aria-label="مدرسه" className="on-hero relative flex flex-col items-center gap-0.5 rounded-hero bg-hero px-4 pt-4 pb-4 text-center text-on-hero shadow-hero lg:hidden">
-      {/* The two doors that left the bottom bar (rounds 3 and 4), on phones: کارتابل then bell, in the banner's
-          start corner — one cluster of the person's own work, each with its unread pill. */}
+      {/* «اعلان‌ها» left the bottom bar in round 3 and its one door is this bell, in the banner's start corner
+          with its unread pill. «پنل من» used to sit beside it; round 5 made the کارتابل a TILE in the grid
+          below (owner: an icon you tap on Home), so the bell stands alone here. */}
       <span className="absolute top-2 start-2 flex items-center gap-0.5">
-        <InboxDoor tone="hero" />
         <NotificationsBell tone="hero" />
       </span>
       <span className="grid size-13 place-items-center rounded-2xl bg-surface shadow-1">

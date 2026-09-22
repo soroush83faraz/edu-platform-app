@@ -1,16 +1,21 @@
 // The admin sections — one list, pure (no server imports), so the rail (client), the phone pill row (client), the
-// admin layout and the tests all read the same order and glyphs. Ordered by how often an admin opens each
-// (owner): people and classes first, structure next, roles and setup last. «نمای کلی» is the /admin landing.
-import { BookOpen, CalendarDays, GraduationCap, Layers, LayoutGrid, type LucideIcon, Rocket, School, ShieldCheck, UserCheck, Users, UsersRound } from "lucide-react";
+// admin layout and the tests all read the same order and glyphs. «نمای کلی» is the /admin landing.
+//
+// Owner, QA round 5: «مدیریت» is a focused area for PEOPLE AND THEIR ROLES — دانش‌آموزان · کارکنان · کلاس‌ها ·
+// نقش‌ها, and nothing else. Everything that describes the school's STRUCTURE (مدرسه‌ها، سال تحصیلی، پایه‌ها،
+// درس‌ها، مقطع‌ها، راه‌اندازی) and the admin's «حضور و غیاب» report left this nav and became its own Home tile —
+// one door per destination, and that door is now on Home (docs/decisions.md «one home per destination»). The
+// pages themselves are untouched and still render inside the admin shell.
+import { GraduationCap, LayoutGrid, type LucideIcon, ShieldCheck, Users, UsersRound } from "lucide-react";
 
-export type AdminSectionKey = "overview" | "students" | "staff" | "classes" | "attendance" | "schools" | "years" | "grades" | "subjects" | "levels" | "roles" | "onboarding";
+export type AdminSectionKey = "overview" | "students" | "staff" | "classes" | "roles";
 
 export interface AdminSection {
   key: AdminSectionKey;
   href: string;
   labelFa: string;
   icon: LucideIcon;
-  /** Organization admins only («راه‌اندازی»: school setup belongs to whoever defines schools — the owner's rule). */
+  /** Organization admins only. Nothing in the people area is organization-only today; the filter stays for the next one. */
   orgOnly?: boolean;
 }
 
@@ -19,15 +24,11 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
   { key: "students", href: "/admin/students", labelFa: "دانش‌آموزان", icon: GraduationCap },
   { key: "staff", href: "/admin/staff", labelFa: "کارکنان", icon: UsersRound },
   { key: "classes", href: "/admin/classes", labelFa: "کلاس‌ها", icon: Users },
-  { key: "attendance", href: "/admin/attendance", labelFa: "حضور و غیاب", icon: UserCheck },
-  { key: "schools", href: "/admin/schools", labelFa: "مدرسه‌ها", icon: School },
-  { key: "years", href: "/admin/years", labelFa: "سال تحصیلی", icon: CalendarDays },
-  { key: "grades", href: "/admin/grades", labelFa: "پایه‌ها", icon: Layers },
-  { key: "subjects", href: "/admin/subjects", labelFa: "درس‌ها", icon: BookOpen },
-  { key: "levels", href: "/admin/levels", labelFa: "مقطع‌ها", icon: Layers },
   { key: "roles", href: "/admin/roles", labelFa: "نقش‌ها", icon: ShieldCheck },
-  { key: "onboarding", href: "/admin/onboarding", labelFa: "راه‌اندازی", icon: Rocket, orgOnly: true },
 ];
+
+/** Every key the admin nav still owns — a resource page NOT in this set moved to Home and needs its own way back. */
+export const ADMIN_SECTION_KEYS: ReadonlySet<string> = new Set(ADMIN_SECTIONS.map((s) => s.key));
 
 /** The serializable shape the client nav components receive (icons resolve by `key` on the client). */
 export interface AdminNavItem {
@@ -40,18 +41,19 @@ export interface AdminNavItem {
 }
 
 /** What a caller sees: school-scoped admins (principal, vice principal) lose the organization-only entries. */
-export function adminSectionsFor(opts: { org: boolean; singleSchool: boolean }): AdminNavItem[] {
+export function adminSectionsFor(opts: { org: boolean }): AdminNavItem[] {
   return ADMIN_SECTIONS.filter((s) => !s.orgOnly || opts.org).map((s) => ({
     key: s.key,
     href: s.href,
-    labelFa: s.key === "schools" ? schoolsLabelFa(opts) : s.labelFa,
+    labelFa: s.labelFa,
     ...(s.orgOnly ? { orgOnly: true } : {}),
   }));
 }
 
 /**
  * «مدرسه» for a school-scoped admin who manages exactly ONE school, «مدرسه‌ها» for the organization admin and for
- * anyone whose scope spans two or more schools (owner's rule). Used by the nav, the page title and the overview row.
+ * anyone whose scope spans two or more schools (owner's rule). Used by the Home tile, the page title and the
+ * /admin breakdown.
  */
 export function schoolsLabelFa(scope: { kind: "organization" } | { kind: "school"; schoolIds: readonly string[] } | { org: boolean; singleSchool: boolean }): string {
   if ("org" in scope) return !scope.org && scope.singleSchool ? "مدرسه" : "مدرسه‌ها";

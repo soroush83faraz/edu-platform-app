@@ -5,14 +5,15 @@ import { canAtAnyScope } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
 import { resolveHomeTiles } from "./home-data";
 import { CardSkeleton } from "./HomeSkeletons";
+import { InboxTileBadge } from "./InboxTileBadge";
 import { NearbyCard } from "./NearbyCard";
 import { Tile } from "./Tile";
 
 /**
- * The grid is the page: the person's OWN live tiles first (only what the nav lacks — ordered by role relevance,
- * staggered 30 ms each), then the muted «به‌زودی» tiles from the product map, then «کارهای نزدیک». An admin's
- * single tile here is «مدیریت» — the door to the management hub; the sections and counters live on /admin
- * (docs/decisions.md «one home per destination»).
+ * The grid is the page: the person's live tiles first («پنل من» with its unread badge, then the role tiles, then
+ * the admin's structure tiles — staggered 30 ms each), then the muted «به‌زودی» tiles from the product map, then
+ * «کارهای نزدیک». Every tile is the ONE door to its destination (docs/decisions.md «one home per destination»):
+ * the people sections and the counters live on /admin, which the nav itself opens; the structure pages live here.
  */
 export async function HomeGrid({ ctx }: { ctx: Ctx }) {
   const has = (p: Permission) => canAtAnyScope(ctx.assignments, p);
@@ -25,7 +26,9 @@ export async function HomeGrid({ ctx }: { ctx: Ctx }) {
         <nav aria-label="بخش‌ها">
           <ul className="reveal-grid grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7">
             {tiles.map((t) => (
-              <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror} />
+              <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror}>
+                {t.code === "inbox" ? <InboxTileBadge /> : null}
+              </Tile>
             ))}
           </ul>
         </nav>

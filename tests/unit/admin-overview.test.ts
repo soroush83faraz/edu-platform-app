@@ -1,6 +1,7 @@
-// The /admin landing page under the IA rule of QA round 3 (docs/decisions.md «one home per destination»): every
-// admin SECTION gets exactly one row, and the two that are not sections get none — «نمای کلی» is this page, and
-// «راه‌اندازی» is the setup panel the page renders above the list. Rendered statically, inspected as a string.
+// The /admin landing page under the IA rule (docs/decisions.md «one home per destination»): every admin SECTION
+// gets exactly one row, «نمای کلی» none (it IS this page), and — since round 5 — no structure row at all: those
+// destinations are Home tiles. «راه‌اندازی مدرسه» keeps only the setup PANEL, whose «گام‌ها» link is the same
+// door the Home tile opens. Rendered statically, inspected as a string.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -38,7 +39,7 @@ const counts: AdminCounts = {
 };
 
 /** What `adminNavItems` hands the page: the sections of that caller, «نمای کلی» already dropped. */
-const itemsFor = (org: boolean) => adminSectionsFor({ org, singleSchool: !org }).filter((i) => i.key !== "overview");
+const itemsFor = (org: boolean) => adminSectionsFor({ org }).filter((i) => i.key !== "overview");
 
 function render(org: boolean) {
   const scope: AdminScope = org ? { kind: "organization" } : { kind: "school", schoolIds: ["s1"] };
@@ -55,6 +56,13 @@ describe("AdminOverview (/admin landing)", () => {
     expect(html).toContain("راه‌اندازی مدرسه");
   });
 
+  it("carries no moved row: مدرسه‌ها، سال تحصیلی، پایه‌ها، درس‌ها، مقطع‌ها and حضور و غیاب are Home tiles now", () => {
+    const html = render(true);
+    for (const href of ["/admin/attendance", "/admin/schools", "/admin/years", "/admin/grades", "/admin/subjects", "/admin/levels"]) {
+      expect(hrefs(html)).not.toContain(href);
+    }
+  });
+
   it("shows a school-scoped admin no «راه‌اندازی» at all", () => {
     const html = render(false);
     expect(hrefs(html)).not.toContain("/admin/onboarding");
@@ -65,8 +73,8 @@ describe("AdminOverview (/admin landing)", () => {
     const html = render(true);
     // The section list is the last block: everything after the counters panel (`surface-panel`) and the setup panel.
     const rows = hrefs(html.slice(html.indexOf('class="surface-work'))).filter((h) => h.startsWith("/admin/"));
-    // Every section the nav carries, in its order, minus «راه‌اندازی» — whatever sections `nav.ts` holds today.
-    expect(rows).toEqual(itemsFor(true).filter((i) => i.key !== "onboarding").map((i) => i.href));
+    // Every section the nav carries, in its order — whatever sections `nav.ts` holds today.
+    expect(rows).toEqual(itemsFor(true).map((i) => i.href));
     expect(html).not.toContain("نمای کلی");
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, CircleHelp, Ellipsis, House, type LucideIcon, Presentation, School, Settings2 } from "lucide-react";
+import { BookOpen, CircleHelp, Ellipsis, LayoutGrid, type LucideIcon, Presentation, School, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "cn";
@@ -16,7 +16,9 @@ interface Item {
   primary?: boolean;
 }
 
-const HOME: Item = { href: "/home", label: "خانه", icon: House, primary: true };
+// The glyph is `LayoutGrid`, not a house (owner, round 5: the house read as dated): Home IS the tile launcher,
+// so its mark is the grid of tiles it opens — and it sits well beside the role item's glyph and «بیشتر»'s dots.
+const HOME: Item = { href: "/home", label: "خانه", icon: LayoutGrid, primary: true };
 const MORE: Item = { href: "/more", label: "بیشتر", icon: Ellipsis };
 
 /** The first item speaks for the person's highest hat (`navRoleFor`); with no hat it points at the guide. */
@@ -37,9 +39,9 @@ const DRIFT = ["-4px", "0px", "4px"];
  * The one navigation component: bottom bar on phones, start-side rail from `lg:`. THREE items — a role item ·
  * خانه · بیشتر (RTL: the role item is at the start/right), the same order in both renderings. «اعلان‌ها» left in
  * QA round 3 and «پنل من» in round 4 (owner: the nav carries places, not work surfaces); Home carries the one
- * door to each — the bell and the کارتابل glyph in the banner on phones, in the page header from `lg:` — with the
- * unread badges that used to sit here. The «امروز» strip's three links are FILTERS of the کارتابل, not a second
- * door.
+ * door to each — the bell as a header control (banner on phones, page header from `lg:`), the کارتابل as the
+ * FIRST tile of the grid since round 5 — each with the unread badge that used to sit here. The «امروز» strip's
+ * three links are FILTERS of the کارتابل, not a second door.
  * With three cells «خانه» is the middle again, at the same level as the rest — no container, no raised tab, no
  * notch, no lift (owner's rule): it reads as the primary item by ONE thing, a bigger bare glyph — 24 px against
  * the others' 20 px (28 px loomed, owner) — in `primary-600` while it is the current tab. The current item is a WHOLE tinted cell — a

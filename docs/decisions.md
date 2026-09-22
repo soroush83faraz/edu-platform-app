@@ -595,3 +595,67 @@ the school's name twice», and «with two schools I am shown only one of them».
   pickers were read and already follow the rule (درس, نوبت and دبیر are plain names inside a page whose header
   names the class). «افزودن» kept the product's existing «… جدید» wording rather than the owner's literal word,
   for consistency with every other create button.
+
+## 2026-09-22 — QA round 5 (IA): «مدیریت» is people and roles; the school's structure moves to Home tiles
+
+The owner opened /admin and found two different products in one nav: the people they manage every day
+(دانش‌آموزان، کارکنان، کلاس‌ها، نقش‌ها) and the structure they set up once a year (مدرسه‌ها، سال تحصیلی، پایه‌ها،
+درس‌ها، مقطع‌ها، راه‌اندازی). The decision: **«مدیریت» is a focused area for people and their roles**, and every
+structural destination becomes **its own tile on Home**, where an admin reaches it in one tap.
+
+- **The admin nav is now دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها** (`ADMIN_SECTIONS`), and that list is
+  the whole of it — the rail, the phone pill row and the /admin landing rows all read it. «حضور و غیاب» left too
+  (owner, later the same round): the admin's report is a page an admin opens daily, so it earns a tile, and by the
+  IA rule a tile means no nav row — `/admin/attendance` is a Home tile gated by `academic.attendance.report`, the
+  permission its own queries check, beside the teacher/student tile on `/attendance`: two audiences, two
+  destinations, one door each. The organization-only
+  filter (`orgOnly`) stays in `adminSectionsFor` but nothing uses it any more — the organization admin and a
+  principal now see the SAME five sections, so `adminNavItems` no longer rewrites a label or an href per scope.
+- **Seven structure tiles on Home** (`HOME_TILES`), each gated by the permission and scope that already guard its
+  page, never by the hat alone: «مدرسه‌ها» (`tenancy.structure.read` — a vice principal reads the structure too),
+  «سال تحصیلی» (`.write`), «زنگ‌بندی» (`.write`), «پایه‌ها» / «درس‌ها» / «مقطع‌ها» / «راه‌اندازی مدرسه»
+  (`.write` + the ORGANIZATION scope: the shared catalog and school setup belong to whoever defines schools) —
+  plus «حضور و غیاب» (`academic.attendance.report`), the first of them because it is the one opened daily.
+  Order: «پنل من», the role tiles, then structure by how often it is opened, setup last — an organization admin
+  ends at eight tiles, three rows at 390 px. **«مدیریت» itself has no tile** (owner, same round): the nav's first
+  cell already opens /admin for an admin, so a tile would be a second door — the last exception to the rule is
+  closed, and `tests/unit/home-tiles.test.ts` now asserts that no tile points at ANY nav destination.
+- **Two tiles follow the scope, because a list of one row is not a list.** `Hats` now carries
+  `adminSingleSchoolId` (free: `getAdminScope` already returned the ids), and `homeTilesFor` uses it to rewrite a
+  tile's href: «مدرسه» (singular, `schoolsLabelFa`) opens that school's hub instead of the list, and «زنگ‌بندی»
+  opens that school's bells. «زنگ‌بندی» exists ONLY for a one-school admin — a bell schedule belongs to a school
+  and has no organization-wide page; an admin of several reaches it through each school's hub, which is what the
+  «مدرسه‌ها» tile opens. This is the one tile whose `href` is a placeholder (`""`), never rendered.
+- **«پنل من» is a TILE, not a header control** (owner: «I want to see an icon on Home and tap it»). `InboxDoor`
+  is deleted; the کارتابل is the FIRST tile for every member — hat or no hat (`role: "everyone"`) — and carries
+  the unread badge through `InboxTileBadge`, which reads the shell's single summary poller, so the badge costs no
+  query. «اعلان‌ها» stays a header control (the bell in the phone banner / the desktop page header). Owner's call;
+  the inconsistency of one door as a tile and its neighbour as a control is deliberate for now.
+- **No duplicates, as a testable rule.** A destination has exactly ONE door across the admin nav, the /admin
+  landing list, the Home tiles and «بیشتر». The counters, «نیازمند توجه» and the multi-school breakdown stay on
+  /admin (the breakdown is the numbers ON the «مدرسه‌ها» door, not a second one), and the «گام‌ها» link of the
+  setup panel is the same door the «راه‌اندازی مدرسه» tile opens. `tests/unit/admin-nav.test.ts` asserts the rule
+  itself: the nav ⊆ the people sections, every moved destination is a Home tile exactly once and gone from the
+  nav, and «بیشتر» links nowhere under /admin.
+- **The moved pages still live in the admin shell**, so they keep the frame, the counters pill row and the same
+  gated queries — only their way back changed: a structure list page that is no longer a SECTION backs out to
+  «خانه», the place its tile is on (`backOutOfAdmin` in `ResourceListPage`, `ADMIN_SECTION_KEYS` in `nav.ts`),
+  and so does /admin/onboarding. Nested pages keep their parent (نوبت‌ها → سال تحصیلی, زنگ‌بندی → the school hub).
+- **One narrowing, on purpose.** پایه‌ها / درس‌ها / مقطع‌ها were in the nav for school-scoped admins as read-only
+  organization catalogs; they now have no tile there. They stay reachable — the school hub's «کاتالوگ سازمان»
+  row — and the pages themselves are unchanged, so nothing is lost but the advertisement.
+- **«خانه» is drawn with `LayoutGrid`, not `House`** (owner: the house looked dated). Home IS the tile launcher,
+  so its mark is the grid of tiles it opens; it sits with the role item's glyph and «بیشتر»'s dots without adding
+  a hue or a shape the product does not already use.
+- **Verified** on the dev server at 390 px and 1280 px as the principal of one school (`09351000002`): Home shows
+  پنل من · حضور و غیاب · مدرسه (singular) · سال تحصیلی · زنگ‌بندی and nothing twice, /admin shows exactly the four
+  people sections in both renderings, /admin/years backs out to «خانه». The organization admin's tiles
+  (with پایه‌ها، درس‌ها، مقطع‌ها، راه‌اندازی مدرسه and the plural «مدرسه‌ها») could not be signed into from the
+  agent's pane and are covered by `tests/unit/home-tiles.test.ts` instead.
+- **زنگ‌بندی opens read-only** (same round, same reason a schedule is read far more often than changed): the
+  periods page renders زنگ · ساعت شروع · ساعت پایان as text with one «ویرایش» (a school with no زنگ gets
+  «تعریف زنگ‌بندی»), and only then shows the inputs, «زنگ جدید» / «حذف آخرین زنگ», «ذخیرهٴ زنگ‌بندی» and
+  «انصراف», which drops every change. The permission, the validation and the action are untouched, so a vice
+  principal sees the read view and NO form control at all (`tests/unit/periods-editor.test.ts`) and an unchanged
+  save still succeeds with «زنگ‌بندی تأیید شد» — there is no «confirmed» flag in the data (every school is seeded
+  with six زنگ at creation), so that word is now the toast of an unchanged save rather than a second button.

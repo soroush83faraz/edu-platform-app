@@ -1,7 +1,8 @@
 // The THREE nav items per role, in order, from a static server render of `AppNav` (no DOM environment: the markup
 // is inspected as a string). Both renderings read role item · خانه · بیشتر (RTL, first = start/right); «اعلان‌ها»
 // left the navigation in QA round 3 and «پنل من» in round 4 — Home's bell and کارتابل glyph are their one door
-// each. The role item follows `navRoleFor`; `aria-current` marks the current route on both renderings.
+// each («پنل من» as the first Home TILE since round 5, «اعلان‌ها» as the bell). The role item follows
+// `navRoleFor`; `aria-current` marks the current route on both renderings.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -85,7 +86,7 @@ describe("AppNav items per role", () => {
 describe("AppNav rail inside /admin", () => {
   it("nests the admin sections (minus «نمای کلی») under «مدیریت» with their counts; «مدیریت» itself is current only on the landing", () => {
     // What `adminNavItems` hands the rail: the sections WITHOUT «نمای کلی» — /admin is the parent, not a section.
-    const items = adminSectionsFor({ org: false, singleSchool: true })
+    const items = adminSectionsFor({ org: false })
       .filter((i) => i.key !== "overview")
       .map((i) => (i.key === "students" ? { ...i, count: 175 } : i));
     const { html } = render("admin", "/admin/students", items);
@@ -97,7 +98,10 @@ describe("AppNav rail inside /admin", () => {
     expect(parentCurrent(html)).toBe(false);
     expect(html).toContain('href="/admin/staff"');
     expect(html).not.toContain("نمای کلی");
-    expect(html).toContain("مدرسه</span>");
+    expect(html).toContain("نقش‌ها</span>");
+    // Round 5: the structure sections left the nav — the rail nests people and roles only.
+    expect(html).not.toContain('href="/admin/schools"');
+    expect(html).not.toContain('href="/admin/years"');
     expect(html).toContain("۱۷۵");
     const nested = [...html.matchAll(/<a[^>]*>/g)].map((m) => m[0]).filter((a) => /aria-current="page"/.test(a)).flatMap((a) => a.match(/href="(\/admin\/[a-z]+)"/)?.[1] ?? []);
     expect(nested).toEqual(["/admin/students"]);

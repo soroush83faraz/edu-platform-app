@@ -68,8 +68,10 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Round 5: this report is a Home tile, not an admin section — so the way back is Home, not a section list. */}
       <PageHeader
         title="حضور و غیاب"
+        back={{ href: "/home", label: "خانه" }}
         description="گزارش کلاس‌ها در یک بازه، و زنگ‌هایی که امروز هنوز ثبت نشده‌اند. ثبت حضور و غیاب کار دبیر همان زنگ است؛ مدیر و معاون هم می‌توانند."
       />
 

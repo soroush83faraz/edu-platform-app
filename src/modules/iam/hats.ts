@@ -21,6 +21,12 @@ export interface Hats {
   studentClass: { classGroupName: string; schoolName: string } | null;
   teachingOfferings: TeachingOffering[];
   adminScope: AdminScope["kind"] | null;
+  /**
+   * The school an admin holds when they hold exactly ONE — the «مدرسه» / «زنگ‌بندی» Home tiles open that school's
+   * own pages instead of a list of one row (owner's rule, docs/decisions.md). Null for the organization admin and
+   * for a scope spanning two or more schools. Free: `getAdminScope` already returned the ids.
+   */
+  adminSingleSchoolId: string | null;
 }
 
 async function studentClassOf(tx: Tx, personId: string): Promise<Hats["studentClass"]> {
@@ -91,14 +97,17 @@ export async function getHats(tx: Tx, ctx: Pick<Ctx, "orgId" | "personId" | "ass
   const studentClass = student ? await studentClassOf(tx, ctx.personId) : null;
   const teachingOfferings = await teachingOfferingsOf(tx, ctx.personId);
   let adminScope: Hats["adminScope"] = null;
+  let adminSingleSchoolId: string | null = null;
   if (canAtAnyScope(ctx.assignments, "iam.admin.access")) {
     try {
-      adminScope = (await getAdminScope(tx, ctx)).kind;
+      const scope = await getAdminScope(tx, ctx);
+      adminScope = scope.kind;
+      if (scope.kind === "school" && scope.schoolIds.length === 1) adminSingleSchoolId = scope.schoolIds[0];
     } catch {
       adminScope = null; // admin permission at a scope that maps to no school → no admin section
     }
   }
-  return { isStudent: student, studentClass, teachingOfferings, adminScope };
+  return { isStudent: student, studentClass, teachingOfferings, adminScope, adminSingleSchoolId };
 }
 
 /** Every member may ask which hats they wear (`iam.account.self` is implicit). */

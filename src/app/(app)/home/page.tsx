@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { HomeDashboard } from "@/components/home/dashboard/HomeDashboard";
 import { HomeGrid } from "@/components/home/HomeGrid";
-import { InboxDoor } from "@/components/home/InboxDoor";
 import { NotificationsBell } from "@/components/home/NotificationsBell";
 import { DashboardSkeleton, GridSkeleton } from "@/components/home/HomeSkeletons";
 import { SchoolBanner } from "@/components/home/SchoolBanner";
@@ -34,14 +33,10 @@ export default async function HomePage() {
             سلام، <bdi>{ctx.firstName}</bdi>
           </>
         }
-        // From `lg:` this header IS the greeting row (the banner is hidden), so Home's two doors — «پنل من» and
-        // «اعلان‌ها», both of which left the navigation — ride here; the phone banner carries the other rendering.
-        actions={
-          <>
-            <InboxDoor />
-            <NotificationsBell />
-          </>
-        }
+        // From `lg:` this header IS the greeting row (the banner is hidden), so «اعلان‌ها» — the one door that
+        // left the navigation and stayed a control — rides here; the phone banner carries the other rendering.
+        // «پنل من» is a TILE in the grid / dashboard aside since round 5, not a control.
+        actions={<NotificationsBell />}
       />
       <SchoolBanner schoolName={ctx.schoolName ?? ctx.orgName} firstName={ctx.firstName} />
       {canAtAnyScope(ctx.assignments, "workspace.work_item.read") ? <TodayStrip /> : null}

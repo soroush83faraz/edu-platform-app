@@ -27,7 +27,8 @@ export default async function OnboardingPage() {
   const done = list.filter((s) => s.done).length;
   return (
     <div className="flex flex-col gap-4">
-      <AdminHeader title="راه‌اندازی مدرسه" description="ترتیب پیشنهادی از بالا به پایین؛ هر ردیف به بخش مربوط می‌رود." />
+      {/* Round 5: «راه‌اندازی مدرسه» is a Home tile, not an admin section — so the way back is Home, not a section list. */}
+      <AdminHeader title="راه‌اندازی مدرسه" back={{ href: "/home", label: "خانه" }} description="ترتیب پیشنهادی از بالا به پایین؛ هر ردیف به بخش مربوط می‌رود." />
       <div className="surface-panel flex items-center gap-3 px-4 py-3">
         <div className="h-2 flex-1 overflow-hidden rounded-full bg-neutral-200" role="progressbar" aria-valuemin={0} aria-valuemax={list.length} aria-valuenow={done}>
           <div className={cn("h-full rounded-full", done === list.length ? "bg-success" : "bg-sky")} style={{ width: `${Math.round((done / list.length) * 100)}%` }} />

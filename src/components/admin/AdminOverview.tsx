@@ -1,4 +1,4 @@
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, School } from "lucide-react";
 import Link from "next/link";
 import { AdminCounters } from "@/components/admin/AdminCounters";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -14,47 +14,36 @@ const HINTS: Record<AdminSectionKey, string> = {
   students: "ثبت، حساب کاربری، انتقال کلاس",
   staff: "دبیران و کادر؛ نقش مدیر/معاون",
   classes: "دانش‌آموزان کلاس، ارائهٴ درس‌ها، برنامهٴ هفتگی",
-  attendance: "گزارش حضور و غیاب کلاس‌ها و زنگ‌های ثبت‌نشدهٴ امروز",
-  schools: "نام، کد، شعبه‌ها، زنگ‌بندی",
-  years: "سال جاری هر مدرسه و نوبت‌ها",
-  grades: "کاتالوگ سازمان",
-  subjects: "کاتالوگ سازمان",
-  levels: "کاتالوگ سازمان",
   roles: "چه کسی مدیر یا معاون کدام مدرسه است",
-  onboarding: "گام‌های باقی‌مانده تا ورود دانش‌آموزان",
 };
 
 /**
  * /admin landing: the counters, the management panels the page passes in («نیازمند توجه», the setup progress),
- * then every section the caller may open — in the nav's order (people and classes first), each with its quiet
- * glyph, a one-line hint and its count. On phones this list IS the admin navigation (the pill row is for inner
- * pages); on desktop the rail repeats it under «مدیریت», which is the group header, not a second link.
+ * then every section the caller may open — in the nav's order, each with its quiet glyph, a one-line hint and its
+ * count. Since QA round 5 those sections are PEOPLE AND ROLES only (دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها); the
+ * school's structure and the «حضور و غیاب» report live on Home as their own tiles, so this list never carries a
+ * second door to them.
+ * On phones this list IS the admin navigation (the pill row is for inner pages); on desktop the rail repeats it
+ * under «مدیریت», which is the group header, not a second link.
  */
 export function AdminOverview({ data, items, children }: { data: AdminOverviewData; items: readonly AdminNavItem[]; children?: React.ReactNode }) {
   const c = data.counts;
   const countOf: Partial<Record<AdminSectionKey, number>> = {
-    schools: c.schools,
-    years: c.years,
-    grades: c.grades,
-    subjects: c.subjects,
-    levels: c.levels,
     classes: c.classes,
     students: c.students,
     staff: c.staff,
   };
-  // «نمای کلی» is this page, and «راه‌اندازی» is the setup panel the page already renders above this list
-  // (`OnboardingProgress`, organization admin only) — neither gets a row: one home per destination
-  // (docs/decisions.md). With two or more schools the «مدرسه‌ها» row is replaced by the breakdown below, which
-  // is the same door with the numbers on it — still one home.
+  // «نمای کلی» is this page — it never gets a row (one home per destination, docs/decisions.md). The structure
+  // sections left this list in QA round 5; their door is the Home tile, and the only structure link left here is
+  // the multi-school breakdown, which is the numbers ON that door, not a second one.
   const schools = data.schools ?? [];
   const many = schools.length > 1;
-  const sections = items.filter((s) => s.key !== "overview" && s.key !== "onboarding" && !(many && s.key === "schools"));
-  const schoolsHref = items.find((s) => s.key === "schools")?.href ?? "/admin/schools";
+  const sections = items.filter((s) => s.key !== "overview");
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="مدیریت مدرسه" description={scopeLine(data, schools)} />
       <AdminCounters counts={c} />
-      {many ? <SchoolBreakdown schools={schools} href={schoolsHref} counts={c} /> : null}
+      {many ? <SchoolBreakdown schools={schools} href="/admin/schools" counts={c} /> : null}
       {children}
       <ul className="surface-work divide-y divide-line/70">
         {sections.map((s) => {
@@ -103,7 +92,7 @@ function SchoolBreakdown({ schools, href, counts }: { schools: readonly SchoolCo
     <PageSection
       id="school-breakdown"
       title="مدرسه‌ها"
-      icon={ADMIN_SECTION_ICONS.schools}
+      icon={School}
       count={schools.length}
       surface="work"
       flush
