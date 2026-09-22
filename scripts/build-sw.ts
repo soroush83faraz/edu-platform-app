@@ -2,10 +2,13 @@
 // under Turbopack, which is Next 16's default bundler, and its configurator needs a package we do not have).
 // `pnpm build` runs this first; the files are gitignored build outputs.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-const root = join(import.meta.dirname, "..");
+// `import.meta.dirname` is undefined when a loader (tsx) evaluates this module from a non-file URL,
+// which is how the cPanel/Passenger build runs it. `import.meta.url` is always set.
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "public");
 mkdirSync(out, { recursive: true });
 
