@@ -6,6 +6,8 @@ import { useEffect, useId, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { v7 as uuidv7 } from "uuid";
 import { cn } from "cn";
+import { JalaliDatePicker } from "@/components/pickers/JalaliDatePicker";
+import { TimePicker, formatTimeFa } from "@/components/pickers/TimePicker";
 import { PRIORITY_LABELS, type Priority } from "@/components/priority";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +15,8 @@ import { Label } from "@/components/ui/label";
 import { SelectNative } from "@/components/ui/select-native";
 import { Textarea } from "@/components/ui/textarea";
 import { flatten } from "@/lib/form-errors";
-import { formatJalaliNumeric, formatNumberFa, parseJalaliToInstant, toFaDigits } from "@/lib/format";
+import { formatNumberFa, parseJalaliToInstant, toFaDigits } from "@/lib/format";
+import { formatJalaliDayLong, parseJalaliDay } from "@/lib/jalali-grid";
 import { createWorkItemAction, offeringRosterQuery, searchPersonsQuery } from "../actions";
 import type { OfferingRow, PersonHit, RosterRow } from "../repo";
 
@@ -26,7 +29,6 @@ export interface NewWorkItemFormProps {
 
 type Mode = "class" | "persons" | "self";
 const PRIORITIES: Priority[] = ["low", "normal", "high", "urgent"];
-const DAY = 86_400_000;
 /** Every field the form renders; a server error on anything else lands on the form-level line (never silent). */
 const RENDERED = ["title", "description", "priority", "dueDate", "dueTime", "recipients"];
 
@@ -92,15 +94,10 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
     return () => window.clearTimeout(t);
   }, [mode, personQuery, chosen]);
 
-  const today = new Date();
   // A due date already behind us is allowed (back-dating a task is legitimate) but flagged inline.
-  const dueInstant = dueDate.trim() ? parseJalaliToInstant(dueDate, dueTime || null) : null;
-  const duePast = dueInstant !== null && dueInstant.getTime() < today.getTime();
-  const dueChips: [string, string][] = [
-    ["امروز", formatJalaliNumeric(today)],
-    ["فردا", formatJalaliNumeric(new Date(today.getTime() + DAY))],
-    ["هفتهٴ بعد", formatJalaliNumeric(new Date(today.getTime() + 7 * DAY))],
-  ];
+  const dueInstant = dueDate ? parseJalaliToInstant(dueDate, dueTime || null) : null;
+  const duePast = dueInstant !== null && dueInstant < new Date();
+  const dueDay = dueDate ? parseJalaliDay(dueDate) : null;
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -163,6 +160,34 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
         <FieldError id={`${descF.id}-err`} text={descF.error} />
       </div>
 
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={dueF.id}>
+          مهلت <span className="text-text-faint">(اختیاری)</span>
+        </Label>
+        <JalaliDatePicker
+          id={dueF.id}
+          value={dueDate}
+          onChange={(v) => {
+            setDueDate(v);
+            if (!v) setDueTime("");
+          }}
+          aria-invalid={dueF.error ? true : undefined} aria-describedby={dueF.describedBy} />
+        <FieldError id={`${dueF.id}-err`} text={dueF.error} />
+        {dueDay ? (
+          <>
+            <TimePicker value={dueTime} onChange={setDueTime} aria-describedby={timeF.describedBy} />
+            <FieldError id={`${timeF.id}-err`} text={timeF.error} />
+            <p role="status" className={cn("flex items-center gap-1.5 text-sm leading-6", duePast ? "text-warning-text" : "text-text-muted")}>
+              {duePast ? <TriangleAlert className="size-4 shrink-0" aria-hidden /> : null}
+              {duePast ? "مهلت در گذشته است: " : "سررسید: "}
+              <span className="tabular text-text">
+                {formatJalaliDayLong(dueDay)}، ساعت {formatTimeFa(dueTime)}
+              </span>
+            </p>
+          </>
+        ) : null}
+      </div>
+
       <fieldset className="flex flex-col gap-2">
         <legend className="text-sm font-medium text-text">اولویت</legend>
         <div className="grid grid-cols-4 gap-2">
@@ -180,61 +205,6 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
           ))}
         </div>
       </fieldset>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={dueF.id}>
-          مهلت <span className="text-text-faint">(اختیاری)</span>
-        </Label>
-        <div className="flex flex-wrap gap-2">
-          {dueChips.map(([label, value]) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => setDueDate(value)}
-              aria-pressed={dueDate === value}
-              className={cn(
-                "h-9 rounded-full border px-3 text-sm transition-base",
-                dueDate === value ? "border-primary-600 bg-primary-50 text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-[1fr_auto] gap-2">
-          <Input
-            id={dueF.id}
-            name="dueDate"
-            inputMode="numeric"
-            placeholder="۱۴۰۵/۰۷/۰۵"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="tabular"
-            aria-invalid={dueF.error ? true : undefined}
-            aria-describedby={dueF.describedBy}
-          />
-          <Input
-            id={timeF.id}
-            name="dueTime"
-            inputMode="numeric"
-            placeholder="ساعت ۲۳:۵۹"
-            value={dueTime}
-            onChange={(e) => setDueTime(e.target.value)}
-            className="w-36 tabular"
-            aria-label="ساعت مهلت"
-            aria-invalid={timeF.error ? true : undefined}
-            aria-describedby={timeF.describedBy}
-          />
-        </div>
-        <FieldError id={`${dueF.id}-err`} text={dueF.error} />
-        <FieldError id={`${timeF.id}-err`} text={timeF.error} />
-        {duePast && !dueF.error && !timeF.error ? (
-          <p role="status" className="flex items-center gap-1.5 text-sm leading-6 text-warning-text">
-            <TriangleAlert className="size-4 shrink-0" aria-hidden />
-            مهلت در گذشته است.
-          </p>
-        ) : null}
-      </div>
 
       <fieldset className="flex flex-col gap-3">
         <legend className="text-sm font-medium text-text">گیرندگان</legend>
@@ -371,7 +341,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
         {errors.form}
       </p>
       <Button type="submit" size="lg" disabled={pending || (mode === "class" && roster === null)}>
-        {pending ? "در حال ایجاد…" : mode === "class" && roster ? `ارسال به ${formatNumberFa(selectedCount)} نفر` : mode === "self" ? "ثبت یادداشت شخصی" : "ایجاد تکلیف"}
+        {pending ? "در حال ارسال…" : mode === "class" && roster ? `ارسال تکلیف به ${formatNumberFa(selectedCount)} نفر` : mode === "self" ? "ثبت یادداشت شخصی" : "ارسال تکلیف"}
       </Button>
     </form>
   );

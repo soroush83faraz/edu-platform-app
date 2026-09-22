@@ -1,0 +1,44 @@
+"use client"
+
+import * as React from "react"
+import { cn } from "cn"
+import { Popover as PopoverPrimitive } from "radix-ui"
+
+/* Hand-written (not generated) shadcn-shaped Popover on the `radix-ui` umbrella already in the tree — the desktop
+   surface of the date picker. Same material as `DialogContent` (popover colour, 1 px foreground ring, 16.8 px
+   radius, the 100 ms fade/zoom), anchored with logical `align` so it lands on the field's start edge in RTL. */
+function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
+  return <PopoverPrimitive.Root data-slot="popover" {...props} />
+}
+
+function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
+  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
+}
+
+function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
+  return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />
+}
+
+function PopoverContent({
+  className,
+  align = "start",
+  sideOffset = 6,
+  ...props
+}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+  return (
+    <PopoverPrimitive.Portal>
+      <PopoverPrimitive.Content
+        data-slot="popover-content"
+        align={align}
+        sideOffset={sideOffset}
+        className={cn(
+          "z-50 rounded-xl bg-popover p-3 text-sm text-popover-foreground shadow-lg ring-1 ring-foreground/10 outline-none duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
+          className
+        )}
+        {...props}
+      />
+    </PopoverPrimitive.Portal>
+  )
+}
+
+export { Popover, PopoverTrigger, PopoverAnchor, PopoverContent }
