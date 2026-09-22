@@ -167,3 +167,19 @@ AGE_IDENTITY=key.txt  APP_DIR=. COMPOSE_FILE=docker-compose.dev.yml bash deploy/
 ## یادداشت‌ها
 - `scripts/migrate.js` (اجرای مهاجرت‌ها در سرویس `migrate`)، `scripts/seed-catalog.js` (سید کاتالوگ در سرویس `seed`؛ تولیدشده در build) و `db/initdb/01-roles.sh` (ساخت نقش‌ها و دیتابیس‌ها در اولین اجرای `db`) آماده‌اند؛ جزئیات در `docs/db.md`.
 - بکاپ شبانه/رمزگذاری/آپلود به آروان: `backup/backup.sh` (بالا).
+
+## دو مسیر استقرار: VPS/Docker (این فایل) و cPanel/Passenger
+
+هر چیزی که تا این‌جا آمد مربوط به مسیر **VPS + Docker + Caddy** است و مسیر اصلی تولید باقی می‌ماند: `ship.ps1` → `deploy.sh` → `migrate` → `seed` → `app` + `caddy`.
+
+مسیر دوم، برای میزبانی اشتراکی: **cPanel + Phusion Passenger**، با بیلد در GitHub Actions و آپلود FTPS. راهنمای کامل (تنظیمات Application Manager، متغیرهای محیطی، secrets، چک‌لیست تأیید و محدودیت‌ها): **`docs/ops/cpanel-deploy.md`**.
+
+| | VPS/Docker | cPanel/Passenger |
+|---|---|---|
+| بیلد | ویندوز (`docker build`) | GitHub Actions (`.github/workflows/deploy-cpanel.yml`) |
+| انتقال | `docker save \| ssh docker load` | FTPS (`lftp`) به `releases/<name>/` |
+| اجرا | کانتینر `app` پشت Caddy | `deploy/cpanel/app.js` (Passenger) با سوئیچ `current.txt` |
+| مهاجرت و سید | خودکار در `deploy.sh` | **دستی از ماشین توسعه** — خط لوله به دیتابیس دست نمی‌زند |
+| بازگشت | `rollback.sh` | بازنویسی `current.txt` + `tmp/restart.txt` (خودکار روی شکست health) |
+
+**چرا `lftp` و نه `SamKirkland/FTP-Deploy-Action`؟** آن اکشن فقط آپلود می‌کند و حالت را در یک فایل sync-state روی سرور نگه می‌دارد؛ ما برای بازگشت خودکار باید `current.txt` فعلی را **دانلود** کنیم، و باید سه آپلود مستقل را به ترتیب مشخص (نسخه → `current.txt` → `tmp/restart.txt`) انجام دهیم. `lftp` هر چهار عمل را با یک ابزار، FTPS اجباری (`ftp:ssl-force`)، خروج با خطا روی اولین شکست (`cmd:fail-exit`) و آپلود موازی انجام می‌دهد؛ با اکشن، بخش rollback اصلاً قابل پیاده‌سازی نبود.
