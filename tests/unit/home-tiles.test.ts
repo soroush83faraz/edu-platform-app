@@ -25,12 +25,17 @@ describe("homeTilesFor", () => {
     expect(HOME_TILES.some((t) => t.href.startsWith("/admin/"))).toBe(false);
   });
 
-  it("no tile is a second door to a nav destination («کلاس من», «کلاس‌های من», «پنل من», «بیشتر»)", () => {
-    const navHrefs = ["/my-class", "/classes", "/inbox", "/more", "/home"];
+  it("no tile is a second door to a nav destination («کلاس من», «کلاس‌ها», «راهنما», «بیشتر», «خانه»)", () => {
+    // The nav is THREE items now — the role item, «خانه», «بیشتر» (docs/decisions.md «navigation round 4»).
+    // «مدیریت» stays the one documented exception: /admin is another AREA, and an admin-only account's only tile.
+    const navHrefs = ["/my-class", "/classes", "/help", "/more", "/home"];
     expect(HOME_TILES.filter((t) => navHrefs.includes(t.href))).toEqual([]);
   });
 
-  it("«اعلان‌ها» left the nav in QA round 3 and did NOT become a tile — Home's bell is its one door", () => {
+  it("«اعلان‌ها» (round 3) and «پنل من» (round 4) left the nav for Home's greeting row, not for the grid", () => {
+    // Their ONE door each is a header control — `NotificationsBell` / `InboxDoor`, carrying the unread badge.
+    // A tile may only be a FILTER of the کارتابل («تکالیف من» `?tab=todo`) or another page under it («تکلیف جدید»).
+    expect(HOME_TILES.filter((t) => t.href === "/inbox")).toEqual([]);
     expect(HOME_TILES.filter((t) => t.href.startsWith("/notifications"))).toEqual([]);
   });
 

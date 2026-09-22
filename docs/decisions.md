@@ -449,8 +449,10 @@ rail under «مدیریت»), and Home carried the school counters that /admin c
   never both at once. Exactly ONE door each: no «پنل من» tile, no «اعلان‌ها» tile.
 - **The «امروز» strip keeps its three links** (`?bucket=overdue`, `?bucket=today`, `?unread=1`): they are FILTERS
   of the same destination, not a second door — the same reading that lets the student's tab tiles stay.
-- **Home IS the middle again, and the drift comes back.** Three cells have a centre, so «خانه» returns to it with
-  its one cue — the bare 28 px glyph, `primary-600` while current — and the neighbour drift that round 3 dropped
+- **Home IS the middle again, the glyph loses 4 px, and the drift comes back.** Three cells have a centre, so
+  «خانه» returns to it with its one cue — a bare glyph in `primary-600` while current, now **24 px** against the
+  neighbours' 20 px (28 px «loomed» once the cells grew to a third of the bar; the cue is the size DIFFERENCE, and
+  4 px carries it) — and the neighbour drift that round 3 dropped
   for want of a middle is restored at ±4 px (`--nav-drift` on the relatively-positioned link, read by the logical
   `start-*` utility: no reflow, no RTL sign flip; `motion-reduce` pins every cell at rest). The sliding
   `primary-50` cell tracks three columns (`w-1/3`, 0/33.3/66.6 %) and still only fades on off-tab routes.
@@ -458,19 +460,19 @@ rail under «مدیریت»), and Home carried the school counters that /admin c
   teacher tile and the subject pages; `/notifications` = the Home bell. Deep links, the PWA start URL and the
   `document.title` badge mirror are unchanged.
 - **Tests.** `tests/unit/app-nav.test.ts`: three cells in role · خانه · بیشتر order on BOTH renderings, the role
-  item per `navRoleFor`, `aria-current` on nested routes, the bare 28 px glyph, `grid-cols-3` / `w-1/3`, the ±4 px
-  drift on /home and all-zero elsewhere, and no `/inbox`, `/notifications` or badge anywhere in the nav.
+  item per `navRoleFor`, `aria-current` on nested routes, the bare 24 px glyph (`size-6` twice, never `size-7`),
+  `grid-cols-3` / `w-1/3`, the ±4 px drift on /home and all-zero elsewhere, and no `/inbox`, `/notifications` or
+  badge anywhere in the nav.
   `tests/unit/home-tiles.test.ts`: the nav-duplication rule updated to the three items (`/help` added, `/inbox`
   removed), plus «no tile owns the bare `/inbox` or `/notifications`» — the two header doors do.
-- **Verified.** `pnpm typecheck` clean, `eslint` clean over the five changed files, `tests/unit/app-nav.test.ts` +
-  `tests/unit/home-tiles.test.ts` green (18 tests). The full `pnpm test:unit` run and the live browser pass are
-  pending — the host ran out of memory with three agents on it (see below).
-- **NOT verified — owner pass still needed.** The live 390 px / 1280 px check per role did not happen: the Browser
-  pane's session was logged out, the agent does not type credentials into login forms (the same limit recorded in
-  the 2026-09-22 navigation entry), and minting a dev session row was refused by the tooling. What the static
-  render cannot answer is left open: the three cells' measured width and 44 px targets at 390 px, the sliding
-  indicator landing on the middle column, the ±4 px drift reading right at three cells (the owner may still want
-  it dropped), and the two-glyph cluster in the banner's start corner against the hero gradient.
+- **Verified.** `pnpm typecheck`, `pnpm lint` and `pnpm test:unit` (20 files / 179 tests) green.
+- **The live pass is the owner's this round.** The agent could not run it: the Browser pane's session was logged
+  out, it does not type credentials into login forms (the same limit recorded in the 2026-09-22 navigation entry)
+  and minting a dev session row was refused by the tooling — so the owner judged the visual himself on :3000.
+  What the static render cannot answer, and what he was asked to look at: the three cells' measured width and
+  44 px targets at 390 px, the sliding indicator landing on the middle column, whether ±4 px of drift still reads
+  right now that a cell is a third of the bar, and the two-glyph cluster on the banner's hero gradient. The 24 px
+  «خانه» glyph above is the first thing that came back from that look.
 
 ## 2026-09-22 — حضور و غیاب: roll call by زنگ, the student's own month, the admin report (migration 0016)
 
