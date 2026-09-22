@@ -3,6 +3,7 @@
 // `canViewWorkItem` are the boundary.
 import { z } from "zod";
 import { defineQuery } from "@/lib/actions";
+import { workItemVoice } from "@/lib/work-item-words";
 import { canAtAnyScope, canBroadly } from "@/modules/iam/can";
 import { unreadNotificationCount } from "@/modules/notif";
 import { ListInboxInput, WorkItemIdInput } from "./dto";
@@ -26,6 +27,8 @@ export const listInboxQuery = defineQuery({ schema: ListInboxInput, permission: 
     tabCounts: await inboxTabCounts(tx, ctx.personId, { createdByMe: input.createdByMe, unreadOnly: input.unreadOnly, offeringId: input.offeringId ?? null }),
     isStaff: staff,
     canCreate: canAtAnyScope(ctx.assignments, "workspace.work_item.create"),
+    // «تکلیف» for a teacher, «تسک» for an admin who does not teach — the page's whole vocabulary hangs off this.
+    voice: workItemVoice(ctx.assignments),
   };
 });
 
@@ -48,6 +51,7 @@ export const newWorkItemOptionsQuery = defineQuery({ permission: "workspace.work
     offerings,
     canPickPersons: canBroadly(ctx.assignments, "workspace.work_item.create"),
     canAssignClass: broadAssign || offerings.length > 0,
+    voice: workItemVoice(ctx.assignments),
   };
 });
 

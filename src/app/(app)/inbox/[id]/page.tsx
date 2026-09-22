@@ -9,12 +9,14 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { PRIORITY_LABELS, priorityTone } from "@/components/priority";
 import { RelativeTime } from "@/components/RelativeTime";
 import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
+import { workItemStatusLabel, workItemWords } from "@/lib/work-item-words";
 import { workItemDetailQuery } from "@/modules/workspace/queries";
 import type { StatusCategory } from "@/modules/workspace/repo";
 import { CommentForm } from "@/modules/workspace/ui/CommentForm";
 import { WorkItemActions } from "@/modules/workspace/ui/WorkItemActions";
 
-export const metadata: Metadata = { title: "تکلیف | سامانهٴ مدرسه" };
+// Role-neutral in the tab title (the page itself says «تکلیف» / «تسک» once it knows the reader).
+export const metadata: Metadata = { title: "کار | سامانهٴ مدرسه" };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -44,6 +46,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
     notFound(); // NOT_FOUND and FORBIDDEN alike: the page never distinguishes "not yours" from "does not exist"
   }
   const { item, creatorName, assignees, watchers, comments, transitions, myInbox, myAssigneeState, viewer } = result.data;
+  const words = workItemWords(viewer.voice);
   const done = assignees.filter((a) => a.state === "done").length;
   // Managers see per-person progress; a personal todo (the only assignee is the creator) needs none.
   const showProgress = viewer.isManager && assignees.length > 0 && !(assignees.length === 1 && assignees[0].personId === item.createdByPersonId);
@@ -52,7 +55,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
   const myState = myAssigneeState ? ASSIGNEE_STATE[myAssigneeState] : null;
   // Assignees see their own state; managers see the item's status.
   const statusFact =
-    myAssigneeState && myState && !viewer.isManager ? { ...ASSIGNEE_FACT[myAssigneeState], value: myState.label } : { ...CATEGORY_FACT[item.statusCategory], value: item.statusName };
+    myAssigneeState && myState && !viewer.isManager ? { ...ASSIGNEE_FACT[myAssigneeState], value: myState.label } : { ...CATEGORY_FACT[item.statusCategory], value: workItemStatusLabel(item.statusName) };
 
   return (
     <ContentWidth size="reading" className="gap-4">
@@ -61,8 +64,9 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
         title={<bdi>{item.title}</bdi>}
         description={
           <>
+            {/* The type in the READER's word: the catalog name for a personal کار, «تکلیف» / «تسک» for a task. */}
             <Chip tone={item.typeCode === "todo" ? "neutral" : "primary"} className="me-1.5 align-middle">
-              {item.typeName}
+              {item.typeCode === "todo" ? item.typeName : words.singular}
             </Chip>
             از <bdi className="text-text">{creatorName}</bdi>
             <span aria-hidden> · </span>
@@ -92,6 +96,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
           myAssigneeState={myAssigneeState}
           isManager={viewer.isManager}
           canUpdate={viewer.canUpdate}
+          words={words}
           inbox={myInbox ? { state: myInbox.state, isPinned: myInbox.isPinned } : null}
         />
       </header>
@@ -175,8 +180,8 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
             {transitions.map((t) => (
               <li key={t.id} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2 text-sm">
                 <span className="text-text">
-                  {t.fromStatusName ? `${t.fromStatusName} ← ` : ""}
-                  {t.toStatusName}
+                  {t.fromStatusName ? `${workItemStatusLabel(t.fromStatusName)} ← ` : ""}
+                  {workItemStatusLabel(t.toStatusName)}
                   <span className="text-text-muted">
                     {" · "}
                     <bdi>{t.byName}</bdi>

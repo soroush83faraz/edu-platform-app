@@ -17,6 +17,7 @@ import { SelectNative } from "@/components/ui/select-native";
 import { Textarea } from "@/components/ui/textarea";
 import { flatten } from "@/lib/form-errors";
 import { formatNumberFa, parseJalaliToInstant, toFaDigits } from "@/lib/format";
+import type { WorkItemWords } from "@/lib/work-item-words";
 import { formatJalaliDayLong, parseJalaliDay } from "@/lib/jalali-grid";
 import { createWorkItemAction, offeringRosterQuery, searchPersonsQuery } from "../actions";
 import type { OfferingRow, PersonHit, RosterRow } from "../repo";
@@ -24,6 +25,8 @@ import type { OfferingRow, PersonHit, RosterRow } from "../repo";
 export interface NewWorkItemFormProps {
   offerings: OfferingRow[];
   canPickPersons: boolean;
+  /** The reader's noun set: «تکلیف» for a teacher, «تسک» for مدیر/معاون (src/lib/work-item-words). */
+  words: WorkItemWords;
   /** A درس to start on (the subject page's «کار جدید برای این درس»); must be one of `offerings`. */
   initialOfferingId?: string;
 }
@@ -32,7 +35,7 @@ type Mode = "class" | "persons" | "self";
 /** Every field the form renders; a server error on anything else lands on the form-level line (never silent). */
 const RENDERED = ["title", "description", "priority", "dueDate", "dueTime", "recipients"];
 
-export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }: NewWorkItemFormProps) {
+export function NewWorkItemForm({ offerings, canPickPersons, words, initialOfferingId }: NewWorkItemFormProps) {
   const router = useRouter();
   const ids = useId();
   const [pending, start] = useTransition();
@@ -130,7 +133,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
         idempotencyKey,
       });
       if (r.ok) {
-        toast.success(r.data.duplicate ? "این تکلیف قبلاً ایجاد شده بود" : mode === "self" ? "یادداشت شخصی ثبت شد" : "تکلیف ایجاد شد");
+        toast.success(r.data.duplicate ? `این ${words.singular} قبلاً ایجاد شده بود` : mode === "self" ? "یادداشت شخصی ثبت شد" : `${words.singular} ایجاد شد`);
         router.push(`/inbox/${r.data.id}`);
         return;
       }
@@ -148,7 +151,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-6">
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={titleF.id}>عنوان</Label>
-        <Input id={titleF.id} name="title" dir="auto" maxLength={200} required placeholder="مثلاً: تمرین صفحهٴ ۴۲" aria-invalid={titleF.error ? true : undefined} aria-describedby={titleF.describedBy} autoFocus />
+        <Input id={titleF.id} name="title" dir="auto" maxLength={200} required placeholder={words.titleExample} aria-invalid={titleF.error ? true : undefined} aria-describedby={titleF.describedBy} autoFocus />
         <FieldError id={`${titleF.id}-err`} text={titleF.error} />
       </div>
 
@@ -339,7 +342,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
         {errors.form}
       </p>
       <Button type="submit" size="lg" disabled={pending || (mode === "class" && roster === null)}>
-        {pending ? "در حال ارسال…" : mode === "class" && roster ? `ارسال تکلیف به ${formatNumberFa(selectedCount)} نفر` : mode === "self" ? "ثبت یادداشت شخصی" : "ارسال تکلیف"}
+        {pending ? "در حال ارسال…" : mode === "class" && roster ? `ارسال ${words.singular} به ${formatNumberFa(selectedCount)} نفر` : mode === "self" ? "ثبت یادداشت شخصی" : `ارسال ${words.singular}`}
       </Button>
     </form>
   );

@@ -5,15 +5,18 @@ import { Chip } from "@/components/Chip";
 import { RelativeTime } from "@/components/RelativeTime";
 import { PriorityDot, RowMark } from "@/components/RowMark";
 import { formatNumberFa } from "@/lib/format";
+import { type WorkItemWords, workItemWords } from "@/lib/work-item-words";
 import type { InboxRow as Row } from "../repo";
 
 /**
  * One کار in the list, read in one glance: the quiet type glyph (todo / task in a 32 px panel circle — never a
- * blue mark), the title (bold when unread) with a small priority dot beside it for high / urgent, one meta line
+ * blue mark; a `task` is named in the READER's word — «تکلیف» for a teacher, «تسک» for an admin), the title
+ * (bold when unread) with a small priority dot beside it for high / urgent, one meta line
  * (due on a clock chip — red when overdue — then who gave it or my progress on it), and the unread dot at the end.
  * 64 px minimum, the whole row is the target.
  */
-export function InboxRow({ row }: { row: Row }) {
+/** `words` is the reader's noun set; it defaults to «تکلیف» for the lists that are a teaching context anyway. */
+export function InboxRow({ row, words = workItemWords("assignment") }: { row: Row; words?: WorkItemWords }) {
   const overdue = row.bucket === "overdue";
   const closed = row.category === "done" || row.category === "cancelled";
   const showProgress = row.createdByMe && row.assigneesTotal > 0 && !(row.assigneesTotal === 1 && row.myAssigneeState);
@@ -26,7 +29,7 @@ export function InboxRow({ row }: { row: Row }) {
           closed && "opacity-70",
         )}
       >
-        <RowMark icon={row.typeCode === "todo" ? ListTodo : ClipboardList} label={row.typeName} />
+        <RowMark icon={row.typeCode === "todo" ? ListTodo : ClipboardList} label={row.typeCode === "todo" ? row.typeName : words.singular} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <p className={cn("line-clamp-2 text-row text-text", row.unread ? "font-semibold" : "font-medium")}>
             {!closed ? <PriorityDot priority={row.priority} className="me-1.5 align-middle" /> : null}
@@ -60,7 +63,7 @@ export function InboxRow({ row }: { row: Row }) {
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           {showProgress ? <ProgressBar done={row.assigneesDone} total={row.assigneesTotal} /> : null}
           {row.unread ? <span className="size-2.5 rounded-full bg-sky" aria-label="خوانده‌نشده" /> : null}
-          {row.category === "done" ? <Chip tone="success">انجام‌شده</Chip> : row.category === "cancelled" ? <Chip tone="neutral">کنسل‌شده</Chip> : null}
+          {row.category === "done" ? <Chip tone="success">انجام‌شده</Chip> : row.category === "cancelled" ? <Chip tone="neutral">حذف‌شده</Chip> : null}
         </div>
       </Link>
     </li>

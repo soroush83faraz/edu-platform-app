@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Button } from "@/components/ui/button";
 import { BUCKET_LABELS, type Bucket, formatNumberFa } from "@/lib/format";
+import { type WorkItemWords, workItemWords } from "@/lib/work-item-words";
 import { BUCKETS, INBOX_TABS, type InboxTab } from "@/modules/workspace/dto";
 import { listInboxQuery } from "@/modules/workspace/queries";
 import type { InboxRow as Row } from "@/modules/workspace/repo";
@@ -64,7 +65,9 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     return <EmptyState title="پنل من در دسترس نیست" description={result.message} />;
   }
-  const { rows, nextCursor, tabCounts, isStaff, canCreate } = result.data;
+  const { rows, nextCursor, tabCounts, isStaff, canCreate, voice } = result.data;
+  // «تکلیف» for a teacher, «تسک» for مدیر/معاون — one noun set for the header, the tabs, the filters, the empties.
+  const words = workItemWords(voice);
   const filtered = Boolean(f.bucket || f.unread || f.mine);
   const grouped = groupByBucket(rows, f.tab);
 
@@ -77,14 +80,14 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
             <Button asChild>
               <Link href="/inbox/new">
                 <Plus aria-hidden />
-                تکلیف جدید
+                {words.new}
               </Link>
             </Button>
           ) : undefined
         }
       />
 
-      <nav aria-label="وضعیت تکالیف">
+      <nav aria-label={`وضعیت ${words.plural}`}>
         <ul className="grid grid-cols-2 gap-1 rounded-2xl bg-neutral-200/60 p-1">
           {VISIBLE_TABS.map((tab) => {
             const current = f.tab === tab;
@@ -104,7 +107,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
                   <span className="flex items-center gap-1.5">
                     <span className="truncate">{TAB_LABELS[tab]}</span>
                     {count > 0 ? (
-                      <span className={cn("tabular rounded-full px-1.5 text-xs leading-5", current ? "bg-info-soft text-primary-800" : "bg-surface/70 text-text-muted")} aria-label={`${formatNumberFa(count)} تکلیف`}>
+                      <span className={cn("tabular rounded-full px-1.5 text-xs leading-5", current ? "bg-info-soft text-primary-800" : "bg-surface/70 text-text-muted")} aria-label={`${formatNumberFa(count)} ${words.singular}`}>
                         {count > 99 ? `${formatNumberFa(99)}+` : formatNumberFa(count)}
                       </span>
                     ) : null}
@@ -118,14 +121,14 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
 
       {isStaff || filtered ? (
         <div className="flex flex-wrap items-center gap-2" aria-label="فیلترها">
-          {isStaff ? <FilterChip href={href({ ...f, mine: !f.mine, cursor: undefined })} active={f.mine} label="فقط تکالیف داده‌شده" /> : null}
+          {isStaff ? <FilterChip href={href({ ...f, mine: !f.mine, cursor: undefined })} active={f.mine} label={`فقط ${words.given}`} /> : null}
           {f.bucket ? <FilterChip href={href({ ...f, bucket: undefined, cursor: undefined })} active removable label={BUCKET_LABELS[f.bucket]} /> : null}
           {f.unread ? <FilterChip href={href({ ...f, unread: false, cursor: undefined })} active removable label="خوانده‌نشده" /> : null}
         </div>
       ) : null}
 
       {rows.length === 0 ? (
-        <Empty tab={f.tab} filtered={filtered} canCreate={canCreate} clearHref={href({ tab: f.tab })} />
+        <Empty tab={f.tab} filtered={filtered} canCreate={canCreate} clearHref={href({ tab: f.tab })} words={words} />
       ) : (
         <div className="mt-2 flex flex-col">
           {grouped.map(([bucket, items]) => (
@@ -137,7 +140,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
               )}
               <ul className="reveal-rows surface-work divide-y divide-line/70">
                 {items.map((row) => (
-                  <InboxRow key={row.id} row={row} />
+                  <InboxRow key={row.id} row={row} words={words} />
                 ))}
               </ul>
             </section>
@@ -185,12 +188,12 @@ function FilterChip({ href, active, label, removable }: { href: string; active: 
   );
 }
 
-function Empty({ tab, filtered, canCreate, clearHref }: { tab: InboxTab; filtered: boolean; canCreate: boolean; clearHref: string }) {
+function Empty({ tab, filtered, canCreate, clearHref, words }: { tab: InboxTab; filtered: boolean; canCreate: boolean; clearHref: string; words: WorkItemWords }) {
   if (filtered) {
     return (
       <EmptyState
         illustration={<EmptyClay size={96} />}
-        title="با این فیلتر تکلیفی پیدا نشد"
+        title={`با این فیلتر ${words.indefinite} پیدا نشد`}
         action={
           <Button asChild variant="outline">
             <Link href={clearHref}>حذف فیلتر</Link>
@@ -203,17 +206,17 @@ function Empty({ tab, filtered, canCreate, clearHref }: { tab: InboxTab; filtere
     return (
       <EmptyState
         illustration={<EmptyClay size={128} />}
-        title="تکلیفی در انتظار شما نیست"
-        description={canCreate ? "وقتی تکلیفی به شما داده شود یا خودتان تکلیفی بدهید، همین‌جا می‌آید." : "وقتی دبیر یا مدرسه تکلیفی بدهد، همین‌جا می‌آید."}
+        title={`${words.indefinite} در انتظار شما نیست`}
+description={canCreate ? `وقتی ${words.indefinite} به شما داده شود یا خودتان ${words.indefinite} بدهید، همین‌جا می‌آید.` : `وقتی دبیر یا مدرسه ${words.indefinite} بدهد، همین‌جا می‌آید.`}
         action={
           canCreate ? (
             <Button asChild>
-              <Link href="/inbox/new">تکلیف جدید</Link>
+              <Link href="/inbox/new">{words.new}</Link>
             </Button>
           ) : undefined
         }
       />
     );
   }
-  return <EmptyState illustration={<EmptyClay size={96} />} title="هنوز تکلیفی انجام‌شده علامت نخورده" description="تکالیف تمام‌شده این‌جا نگه داشته می‌شوند." />;
+  return <EmptyState illustration={<EmptyClay size={96} />} title={`هنوز ${words.indefinite} انجام‌شده علامت نخورده`} description={`${words.plural} تمام‌شده این‌جا نگه داشته می‌شوند.`} />;
 }

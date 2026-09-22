@@ -14,6 +14,7 @@ import { chunk } from "@/lib/collections";
 import { forbidden, invalidReference, notFound, validation } from "@/lib/errors";
 import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
 import { can, canAtAnyScope, canBroadly, type CanContext } from "@/modules/iam/can";
+import { type WorkItemVoice, type WorkItemWords, workItemStatusLabel, workItemVoice, workItemWords } from "@/lib/work-item-words";
 import { staffProfile } from "@/modules/iam/schema";
 import { notifyMany } from "@/modules/notif/service";
 import type { Recipients } from "./dto";
@@ -46,6 +47,16 @@ import { inboxEntry, workItem, workItemAssignee, workItemComment, workItemTransi
 export type WorkspaceCtx = AuditCtx & CanContext & { personId: string };
 
 export const INSERT_CHUNK = 500;
+
+/**
+ * The nouns of the ACTOR — the person whose click produced this string. A teacher's «تکلیف» and an admin's «تسک»
+ * (src/lib/work-item-words). Errors go back to the actor, so the actor's word is the right one; a stored
+ * notification row is read by many people, and there it is the CREATOR's word — the item's own word — that is
+ * written once (an admin who sends to students is the one mismatch, and «تسک» is then what its author called it).
+ */
+function nouns(ctx: WorkspaceCtx): WorkItemWords {
+  return workItemWords(workItemVoice(ctx.assignments));
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // visibility
@@ -139,7 +150,7 @@ export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWor
     if (existing) return { id: existing.id, assigneeCount: existing.n, notified: 0, duplicate: true };
   }
   const type = await findTypeWithInitialStatus(tx, input.typeCode);
-  if (!type) throw invalidReference("نوع تکلیف یافت نشد.");
+  if (!type) throw invalidReference(`نوع ${nouns(ctx).singular} یافت نشد.`);
   const recipientIds = [...new Set(await resolveRecipients(tx, ctx, input.recipients))];
   const creatorName = (await findPersonName(tx, ctx.personId)) ?? "";
 
@@ -187,7 +198,7 @@ export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWor
 
   const notified = await notifyMany(tx, ctx, others, {
     typeCode: "work_item.assigned",
-    title: `تکلیف جدید: ${input.title}`,
+    title: `${nouns(ctx).new}: ${input.title}`,
     body: creatorName,
     sourceKind: "work_item",
     sourceId: wi.id,
@@ -308,11 +319,11 @@ async function setItemStatus(tx: Tx, ctx: WorkspaceCtx, item: WorkItemCore, to: 
  */
 export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatusInput): Promise<ChangeStatusResult> {
   const item = await canViewWorkItem(tx, ctx, input.workItemId);
-  if (item.archivedAt) throw validation(undefined, "این تکلیف بایگانی شده است.");
+  if (item.archivedAt) throw validation(undefined, `این ${nouns(ctx).singular} بایگانی شده است.`);
   if (!canAtAnyScope(ctx.assignments, "workspace.work_item.update")) throw forbidden();
   const statuses = await listStatusesOfType(tx, item.typeId);
   const target = statuses.find((s) => s.code === input.toStatusCode);
-  if (!target) throw validation(undefined, "این وضعیت برای این نوع تکلیف وجود ندارد.");
+  if (!target) throw validation(undefined, `این وضعیت برای این نوع ${nouns(ctx).singular} وجود ندارد.`);
   const note = input.note?.trim() ? input.note.trim() : null;
 
   const mine = await findMyAssigneeRow(tx, ctx.personId, item.id);
@@ -336,9 +347,9 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
     recipients = (await listAssignees(tx, item.id)).map((a) => a.personId).filter((id) => id !== ctx.personId);
   } else {
     if (!mine) throw forbidden();
-    if (item.statusCategory === "cancelled" || item.statusCategory === "done") throw validation(undefined, "این تکلیف بسته شده است.");
+    if (item.statusCategory === "cancelled" || item.statusCategory === "done") throw validation(undefined, `این ${nouns(ctx).singular} بسته شده است.`);
     if (target.category === "doing") {
-      if (mine.state !== "pending") throw validation(undefined, "این تکلیف را قبلاً شروع کرده‌اید.");
+      if (mine.state !== "pending") throw validation(undefined, `این ${nouns(ctx).singular} را قبلاً شروع کرده‌اید.`);
       await tx
         .update(workItemAssignee)
         .set({ state: "accepted" })
@@ -348,7 +359,7 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
         itemChanged = true;
       }
     } else if (target.category === "done") {
-      if (mine.state === "done") throw validation(undefined, "این تکلیف را قبلاً انجام‌شده علامت زده‌اید.");
+      if (mine.state === "done") throw validation(undefined, `این ${nouns(ctx).singular} را قبلاً انجام‌شده علامت زده‌اید.`);
       await tx
         .update(workItemAssignee)
         .set({ state: "done", respondedAt: sql`now()` })
@@ -363,7 +374,7 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
       }
       if (item.createdByPersonId !== ctx.personId) recipients = [item.createdByPersonId];
     } else {
-      throw forbidden("فقط دهندهٴ تکلیف می‌تواند آن را بازگشایی یا لغو کند.");
+      throw forbidden(`فقط دهندهٴ ${nouns(ctx).singular} می‌تواند آن را بازگشایی یا حذف کند.`);
     }
   }
 
@@ -375,7 +386,7 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
     const progress = assignees.length > 1 ? ` (${formatNumberFa(done)}/${formatNumberFa(assignees.length)})` : "";
     await notifyMany(tx, ctx, recipients, {
       typeCode: "work_item.status_changed",
-      title: manager ? `وضعیت «${item.title}»: ${target.name}` : `${actorName} «${item.title}» را ${target.name} کرد${progress}`,
+      title: manager ? `وضعیت «${item.title}»: ${workItemStatusLabel(target.name)}` : `${actorName} «${item.title}» را ${workItemStatusLabel(target.name)} کرد${progress}`,
       body: note,
       sourceKind: "work_item",
       sourceId: item.id,
@@ -410,15 +421,16 @@ export interface ExtendDueAtInput {
 /**
  * «تمدید»: the creator (or a broad `update` holder) moves the due date of an OPEN item to a later moment. The new
  * due must lie in the future — anything else is a back-date, which is not an extension. Every assignee is told
- * («مهلت تکلیف «…» تا … تمدید شد», deduped per new due) and their inbox rows flip back to unread; one audit row.
+ * («مهلت تکلیف «…» تا … تمدید شد» in the actor's word, deduped per new due) and their inbox rows flip back to
+ * unread; one audit row.
  */
 export async function extendDueAt(tx: Tx, ctx: WorkspaceCtx, input: ExtendDueAtInput): Promise<{ dueAt: Date; notified: number }> {
   const item = await canViewWorkItem(tx, ctx, input.workItemId);
-  if (item.archivedAt) throw validation(undefined, "این تکلیف بایگانی شده است.");
+  if (item.archivedAt) throw validation(undefined, `این ${nouns(ctx).singular} بایگانی شده است.`);
   if (!canAtAnyScope(ctx.assignments, "workspace.work_item.update")) throw forbidden();
   const manager = item.createdByPersonId === ctx.personId || canBroadly(ctx.assignments, "workspace.work_item.update");
-  if (!manager) throw forbidden("فقط دهندهٴ تکلیف می‌تواند مهلت را تمدید کند.");
-  if (item.statusCategory === "done" || item.statusCategory === "cancelled") throw validation(undefined, "این تکلیف بسته شده است؛ برای تمدید اول بازگشایی کنید.");
+  if (!manager) throw forbidden(`فقط دهندهٴ ${nouns(ctx).singular} می‌تواند مهلت را تمدید کند.`);
+  if (item.statusCategory === "done" || item.statusCategory === "cancelled") throw validation(undefined, `این ${nouns(ctx).singular} بسته شده است؛ برای تمدید اول بازگشایی کنید.`);
   if (input.dueAt.getTime() <= Date.now()) throw validation({ fieldErrors: { dueDate: ["مهلت جدید باید بعد از اکنون باشد."] } });
   if (item.dueAt && input.dueAt.getTime() === item.dueAt.getTime()) throw validation({ fieldErrors: { dueDate: ["مهلت تغییری نکرده است."] } });
 
@@ -430,7 +442,7 @@ export async function extendDueAt(tx: Tx, ctx: WorkspaceCtx, input: ExtendDueAtI
     const when = formatJalaliDateTime(input.dueAt);
     notified = await notifyMany(tx, ctx, recipients, {
       typeCode: "work_item.due_extended",
-      title: `مهلت تکلیف «${item.title}» تا ${when} تمدید شد`,
+      title: `مهلت ${nouns(ctx).singular} «${item.title}» تا ${when} تمدید شد`,
       body: null,
       sourceKind: "work_item",
       sourceId: item.id,
@@ -504,6 +516,8 @@ export interface WorkItemDetail {
     isStaff: boolean;
     canComment: boolean;
     canUpdate: boolean;
+    /** «تکلیف» or «تسک» — the noun this reader sees for the item (src/lib/work-item-words). */
+    voice: WorkItemVoice;
   };
 }
 
@@ -538,6 +552,7 @@ export async function getWorkItemDetail(tx: Tx, ctx: WorkspaceCtx, workItemId: s
       isStaff: staff,
       canComment: canAtAnyScope(ctx.assignments, "workspace.work_item.comment"),
       canUpdate: canAtAnyScope(ctx.assignments, "workspace.work_item.update"),
+      voice: workItemVoice(ctx.assignments),
     },
   };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Ban, CalendarPlus, Check, CheckCheck, Ellipsis, Pin, PinOff, RotateCcw } from "lucide-react";
+import { Archive, CalendarPlus, Check, CheckCheck, Ellipsis, Pin, PinOff, RotateCcw, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { flatten } from "@/lib/form-errors";
 import { formatJalaliDateTime, parseJalaliToInstant, tehranNow } from "@/lib/format";
 import { formatHm, formatJalaliDay, formatJalaliDayLong, parseJalaliDay, tehranToday } from "@/lib/jalali-grid";
+import type { WorkItemWords } from "@/lib/work-item-words";
 import { archiveInboxAction, changeStatusAction, extendDueAtAction, markInboxReadAction, setPinnedAction } from "../actions";
 import type { StatusCategory } from "../repo";
 
@@ -26,18 +27,23 @@ export interface WorkItemActionsProps {
   isManager: boolean;
   canUpdate: boolean;
   inbox: { state: string; isPinned: boolean } | null;
+  /** The reader's noun set: «تکلیف» for a teacher, «تسک» for مدیر/معاون (src/lib/work-item-words). */
+  words: WorkItemWords;
 }
 
 /**
- * The action row of a تکلیف. An assignee gets «انجام شد». Its creator (or a broad admin) gets the three creator
- * actions — «اتمام» (primary: closes it for everyone), «تمدید» (secondary: a later due date), «کنسل» (ghost, red)
- * — or «بازگشایی» once it is closed. Pin / archive stay in the personal «بیشتر» menu. Full-width and stacked on
- * phones, one inline row from `sm:`, every target 44 px. Marks my inbox row read once on mount.
+ * The action row of a کار — named «تکلیف» or «تسک» by the reader's hats. An assignee gets «انجام شد». Its creator
+ * (or a broad admin) gets the three creator actions — «اتمام» (primary: closes it for everyone), «تمدید»
+ * (secondary: a later due date), «حذف» (ghost, red) — or «بازگشایی» once it is closed. «حذف» is a LABEL: the
+ * stored status is still `cancelled`, nothing leaves the database and «بازگشایی» brings the item back (owner,
+ * round 4). Pin / archive stay in the personal «بیشتر» menu. Full-width and stacked on phones, one inline row
+ * from `sm:`, every target 44 px. Marks my inbox row read once on mount.
  */
-export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assigneeCount, myAssigneeState, isManager, canUpdate, inbox }: WorkItemActionsProps) {
+export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assigneeCount, myAssigneeState, isManager, canUpdate, inbox, words }: WorkItemActionsProps) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [pinned, setPinned] = useState(inbox?.isPinned ?? false);
+  // `"cancel"` is the `cancelled` transition — the button that used to read «کنسل» and now reads «حذف».
   const [confirm, setConfirm] = useState<"done" | "cancel" | null>(null);
   const [extending, setExtending] = useState(false);
 
@@ -96,8 +102,8 @@ export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assi
         تمدید
       </Button>,
       <Button key="cancel" variant="ghost" className={cn(buttonClass, "text-danger hover:bg-danger-soft hover:text-danger")} disabled={pending} onClick={() => setConfirm("cancel")}>
-        <Ban aria-hidden />
-        کنسل
+        <Trash2 aria-hidden />
+        حذف
       </Button>,
     );
   }
@@ -152,8 +158,8 @@ export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assi
       <ResponsiveModal
         open={confirm === "done"}
         onOpenChange={(o) => setConfirm(o ? "done" : null)}
-        title="اتمام تکلیف"
-        description={assigneeCount > 1 ? "همهٴ دانش‌آموزان انجام‌شده ثبت می‌شوند؟ تکلیف برای همه بسته می‌شود و بعداً می‌توانید آن را بازگشایی کنید." : "گیرنده انجام‌شده ثبت می‌شود و تکلیف بسته می‌شود. بعداً می‌توانید آن را بازگشایی کنید."}
+        title={`اتمام ${words.singular}`}
+description={assigneeCount > 1 ? `همهٴ ${words.recipients} انجام‌شده ثبت می‌شوند؟ ${words.singular} برای همه بسته می‌شود و بعداً می‌توانید آن را بازگشایی کنید.` : `گیرنده انجام‌شده ثبت می‌شود و ${words.singular} بسته می‌شود. بعداً می‌توانید آن را بازگشایی کنید.`}
       >
         <ConfirmRow
           pending={pending}
@@ -165,22 +171,22 @@ export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assi
               disabled={pending}
               onClick={() => {
                 setConfirm(null);
-                run("تکلیف تمام شد", () => changeStatusAction({ workItemId, toStatusCode: "done" }));
+                run(`${words.singular} تمام شد`, () => changeStatusAction({ workItemId, toStatusCode: "done" }));
               }}
             >
               <CheckCheck aria-hidden />
-              اتمام تکلیف
+              اتمام {words.singular}
             </Button>
           }
         />
       </ResponsiveModal>
 
-      {/* «کنسل» — the existing cancel transition. */}
+      {/* «حذف» — the same `cancelled` transition as before, under the word the owner asked for. */}
       <ResponsiveModal
         open={confirm === "cancel"}
         onOpenChange={(o) => setConfirm(o ? "cancel" : null)}
-        title="کنسل کردن تکلیف"
-        description="این تکلیف برای همهٴ گیرندگان کنسل می‌شود و از فهرست تکالیف بازشان برداشته می‌شود. بعداً می‌توانید آن را بازگشایی کنید."
+        title={`حذف ${words.singular}`}
+description={`این ${words.singular} حذف شود؟ ${words.recipients} دیگر آن را در فهرست خود نمی‌بینند. بعداً می‌توانید آن را بازگشایی کنید.`}
       >
         <ConfirmRow
           pending={pending}
@@ -193,11 +199,11 @@ export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assi
               disabled={pending}
               onClick={() => {
                 setConfirm(null);
-                run("تکلیف کنسل شد", () => changeStatusAction({ workItemId, toStatusCode: "cancelled" }));
+                run(`${words.singular} حذف شد`, () => changeStatusAction({ workItemId, toStatusCode: "cancelled" }));
               }}
             >
-              <Ban aria-hidden />
-              کنسل کردن
+              <Trash2 aria-hidden />
+              حذف {words.singular}
             </Button>
           }
         />
