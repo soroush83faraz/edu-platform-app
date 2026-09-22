@@ -2,7 +2,7 @@
 
 import { Pencil, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useId, useReducer, useTransition } from "react";
+import { useId, useReducer, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
@@ -29,8 +29,10 @@ export interface ResourceFormProps {
   initial?: Record<string, FormValue>;
   /** Values sent with every submit but never shown (the parent id of a nested resource). */
   fixed?: Record<string, string>;
-  /** Trigger rendering: full button (list header) or icon (table row). */
-  trigger?: "button" | "icon";
+  /** Trigger rendering: full button (list header), icon (table row) or none — the row's kebab menu opens it through `openSignal`. */
+  trigger?: "button" | "icon" | "none";
+  /** Increment to open the dialog from outside (`RowActions`); the values are seeded at that moment, like a click. */
+  openSignal?: number;
 }
 
 /**
@@ -39,7 +41,7 @@ export interface ResourceFormProps {
  * dialog OPENS, so after a save (close → `router.refresh()` → fresh props) the next open shows the saved row, and
  * «انصراف» / Escape / the overlay drop edits and errors alike (QA round 2, MAJOR).
  */
-export function ResourceForm({ resource, labelFa, fields, options, mode, id, initial, fixed, trigger = "button" }: ResourceFormProps) {
+export function ResourceForm({ resource, labelFa, fields, options, mode, id, initial, fixed, trigger = "button", openSignal = 0 }: ResourceFormProps) {
   const router = useRouter();
   const ids = useId();
   const [pending, start] = useTransition();
@@ -49,6 +51,13 @@ export function ResourceForm({ resource, labelFa, fields, options, mode, id, ini
   // `initial` is read HERE, from the props of the render that handles the click — never from a stale closure.
   const openForm = () => dispatch({ type: "open", fields: visible, initial });
   const closeForm = () => dispatch({ type: "close" });
+  // A menu item elsewhere asked for the dialog: the same open as a click on the trigger, seeded from the props of
+  // THIS render (state adjusted during render — React's "derive from a prop" pattern, no effect).
+  const [seenSignal, setSeenSignal] = useState(openSignal);
+  if (openSignal !== seenSignal) {
+    setSeenSignal(openSignal);
+    dispatch({ type: "open", fields: visible, initial });
+  }
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -69,7 +78,7 @@ export function ResourceForm({ resource, labelFa, fields, options, mode, id, ini
   const title = mode === "create" ? newLabelFa(labelFa) : `ویرایش ${labelFa}`;
   return (
     <>
-      {trigger === "icon" ? (
+      {trigger === "none" ? null : trigger === "icon" ? (
         <Button type="button" variant="ghost" size="icon" aria-label={title} onClick={openForm} className="size-11 md:size-9">
           <Pencil className="size-4" aria-hidden />
         </Button>

@@ -1,9 +1,9 @@
 import { ChevronLeft, LifeBuoy, LockKeyhole, type LucideIcon, Map, Rocket, ShieldCheck, UserRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ClayIcon } from "@/components/ClayIcon";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { RowMark } from "@/components/RowMark";
 import { LogoutButton } from "@/components/shell/LogoutButton";
 import { requireContext } from "@/lib/ctx";
 import { formatLoginIdentifierFa, formatNumberFa } from "@/lib/format";
@@ -43,7 +43,7 @@ export default async function MorePage() {
     <ContentWidth className="reveal-stagger gap-6">
       <PageHeader title="بیشتر" />
       <section className="surface-work flex items-center gap-4 p-4">
-        <ClayIcon icon={UserRound} size="lg" />
+        <RowMark icon={UserRound} size="lg" />
         <div className="flex min-w-0 flex-col">
           <p className="text-xl font-bold text-text">
             <bdi>
@@ -80,7 +80,7 @@ export default async function MorePage() {
       ) : null}
 
       <nav aria-label="حساب">
-        <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
+        <ul className="surface-work divide-y divide-line/70">
           <MoreLink href="/change-password" icon={LockKeyhole} label="تغییر رمز" />
           <MoreLink href="/help" icon={LifeBuoy} label="راهنما" hint="ورود، پنل من، مدیریت" />
           <MoreLink href="/privacy" icon={ShieldCheck} label="حریم خصوصی" hint="چه داده‌ای، چرا، کجا" />
@@ -91,7 +91,7 @@ export default async function MorePage() {
       {/* Only «خروج» for now (owner, QA round 2): «خروج از همهٴ دستگاه‌ها» is unmounted; `logoutAllAction` /
           `revokeAllForUser` stay for the service paths (password change, admin reset, `pnpm sessions:revoke`). */}
       <nav aria-label="خروج">
-        <ul className="divide-y divide-line/70 rounded-card bg-surface shadow-1">
+        <ul className="surface-work divide-y divide-line/70">
           <LogoutButton action={logoutAction} label="خروج" mark="device" />
         </ul>
       </nav>
@@ -99,12 +99,12 @@ export default async function MorePage() {
   );
 }
 
-/** One row of a «بیشتر» list: the blue clay mark, label, hint, chevron. */
+/** One row of a «بیشتر» list: the quiet glyph, label, hint, chevron. */
 function MoreLink({ href, icon, label, hint }: { href: string; icon: LucideIcon; label: string; hint?: string }) {
   return (
     <li>
-      <Link href={href} className="pressable flex min-h-14 items-center gap-3 px-3 py-2 text-base text-text first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
-        <ClayIcon icon={icon} />
+      <Link href={href} className="pressable flex min-h-14 items-center gap-3 px-3 py-2 text-row text-text first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
+        <RowMark icon={icon} />
         <span className="shrink-0">{label}</span>
         <span className="flex min-w-0 flex-1 items-center justify-end gap-2 text-sm text-text-faint">
           <span className="truncate">{hint}</span>

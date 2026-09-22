@@ -2,6 +2,7 @@ import { Bell, ClipboardPlus, Inbox, KeyRound, LifeBuoy, LogIn, type LucideIcon,
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ClayIcon } from "@/components/ClayIcon";
+import { RowMark } from "@/components/RowMark";
 import { PublicBackLink } from "@/components/shell/PublicBackLink";
 import { getRequestContext } from "@/lib/ctx";
 import { productName } from "@/lib/product";
@@ -188,7 +189,7 @@ function Topic({ topic, children }: { topic: Topic; children: React.ReactNode })
   return (
     <section id={topic.id} aria-labelledby={`${topic.id}-title`} className="flex scroll-mt-20 flex-col gap-3 rounded-card bg-surface p-4 shadow-1">
       <div className="flex items-center gap-3">
-        <ClayIcon icon={topic.icon} />
+        <RowMark icon={topic.icon} />
         <div className="flex flex-col">
           <h3 id={`${topic.id}-title`} className="text-base font-semibold text-text">
             {topic.title}

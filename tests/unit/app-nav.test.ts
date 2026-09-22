@@ -12,10 +12,12 @@ vi.mock("@/components/shell/InboxSummaryProvider", () => ({
 }));
 
 const { AppNav } = await import("@/components/shell/AppNav");
+const { adminSectionsFor } = await import("@/lib/admin/nav");
+type AdminNavItem = import("@/lib/admin/nav").AdminNavItem;
 
-function render(role: "admin" | "teacher" | "student" | null, at = "/home") {
+function render(role: "admin" | "teacher" | "student" | null, at = "/home", adminItems?: readonly AdminNavItem[]) {
   pathname = at;
-  const html = renderToStaticMarkup(createElement(AppNav, { schoolName: "دبستان", role }));
+  const html = renderToStaticMarkup(createElement(AppNav, { schoolName: "دبستان", productName: "سامانهٴ مدرسه", role, adminItems }));
   const links = [...html.matchAll(/<a([^>]*)href="([^"]+)"([^>]*)>(.*?)<\/a>/g)].map((m) => ({
     href: m[2],
     current: /aria-current="page"/.test(m[1] + m[3]),
@@ -56,3 +58,26 @@ describe("AppNav items per role", () => {
     expect(html.match(/۳ مورد خوانده‌نشده/g)?.length).toBe(2);
   });
 });
+
+describe("AppNav rail inside /admin", () => {
+  it("nests the admin sections (minus «نمای کلی») under «مدیریت» with their counts; «مدیریت» itself is current only on the landing", () => {
+    const items = adminSectionsFor({ org: false, singleSchool: true }).map((i) => (i.key === "students" ? { ...i, count: 175 } : i));
+    const { html } = render("admin", "/admin/students", items);
+    // The rail only (the bottom bar's «مدیریت» stays current on every /admin route).
+    const parentCurrent = (h: string) => {
+      const rail = h.slice(h.indexOf("<aside"));
+      return /<a[^>]*href="\/admin"[^>]*aria-current="page"/.test(rail) || /<a[^>]*aria-current="page"[^>]*href="\/admin"/.test(rail);
+    };
+    expect(parentCurrent(html)).toBe(false);
+    expect(html).toContain('href="/admin/staff"');
+    expect(html).not.toMatch(/href="\/admin"[^>]*>[^<]*نمای کلی/);
+    expect(html).toContain("مدرسه</span>");
+    expect(html).toContain("۱۷۵");
+    const nested = [...html.matchAll(/<a[^>]*>/g)].map((m) => m[0]).filter((a) => /aria-current="page"/.test(a)).flatMap((a) => a.match(/href="(\/admin\/[a-z]+)"/)?.[1] ?? []);
+    expect(nested).toEqual(["/admin/students"]);
+    expect(parentCurrent(render("admin", "/admin", items).html)).toBe(true);
+    // Outside /admin the sections stay folded.
+    expect(render("admin", "/home", items).html).not.toContain('href="/admin/staff"');
+  });
+});
+

@@ -2,7 +2,7 @@ import { Printer } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { cn } from "cn";
-import { IconChip } from "@/components/IconChip";
+import { RowMark } from "@/components/RowMark";
 import { RocketClay } from "@/components/illustrations";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -45,7 +45,7 @@ export default function RoadmapPage() {
               <ul className="flex flex-col divide-y divide-line/70 px-4 pt-2">
                 {items.map((m) => (
                   <li key={m.code} id={m.code} className="flex scroll-mt-24 items-start gap-3 py-3 target:-mx-2 target:rounded-xl target:bg-info-soft/60 target:px-2">
-                    <IconChip icon={m.icon} tone={live ? "success" : "primary"} size="sm" className="mt-0.5" />
+                    <RowMark icon={m.icon} className="mt-0.5" />
                     <div className="flex min-w-0 flex-1 flex-col">
                       <p className="text-sm font-medium text-text">
                         {live ? <Link href={m.href} className="hover:underline">{m.labelFa}</Link> : m.labelFa}

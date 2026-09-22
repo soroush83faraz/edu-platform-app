@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { AdminHeader, Pagination, SearchForm, lastPage } from "@/components/admin/AdminPage";
+import { Pagination, SearchForm, lastPage } from "@/components/admin/AdminPage";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { getAdminShell } from "@/lib/admin/admin-shell";
+import { schoolsLabelFa } from "@/lib/admin/nav";
 import { ResourceForm } from "@/components/admin/ResourceForm";
 import { ResourceTable } from "@/components/admin/ResourceTable";
 import { Button } from "@/components/ui/button";
@@ -40,10 +43,13 @@ export async function ResourceListPage({ def, sp, parent, basePath, back }: { de
     return `${basePath ?? `/admin/${def.key}`}${s ? `?${s}` : ""}`;
   };
   if (page > lastPage(total, pageSize)) redirect(hrefFor(lastPage(total, pageSize)));
+  // «مدرسه» for a principal of exactly one school, «مدرسه‌ها» otherwise (owner's rule; the same cached scope read as the nav).
+  const title = def.key === "schools" ? schoolsLabelFa((await getAdminShell()).scope ?? { kind: "organization" }) : def.labelFaPlural;
   return (
     <div className="flex flex-col gap-4">
-      <AdminHeader
-        title={def.labelFaPlural}
+      <PageHeader
+        title={title}
+        count={`${formatNumberFa(total)} مورد`}
         description={def.descriptionFa}
         back={back ?? (def.parentParam ? { href: def.parentParam.backHref(parentId), label: def.parentParam.labelFa } : undefined)}
         actions={
@@ -58,8 +64,7 @@ export async function ResourceListPage({ def, sp, parent, basePath, back }: { de
         }
       />
       {def.orgOnly && !canWrite ? <p className="rounded-card border border-warning/40 bg-warning-soft/40 px-4 py-2 text-sm text-text">این فهرست در سطح سازمان تعریف می‌شود و برای شما فقط‌خواندنی است.</p> : null}
-      {!def.parentParam ? <SearchForm q={q} placeholder={`جست‌وجو در ${def.labelFaPlural}`} /> : null}
-      <p className="tabular text-xs text-text-muted">{formatNumberFa(total)} مورد</p>
+      {!def.parentParam ? <SearchForm q={q} placeholder={`جست‌وجو در ${title}`} /> : null}
       <ResourceTable def={def} rows={rows} options={options} canWrite={canWrite} fixed={fixed} />
       <Pagination page={page} pageSize={pageSize} total={total} href={hrefFor} />
     </div>

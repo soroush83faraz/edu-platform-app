@@ -126,15 +126,15 @@ export const MODULES: readonly ModuleEntry[] = [
   },
 
   {
+    // Delivered in phase 1 (owner): class items ARE «تکالیف» — given from «تکلیف جدید», followed in «پنل من».
     code: "homework",
     labelFa: "تکالیف",
-    href: "/roadmap#phase-2",
+    href: "/inbox",
     icon: NotebookPen,
-    phase: 2,
-    month: "مهر",
+    permission: "workspace.work_item.read",
+    phase: 1,
     competitorTerm: "تکلیف",
-    descriptionFa:
-      "تکلیف با فایل، تحویل و نمره؛ کار امروزِ پنل من شکل کامل‌تر می‌گیرد.",
+    descriptionFa: "تکلیف برای کلاس یا نفر، با مهلت و اولویت؛ دانش‌آموز انجام‌شدن را علامت می‌زند و دبیر پیشرفت را می‌بیند. فایل و نمره در فازهای بعد.",
   },
   {
     code: "classbook",
@@ -488,7 +488,6 @@ export function homeTilesFor(
 
 /** The muted «به‌زودی» tiles: the owner's list of the competitor's modules we do not have yet, in phase/month order. */
 const HOME_UPCOMING_CODES = [
-  "homework",
   "classbook",
   "attendance",
   "discipline",

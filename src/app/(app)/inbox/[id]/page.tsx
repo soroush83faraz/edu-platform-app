@@ -3,10 +3,10 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { cn } from "cn";
 import { Chip, type ChipTone } from "@/components/Chip";
-import { IconChip, type IconChipTone } from "@/components/IconChip";
+import { RowMark } from "@/components/RowMark";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { PRIORITY_LABELS, priorityChipTone } from "@/components/priority";
+import { PRIORITY_LABELS, priorityTone } from "@/components/priority";
 import { RelativeTime } from "@/components/RelativeTime";
 import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
 import { workItemDetailQuery } from "@/modules/workspace/queries";
@@ -18,21 +18,21 @@ export const metadata: Metadata = { title: "کار | سامانهٴ مدرسه" 
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const CATEGORY_FACT: Record<StatusCategory, { icon: LucideIcon; tone: IconChipTone }> = {
-  todo: { icon: ListTodo, tone: "primary" },
-  doing: { icon: Play, tone: "sky" },
-  done: { icon: CircleCheck, tone: "success" },
-  cancelled: { icon: Ban, tone: "muted" },
+const CATEGORY_FACT: Record<StatusCategory, { icon: LucideIcon }> = {
+  todo: { icon: ListTodo },
+  doing: { icon: Play },
+  done: { icon: CircleCheck },
+  cancelled: { icon: Ban },
 };
 const ASSIGNEE_STATE: Record<"pending" | "accepted" | "done", { label: string; tone: ChipTone }> = {
   pending: { label: "در انتظار", tone: "neutral" },
   accepted: { label: "در حال انجام", tone: "primary" },
   done: { label: "انجام‌شده", tone: "success" },
 };
-const ASSIGNEE_FACT: Record<"pending" | "accepted" | "done", { icon: LucideIcon; tone: IconChipTone }> = {
-  pending: { icon: ListTodo, tone: "primary" },
-  accepted: { icon: Play, tone: "sky" },
-  done: { icon: CircleCheck, tone: "success" },
+const ASSIGNEE_FACT: Record<"pending" | "accepted" | "done", { icon: LucideIcon }> = {
+  pending: { icon: ListTodo },
+  accepted: { icon: Play },
+  done: { icon: CircleCheck },
 };
 
 export default async function WorkItemPage({ params }: { params: Promise<{ id: string }> }) {
@@ -75,12 +75,12 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
 
         {/* The three facts a reader checks before acting — status, priority, due — as chip-led cells in one card. */}
         <dl className="grid grid-cols-3 divide-x divide-line/70 rounded-card bg-surface shadow-1">
-          <Fact icon={statusFact.icon} tone={statusFact.tone} label="وضعیت" value={statusFact.value} />
-          <Fact icon={Flag} tone={priorityChipTone(item.priority)} label="اولویت" value={PRIORITY_LABELS[item.priority]} />
+          <Fact icon={statusFact.icon} label="وضعیت" value={statusFact.value} />
+          <Fact icon={Flag} label="اولویت" value={<Chip tone={priorityTone(item.priority)}>{PRIORITY_LABELS[item.priority]}</Chip>} />
           {item.dueAt ? (
-            <Fact icon={Clock} tone={overdue ? "danger" : "primary"} label="مهلت" value={<RelativeTime at={item.dueAt} />} hint={formatJalaliDateTime(item.dueAt)} alert={overdue} />
+            <Fact icon={Clock} label="مهلت" value={<RelativeTime at={item.dueAt} />} hint={formatJalaliDateTime(item.dueAt)} alert={overdue} />
           ) : (
-            <Fact icon={CalendarOff} tone="muted" label="مهلت" value="بدون مهلت" />
+            <Fact icon={CalendarOff} label="مهلت" value="بدون مهلت" />
           )}
         </dl>
         <WorkItemActions
@@ -190,15 +190,15 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
   );
 }
 
-/** One cell of the facts row: chip on top, a quiet label, the value; `hint` is the exact timestamp under a relative due. */
-function Fact({ icon, tone, label, value, hint, alert = false }: { icon: LucideIcon; tone: IconChipTone; label: string; value: React.ReactNode; hint?: string; alert?: boolean }) {
+/** One cell of the facts row: the quiet glyph on top, a label, the value (priority as its chip); `hint` is the exact timestamp under a relative due. */
+function Fact({ icon, label, value, hint, alert = false }: { icon: LucideIcon; label: string; value: React.ReactNode; hint?: string; alert?: boolean }) {
   return (
     <div className="flex min-w-0 flex-col items-center gap-1.5 px-2 py-4 text-center">
-      <IconChip icon={icon} tone={tone} size="lg" />
-      <dt className="text-xs text-text-muted">{label}</dt>
+      <RowMark icon={icon} tone={alert ? "danger" : "muted"} />
+      <dt className="text-meta text-text-muted">{label}</dt>
       <dd className={cn("text-sm font-semibold leading-5 text-balance", alert ? "text-danger" : "text-text")}>
         {value}
-        {hint ? <span className="mt-0.5 block text-xs font-normal text-text-faint">{hint}</span> : null}
+        {hint ? <span className="mt-0.5 block text-meta font-normal text-text-faint">{hint}</span> : null}
       </dd>
     </div>
   );

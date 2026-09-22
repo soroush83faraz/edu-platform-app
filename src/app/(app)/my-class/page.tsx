@@ -4,7 +4,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
-import { IconChip } from "@/components/IconChip";
+import { RowMark } from "@/components/RowMark";
 import { SchoolClay } from "@/components/illustrations";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -79,13 +79,13 @@ export default async function MyClassPage() {
           <Card>
             <dl className="grid grid-cols-2 divide-x divide-line/70">
               <div className="flex flex-col items-center gap-1.5 px-2 py-4 text-center">
-                <IconChip icon={Users} size="lg" />
-                <dt className="text-xs text-text-muted">هم‌کلاسی‌ها</dt>
+                <RowMark icon={Users} />
+                <dt className="text-meta text-text-muted">هم‌کلاسی‌ها</dt>
                 <dd className="tabular text-lg font-semibold leading-6 text-text">{formatNumberFa(cls.classmates)}</dd>
               </div>
               <div className="flex flex-col items-center gap-1.5 px-2 py-4 text-center">
-                <IconChip icon={BookOpen} size="lg" tone="sky" />
-                <dt className="text-xs text-text-muted">درس‌ها</dt>
+                <RowMark icon={BookOpen} />
+                <dt className="text-meta text-text-muted">درس‌ها</dt>
                 <dd className="tabular text-lg font-semibold leading-6 text-text">{formatNumberFa(cls.teachers.length)}</dd>
               </div>
             </dl>
@@ -103,12 +103,12 @@ export default async function MyClassPage() {
                   {cls.teachers.map((t) => (
                     <li key={t.offeringId}>
                       <Link href={`/subjects/${t.offeringId}`} className="pressable flex min-h-14 items-center gap-3 px-3 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
-                        <IconChip icon={School} size="sm" tone={t.teacherName ? "primary" : "muted"} />
+                        <RowMark icon={School} />
                         <div className="flex min-w-0 flex-1 flex-col">
-                          <p className="truncate text-sm font-medium text-text">
+                          <p className="truncate text-row font-medium text-text">
                             <bdi>{t.subjectName}</bdi>
                           </p>
-                          <p className="truncate text-xs text-text-muted">{t.teacherName ? <bdi>{t.teacherName}</bdi> : "معلم هنوز مشخص نشده"}</p>
+                          <p className="truncate text-meta text-text-muted">{t.teacherName ? <bdi>{t.teacherName}</bdi> : "دبیر هنوز مشخص نشده"}</p>
                         </div>
                       </Link>
                     </li>

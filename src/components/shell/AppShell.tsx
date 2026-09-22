@@ -1,18 +1,19 @@
 import { BookOpen } from "lucide-react";
 import { AppNav } from "@/components/shell/AppNav";
 import { InboxSummaryProvider } from "@/components/shell/InboxSummaryProvider";
+import type { AdminNavItem } from "@/lib/admin/nav";
 import type { Ctx } from "@/lib/ctx";
 import { navRoleFor } from "@/modules/iam/can";
-import { adminNavFor } from "@/lib/admin/resources";
 import { productName } from "@/lib/product";
 import { inboxSummaryQuery } from "@/modules/workspace/queries";
 
 /**
  * The signed-in frame shared by the (app) and (admin) route groups: the summary provider (server-rendered initial
  * counts, one client poller), nav (bottom bar / start rail), the mobile header, and the content column; pages cap
- * their own width with `ContentWidth` (1200 px, or the reading measure).
+ * their own width with `ContentWidth` (1200 px, or the reading measure). The admin layout passes `adminItems`
+ * (sections with counts) so the rail can nest them under «مدیریت».
  */
-export async function AppShell({ ctx, children }: { ctx: Ctx; children: React.ReactNode }) {
+export async function AppShell({ ctx, children, adminItems }: { ctx: Ctx; children: React.ReactNode; adminItems?: readonly AdminNavItem[] }) {
   const summary = await inboxSummaryQuery();
   const initial = summary.ok ? summary.data : { overdue: 0, dueToday: 0, unread: 0, unreadNotifications: 0 };
   const title = ctx.schoolName ?? ctx.orgName;
@@ -29,7 +30,7 @@ export async function AppShell({ ctx, children }: { ctx: Ctx; children: React.Re
         پرش به محتوا
       </a>
       <h1 className="sr-only">{title}</h1>
-      <AppNav schoolName={title} productName={productName()} role={navRole} adminItems={navRole === "admin" ? adminNavFor(ctx.assignments) : undefined} />
+      <AppNav schoolName={title} productName={productName()} role={navRole} adminItems={adminItems} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-14 items-center gap-3 bg-canvas/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm lg:hidden">
           <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-xl bg-hero text-white shadow-1">

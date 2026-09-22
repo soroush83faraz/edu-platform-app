@@ -45,6 +45,12 @@ export interface Column<TRow> {
   className?: string;
   /** Hide below `md`. */
   secondary?: boolean;
+  /**
+   * Phones show each row as a card: the first column as the title and the columns marked here as two meta lines
+   * (`1` — or `true` — and `2`; columns of one line join with « · »). A boolean column contributes its label when
+   * true («جاری», «پیش‌فرض») and nothing otherwise.
+   */
+  mobileMeta?: boolean | 1 | 2;
 }
 
 export interface ListOptions {
@@ -94,6 +100,8 @@ export interface ResourceDef<TRow extends { id: string }, TInput> {
   formValues?: (row: TRow) => Record<string, string | number | boolean | null>;
   /** Detail page of a row, if any. */
   rowHref?: (row: TRow) => string;
+  /** A printable page of a row («چاپ» in the row menu), e.g. a class's credentials sheet. */
+  printHref?: (row: TRow) => string;
   /** Extra links shown above the table (e.g. «شعبه‌ها» from schools). */
   links?: Array<{ href: string; labelFa: string }>;
 }

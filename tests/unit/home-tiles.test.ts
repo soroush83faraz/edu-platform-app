@@ -3,7 +3,7 @@
 // principal or vice principal never sees the tile, the admin nav entry or the «بیشتر» row (the page itself is
 // NOT_FOUND for them, checked in tests/int/admin-scope.test.ts against the database-derived scope).
 import { describe, expect, it } from "vitest";
-import { HOME_TILES, homeTilesFor, type TileHats } from "@/lib/modules-registry";
+import { HOME_TILES, HOME_UPCOMING, MODULES, homeTilesFor, type TileHats } from "@/lib/modules-registry";
 import { isOrganizationAdmin, navRoleFor, type Assignment } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
 
@@ -70,3 +70,14 @@ describe("navRoleFor", () => {
     expect(navRoleFor([])).toBeNull();
   });
 });
+
+describe("product map", () => {
+  it("«تکالیف» is delivered (phase 1) and no longer a «به‌زودی» tile; «برنامهٴ کلاسی» likewise", () => {
+    expect(MODULES.find((m) => m.code === "homework")?.phase).toBe(1);
+    expect(MODULES.find((m) => m.code === "class-schedule")?.phase).toBe(1);
+    expect(HOME_UPCOMING.map((m) => m.code)).not.toContain("homework");
+    expect(HOME_UPCOMING.map((m) => m.code)).not.toContain("class-schedule");
+    expect(HOME_UPCOMING.every((m) => m.phase > 1)).toBe(true);
+  });
+});
+

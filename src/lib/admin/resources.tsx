@@ -35,6 +35,7 @@ import {
   upsertTerm,
 } from "@/modules/tenancy/service";
 import { defineResource, type AnyResourceDef, type ListOptions, type SelectOption } from "./defineResource";
+import { adminSectionsFor, type AdminNavItem } from "./nav";
 
 // ---------------------------------------------------------------------------------------------------------------
 // shared pieces
@@ -151,10 +152,10 @@ export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolIn
   createNeedsOrgScope: true,
   columns: [
     { key: "name", labelFa: "نام" },
-    { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi> },
-    { key: "genderPolicy", labelFa: "جنسیت", render: (r) => GENDER_LABELS[r.genderPolicy ?? ""] ?? "—", secondary: true },
-    { key: "branches", labelFa: "شعبه", render: (r) => formatNumberFa(r.branches), secondary: true },
-    { key: "isDefault", labelFa: "پیش‌فرض", render: (r) => (r.isDefault ? "✓" : ""), secondary: true },
+    { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, mobileMeta: 1 },
+    { key: "genderPolicy", labelFa: "جنسیت", render: (r) => GENDER_LABELS[r.genderPolicy ?? ""] ?? "—", secondary: true, mobileMeta: 2 },
+    { key: "branches", labelFa: "شعبه", render: (r) => `${formatNumberFa(r.branches)} شعبه`, secondary: true, mobileMeta: 2 },
+    { key: "isDefault", labelFa: "پیش‌فرض", render: (r) => (r.isDefault ? "✓" : ""), secondary: true, mobileMeta: 1 },
   ],
   schema: SchoolInput,
   formFields: [
@@ -222,9 +223,9 @@ export const branchResource = defineResource<BranchRow, z.output<typeof BranchIn
   permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
   columns: [
     { key: "name", labelFa: "نام" },
-    { key: "schoolName", labelFa: "مدرسه" },
-    { key: "address", labelFa: "نشانی", render: (r) => r.address ?? "—", secondary: true },
-    { key: "isDefault", labelFa: "پیش‌فرض", render: (r) => (r.isDefault ? "✓" : ""), secondary: true },
+    { key: "schoolName", labelFa: "مدرسه", mobileMeta: 1 },
+    { key: "address", labelFa: "نشانی", render: (r) => r.address ?? "—", secondary: true, mobileMeta: 2 },
+    { key: "isDefault", labelFa: "پیش‌فرض", render: (r) => (r.isDefault ? "✓" : ""), secondary: true, mobileMeta: 1 },
   ],
   schema: BranchInput,
   formFields: [
@@ -306,11 +307,12 @@ export const yearResource = defineResource<YearRow, z.output<typeof YearInput>>(
   permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
   columns: [
     { key: "name", labelFa: "سال" },
-    { key: "schoolName", labelFa: "مدرسه" },
+    { key: "schoolName", labelFa: "مدرسه", mobileMeta: 2 },
     { key: "startsOn", labelFa: "شروع", render: (r) => <span className="tabular">{isoDateToJalali(r.startsOn)}</span>, secondary: true },
     { key: "endsOn", labelFa: "پایان", render: (r) => <span className="tabular">{isoDateToJalali(r.endsOn)}</span>, secondary: true },
-    { key: "terms", labelFa: "نوبت‌ها", render: (r) => formatNumberFa(r.terms) },
-    { key: "isCurrent", labelFa: "جاری", render: (r) => (r.isCurrent ? "✓" : "") },
+    { key: "range", labelFa: "بازه", render: (r) => <span className="tabular">{isoDateToJalali(r.startsOn)} – {isoDateToJalali(r.endsOn)}</span>, className: "hidden", mobileMeta: 1 },
+    { key: "terms", labelFa: "نوبت‌ها", render: (r) => `${formatNumberFa(r.terms)} نوبت`, mobileMeta: 2 },
+    { key: "isCurrent", labelFa: "جاری", render: (r) => (r.isCurrent ? "✓" : ""), mobileMeta: 1 },
   ],
   schema: YearInput,
   formFields: [
@@ -408,9 +410,9 @@ export const termResource = defineResource<TermRow, z.output<typeof TermInputSch
   columns: [
     { key: "sequence", labelFa: "ترتیب", render: (r) => formatNumberFa(r.sequence) },
     { key: "name", labelFa: "نام" },
-    { key: "startsOn", labelFa: "شروع", render: (r) => <span className="tabular">{isoDateToJalali(r.startsOn)}</span> },
-    { key: "endsOn", labelFa: "پایان", render: (r) => <span className="tabular">{isoDateToJalali(r.endsOn)}</span> },
-    { key: "offerings", labelFa: "ارائه‌ها", render: (r) => formatNumberFa(r.offerings), secondary: true },
+    { key: "startsOn", labelFa: "شروع", render: (r) => <span className="tabular">{isoDateToJalali(r.startsOn)}</span>, mobileMeta: 1 },
+    { key: "endsOn", labelFa: "پایان", render: (r) => <span className="tabular">{isoDateToJalali(r.endsOn)}</span>, mobileMeta: 1 },
+    { key: "offerings", labelFa: "ارائه‌ها", render: (r) => `${formatNumberFa(r.offerings)} ارائه`, secondary: true, mobileMeta: 2 },
   ],
   schema: TermInputSchema,
   formFields: [
@@ -484,8 +486,8 @@ export const levelResource = defineResource<LevelRow, z.output<typeof LevelInput
   columns: [
     { key: "sequence", labelFa: "ترتیب", render: (r) => formatNumberFa(r.sequence) },
     { key: "name", labelFa: "نام" },
-    { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, secondary: true },
-    { key: "grades", labelFa: "پایه‌ها", render: (r) => formatNumberFa(r.grades) },
+    { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, secondary: true, mobileMeta: 2 },
+    { key: "grades", labelFa: "پایه‌ها", render: (r) => `${formatNumberFa(r.grades)} پایه`, mobileMeta: 1 },
   ],
   schema: LevelInput,
   formFields: [
@@ -537,9 +539,9 @@ export const gradeResource = defineResource<GradeRow, z.output<typeof GradeInput
   columns: [
     { key: "sequence", labelFa: "ترتیب", render: (r) => formatNumberFa(r.sequence) },
     { key: "name", labelFa: "نام" },
-    { key: "levelName", labelFa: "مقطع", secondary: true },
-    { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, secondary: true },
-    { key: "classes", labelFa: "کلاس‌ها", render: (r) => formatNumberFa(r.classes) },
+    { key: "levelName", labelFa: "مقطع", secondary: true, mobileMeta: 1 },
+    { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, secondary: true, mobileMeta: 2 },
+    { key: "classes", labelFa: "کلاس‌ها", render: (r) => `${formatNumberFa(r.classes)} کلاس`, mobileMeta: 1 },
   ],
   schema: GradeInput,
   formFields: [
@@ -600,8 +602,8 @@ export const subjectResource = defineResource<SubjectRow, z.output<typeof Subjec
   orgOnly: true,
   columns: [
     { key: "name", labelFa: "نام" },
-    { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, secondary: true },
-    { key: "offerings", labelFa: "ارائه‌ها", render: (r) => formatNumberFa(r.offerings) },
+    { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, secondary: true, mobileMeta: 2 },
+    { key: "offerings", labelFa: "ارائه‌ها", render: (r) => `${formatNumberFa(r.offerings)} ارائه`, mobileMeta: 1 },
   ],
   schema: SubjectInput,
   formFields: [
@@ -695,11 +697,11 @@ export const classResource = defineResource<ClassRow, z.output<typeof ClassInput
   permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
   columns: [
     { key: "name", labelFa: "کلاس" },
-    { key: "gradeName", labelFa: "پایه" },
+    { key: "gradeName", labelFa: "پایه", mobileMeta: 1 },
     // Only the school: the branch is one per school in phase 1 («— کارگر» repeated on every row said nothing).
-    { key: "schoolName", labelFa: "مدرسه", secondary: true },
-    { key: "yearName", labelFa: "سال", secondary: true },
-    { key: "students", labelFa: "دانش‌آموز", render: (r) => formatNumberFa(r.students) },
+    { key: "schoolName", labelFa: "مدرسه", secondary: true, mobileMeta: 2 },
+    { key: "yearName", labelFa: "سال", secondary: true, mobileMeta: 2 },
+    { key: "students", labelFa: "دانش‌آموز", render: (r) => `${formatNumberFa(r.students)} دانش‌آموز`, mobileMeta: 1 },
     { key: "status", labelFa: "وضعیت", render: (r) => (r.status === "active" ? "فعال" : "بایگانی"), secondary: true },
   ],
   schema: ClassInput,
@@ -712,6 +714,7 @@ export const classResource = defineResource<ClassRow, z.output<typeof ClassInput
   ],
   formValues: (r) => ({ branchId: r.branchId, academicYearId: r.academicYearId, gradeLevelId: r.gradeLevelId, name: r.name, capacity: r.capacity }),
   rowHref: (r) => `/admin/classes/${r.id}`,
+  printHref: (r) => `/admin/classes/${r.id}/credentials`,
   loadOptions: (tx, _ctx, scope) => classOptions(tx, scope),
   list: (tx, _ctx, scope, opts) => listClassRows(tx, scope, opts),
   async create(tx, ctx, scope, input) {
@@ -852,9 +855,9 @@ export const offeringResource = defineResource<OfferingRow, z.output<typeof Offe
   parentParam: { name: "class", field: "classGroupId", labelFa: "کلاس", backHref: (parent) => `/admin/classes/${parent}` },
   columns: [
     { key: "subjectName", labelFa: "درس" },
-    { key: "termName", labelFa: "نوبت", secondary: true },
-    { key: "teacherName", labelFa: "دبیر", render: (r) => r.teacherName ?? <span className="text-warning-text">بدون دبیر</span> },
-    { key: "weeklyHours", labelFa: "ساعت/هفته", render: (r) => (r.weeklyHours ? formatNumberFa(Number(r.weeklyHours)) : "—"), secondary: true },
+    { key: "termName", labelFa: "نوبت", secondary: true, mobileMeta: 2 },
+    { key: "teacherName", labelFa: "دبیر", render: (r) => r.teacherName ?? <span className="text-warning-text">بدون دبیر</span>, mobileMeta: 1 },
+    { key: "weeklyHours", labelFa: "ساعت/هفته", render: (r) => (r.weeklyHours ? `${formatNumberFa(Number(r.weeklyHours))} ساعت در هفته` : "—"), secondary: true, mobileMeta: 2 },
     { key: "status", labelFa: "وضعیت", render: (r) => OFFERING_STATUS[r.status] ?? r.status, secondary: true },
   ],
   schema: OfferingInput,
@@ -970,30 +973,10 @@ export const RESOURCES: Record<string, AnyResourceDef> = Object.fromEntries(
 
 export const RESOURCE_KEYS = Object.keys(RESOURCES) as [string, ...string[]];
 
-export interface AdminNavItem {
-  href: string;
-  labelFa: string;
-  /** Organization admins only («راه‌اندازی»: school setup belongs to whoever defines schools — the owner's rule). */
-  orgOnly?: boolean;
-}
-
-/** Admin sub-navigation, in onboarding order. `adminNavFor` filters it for the caller. */
-export const ADMIN_NAV: readonly AdminNavItem[] = [
-  { href: "/admin", labelFa: "نمای کلی" },
-  { href: "/admin/schools", labelFa: "مدرسه‌ها" },
-  { href: "/admin/years", labelFa: "سال‌ها" },
-  { href: "/admin/levels", labelFa: "مقطع‌ها" },
-  { href: "/admin/grades", labelFa: "پایه‌ها" },
-  { href: "/admin/subjects", labelFa: "درس‌ها" },
-  { href: "/admin/classes", labelFa: "کلاس‌ها" },
-  { href: "/admin/students", labelFa: "دانش‌آموزان" },
-  { href: "/admin/staff", labelFa: "کارکنان" },
-  { href: "/admin/roles", labelFa: "نقش‌ها" },
-  { href: "/admin/onboarding", labelFa: "راه‌اندازی", orgOnly: true },
-];
+/** The admin sections live in `./nav` (pure, shared with the client nav); `ADMIN_NAV` keeps the old name for callers and tests. */
+export { ADMIN_SECTIONS as ADMIN_NAV, type AdminNavItem } from "./nav";
 
 /** The sub-navigation a caller sees: school-scoped admins (principal, vice principal) lose the organization-only entries. */
 export function adminNavFor(assignments: readonly Assignment[]): AdminNavItem[] {
-  const org = isOrganizationAdmin(assignments);
-  return ADMIN_NAV.filter((item) => !item.orgOnly || org);
+  return adminSectionsFor({ org: isOrganizationAdmin(assignments), singleSchool: false });
 }

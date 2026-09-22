@@ -2,16 +2,16 @@ import { ClipboardList, Clock, ListTodo, MessageSquare, Pin } from "lucide-react
 import Link from "next/link";
 import { cn } from "cn";
 import { Chip } from "@/components/Chip";
-import { IconChip } from "@/components/IconChip";
-import { priorityChipTone } from "@/components/priority";
 import { RelativeTime } from "@/components/RelativeTime";
+import { PriorityDot, RowMark } from "@/components/RowMark";
 import { formatNumberFa } from "@/lib/format";
 import type { InboxRow as Row } from "../repo";
 
 /**
- * One کار in the list, read in one glance: the type chip (todo / task glyph) tinted by priority, bold title when
- * unread, one meta line (due on a clock chip — red when overdue — then who gave it or my progress on it), and the
- * unread dot at the end. 64 px minimum, the whole row is the target.
+ * One کار in the list, read in one glance: the quiet type glyph (todo / task in a 32 px panel circle — never a
+ * blue mark), the title (bold when unread) with a small priority dot beside it for high / urgent, one meta line
+ * (due on a clock chip — red when overdue — then who gave it or my progress on it), and the unread dot at the end.
+ * 64 px minimum, the whole row is the target.
  */
 export function InboxRow({ row }: { row: Row }) {
   const overdue = row.bucket === "overdue";
@@ -26,12 +26,13 @@ export function InboxRow({ row }: { row: Row }) {
           closed && "opacity-70",
         )}
       >
-        <IconChip icon={row.typeCode === "todo" ? ListTodo : ClipboardList} tone={closed ? "muted" : priorityChipTone(row.priority)} label={row.typeName} />
+        <RowMark icon={row.typeCode === "todo" ? ListTodo : ClipboardList} label={row.typeName} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <p className={cn("line-clamp-2 text-base leading-6 text-text", row.unread ? "font-semibold" : "font-medium")}>
+          <p className={cn("line-clamp-2 text-row text-text", row.unread ? "font-semibold" : "font-medium")}>
+            {!closed ? <PriorityDot priority={row.priority} className="me-1.5 align-middle" /> : null}
             <bdi>{row.title}</bdi>
           </p>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-muted">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta text-text-muted">
             {row.dueAt ? (
               <Chip tone={overdue ? "danger" : "neutral"} className="h-5 px-1.5 text-xs">
                 <Clock className="size-3" strokeWidth={2} aria-hidden />

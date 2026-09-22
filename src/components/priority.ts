@@ -1,5 +1,3 @@
-import type { IconChipTone } from "@/components/IconChip";
-
 export type Priority = "low" | "normal" | "high" | "urgent";
 
 export const PRIORITY_LABELS: Record<Priority, string> = {
@@ -9,12 +7,7 @@ export const PRIORITY_LABELS: Record<Priority, string> = {
   urgent: "فوری",
 };
 
-/** Chip/Chip-tone for a priority: low = quiet neutral, normal = accent, high = warning, urgent = danger. */
+/** Chip tone for a priority (the detail facts): low = quiet neutral, normal = accent, high = warning, urgent = danger. In lists the priority is `PriorityDot` (`RowMark.tsx`). */
 export function priorityTone(priority: Priority): "neutral" | "primary" | "warning" | "danger" {
   return priority === "low" ? "neutral" : priority === "normal" ? "primary" : priority === "high" ? "warning" : "danger";
-}
-
-/** The icon-chip tint of an inbox row — the priority now lives in the chip, not in an edge stripe. */
-export function priorityChipTone(priority: Priority): IconChipTone {
-  return priority === "low" ? "muted" : priority === "normal" ? "primary" : priority === "high" ? "warning" : "danger";
 }

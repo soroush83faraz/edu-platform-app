@@ -1,6 +1,7 @@
 import { Building2, Eye, FileText, Globe, ListChecks, type LucideIcon, MapPin, Pencil, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import { ClayIcon } from "@/components/ClayIcon";
+import { RowMark } from "@/components/RowMark";
 import { PublicBackLink } from "@/components/shell/PublicBackLink";
 import { productName } from "@/lib/product";
 
@@ -81,7 +82,7 @@ function Section({ icon, title, children }: { icon: LucideIcon; title: string; c
   return (
     <section className="flex flex-col gap-3 rounded-card bg-surface p-4 shadow-1">
       <h3 className="flex items-center gap-3 text-base font-semibold text-text">
-        <ClayIcon icon={icon} size="sm" />
+        <RowMark icon={icon} />
         {title}
       </h3>
       <div className="flex flex-col gap-2 text-sm leading-7 text-text">{children}</div>

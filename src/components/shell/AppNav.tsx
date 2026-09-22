@@ -7,15 +7,10 @@ import { cn } from "cn";
 import { ClayIcon } from "@/components/ClayIcon";
 import { CountBadge } from "@/components/CountBadge";
 import { formatNumberFa } from "@/lib/format";
+import { ADMIN_SECTION_ICONS, type AdminNavItem } from "@/lib/admin/nav";
 import type { NavRole } from "@/modules/iam/can";
 import { useInboxSummaryContext } from "./InboxSummaryProvider";
 import type { InboxSummaryState } from "./useInboxSummary";
-
-/** One admin section under «مدیریت» in the rail (`adminNavFor`). */
-export interface AdminSubItem {
-  href: string;
-  labelFa: string;
-}
 
 interface Item {
   href: string;
@@ -51,13 +46,14 @@ const COLUMNS = 5;
  * same five with Home first and, inside /admin, nests the admin sections under «مدیریت». Both renderings read the
  * shell's single summary poller (`InboxSummaryProvider`), as do the Home strip and tile badges.
  */
-export function AppNav({ schoolName, productName, role, adminItems }: { schoolName: string; productName?: string; role: NavRole | null; adminItems?: readonly AdminSubItem[] }) {
+export function AppNav({ schoolName, productName, role, adminItems }: { schoolName: string; productName?: string; role: NavRole | null; adminItems?: readonly AdminNavItem[] }) {
   const pathname = usePathname();
   const summary = useInboxSummaryContext();
   const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
   const roleItem = ROLE_ITEMS[role ?? "none"];
-  // Inside /admin the rail opens the admin sections under «مدیریت» (phones keep the chip sub-nav in the content).
-  const nested = role === "admin" && adminItems && isCurrent("/admin") ? adminItems : null;
+  // Inside /admin the rail opens the admin sections under «مدیریت» (phones keep the pill row in the content); the
+  // «نمای کلی» entry is the parent itself, so it is not repeated.
+  const nested = role === "admin" && adminItems && isCurrent("/admin") ? adminItems.filter((s) => s.key !== "overview") : null;
   const bottomItems: Item[] = [INBOX, NOTIFICATIONS, HOME, roleItem, MORE];
   const sideItems: Item[] = [HOME, INBOX, NOTIFICATIONS, roleItem, MORE];
   // The bottom bar has ONE tinted cell that slides between the five columns; off-tab routes (/change-password) hide
@@ -101,22 +97,32 @@ export function AppNav({ schoolName, productName, role, adminItems }: { schoolNa
         <nav aria-label="پیمایش اصلی" className="flex-1 overflow-y-auto px-3 py-2">
           <ul className="flex flex-col gap-1">
             {sideItems.map((item) => (
-              <NavLink key={item.href} item={item} current={isCurrent(item.href)} count={item.badge?.(summary) ?? 0} layout="side">
+              <NavLink
+                key={item.href}
+                item={item}
+                // With the sections open, «مدیریت» itself is current only on the landing page.
+                current={nested && item.href === "/admin" ? pathname === "/admin" : isCurrent(item.href)}
+                count={item.badge?.(summary) ?? 0}
+                layout="side"
+              >
                 {nested && item.href === "/admin" ? (
-                  <ul className="mt-0.5 mb-1 ms-6.5 flex flex-col gap-0.5 border-s border-line ps-3">
+                  <ul className="mt-1 mb-1 ms-4 flex flex-col gap-0.5 border-s border-line ps-2">
                     {nested.map((sub) => {
-                      const current = sub.href === "/admin" ? pathname === "/admin" : isCurrent(sub.href);
+                      const current = isCurrent(sub.href);
+                      const Glyph = ADMIN_SECTION_ICONS[sub.key];
                       return (
                         <li key={sub.href}>
                           <Link
                             href={sub.href}
                             aria-current={current ? "page" : undefined}
                             className={cn(
-                              "pressable flex min-h-9 items-center rounded-lg px-2.5 text-sm",
+                              "pressable flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm",
                               current ? "bg-primary-50 font-semibold text-primary-700" : "text-text-muted hover:bg-surface-sunken hover:text-text",
                             )}
                           >
-                            {sub.labelFa}
+                            <Glyph className={cn("size-4.5 shrink-0", current ? "text-primary-700" : "text-text-faint")} strokeWidth={1.75} aria-hidden />
+                            <span className="flex-1 truncate">{sub.labelFa}</span>
+                            {sub.count !== undefined ? <span className={cn("tabular text-meta", current ? "text-primary-700" : "text-text-faint")}>{formatNumberFa(sub.count)}</span> : null}
                           </Link>
                         </li>
                       );
