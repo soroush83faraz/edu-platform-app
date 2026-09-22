@@ -1,4 +1,4 @@
-import { BookOpen, CalendarDays, ChevronLeft, School, UserCheck, Users } from "lucide-react";
+import { BookOpen, CalendarDays, School, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -12,7 +12,7 @@ import { WeekTimetable } from "@/components/timetable/WeekTimetable";
 import { formatNumberFa } from "@/lib/format";
 import { myClassQuery, myTimetableQuery } from "@/modules/academic/queries";
 
-export const metadata: Metadata = { title: "کلاس من | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "کلاس من" };
 
 /**
  * «کلاس من»: the class and school, then the weekly timetable — the whole week, today's column tinted, the
@@ -90,16 +90,6 @@ export default async function MyClassPage() {
               </div>
             </dl>
           </Card>
-
-          {/* The student's own attendance lives on /attendance (one home per destination); this is the door from their class. */}
-          <Link href="/attendance" className="surface-work surface-link flex min-h-14 items-center gap-3 px-3 py-2.5">
-            <RowMark icon={UserCheck} />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="text-row font-medium text-text">حضور و غیاب من</span>
-              <span className="truncate text-meta text-text-muted">حاضر، غایب، تأخیر و موجهِ این ماه</span>
-            </span>
-            <ChevronLeft className="size-4 shrink-0 text-text-faint" aria-hidden />
-          </Link>
 
           <section aria-labelledby="teachers-heading" className="flex flex-col gap-2.5">
             <h3 id="teachers-heading" className="px-1 text-section font-semibold text-text">
