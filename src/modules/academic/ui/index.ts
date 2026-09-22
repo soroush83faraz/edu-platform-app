@@ -1,2 +1,3 @@
 // UI components specific to the academic module.
-export {};
+export { TimetableEditor } from "./TimetableEditor";
+export { PeriodsEditor } from "./PeriodsEditor";

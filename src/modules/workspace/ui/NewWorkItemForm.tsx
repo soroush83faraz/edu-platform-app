@@ -20,6 +20,8 @@ import type { OfferingRow, PersonHit, RosterRow } from "../repo";
 export interface NewWorkItemFormProps {
   offerings: OfferingRow[];
   canPickPersons: boolean;
+  /** A درس to start on (the subject page's «کار جدید برای این درس»); must be one of `offerings`. */
+  initialOfferingId?: string;
 }
 
 type Mode = "class" | "persons" | "self";
@@ -28,7 +30,7 @@ const DAY = 86_400_000;
 /** Every field the form renders; a server error on anything else lands on the form-level line (never silent). */
 const RENDERED = ["title", "description", "priority", "dueDate", "dueTime", "recipients"];
 
-export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormProps) {
+export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }: NewWorkItemFormProps) {
   const router = useRouter();
   const ids = useId();
   const [pending, start] = useTransition();
@@ -43,7 +45,7 @@ export function NewWorkItemForm({ offerings, canPickPersons }: NewWorkItemFormPr
   const [dueTime, setDueTime] = useState("");
 
   // ---- class recipients
-  const [offeringId, setOfferingId] = useState(offerings[0]?.id ?? "");
+  const [offeringId, setOfferingId] = useState(initialOfferingId ?? offerings[0]?.id ?? "");
   const [roster, setRoster] = useState<RosterRow[] | null>(null);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [rosterFilter, setRosterFilter] = useState("");

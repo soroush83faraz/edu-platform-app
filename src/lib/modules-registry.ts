@@ -63,7 +63,7 @@ export const PHASES: Record<
   1: {
     title: "فاز ۱ — اکنون فعال",
     months: "شهریور ۱۴۰۵",
-    summary: "ورود امن، پنل من، اعلان‌ها و مدیریت ساختار مدرسه؛ نصب روی گوشی.",
+    summary: "ورود امن، پنل من، اعلان‌ها، برنامهٴ کلاسی و مدیریت ساختار مدرسه؛ نصب روی گوشی.",
   },
   2: {
     title: "فاز ۲",
@@ -113,6 +113,17 @@ export const MODULES: readonly ModuleEntry[] = [
     descriptionFa:
       "مدرسه، کلاس‌ها، دانش‌آموزان، همکاران، حساب‌ها و اعتبارنامه‌ها.",
   },
+  {
+    // Delivered in phase 1 (owner's ask): /timetable sends each hat to its own view — «کلاس من», «کلاس‌های من», the admin class pages.
+    code: "class-schedule",
+    labelFa: "برنامهٴ کلاسی",
+    href: "/timetable",
+    icon: CalendarDays,
+    permission: "academic.timetable.read",
+    phase: 1,
+    competitorTerm: "برنامهٴ کلاسی",
+    descriptionFa: "برنامهٴ هفتگی هر کلاس، زنگ به زنگ، برای دانش‌آموز و معلم؛ زنگ‌بندی و برنامه را مدیر تنظیم می‌کند.",
+  },
 
   {
     code: "homework",
@@ -144,16 +155,6 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "مهر",
     competitorTerm: "حضور و غیاب",
     descriptionFa: "ثبت روزانه در کلاس، گزارش به والدین.",
-  },
-  {
-    code: "class-schedule",
-    labelFa: "برنامهٴ کلاسی",
-    href: "/roadmap#phase-2",
-    icon: CalendarDays,
-    phase: 2,
-    month: "مهر",
-    competitorTerm: "برنامهٴ کلاسی",
-    descriptionFa: "برنامهٴ هفتگی هر کلاس، زنگ به زنگ، برای دانش‌آموز و معلم.",
   },
   {
     code: "discipline",
@@ -371,6 +372,14 @@ export const HOME_TILES: readonly HomeTile[] = [
     icon: School,
     role: "student",
   },
+  {
+    code: "timetable",
+    labelFa: "برنامهٴ کلاسی",
+    href: "/my-class",
+    icon: CalendarDays,
+    role: "student",
+    permission: "academic.timetable.read",
+  },
 
   {
     code: "classes",
@@ -378,6 +387,14 @@ export const HOME_TILES: readonly HomeTile[] = [
     href: "/classes",
     icon: Presentation,
     role: "teacher",
+  },
+  {
+    code: "teacher-timetable",
+    labelFa: "برنامهٴ کلاسی",
+    href: "/classes",
+    icon: CalendarDays,
+    role: "teacher",
+    permission: "academic.timetable.read",
   },
   {
     code: "given",
@@ -474,7 +491,6 @@ const HOME_UPCOMING_CODES = [
   "homework",
   "classbook",
   "attendance",
-  "class-schedule",
   "discipline",
   "guardians",
   "requests",

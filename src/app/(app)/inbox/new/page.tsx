@@ -9,7 +9,11 @@ import { NewWorkItemForm } from "@/modules/workspace/ui/NewWorkItemForm";
 
 export const metadata: Metadata = { title: "کار جدید | سامانهٴ مدرسه" };
 
-export default async function NewWorkItemPage() {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** `?offering=<id>` (from a subject page) pre-selects that درس in the class picker when the caller may send to it. */
+export default async function NewWorkItemPage({ searchParams }: { searchParams: Promise<{ offering?: string }> }) {
+  const sp = await searchParams;
   const options = await newWorkItemOptionsQuery();
   if (!options.ok) {
     if (options.code === "UNAUTHENTICATED") redirect("/login");
@@ -32,7 +36,11 @@ export default async function NewWorkItemPage() {
         پنل من
       </Link>
       <h2 className="text-xl font-bold text-text">کار جدید</h2>
-      <NewWorkItemForm offerings={options.data.offerings} canPickPersons={options.data.canPickPersons} />
+      <NewWorkItemForm
+        offerings={options.data.offerings}
+        canPickPersons={options.data.canPickPersons}
+        initialOfferingId={sp.offering && UUID_RE.test(sp.offering) && options.data.offerings.some((o) => o.id === sp.offering) ? sp.offering : undefined}
+      />
     </div>
   );
 }

@@ -164,6 +164,8 @@ export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolIn
     { name: "isDefault", labelFa: "مدرسهٴ پیش‌فرض سازمان", type: "toggle" },
   ],
   links: [{ href: "/admin/branches", labelFa: "شعبه‌ها" }],
+  /** The school's own page in phase 1 is its زنگ‌بندی (the timetable of every class rests on it). */
+  rowHref: (r) => `/admin/schools/${r.id}/periods`,
   async list(tx, _ctx, scope, opts) {
     const where = and(scopeSchoolIds(scope), faLike(school.name, opts.q));
     const rows = await tx

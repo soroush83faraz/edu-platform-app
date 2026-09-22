@@ -1,4 +1,4 @@
-import { BookOpen, Plus, Printer } from "lucide-react";
+import { BookOpen, CalendarDays, Plus, Printer } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -42,6 +42,12 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
               <Link href={`/admin/classes/${id}/offerings`}>
                 <BookOpen className="size-4" aria-hidden />
                 ارائهٴ درس‌ها ({formatNumberFa(offerings.length)})
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href={`/admin/classes/${id}/timetable`}>
+                <CalendarDays className="size-4" aria-hidden />
+                برنامهٴ هفتگی
               </Link>
             </Button>
             {canPrint ? (

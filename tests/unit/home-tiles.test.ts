@@ -30,8 +30,8 @@ describe("homeTilesFor", () => {
 
   it("the tile is the only organization-scoped one; a teacher without the admin hat sees no admin tile at all", () => {
     expect(HOME_TILES.filter((t) => t.adminScope).map((t) => t.code)).toEqual(["onboarding"]);
-    const tiles = codes(homeTilesFor(teacher, has(["workspace.work_item.create", "iam.admin.access"])));
-    expect(tiles).toEqual(["classes", "given", "new-item"]);
+    const tiles = codes(homeTilesFor(teacher, has(["workspace.work_item.create", "iam.admin.access", "academic.timetable.read"])));
+    expect(tiles).toEqual(["classes", "teacher-timetable", "given", "new-item"]);
   });
 });
 
