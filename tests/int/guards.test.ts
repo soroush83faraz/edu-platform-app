@@ -54,11 +54,11 @@ describe("updated_at is maintained by the server (app.set_updated_at)", () => {
             and c.table_schema in ('tenancy','iam','academic','workspace','notif','files','audit','config','integ')
           order by 1`,
       );
-      // 10 tenancy tables + iam: auth_identity, contact_point, person, role, role_assignment, staff_profile,
-      // student_profile, user_account (organization_membership, login_attempt, user_session, permission,
-      // role_permission have no updated_at) + academic 3 + workspace: work_item_type, work_item, inbox_entry
-      // + config: feature_flag, setting_value.
-      expect(res.rows).toHaveLength(18 + 3 + 3 + 2);
+      // 11 tenancy tables (school_period since 0015) + iam: auth_identity, contact_point, person, role,
+      // role_assignment, staff_profile, student_profile, user_account (organization_membership, login_attempt,
+      // user_session, permission, role_permission have no updated_at) + academic 4 (timetable_slot since 0015)
+      // + workspace: work_item_type, work_item, inbox_entry + config: feature_flag, setting_value.
+      expect(res.rows).toHaveLength(19 + 4 + 3 + 2);
       expect(res.rows.filter((r) => !r.has_trigger).map((r) => r.table)).toEqual([]);
     });
   });
