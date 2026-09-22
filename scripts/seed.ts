@@ -68,7 +68,7 @@ const SYSTEM_ROLE_CODES = SYSTEM_ROLES.map((r) => r.code);
 type Db = NodePgDatabase<typeof schema> & { $client: NodePgClient };
 
 
-const { organization, person, studentProfile, staffProfile, role, roleAssignment, classEnrollment, teacherAssignment } = schema;
+const { organization, person, studentProfile, staffProfile, role, roleAssignment, classEnrollment, teacherAssignment, classGroup, classOffering, workItem, workItemAssignee } = schema;
 
 // ---------------------------------------------------------------------------------------------------------------
 // catalog
@@ -116,6 +116,12 @@ export function demoId(key: string): string {
 
 /** +98912 3xx xxxx, unique per index. */
 export const demoPhone = (i: number) => `+98912${String(3000000 + i)}`;
+
+/** 2–4 sessions per week for a demo offering, deterministic from its id (like the pilot's `sessionsOf`). */
+export function demoSessionCount(offeringId: string): number {
+  const h = createHash("sha256").update(`edu-demo-sessions:${offeringId}`).digest();
+  return 2 + (h.readUInt32BE(0) % 3);
+}
 
 /** The demo staff member's primary school: first school-scoped role, else the school of the first taught offering. */
 export function demoStaffSchoolId(p: DemoPerson, schoolIds: Record<string, string>): string | null {
@@ -270,6 +276,7 @@ export interface DemoCounts extends Record<string, number> {
   classEnrollments: number;
   teacherAssignments: number;
   derivedTeacherRoles: number;
+  linkedTasks: number;
 }
 
 async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promise<{ logins: DemoLogin[]; counts: DemoCounts }> {
@@ -521,22 +528,84 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
       if (existing.length === 0) await assignTeacher(tx, svcCtx, { ...plan, role: "main", validFrom: demoStart });
     }
 
-    // ---- a small weekly timetable: every offering three sessions over the six default زنگ‌ها, no teacher twice at once ----
-    const teacherOfOffering = new Map(teacherPlans.map((t) => [t.classOfferingId, t.staffProfileId]));
-    const planClasses: PlanClass[] = Object.entries(classIds).map(([key, classGroupId]) => ({
-      key: classGroupId,
-      offerings: spec.offered.map((code) => {
-        const offeringId = offeringIds[`${key}:${code}`];
-        return { key: offeringId, teacherKey: teacherOfOffering.get(offeringId) ?? `none:${offeringId}`, sessions: 3 };
-      }),
-    }));
+    // ---- backfill: work items a teacher made for a whole class (created outside the seed, e.g. through the admin
+    // panel) but with no درس link get one — matched by exact assignee-roster equality against a class the creator
+    // teaches (their currently active enrollment), the same idea as the pilot seed's pre-0015 backfill. Idempotent:
+    // only rows with class_offering_id still null are examined, so a second run touches nothing. ----
+    const unlinkedTasks = await tx.select({ id: workItem.id, createdByPersonId: workItem.createdByPersonId }).from(workItem).where(and(eq(workItem.organizationId, orgId), isNull(workItem.classOfferingId)));
+    if (unlinkedTasks.length > 0) {
+      const teacherOfferings = await tx
+        .select({ personId: person.id, offeringId: teacherAssignment.classOfferingId, classGroupId: classOffering.classGroupId })
+        .from(teacherAssignment)
+        .innerJoin(staffProfile, eq(staffProfile.id, teacherAssignment.staffProfileId))
+        .innerJoin(person, eq(person.id, staffProfile.personId))
+        .innerJoin(classOffering, eq(classOffering.id, teacherAssignment.classOfferingId))
+        .where(and(eq(teacherAssignment.role, "main"), isNull(teacherAssignment.validTo)));
+      const offeringsByCreator = new Map<string, Array<{ offeringId: string; classGroupId: string }>>();
+      for (const r of teacherOfferings) offeringsByCreator.set(r.personId, [...(offeringsByCreator.get(r.personId) ?? []), { offeringId: r.offeringId, classGroupId: r.classGroupId }]);
+      const rosterCache = new Map<string, Set<string>>();
+      const activeRoster = async (classGroupId: string): Promise<Set<string>> => {
+        const hit = rosterCache.get(classGroupId);
+        if (hit) return hit;
+        const rows = await tx
+          .select({ personId: studentProfile.personId })
+          .from(classEnrollment)
+          .innerJoin(studentProfile, eq(studentProfile.id, classEnrollment.studentProfileId))
+          .where(and(eq(classEnrollment.classGroupId, classGroupId), eq(classEnrollment.status, "active")));
+        const set = new Set(rows.map((r) => r.personId));
+        rosterCache.set(classGroupId, set);
+        return set;
+      };
+      for (const task of unlinkedTasks) {
+        const offerings = offeringsByCreator.get(task.createdByPersonId);
+        if (!offerings || offerings.length === 0) continue;
+        const assignees = await tx.select({ personId: workItemAssignee.personId }).from(workItemAssignee).where(and(eq(workItemAssignee.workItemId, task.id), eq(workItemAssignee.role, "assignee")));
+        if (assignees.length === 0) continue;
+        const assigneeSet = new Set(assignees.map((a) => a.personId));
+        let match: string | null = null;
+        for (const o of offerings) {
+          const roster = await activeRoster(o.classGroupId);
+          if (roster.size === 0) continue;
+          if (roster.size === assigneeSet.size && [...roster].every((id) => assigneeSet.has(id))) {
+            match = o.offeringId;
+            break;
+          }
+        }
+        if (match) await tx.update(workItem).set({ classOfferingId: match }).where(and(eq(workItem.id, task.id), isNull(workItem.classOfferingId)));
+      }
+    }
+
+    // ---- weekly timetable: EVERY active class/offering of the organization — the spec's own classes plus any
+    // added later by hand through the admin panel (e.g. classes created after this seed spec was written) — 2–4
+    // sessions per offering (`demoSessionCount`, hashed like the pilot's `sessionsOf`), no teacher twice at once,
+    // through the service as the org admin; idempotent (skip cells that already match, clear the rest). ----
+    const offeringRows = await tx
+      .select({ classGroupId: classOffering.classGroupId, offeringId: classOffering.id, teacherStaffProfileId: teacherAssignment.staffProfileId })
+      .from(classOffering)
+      .innerJoin(classGroup, eq(classGroup.id, classOffering.classGroupId))
+      .leftJoin(teacherAssignment, and(eq(teacherAssignment.classOfferingId, classOffering.id), eq(teacherAssignment.role, "main"), isNull(teacherAssignment.validTo)))
+      .where(and(eq(classGroup.organizationId, orgId), eq(classGroup.status, "active"), eq(classOffering.status, "active")));
+    const byClass = new Map<string, PlanClass["offerings"]>();
+    for (const r of offeringRows) {
+      const list = byClass.get(r.classGroupId) ?? [];
+      list.push({ key: r.offeringId, teacherKey: r.teacherStaffProfileId ?? `none:${r.offeringId}`, sessions: demoSessionCount(r.offeringId) });
+      byClass.set(r.classGroupId, list);
+    }
+    const planClasses: PlanClass[] = [...byClass.entries()].map(([classGroupId, offerings]) => ({ key: classGroupId, offerings }));
     const plan = planTimetables(planClasses, SCHOOL_WEEKDAYS, DEFAULT_PERIODS.map((p) => p.periodNo));
     for (const cls of planClasses) {
       const existing = await listClassSlots(tx, cls.key);
-      for (const slot of plan.slots.get(cls.key) ?? []) {
+      const planned = plan.slots.get(cls.key) ?? [];
+      for (const slot of planned) {
         const current = existing.find((e) => e.weekday === slot.weekday && e.periodNo === slot.periodNo);
         if (current?.offeringId === slot.offeringKey) continue;
         await setTimetableSlot(tx, ctx, { classGroupId: cls.key, weekday: slot.weekday, periodNo: slot.periodNo, classOfferingId: slot.offeringKey });
+      }
+      // Cells the plan no longer uses (a re-planned seed, or the class lost an offering) are cleared.
+      for (const e of existing) {
+        if (!planned.some((p) => p.weekday === e.weekday && p.periodNo === e.periodNo)) {
+          await setTimetableSlot(tx, ctx, { classGroupId: cls.key, weekday: e.weekday, periodNo: e.periodNo, classOfferingId: null });
+        }
       }
     }
 
@@ -554,6 +623,7 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
       teacherAssignments: await count("academic.teacher_assignment", "where valid_to is null"),
       derivedTeacherRoles: await count("iam.role_assignment", "where source_type = 'teacher_assignment' and revoked_at is null"),
       timetableSlots: await count("academic.timetable_slot"),
+      linkedTasks: await count("workspace.work_item", "where class_offering_id is not null"),
     };
     return { logins, counts };
   });
@@ -630,7 +700,7 @@ async function main(): Promise<void> {
       console.log(`[seed] demo: ${logins.length} accounts in 2 organizations`);
       for (const [slug, c] of Object.entries(counts)) {
         console.log(
-          `[seed] demo ${slug}: ${c.school} schools, ${c.classGroup} classes, ${c.classOffering} offerings, ${c.persons} persons, ${c.accounts} accounts, ${c.roleAssignments} role assignments, ${c.schoolEnrollments} school enrollments, ${c.classEnrollments} active class enrollments, ${c.teacherAssignments} teacher assignments, ${c.derivedTeacherRoles} derived teacher roles, ${c.timetableSlots} timetable slots`,
+          `[seed] demo ${slug}: ${c.school} schools, ${c.classGroup} classes, ${c.classOffering} offerings, ${c.persons} persons, ${c.accounts} accounts, ${c.roleAssignments} role assignments, ${c.schoolEnrollments} school enrollments, ${c.classEnrollments} active class enrollments, ${c.teacherAssignments} teacher assignments, ${c.derivedTeacherRoles} derived teacher roles, ${c.timetableSlots} timetable slots, ${c.linkedTasks} tasks linked to a درس`,
         );
       }
       printLogins(logins, password, generated, process.env.SEED_DEMO_NO_FORCE !== "1");

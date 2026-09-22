@@ -13,7 +13,7 @@ import { PERMISSIONS } from "@/modules/iam/permissions";
 import { buildSeedCatalog } from "../../scripts/build-seed-catalog";
 import { formatCatalogSummary } from "../../scripts/catalog";
 import { runMigrations } from "../../scripts/migrate";
-import { NOTIFICATION_TYPES, SYSTEM_ROLES, SYSTEM_WORK_ITEM_TYPES, catalogCounts, seedCatalog } from "../../scripts/seed";
+import { DANESH, NOTIFICATION_TYPES, SYSTEM_ROLES, SYSTEM_WORK_ITEM_TYPES, catalogCounts, demoId, seedCatalog, seedDemo } from "../../scripts/seed";
 import { OWNER_URL } from "./env";
 import { dropAppSchemas, seed } from "./global-setup";
 import * as f from "./fixtures";
@@ -86,6 +86,49 @@ describe("seed --catalog", () => {
       const refused = spawnSync(process.execPath, [out, "--test"], { encoding: "utf8", env: { ...process.env, MIGRATION_DATABASE_URL_TEST: OWNER_URL.replace(/_test(\?|$)/, "$1") } });
       expect(refused.status).toBe(1);
       expect(refused.stderr).toContain("_test");
+    } finally {
+      await pool.end();
+    }
+  });
+});
+
+describe("seed --demo (weekly timetable)", () => {
+  afterAll(async () => {
+    await dropAppSchemas();
+    await runMigrations({ test: true, connectionString: OWNER_URL });
+    await seed();
+  });
+
+  it("every demo class ends up with a timetable, and re-seeding changes nothing", async () => {
+    const pool = new Pool({ connectionString: OWNER_URL, max: 1 });
+    try {
+      const db = drizzle({ client: pool, schema });
+      const roleIds = await seedCatalog(db);
+      process.env.SEED_DEMO_PASSWORD = "Demo-1405-pass";
+      const first = await seedDemo(db, roleIds);
+      const danesh = first.counts[DANESH.slug];
+      const noor = first.counts["noor-demo"];
+      expect(danesh.timetableSlots).toBeGreaterThan(0);
+      expect(noor.timetableSlots).toBeGreaterThan(0);
+
+      // Every active class of both demo organizations — not just the ones a spec names — has at least one slot.
+      const client = await pool.connect();
+      try {
+        for (const orgId of [demoId(`org:${DANESH.key}`), demoId("org:noor")]) {
+          await client.query("select set_config('app.current_org_id', $1, false)", [orgId]);
+          const classes = await client.query<{ id: string }>("select id from tenancy.class_group where organization_id = $1 and status = 'active'", [orgId]);
+          expect(classes.rows.length).toBeGreaterThan(0);
+          for (const { id } of classes.rows) {
+            const slots = await client.query<{ n: string }>("select count(*)::int as n from academic.timetable_slot where class_group_id = $1", [id]);
+            expect(Number(slots.rows[0].n)).toBeGreaterThan(0);
+          }
+        }
+      } finally {
+        client.release();
+      }
+
+      const second = await seedDemo(db, roleIds);
+      expect(second.counts).toEqual(first.counts);
     } finally {
       await pool.end();
     }
