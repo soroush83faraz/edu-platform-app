@@ -58,7 +58,7 @@ export default async function SchoolHubPage({ params }: { params: Promise<{ id: 
             ))}
           </span>
         }
-        back={{ href: "/admin/schools", label: "مدرسه‌ها" }}
+        back={{ href: "/admin/schools", label: d.backLabelFa }}
         actions={
           d.can.school ? (
             <ResourceForm resource={schoolResource.key} labelFa="مشخصات" fields={schoolResource.formFields} options={{}} mode="edit" id={d.school.id} initial={{ name: d.school.name, genderPolicy: d.school.genderPolicy, isDefault: d.school.isDefault }} />

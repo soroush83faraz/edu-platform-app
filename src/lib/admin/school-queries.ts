@@ -11,6 +11,7 @@ import { assertSchoolInScope, getAdminScope } from "@/modules/iam/service";
 import { findSchoolById, listSchoolPeriods, listTerms, type SchoolPeriodRow } from "@/modules/tenancy/repo";
 import { academicYear, branch, classGroup, classOffering } from "@/modules/tenancy/schema";
 import { resourceOpGate, type AnyResourceDef, type ResourceOp } from "./defineResource";
+import { schoolsLabelFa } from "./nav";
 import { branchResource, classOptions, classResource, listClassRows, schoolResource, yearResource, type ClassRow } from "./resources";
 
 export const SchoolIdInput = z.object({ schoolId: z.uuid("شناسه نامعتبر است.") }).strict();
@@ -39,6 +40,8 @@ export interface SchoolHubData {
   options: { class: Record<string, Array<{ value: string; label: string; group?: string }>> };
   can: { school: boolean; structure: boolean; classes: boolean };
   isOrgAdmin: boolean;
+  /** «مدرسه» / «مدرسه‌ها» — what the list this page came from is called for THIS caller (`schoolsLabelFa`). */
+  backLabelFa: string;
 }
 
 /**
@@ -107,6 +110,7 @@ export const schoolHubQuery = defineQuery<SchoolHubData, typeof SchoolIdInput>(
       options: { class: await classOptions(tx, { kind: "school", schoolIds: [sch.id] }) },
       can: { school: gate(schoolResource, "update"), structure: gate(branchResource, "create") && gate(yearResource, "create"), classes: gate(classResource, "create") },
       isOrgAdmin: scope.kind === "organization",
+      backLabelFa: schoolsLabelFa(scope),
     };
   },
 );
