@@ -40,7 +40,10 @@ export function AdminOverview({ data, items, children }: { data: AdminOverviewDa
     students: c.students,
     staff: c.staff,
   };
-  const sections = items.filter((s) => s.key !== "overview");
+  // «نمای کلی» is this page, and «راه‌اندازی» is the setup panel the page already renders above this list
+  // (`OnboardingProgress`, organization admin only) — neither gets a row: one home per destination
+  // (docs/decisions.md). The rail and the phone pill row keep both entries, they are the navigation.
+  const sections = items.filter((s) => s.key !== "overview" && s.key !== "onboarding");
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title="مدیریت مدرسه" description={data.scope.kind === "organization" ? "دامنهٴ شما: همهٴ مدرسه‌های سازمان." : data.scope.schoolIds.length === 1 ? "دامنهٴ شما: مدرسهٴ خودتان." : `دامنهٴ شما: ${formatNumberFa(data.scope.schoolIds.length)} مدرسه.`} />

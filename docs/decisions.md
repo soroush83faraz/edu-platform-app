@@ -390,3 +390,42 @@ rail under «مدیریت»), and Home carried the school counters that /admin c
 - **Verified.** `pnpm typecheck`, `pnpm lint`, `pnpm test:unit` (18 files / 159 tests) green; `impeccable detect` over the six changed UI files: no findings. Dev server as the ALK teacher امین ظفری: at 1280 px the popover measures 376 px with every row on 477→829, the priority list opens at the trigger's width with `animation-duration: 0.17s` and `--tw-enter-scale: 0.98`, ArrowDown+Enter picks «بالا» and returns focus to the trigger, «ف» jumps to فوری; the drums commit one at a time (hour 14→11, minute 30→25, PageDown 11→16) and the hidden `dueTime` tracks them («16:25»); «ارسال تکلیف به ۲۵ نفر» created «آزمایش چرخ ساعت و اولویت» with «فوری» and «چهارشنبه ۱ مهر ۱۴۰۵، ۱۶:۲۵», then «تمدید» → «هفتهٴ بعد» → «۷ روز دیگر — سه‌شنبه ۷ مهر ۱۴۰۵، ۱۶:۲۵». At 390 px the sheet's calendar is centred with equal 16 px gutters and the priority popover fits under the trigger without a sheet.
 - **Known limit.** The two drums read `hour`/`minute` from the same render closure, so if both settled inside one tick the second commit would overwrite the first. One pointer can only drag one drum, and the keyboard moves one at a time, so this is only reachable by scripting both at once — left as is rather than adding a ref-sync dance.
 - **Deferred.** The wheels need JS (so does the rest of the form — it posts through a Server Action from an `onSubmit` handler), so no `noscript` selects were kept: without JS the page never submitted anyway and dead controls would have been worse than none.
+
+## 2026-09-22 — IA round 3 follow-ups: school setup lives in /admin, the bell schedule is confirmable, «اعلان‌ها» leaves the nav
+
+- **Why.** Three owner/QA items after the «one home per destination» round: `/more` still carried a «راه‌اندازی مدرسه»
+  row (flagged as deferred in the IA entry above), a new school's six default زنگ‌ها could not be accepted as they
+  were, and the bell in the navigation was «too much for the sidebar».
+- **«راه‌اندازی مدرسه» is an /admin destination, nowhere else.** The `/more` row is gone (`src/app/(app)/more/page.tsx`
+  keeps only the account rows: تغییر رمز · راهنما · حریم خصوصی · نقشهٴ راه). Inside the hub the entry is the
+  organization admin's `orgOnly` nav section — rail and phone pill row, `adminSectionsFor` — plus the setup PANEL on
+  the /admin landing (`OnboardingProgress`). The landing's section LIST now drops «راه‌اندازی» exactly as it already
+  dropped «نمای کلی»: the panel above it is that page's one door, so the page no longer offered two. School-scoped
+  admins (principal, vice) see nothing of it anywhere. New `tests/unit/admin-overview.test.ts` renders the landing
+  and asserts `/admin/onboarding` appears exactly once for the organization admin and never for a principal.
+- **The default bell schedule can be confirmed as-is.** `PeriodsEditor`'s primary action was
+  `disabled={pending || !dirty}`, so the operator whose day already matches the six seeded defaults had to fake an
+  edit to save anything. The action is now always enabled and only its WORD follows `dirty` — «تأیید زنگ‌بندی» when
+  nothing was touched, «ذخیرهٴ زنگ‌بندی» once a row changed — and both post the same rows through the same
+  `setSchoolPeriodsAction`. A helper line above the table says what the confirmation means. Validation (order,
+  overlap, start < end, ≤ 12) and the permission (`tenancy.structure.write`: org admin + principal, vice read-only)
+  are untouched; the onboarding checklist has no زنگ‌بندی step to satisfy (it derives from the admin counters), so
+  the bug was purely the disabled button. `tests/int/timetable.test.ts` gained «confirming with NO changes
+  succeeds»: the six rows keep their ids and times, and the confirmation is audited like any other replace.
+- **«اعلان‌ها» left the navigation; Home carries it.** `AppNav` became four cells — خانه · پنل من · role item ·
+  بیشتر — in the SAME order in the bottom bar and the rail. With four cells there is no true middle, so «خانه» went
+  first (start/right) rather than sitting one off-centre: the bar then read as a sequence that starts at home, and
+  it matched the rail's existing order. It kept its single cue (the bare 28 px glyph, `primary-600` while current)
+  and the sliding `primary-50` cell spanned a quarter of the bar. **The neighbour drift went with the fifth cell**:
+  it eased four neighbours away from a CENTRE cell, and a first cell has no neighbours to balance — the motion read
+  as an arbitrary nudge sideways, so `--nav-drift` was removed rather than re-tuned. *(Superseded the same day by
+  round 4 — see its own entry: «پنل من» left the nav too, three cells put «خانه» back in the middle, and the drift
+  came back with it. The removal of «اعلان‌ها» and Home's bell below are unchanged by that round.)*
+- **The one door is Home's bell** (`src/components/home/NotificationsBell.tsx`): a 44 px outline bell carrying the
+  unread count on the same yellow `CountBadge` («۹۹+» cap), quiet and pill-less at zero, reading the shell's single
+  summary poller. Home has two greeting rows, one per breakpoint, so the bell has two tones and renders in exactly
+  one of them: `hero` in the phone `SchoolBanner`'s start corner, the default as the desktop `PageHeader` action.
+  (Round 4 put the کارتابل door beside it in both places, on the same two-tone pattern.)
+  A grid tile was the alternative and was not taken — the badge belongs beside the greeting, and a tile would have
+  been a second personal door to a page the header already opens. `/notifications`, the poller and the
+  `document.title` mirror are unchanged.
