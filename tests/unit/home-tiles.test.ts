@@ -93,5 +93,20 @@ describe("product map", () => {
     expect(HOME_UPCOMING.map((m) => m.code)).not.toContain("class-schedule");
     expect(HOME_UPCOMING.every((m) => m.phase > 1)).toBe(true);
   });
+
+  it("«حضور و غیاب» is delivered too, and its ONE tile serves both the student and the teacher", () => {
+    expect(MODULES.find((m) => m.code === "attendance")?.phase).toBe(1);
+    expect(MODULES.find((m) => m.code === "attendance")?.href).toBe("/attendance");
+    expect(HOME_UPCOMING.map((m) => m.code)).not.toContain("attendance");
+    // One destination, one tile (the IA rule) — even though two hats reach it.
+    expect(HOME_TILES.filter((t) => t.href === "/attendance")).toHaveLength(1);
+    const withAttendance: Permission[] = [...ADMIN_PERMS, "academic.attendance.read"];
+    expect(codes(homeTilesFor(student, has(withAttendance)))).toContain("attendance");
+    expect(codes(homeTilesFor(teacher, has(withAttendance)))).toContain("attendance");
+    // An admin who is neither reads the report in the hub, so no tile.
+    expect(codes(homeTilesFor(orgAdmin, has(withAttendance)))).not.toContain("attendance");
+    // Without the permission (a role that never sees attendance) the tile disappears.
+    expect(codes(homeTilesFor(student, has(ADMIN_PERMS)))).not.toContain("attendance");
+  });
 });
 

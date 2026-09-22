@@ -57,13 +57,13 @@ export const PHASES: Record<
   1: {
     title: "فاز ۱ — اکنون فعال",
     months: "شهریور ۱۴۰۵",
-    summary: "ورود امن، پنل من، اعلان‌ها، برنامهٴ کلاسی و مدیریت ساختار مدرسه؛ نصب روی گوشی.",
+    summary: "ورود امن، پنل من، اعلان‌ها، برنامهٴ کلاسی، حضور و غیاب و مدیریت ساختار مدرسه؛ نصب روی گوشی.",
   },
   2: {
     title: "فاز ۲",
     months: "مهر تا آبان ۱۴۰۵",
     summary:
-      "کلاس‌داری روزانه: تکلیف، حضور و غیاب، دفتر کلاسی، والدین و گزارش‌ها.",
+      "دفتر کلاسی، موارد انضباطی، والدین، تابلو اعلانات و گزارش‌ها.",
   },
   3: {
     title: "فاز ۳",
@@ -131,6 +131,18 @@ export const MODULES: readonly ModuleEntry[] = [
     descriptionFa: "تکلیف برای کلاس یا نفر، با مهلت و اولویت؛ دانش‌آموز انجام‌شدن را علامت می‌زند و دبیر پیشرفت را می‌بیند. فایل و نمره در فازهای بعد.",
   },
   {
+    // Delivered in phase 1 (owner's ask): the teacher takes the roll call زنگ by زنگ, the student sees their own
+    // month, the admin reads the class report — `/attendance` sends each hat to its own view.
+    code: "attendance",
+    labelFa: "حضور و غیاب",
+    href: "/attendance",
+    icon: UserCheck,
+    permission: "academic.attendance.read",
+    phase: 1,
+    competitorTerm: "حضور و غیاب",
+    descriptionFa: "ثبت زنگ به زنگ در کلاس، «حضور و غیاب من» برای دانش‌آموز، و گزارش درصد غیبت برای مدیر. اطلاع به والدین در فاز بعد.",
+  },
+  {
     code: "classbook",
     labelFa: "دفتر کلاسی",
     href: "/roadmap#phase-2",
@@ -139,16 +151,6 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "مهر",
     competitorTerm: "دفتر کلاسی",
     descriptionFa: "نمرهٴ مستمر و یادداشت جلسه به جلسه برای هر درس.",
-  },
-  {
-    code: "attendance",
-    labelFa: "حضور و غیاب",
-    href: "/roadmap#phase-2",
-    icon: UserCheck,
-    phase: 2,
-    month: "مهر",
-    competitorTerm: "حضور و غیاب",
-    descriptionFa: "ثبت روزانه در کلاس، گزارش به والدین.",
   },
   {
     code: "discipline",
@@ -323,7 +325,12 @@ export interface HomeTile {
   icon: LucideIcon;
   /** The clay mark's shade — every live tile is the one blue; only «کار جدید» (the action) is `yellow`. */
   shade?: ClayShade;
-  role: TileRole;
+  /**
+   * Who sees the tile. A LIST when one destination genuinely belongs to two hats («حضور و غیاب» is the same page
+   * for the teacher who takes it and the student who reads it) — the IA rule is one home per DESTINATION, so such
+   * a place gets ONE tile, not one per role.
+   */
+  role: TileRole | readonly TileRole[];
   /** Shown only when the person holds it at any scope (the hat alone is not enough for admin tiles). */
   permission?: Permission;
   /**
@@ -380,6 +387,17 @@ export const HOME_TILES: readonly HomeTile[] = [
   },
 
   {
+    // One destination for two hats: the teacher takes today's roll call, the student reads their own month.
+    // /admin/attendance is the ADMIN's door and lives on /admin — the hub lists it, Home never does.
+    code: "attendance",
+    labelFa: "حضور و غیاب",
+    href: "/attendance",
+    icon: UserCheck,
+    role: ["student", "teacher"],
+    permission: "academic.attendance.read",
+  },
+
+  {
     code: "admin",
     labelFa: "مدیریت",
     href: "/admin",
@@ -397,10 +415,11 @@ export function homeTilesFor(
   hats: TileHats,
   has: (p: Permission) => boolean,
 ): HomeTile[] {
-  const wears = (role: TileRole) =>
+  const wearsOne = (role: TileRole) =>
     (role === "student" && hats.isStudent) ||
     (role === "teacher" && hats.isTeacher) ||
     (role === "admin" && hats.isAdmin);
+  const wears = (role: HomeTile["role"]) => (Array.isArray(role) ? role.some(wearsOne) : wearsOne(role as TileRole));
   return HOME_TILES.filter(
     (t) =>
       wears(t.role) &&
@@ -412,7 +431,6 @@ export function homeTilesFor(
 /** The muted «به‌زودی» tiles: the owner's list of the competitor's modules we do not have yet, in phase/month order. */
 const HOME_UPCOMING_CODES = [
   "classbook",
-  "attendance",
   "discipline",
   "guardians",
   "requests",

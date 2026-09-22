@@ -1,9 +1,9 @@
 // The admin sections — one list, pure (no server imports), so the rail (client), the phone pill row (client), the
 // admin layout and the tests all read the same order and glyphs. Ordered by how often an admin opens each
 // (owner): people and classes first, structure next, roles and setup last. «نمای کلی» is the /admin landing.
-import { BookOpen, CalendarDays, GraduationCap, Layers, LayoutGrid, type LucideIcon, Rocket, School, ShieldCheck, Users, UsersRound } from "lucide-react";
+import { BookOpen, CalendarDays, GraduationCap, Layers, LayoutGrid, type LucideIcon, Rocket, School, ShieldCheck, UserCheck, Users, UsersRound } from "lucide-react";
 
-export type AdminSectionKey = "overview" | "students" | "staff" | "classes" | "schools" | "years" | "grades" | "subjects" | "levels" | "roles" | "onboarding";
+export type AdminSectionKey = "overview" | "students" | "staff" | "classes" | "attendance" | "schools" | "years" | "grades" | "subjects" | "levels" | "roles" | "onboarding";
 
 export interface AdminSection {
   key: AdminSectionKey;
@@ -19,6 +19,7 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
   { key: "students", href: "/admin/students", labelFa: "دانش‌آموزان", icon: GraduationCap },
   { key: "staff", href: "/admin/staff", labelFa: "کارکنان", icon: UsersRound },
   { key: "classes", href: "/admin/classes", labelFa: "کلاس‌ها", icon: Users },
+  { key: "attendance", href: "/admin/attendance", labelFa: "حضور و غیاب", icon: UserCheck },
   { key: "schools", href: "/admin/schools", labelFa: "مدرسه‌ها", icon: School },
   { key: "years", href: "/admin/years", labelFa: "سال تحصیلی", icon: CalendarDays },
   { key: "grades", href: "/admin/grades", labelFa: "پایه‌ها", icon: Layers },

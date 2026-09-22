@@ -1,4 +1,4 @@
-import { CalendarDays, ChevronLeft, Plus, Presentation } from "lucide-react";
+import { CalendarDays, ChevronLeft, Plus, Presentation, UserCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -46,14 +46,25 @@ export default async function ClassesPage() {
         title="کلاس‌های من"
         description={offerings.length > 0 ? `${formatNumberFa(offerings.length)} درس در این سال` : "درسی به شما سپرده نشده"}
         actions={
-          canCreate ? (
-            <Button asChild>
-              <Link href="/inbox/new">
-                <Plus aria-hidden />
-                تکلیف جدید
-              </Link>
-            </Button>
-          ) : undefined
+          <>
+            {/* The roll call of today's زنگ‌ها lives on /attendance; this is the teacher's door into it. */}
+            {offerings.length > 0 ? (
+              <Button asChild variant="outline">
+                <Link href="/attendance">
+                  <UserCheck aria-hidden />
+                  حضور و غیاب
+                </Link>
+              </Button>
+            ) : null}
+            {canCreate ? (
+              <Button asChild>
+                <Link href="/inbox/new">
+                  <Plus aria-hidden />
+                  تکلیف جدید
+                </Link>
+              </Button>
+            ) : null}
+          </>
         }
       />
 

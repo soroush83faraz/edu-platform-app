@@ -19,7 +19,7 @@ describe("schoolsLabelFa", () => {
 describe("adminSectionsFor", () => {
   it("orders people and classes first; only the organization admin gets «راه‌اندازی»", () => {
     const org = adminSectionsFor({ org: true, singleSchool: false });
-    expect(org.map((s) => s.key)).toEqual(["overview", "students", "staff", "classes", "schools", "years", "grades", "subjects", "levels", "roles", "onboarding"]);
+    expect(org.map((s) => s.key)).toEqual(["overview", "students", "staff", "classes", "attendance", "schools", "years", "grades", "subjects", "levels", "roles", "onboarding"]);
     const school = adminSectionsFor({ org: false, singleSchool: true });
     expect(school.some((s) => s.key === "onboarding")).toBe(false);
     expect(school.find((s) => s.key === "schools")?.labelFa).toBe("مدرسه");
