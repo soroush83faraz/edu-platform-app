@@ -4,7 +4,6 @@ import { Bell, BookOpen, CircleHelp, Ellipsis, House, Inbox, type LucideIcon, Pr
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "cn";
-import { ClayIcon } from "@/components/ClayIcon";
 import { CountBadge } from "@/components/CountBadge";
 import { formatNumberFa } from "@/lib/format";
 import { ADMIN_SECTION_ICONS, type AdminNavItem } from "@/lib/admin/nav";
@@ -17,7 +16,7 @@ interface Item {
   label: string;
   icon: LucideIcon;
   badge?: (s: InboxSummaryState) => number;
-  /** The primary item: its glyph sits in a small filled persian-blue squircle (the 36 px `sm` clay mark) instead of bare. */
+  /** The primary item: a bigger bare glyph (28 px) — no container of its own. */
   primary?: boolean;
 }
 
@@ -35,16 +34,24 @@ const ROLE_ITEMS: Record<NavRole | "none", Item> = {
 };
 
 const COLUMNS = 5;
+/** `bottomItems` index of «خانه» — the middle column the other four ease away from. */
+const HOME_INDEX = 2;
+/** Per-column drift while Home is the current tab: inner pair 2 px, outer pair 4 px, Home itself still. */
+const DRIFT = ["-4px", "-2px", "0px", "2px", "4px"];
 
 /**
  * The one navigation component: bottom bar on phones, start-side rail from `md:`. Five items — پنل من · اعلان‌ها ·
- * خانه · a role item · بیشتر (RTL: the first is at the start/right). «خانه» sits in the middle at the same level and
- * size as the rest; it reads as the primary item only by its glyph sitting in a small filled persian-blue squircle
- * (owner's rule: no raised tab, no notch, no lift). The current item is a WHOLE tinted cell — a `primary-50`
- * rounded-lg block inset 4 px, glyph and label in `primary-700` — and the bottom bar slides ONE such cell between its
- * five columns; counts are yellow pills. The rail (264 px from `lg:`) opens with the product mark and name, lists the
- * same five with Home first and, inside /admin, nests the admin sections under «مدیریت». Both renderings read the
- * shell's single summary poller (`InboxSummaryProvider`), as do the Home strip and tile badges.
+ * خانه · a role item · بیشتر (RTL: the first is at the start/right). «خانه» sits in the middle at the same level as
+ * the rest — no container, no raised tab, no notch, no lift (owner's rule): it reads as the primary item by ONE
+ * thing, a bigger bare glyph (28 px against the others' 20 px), `primary-600` while it is the current tab. The
+ * current item is a WHOLE tinted cell — a `primary-50` rounded-lg block inset 4 px, glyph and label in
+ * `primary-700` — and the bottom bar slides ONE such cell between its five columns; counts are yellow pills.
+ * While Home IS the current tab its four neighbours ease outwards from it and settle back when another tab takes
+ * over: `--nav-drift` on the relatively-positioned link, read by the logical `start-*` utility, so nothing reflows
+ * and RTL needs no sign flip; `motion-reduce` pins every cell at rest. The rail (264 px from `lg:`) opens with the
+ * product mark and name, lists the same five with Home first — no drift there: the column is vertical and Home is
+ * not its middle — and, inside /admin, nests the admin sections under «مدیریت». Both renderings read the shell's
+ * single summary poller (`InboxSummaryProvider`), as do the Home strip and tile badges.
  */
 export function AppNav({ schoolName, productName, role, adminItems }: { schoolName: string; productName?: string; role: NavRole | null; adminItems?: readonly AdminNavItem[] }) {
   const pathname = usePathname();
@@ -52,13 +59,14 @@ export function AppNav({ schoolName, productName, role, adminItems }: { schoolNa
   const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
   const roleItem = ROLE_ITEMS[role ?? "none"];
   // Inside /admin the rail opens the admin sections under «مدیریت» (phones keep the pill row in the content); the
-  // «نمای کلی» entry is the parent itself, so it is not repeated.
-  const nested = role === "admin" && adminItems && isCurrent("/admin") ? adminItems.filter((s) => s.key !== "overview") : null;
+  // sections never contain /admin itself, so the parent is not repeated (`adminNavItems`).
+  const nested = role === "admin" && adminItems && isCurrent("/admin") ? adminItems : null;
   const bottomItems: Item[] = [INBOX, NOTIFICATIONS, HOME, roleItem, MORE];
   const sideItems: Item[] = [HOME, INBOX, NOTIFICATIONS, roleItem, MORE];
   // The bottom bar has ONE tinted cell that slides between the five columns; off-tab routes (/change-password) hide
   // it. While hidden it only fades, so it never slides across the bar when it comes back.
   const activeIndex = bottomItems.findIndex((item) => isCurrent(item.href));
+  const homeIsCurrent = activeIndex === HOME_INDEX;
 
   return (
     <>
@@ -74,8 +82,15 @@ export function AppNav({ schoolName, productName, role, adminItems }: { schoolNa
           >
             <span className="block h-full w-full rounded-lg bg-primary-50" />
           </li>
-          {bottomItems.map((item) => (
-            <NavLink key={item.href} item={item} current={isCurrent(item.href)} count={item.badge?.(summary) ?? 0} layout="bottom" />
+          {bottomItems.map((item, index) => (
+            <NavLink
+              key={item.href}
+              item={item}
+              current={isCurrent(item.href)}
+              count={item.badge?.(summary) ?? 0}
+              layout="bottom"
+              drift={homeIsCurrent ? DRIFT[index] : "0px"}
+            />
           ))}
         </ul>
       </nav>
@@ -138,9 +153,21 @@ export function AppNav({ schoolName, productName, role, adminItems }: { schoolNa
   );
 }
 
-function NavLink({ item, current, count, layout, children }: { item: Item; current: boolean; count: number; layout: "bottom" | "side"; children?: React.ReactNode }) {
+function NavLink({ item, current, count, layout, drift, children }: { item: Item; current: boolean; count: number; layout: "bottom" | "side"; drift?: string; children?: React.ReactNode }) {
   const Icon = item.icon;
   const badge = <CountBadge count={count} label={`${formatNumberFa(count)} مورد خوانده‌نشده`} floating={layout === "bottom"} />;
+  // The primary glyph is the only one that changes size; it keeps the same 28 px box as its neighbours so every
+  // label sits on one line.
+  const glyph = (
+    <Icon
+      className={cn(
+        "transition-base",
+        item.primary ? cn("size-7", current ? "text-primary-600" : "text-text-muted") : layout === "side" ? cn("size-5", current ? "text-primary-700" : "text-text-faint") : "size-5",
+      )}
+      strokeWidth={2}
+      aria-hidden
+    />
+  );
 
   if (layout === "bottom") {
     return (
@@ -148,24 +175,23 @@ function NavLink({ item, current, count, layout, children }: { item: Item; curre
         <Link
           href={item.href}
           aria-current={current ? "page" : undefined}
+          style={{ "--nav-drift": drift ?? "0px" } as React.CSSProperties}
           className={cn(
-            "group pressable relative flex min-h-14 flex-col px-1 text-meta",
-            // The 36 px primary mark takes the cell's vertical padding and the glyph box's 8 px of padding/gap: every
-            // cell stays 60 px and the label lands within 2 px of its neighbours'.
-            item.primary ? "py-0" : "py-1",
+            "group pressable relative flex min-h-14 flex-col px-1 py-1 text-meta",
+            // Neighbours ease away from «خانه» while Home is the current tab (logical offset: no reflow, no RTL flip).
+            "start-(--nav-drift) transition-[inset-inline-start] duration-(--duration-slow) ease-(--ease-out) motion-reduce:start-0 motion-reduce:transition-none",
             current ? "font-semibold text-primary-700" : "text-text-muted hover:text-text",
           )}
         >
           {/* The sliding tinted cell lives on the <ul>; this block is the same shape so a press tints the whole cell too. */}
           <span
             className={cn(
-              "flex flex-1 flex-col items-center justify-center rounded-lg transition-base",
-              item.primary ? "gap-0" : "gap-0.5 pt-1 pb-0.5",
+              "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg pt-1 pb-0.5 transition-base",
               !current && "group-active:bg-primary-50 group-active:text-primary-700",
             )}
           >
-            <span className={cn("relative flex w-12 items-center justify-center", item.primary ? "h-9" : "h-6")}>
-              {item.primary ? <ClayIcon icon={Icon} size="sm" /> : <Icon className="size-5 transition-base" strokeWidth={2} aria-hidden />}
+            <span className="relative flex h-7 w-12 items-center justify-center">
+              {glyph}
               {badge}
             </span>
             {item.label}
@@ -184,10 +210,8 @@ function NavLink({ item, current, count, layout, children }: { item: Item; curre
           current ? "bg-primary-50 font-semibold text-primary-700" : "text-text-muted hover:bg-surface-sunken hover:text-text active:bg-primary-50 active:text-primary-700",
         )}
       >
-        {/* Every glyph sits in a 36 px box so the labels line up with the Home row's clay mark. */}
-        <span className="grid size-9 shrink-0 place-items-center">
-          {item.primary ? <ClayIcon icon={Icon} size="sm" /> : <Icon className={cn("size-5 transition-base", current ? "text-primary-700" : "text-text-faint")} strokeWidth={2} aria-hidden />}
-        </span>
+        {/* Every glyph sits in a 36 px box so the labels line up down the rail. */}
+        <span className="grid size-9 shrink-0 place-items-center">{glyph}</span>
         <span className="flex-1">{item.label}</span>
         {badge}
       </Link>

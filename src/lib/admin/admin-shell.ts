@@ -18,12 +18,17 @@ export const getAdminShell = cache(async (): Promise<AdminShell> => {
   return r.ok ? { scope: r.data.scope, counts: r.data.counts } : { scope: null, counts: null };
 });
 
-/** The admin nav items of a caller — order and labels from `nav.ts`, counts from the cached overview. */
+/**
+ * The admin SECTIONS of a caller — order and labels from `nav.ts`, counts from the cached overview. «نمای کلی» is
+ * dropped: /admin is the hub itself (the landing page, the rail's «مدیریت», the phone nav's role item), so listing
+ * it among its own sections would be a second door to a place you are already in — one home per destination
+ * (docs/decisions.md).
+ */
 export function adminNavItems(assignments: readonly Assignment[], shell: AdminShell): AdminNavItem[] {
   const org = isOrganizationAdmin(assignments);
   const singleSchool = shell.scope?.kind === "school" && shell.scope.schoolIds.length === 1;
   const c = shell.counts;
-  return adminSectionsFor({ org, singleSchool }).map((item) =>
-    c && (item.key === "students" || item.key === "staff" || item.key === "classes") ? { ...item, count: c[item.key] } : item,
-  );
+  return adminSectionsFor({ org, singleSchool })
+    .filter((item) => item.key !== "overview")
+    .map((item) => (c && (item.key === "students" || item.key === "staff" || item.key === "classes") ? { ...item, count: c[item.key] } : item));
 }

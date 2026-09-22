@@ -52,16 +52,28 @@ describe("AppNav items per role", () => {
     expect(off.bottom.every((l) => !l.current)).toBe(true);
   });
 
-  it("«خانه» carries the clay mark in both renderings; the unread count shows on «پنل من» twice", () => {
+  it("«خانه» is a bare, bigger glyph — no clay squircle — in both renderings; the unread count shows on «پنل من» twice", () => {
     const { html } = render("teacher");
-    expect(html.match(/class="clay-icon/g)?.length).toBe(2);
+    expect(html).not.toContain("clay-icon");
+    // One `size-7` glyph per rendering (bottom bar + rail); every other item stays at `size-5`.
+    expect(html.match(/size-7/g)?.length).toBe(2);
     expect(html.match(/۳ مورد خوانده‌نشده/g)?.length).toBe(2);
+  });
+
+  it("the four neighbours ease away from «خانه» only while Home is the current tab", () => {
+    const onHome = render("student", "/home").html;
+    expect([...onHome.matchAll(/--nav-drift:\s*(-?\d+px)/g)].map((m) => m[1])).toEqual(["-4px", "-2px", "0px", "2px", "4px"]);
+    const elsewhere = render("student", "/inbox").html;
+    expect([...elsewhere.matchAll(/--nav-drift:\s*(-?\d+px)/g)].map((m) => m[1])).toEqual(["0px", "0px", "0px", "0px", "0px"]);
   });
 });
 
 describe("AppNav rail inside /admin", () => {
   it("nests the admin sections (minus «نمای کلی») under «مدیریت» with their counts; «مدیریت» itself is current only on the landing", () => {
-    const items = adminSectionsFor({ org: false, singleSchool: true }).map((i) => (i.key === "students" ? { ...i, count: 175 } : i));
+    // What `adminNavItems` hands the rail: the sections WITHOUT «نمای کلی» — /admin is the parent, not a section.
+    const items = adminSectionsFor({ org: false, singleSchool: true })
+      .filter((i) => i.key !== "overview")
+      .map((i) => (i.key === "students" ? { ...i, count: 175 } : i));
     const { html } = render("admin", "/admin/students", items);
     // The rail only (the bottom bar's «مدیریت» stays current on every /admin route).
     const parentCurrent = (h: string) => {
@@ -70,7 +82,7 @@ describe("AppNav rail inside /admin", () => {
     };
     expect(parentCurrent(html)).toBe(false);
     expect(html).toContain('href="/admin/staff"');
-    expect(html).not.toMatch(/href="\/admin"[^>]*>[^<]*نمای کلی/);
+    expect(html).not.toContain("نمای کلی");
     expect(html).toContain("مدرسه</span>");
     expect(html).toContain("۱۷۵");
     const nested = [...html.matchAll(/<a[^>]*>/g)].map((m) => m[0]).filter((a) => /aria-current="page"/.test(a)).flatMap((a) => a.match(/href="(\/admin\/[a-z]+)"/)?.[1] ?? []);

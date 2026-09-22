@@ -1,7 +1,8 @@
-// The Home tile registry (`homeTilesFor`) and the pure organization-admin predicate behind the owner's rule of QA
-// round 2: «راه‌اندازی مدرسه» (school setup) belongs to the organization admin — the one who defines schools — so a
-// principal or vice principal never sees the tile, the admin nav entry or the «بیشتر» row (the page itself is
-// NOT_FOUND for them, checked in tests/int/admin-scope.test.ts against the database-derived scope).
+// The Home tile registry (`homeTilesFor`) under the IA rule of QA round 3 (docs/decisions.md «one home per
+// destination»): Home is the person's OWN work, so a tile is only a personal destination the navigation does not
+// already carry — no admin SECTION («دانش‌آموزان», «کارکنان», «کلاس‌ها», «راه‌اندازی» live on /admin alone), and no
+// second door to the nav's own role item («کلاس من», «کلاس‌های من»). The one admin tile is «مدیریت», the door into
+// the hub. Plus the pure organization-admin predicate and the nav role.
 import { describe, expect, it } from "vitest";
 import { HOME_TILES, HOME_UPCOMING, MODULES, homeTilesFor, type TileHats } from "@/lib/modules-registry";
 import { isOrganizationAdmin, navRoleFor, type Assignment } from "@/modules/iam/can";
@@ -14,24 +15,33 @@ const codes = (tiles: ReturnType<typeof homeTilesFor>) => tiles.map((t) => t.cod
 const orgAdmin: TileHats = { isStudent: false, isTeacher: false, isAdmin: true, adminScope: "organization" };
 const principal: TileHats = { isStudent: false, isTeacher: false, isAdmin: true, adminScope: "school" };
 const teacher: TileHats = { isStudent: false, isTeacher: true, isAdmin: false, adminScope: null };
+const student: TileHats = { isStudent: true, isTeacher: false, isAdmin: false, adminScope: null };
 
 describe("homeTilesFor", () => {
-  it("the organization admin sees every admin tile, «راه‌اندازی مدرسه» included", () => {
-    const admin = HOME_TILES.filter((t) => t.role === "admin").map((t) => t.code);
-    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(admin);
-    expect(admin).toContain("onboarding");
+  it("an admin's ONLY tile is «مدیریت» — every admin section lives on /admin", () => {
+    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["admin"]);
+    expect(codes(homeTilesFor(principal, has(ADMIN_PERMS)))).toEqual(["admin"]);
+    expect(HOME_TILES.filter((t) => t.role === "admin").map((t) => t.href)).toEqual(["/admin"]);
+    expect(HOME_TILES.some((t) => t.href.startsWith("/admin/"))).toBe(false);
   });
 
-  it("a school-scoped admin (principal, vice principal) gets the admin tiles WITHOUT «راه‌اندازی مدرسه»", () => {
-    const tiles = codes(homeTilesFor(principal, has(ADMIN_PERMS)));
-    expect(tiles).not.toContain("onboarding");
-    expect(tiles).toEqual(HOME_TILES.filter((t) => t.role === "admin" && t.code !== "onboarding").map((t) => t.code));
+  it("no tile is a second door to a nav destination («کلاس من», «کلاس‌های من», «پنل من», «اعلان‌ها», «بیشتر»)", () => {
+    const navHrefs = ["/my-class", "/classes", "/inbox", "/notifications", "/more", "/home"];
+    expect(HOME_TILES.filter((t) => navHrefs.includes(t.href))).toEqual([]);
   });
 
-  it("the tile is the only organization-scoped one; a teacher without the admin hat sees no admin tile at all", () => {
-    expect(HOME_TILES.filter((t) => t.adminScope).map((t) => t.code)).toEqual(["onboarding"]);
-    const tiles = codes(homeTilesFor(teacher, has(["workspace.work_item.create", "iam.admin.access", "academic.timetable.read"])));
-    expect(tiles).toEqual(["classes", "teacher-timetable", "given", "new-item"]);
+  it("every tile href is unique: one home per destination", () => {
+    const hrefs = HOME_TILES.map((t) => t.href);
+    expect(new Set(hrefs).size).toBe(hrefs.length);
+  });
+
+  it("a student sees their own two work views; a teacher the two they give", () => {
+    expect(codes(homeTilesFor(student, has(["workspace.work_item.read", "academic.timetable.read"])))).toEqual(["my-todo", "my-done"]);
+    expect(codes(homeTilesFor(teacher, has(["workspace.work_item.create", "iam.admin.access", "academic.timetable.read"])))).toEqual(["given", "new-item"]);
+  });
+
+  it("a teaching principal reads personal tiles first, then the hub", () => {
+    expect(codes(homeTilesFor({ isStudent: false, isTeacher: true, isAdmin: true, adminScope: "school" }, has(ADMIN_PERMS)))).toEqual(["given", "new-item", "admin"]);
   });
 });
 

@@ -6,7 +6,6 @@ import {
   ClipboardCheck,
   ClipboardPlus,
   FileSpreadsheet,
-  GraduationCap,
   Handshake,
   HeartHandshake,
   Inbox,
@@ -17,18 +16,13 @@ import {
   Megaphone,
   MessagesSquare,
   NotebookPen,
-  Presentation,
-  Printer,
-  Rocket,
   Scale,
-  School,
   Send,
   Settings2,
   ShieldAlert,
   Ticket,
   Trophy,
   UserCheck,
-  Users,
   Video,
   Wallet,
 } from "lucide-react";
@@ -111,7 +105,7 @@ export const MODULES: readonly ModuleEntry[] = [
     permission: "iam.admin.access",
     phase: 1,
     descriptionFa:
-      "مدرسه، کلاس‌ها، دانش‌آموزان، همکاران، حساب‌ها و اعتبارنامه‌ها.",
+      "مدرسه، کلاس‌ها، دانش‌آموزان، همکاران و حساب‌ها.",
   },
   {
     // Delivered in phase 1 (owner's ask): /timetable sends each hat to its own view — «کلاس من», «کلاس‌های من», the admin class pages.
@@ -322,9 +316,6 @@ export interface TileHats {
   adminScope: TileAdminScope | null;
 }
 
-/** Live numbers a tile may carry — today only the school-onboarding progress (unread counts live on the nav). */
-export type TileBadge = "onboarding";
-
 export interface HomeTile {
   code: string;
   labelFa: string;
@@ -340,15 +331,19 @@ export interface HomeTile {
    * the organization admin defines schools, so school setup is theirs; principals and vice principals never see it.
    */
   adminScope?: TileAdminScope;
-  badge?: TileBadge;
   /** The glyph implies a direction (send, arrows) and must flip in RTL. */
   mirror?: boolean;
 }
 
 /**
- * The live tiles of the Home grid: ONLY a hat's own tiles — nothing the bottom nav / side rail (کارتابل, اعلان‌ها,
- * بیشتر) or the «بیشتر» page (راهنما, نقشهٴ راه, پروفایل) already offers. `homeTilesFor` picks per person; the
- * order is student → teacher → admin so a multi-hat person reads their most personal tiles first.
+ * The live tiles of the Home grid — Home is the person's OWN work, so a tile is ONLY a personal destination the
+ * navigation does not already carry. Nothing the bottom nav / side rail offers gets a tile («پنل من», «اعلان‌ها»,
+ * «بیشتر» and the role item — a student's «کلاس من», a teacher's «کلاس‌ها», an admin's «مدیریت» page), nothing
+ * the «بیشتر» page offers (راهنما, نقشهٴ راه, پروفایل), and — the owner's QA round 3 — no ADMIN SECTION: «دانش‌آموزان»,
+ * «کارکنان», «کلاس‌ها», «راه‌اندازی» and the counters live on /admin, the management hub, and there only. The one
+ * admin tile is «مدیریت»: the door from personal work into that hub (docs/decisions.md «one home per
+ * destination»). `homeTilesFor` picks per person; the order is student → teacher → admin so a multi-hat person
+ * reads their most personal tiles first.
  */
 export const HOME_TILES: readonly HomeTile[] = [
   {
@@ -365,37 +360,7 @@ export const HOME_TILES: readonly HomeTile[] = [
     icon: ListChecks,
     role: "student",
   },
-  {
-    code: "my-class",
-    labelFa: "کلاس من",
-    href: "/my-class",
-    icon: School,
-    role: "student",
-  },
-  {
-    code: "timetable",
-    labelFa: "برنامهٴ کلاسی",
-    href: "/my-class",
-    icon: CalendarDays,
-    role: "student",
-    permission: "academic.timetable.read",
-  },
 
-  {
-    code: "classes",
-    labelFa: "کلاس‌های من",
-    href: "/classes",
-    icon: Presentation,
-    role: "teacher",
-  },
-  {
-    code: "teacher-timetable",
-    labelFa: "برنامهٴ کلاسی",
-    href: "/classes",
-    icon: CalendarDays,
-    role: "teacher",
-    permission: "academic.timetable.read",
-  },
   {
     code: "given",
     labelFa: "تکالیف داده‌شده",
@@ -419,48 +384,6 @@ export const HOME_TILES: readonly HomeTile[] = [
     labelFa: "مدیریت",
     href: "/admin",
     icon: Settings2,
-    role: "admin",
-    permission: "iam.admin.access",
-  },
-  {
-    code: "students",
-    labelFa: "دانش‌آموزان",
-    href: "/admin/students",
-    icon: GraduationCap,
-    role: "admin",
-    permission: "iam.admin.access",
-  },
-  {
-    code: "staff",
-    labelFa: "کارکنان",
-    href: "/admin/staff",
-    icon: Users,
-    role: "admin",
-    permission: "iam.admin.access",
-  },
-  {
-    code: "admin-classes",
-    labelFa: "کلاس‌ها",
-    href: "/admin/classes",
-    icon: School,
-    role: "admin",
-    permission: "iam.admin.access",
-  },
-  {
-    code: "onboarding",
-    labelFa: "راه‌اندازی مدرسه",
-    href: "/admin/onboarding",
-    icon: Rocket,
-    role: "admin",
-    permission: "iam.admin.access",
-    adminScope: "organization",
-    badge: "onboarding",
-  },
-  {
-    code: "credentials",
-    labelFa: "چاپ اعتبارنامه",
-    href: "/admin/classes",
-    icon: Printer,
     role: "admin",
     permission: "iam.admin.access",
   },

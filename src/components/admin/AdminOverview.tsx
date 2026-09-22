@@ -12,7 +12,7 @@ const HINTS: Record<AdminSectionKey, string> = {
   overview: "",
   students: "ثبت، حساب کاربری، انتقال کلاس",
   staff: "دبیران و کادر؛ نقش مدیر/معاون",
-  classes: "دانش‌آموزان کلاس، ارائهٴ درس‌ها، برنامهٴ هفتگی، چاپ اعتبارنامه",
+  classes: "دانش‌آموزان کلاس، ارائهٴ درس‌ها، برنامهٴ هفتگی",
   schools: "نام، کد، شعبه‌ها، زنگ‌بندی",
   years: "سال جاری هر مدرسه و نوبت‌ها",
   grades: "کاتالوگ سازمان",
@@ -23,11 +23,12 @@ const HINTS: Record<AdminSectionKey, string> = {
 };
 
 /**
- * /admin landing: the counters, then every section the caller may open — in the nav's order (people and classes
- * first), each with its quiet glyph, a one-line hint and its count. On phones this list IS the admin navigation
- * (the pill row is for inner pages); on desktop the rail repeats it under «مدیریت».
+ * /admin landing: the counters, the management panels the page passes in («نیازمند توجه», the setup progress),
+ * then every section the caller may open — in the nav's order (people and classes first), each with its quiet
+ * glyph, a one-line hint and its count. On phones this list IS the admin navigation (the pill row is for inner
+ * pages); on desktop the rail repeats it under «مدیریت», which is the group header, not a second link.
  */
-export function AdminOverview({ data, items }: { data: AdminOverviewData; items: readonly AdminNavItem[] }) {
+export function AdminOverview({ data, items, children }: { data: AdminOverviewData; items: readonly AdminNavItem[]; children?: React.ReactNode }) {
   const c = data.counts;
   const countOf: Partial<Record<AdminSectionKey, number>> = {
     schools: c.schools,
@@ -44,6 +45,7 @@ export function AdminOverview({ data, items }: { data: AdminOverviewData; items:
     <div className="flex flex-col gap-5">
       <PageHeader title="مدیریت مدرسه" description={data.scope.kind === "organization" ? "دامنهٴ شما: همهٴ مدرسه‌های سازمان." : data.scope.schoolIds.length === 1 ? "دامنهٴ شما: مدرسهٴ خودتان." : `دامنهٴ شما: ${formatNumberFa(data.scope.schoolIds.length)} مدرسه.`} />
       <AdminCounters counts={c} />
+      {children}
       <ul className="surface-work divide-y divide-line/70">
         {sections.map((s) => {
           const count = countOf[s.key];

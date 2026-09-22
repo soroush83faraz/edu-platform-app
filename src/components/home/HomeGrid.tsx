@@ -1,24 +1,23 @@
 import { Suspense } from "react";
 import type { Ctx } from "@/lib/ctx";
-import { formatNumberFa } from "@/lib/format";
 import { HOME_UPCOMING } from "@/lib/modules-registry";
 import { canAtAnyScope } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
-import { AdminGlance } from "./AdminGlance";
 import { resolveHomeTiles } from "./home-data";
 import { CardSkeleton } from "./HomeSkeletons";
 import { NearbyCard } from "./NearbyCard";
 import { Tile } from "./Tile";
 
 /**
- * The grid is the page: live tiles first (only what the nav lacks — ordered by role relevance, staggered 30 ms
- * each), then the muted «به‌زودی» tiles from the product map, then ONE card — admins get «مدرسه در یک نگاه», everyone else «کارهای
- * نزدیک». Resolves the hats once; the admin overview is read only when the person has an admin scope.
+ * The grid is the page: the person's OWN live tiles first (only what the nav lacks — ordered by role relevance,
+ * staggered 30 ms each), then the muted «به‌زودی» tiles from the product map, then «کارهای نزدیک». An admin's
+ * single tile here is «مدیریت» — the door to the management hub; the sections and counters live on /admin
+ * (docs/decisions.md «one home per destination»).
  */
 export async function HomeGrid({ ctx }: { ctx: Ctx }) {
   const has = (p: Permission) => canAtAnyScope(ctx.assignments, p);
-  // Shared with the desktop dashboard (`home-data.ts`, React cache): hats, tiles and the admin counts read once.
-  const { tiles, counts, onboarding } = await resolveHomeTiles(ctx);
+  // Shared with the desktop dashboard (`home-data.ts`, React cache): hats and tiles read once.
+  const { tiles } = await resolveHomeTiles(ctx);
 
   return (
     <>
@@ -26,26 +25,7 @@ export async function HomeGrid({ ctx }: { ctx: Ctx }) {
         <nav aria-label="بخش‌ها">
           <ul className="reveal-grid grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7">
             {tiles.map((t) => (
-              <Tile
-                key={t.code}
-                href={t.href}
-                label={t.labelFa}
-                icon={t.icon}
-                shade={t.shade}
-                mirror={t.mirror}
-              >
-                {t.badge === "onboarding" &&
-                onboarding &&
-                onboarding.done < onboarding.total ? (
-                  <span
-                    className="tabular absolute -top-1.5 -end-2 inline-flex h-5 items-center rounded-full bg-warning px-1.5 text-xs font-semibold leading-none text-primary-900 ring-2 ring-canvas"
-                    aria-label={`${formatNumberFa(onboarding.done)} از ${formatNumberFa(onboarding.total)} گام انجام شده`}
-                  >
-                    {formatNumberFa(onboarding.done)}/
-                    {formatNumberFa(onboarding.total)}
-                  </span>
-                ) : null}
-              </Tile>
+              <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror} />
             ))}
           </ul>
         </nav>
@@ -74,14 +54,11 @@ export async function HomeGrid({ ctx }: { ctx: Ctx }) {
         </ul>
       </section>
 
-      {counts ? (
-        <AdminGlance counts={counts} />
-      ) : has("workspace.work_item.read") ? (
+      {has("workspace.work_item.read") ? (
         <Suspense fallback={<CardSkeleton rows={5} />}>
           <NearbyCard />
         </Suspense>
       ) : null}
-
     </>
   );
 }

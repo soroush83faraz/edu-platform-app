@@ -318,3 +318,61 @@ Owner's asks: (A) creating a تکلیف must not need typing — a real date pic
 - **Creator actions.** `WorkItemActions` renders «اتمام» (primary, `CheckCheck`; confirm «همهٴ دانش‌آموزان انجام‌شده ثبت می‌شوند؟ …» — the existing creator-authoritative `done` transition, which already marks every assignee done), «تمدید» (`outline`, opens a `ResponsiveModal` whose body is the calendar INLINE from today plus the time toggle, prefilled with the current due; the submit stays disabled while the pick is in the past or equals the current due, with the reason on the status line), «کنسل» (`ghost` in `text-danger`, confirm), and «بازگشایی» (`outline`) on a closed item; pin/archive stay in «بیشتر» (`sm:ms-auto`). A creator who is the only assignee (a self item) sees «انجام شد» and not «اتمام» — the same click twice. Stacked full-width on phones, one inline row from `sm:`; every button is the 44 px `default` size (the row used `lg` 48 before). After a successful extension the page `router.refresh()`es and the header's due fact re-renders from the server.
 - **Verified.** `pnpm verify:full` green (typecheck, lint, forbidden grep, unit incl. the 9 new grid tests, int files individually — `workspace-service` 12). `impeccable detect` over the pickers, the form and the actions: no findings. Browser pane on the dev server as the ALK teacher امین ظفری (`09351000011`, already signed in): at 390 px the field opens the bottom sheet, «فردا» picks ۱ مهر, the toggle turns on at 13:50 (now rounded up), «ارسال تکلیف به ۲۵ نفر» creates the item with «چهارشنبه ۱ مهر ۱۴۰۵، ۱۳:۵۰»; «تمدید» → «هفتهٴ بعد» → the due fact reads «۷ روز دیگر — سه‌شنبه ۷ مهر»; «اتمام» → confirm → «انجام‌شده ۲۵/۲۵» with «بازگشایی»; at 1280 px the popover anchors to the field's start edge and the three actions sit inline at 44 px with «بیشتر» at the end; keyboard in the extend dialog: ArrowLeft +1, ArrowDown +7, PageDown → آبان, Enter picks. The student's side was verified in the database (the agent does not type credentials): `09351001000` (احسان قنبری) holds one unread `work_item.due_extended` row for the extension; the owner should open the notification as the student in the browser.
 - **Deferred.** A year jump in the picker (month arrows only — a school term rarely needs more); «تمدید» is not offered to an assignee who wants more time (a request flow is phase 2); the `pnpm seed` catalog step must run on the dev DB after pulling (the new notification type is an FK target).
+## 2026-09-22 — IA: one home per destination (Home is personal, /admin is the management hub)
+
+Owner, looking at an admin's phone: «why are items duplicated? «مدیریت» is on Home, and then a separate admin
+segment below; کارکنان and کلاس‌ها appear both inside مدیریت and on the main page — it's confusing.» He was right:
+دانش‌آموزان / کارکنان / کلاس‌ها reached the eye in three places (a Home tile, the /admin landing list, the desktop
+rail under «مدیریت»), and Home carried the school counters that /admin carries too.
+
+- **The rule, from now on: every destination has exactly ONE home in the information architecture.**
+  1. **The persistent nav owns five places** — پنل من, اعلان‌ها, خانه, the role item (مدیریت / کلاس‌ها / کلاس من /
+     راهنما), بیشتر. Nothing else may offer a second door to them.
+  2. **Home = the person's own work**, every role: the «امروز» strip, their own tiles, their own panels. A tile is
+     only a personal destination the nav does not already carry.
+  3. **/admin = the management hub.** Its landing page is the ONE place the school's management overview lives:
+     the counters, «نیازمند توجه», the organization admin's setup progress, and the section list. The desktop rail
+     nests the same sections under «مدیریت» — that is the group header of a real page, not a duplicate link.
+  4. **No surface lists its own parent.** `adminNavItems` (`src/lib/admin/admin-shell.ts`) drops the «نمای کلی»
+     entry, so the phone pill row on an inner admin page no longer carries a chip pointing at /admin while the
+     bottom nav's «مدیریت» already does; tapping that nav item is the way back up.
+- **What moved.** `HOME_TILES` lost five admin tiles (دانش‌آموزان، کارکنان، کلاس‌ها، راه‌اندازی مدرسه، چاپ اعتبارنامه)
+  and the four nav-duplicating ones (student «کلاس من» + «برنامهٴ کلاسی», teacher «کلاس‌های من» + «برنامهٴ کلاسی» —
+  the two timetable tiles pointed at `/my-class` and `/classes`, the very pages the role item opens, and the
+  timetable is the main content of both). `AdminGlance` and the desktop `StatRow` are gone; `Attention` and the
+  onboarding progress card moved out of `src/components/home/dashboard/` into `src/components/admin/` and render
+  on the /admin landing through `AdminOverview`'s new children slot. `home-data.ts` no longer reads the admin
+  counters at all — one query fewer on every admin's Home.
+- **The desktop board follows the PERSONAL hats, not `navRoleFor`.** A principal who also teaches now gets the
+  teaching board on Home and the management overview on /admin, instead of the admin board swallowing the teaching
+  one. An admin with no teaching or student hat gets «کارهای نزدیک» like anyone else.
+- **What each role sees on Home afterwards.** Student: «تکالیف من», «انجام‌شده» (+ امروز / فوری‌ها / این هفته on
+  desktop). Teacher: «تکالیف داده‌شده», «تکلیف جدید» (+ نیاز به پیگیری / امروز تدریس دارم / نظرهای تازه). Admin:
+  «مدیریت» alone (+ کارهای نزدیک). A multi-hat person gets them concatenated, personal first. Nothing became
+  unreachable: every admin section is one tap from /admin, the class pages one tap from the nav's role item, and
+  the timetable is the first thing on those pages.
+- **Accepted asymmetry.** «مدیریت» is the one tile whose destination the nav also carries. It stays because /admin
+  is another AREA, not a page — the handoff from personal work to the management hat — and because it is the only
+  live tile an admin-only account has. If a future round wants absolute purity, drop it and Home becomes the
+  strip + «کارهای نزدیک» + «به‌زودی», with the nav as the sole door.
+- **Nav polish in the same commit (owner).** «خانه» lost its clay squircle: it is now a bare `House` glyph at 28 px
+  against the others' 20 px, `primary-600` while current, `text-muted` otherwise — one cue instead of a container
+  (this supersedes the «36 px `sm` clay mark» of the 2026-09-22 navigation entry). While Home IS the current tab
+  its four neighbours ease outwards from it — inner pair 2 px, outer pair 4 px — over `--duration-slow` with
+  `--ease-out`, and settle back when another tab takes over. It is written as `--nav-drift` on the
+  relatively-positioned link read by the logical `start-*` utility (NOT `translate-x`): a logical inset needs no
+  RTL sign flip, moves nothing in the layout, and matches how the sliding indicator already animates;
+  `motion-reduce:start-0` pins every cell at rest. The rail keeps no drift — its column is vertical and «خانه» is
+  its first item, not its middle.
+- **Tests.** `tests/unit/home-tiles.test.ts` now asserts the rule itself: an admin's only tile is `/admin`, no tile
+  href starts with `/admin/`, no tile href is a nav destination, and every tile href is unique.
+  `tests/unit/app-nav.test.ts` asserts the bare bigger «خانه» glyph (no `clay-icon`), the five `--nav-drift` values
+  on /home vs. all-zero elsewhere, and a rail with no «نمای کلی».
+- **Verified** on the dev server at 390 px and 1280 px as principal `09351000002` (Home: one «مدیریت» tile, no
+  counters; /admin: counters + نیازمند توجه + the nine sections; /admin/staff: a pill row that starts at
+  دانش‌آموزان), student `09351001000` and teacher `09351000011` (two tiles each, no class tile). Measured: the five
+  bottom cells stay 78 px wide with the drift applied, the sliding indicator still lands on the Home column, and
+  the Home glyph computes to 28 px in `#072AC8` against 20 px neighbours.
+- **Deferred / flagged.** `/more` still shows the organization admin a «راه‌اندازی مدرسه» row whose comment cites
+  «the Home tile» that no longer exists — by the rule above that row is now a third door to an /admin section and
+  should go (the file was another agent's in this round).

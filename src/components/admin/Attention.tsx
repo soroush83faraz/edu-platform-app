@@ -15,7 +15,7 @@ interface AttentionRow {
 /** The problems an admin can fix today, each row opening the page that fixes it; zero-count rows are not listed. */
 export function attentionRows(c: AdminCounts): AttentionRow[] {
   return [
-    { href: "/admin/students?pending=1", label: "حساب‌های فعال‌نشده", count: c.accountsPending, fix: "رمز اولیه هنوز عوض نشده؛ اعتبارنامه را چاپ یا یادآوری کنید." },
+    { href: "/admin/students?pending=1", label: "حساب‌های فعال‌نشده", count: c.accountsPending, fix: "رمز اولیه هنوز عوض نشده؛ به این افراد یادآوری کنید وارد شوند." },
     { href: "/admin/classes", label: "ارائه‌های بدون دبیر", count: c.offeringsWithoutTeacher, fix: "از صفحهٴ کلاس، «ارائهٴ درس‌ها» → دبیر را انتخاب کنید." },
     { href: "/admin/classes", label: "کلاس‌های بدون ارائهٴ درس", count: c.classesWithoutOfferings, fix: "برای هر کلاس درس‌ها و دبیرها را تعریف کنید." },
     { href: "/admin/classes", label: "کلاس‌های بدون برنامهٴ هفتگی", count: c.classesWithoutTimetable, fix: "از صفحهٴ کلاس، «برنامهٴ هفتگی» را پر کنید." },
@@ -23,7 +23,10 @@ export function attentionRows(c: AdminCounts): AttentionRow[] {
   ].filter((r) => r.count > 0);
 }
 
-/** «نیازمند توجه»: the attention rows as a work list; when nothing is wrong, one calm line instead of an empty box. */
+/**
+ * «نیازمند توجه»: the attention rows as a work list; when nothing is wrong, one calm line instead of an empty box.
+ * Lives on the /admin landing page — the management overview — and nowhere else (Home is personal work now).
+ */
 export function Attention({ counts }: { counts: AdminCounts }) {
   const rows = attentionRows(counts);
   return (
