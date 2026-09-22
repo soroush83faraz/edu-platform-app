@@ -3,7 +3,7 @@
 // CURRENT `initial` when the dialog opens; closing (cancel, Escape, overlay, a save) drops edits and errors.
 import { describe, expect, it } from "vitest";
 import type { FormField } from "@/lib/admin/defineResource";
-import { CLOSED_SESSION, defaults, formSessionReducer, serialize, type FormSession } from "@/components/admin/resource-form-state";
+import { CLOSED_SESSION, defaults, formSessionReducer, isSettled, seedValues, serialize, type FormSession } from "@/components/admin/resource-form-state";
 
 const fields: FormField[] = [
   { name: "weeklyHours", labelFa: "ساعت در هفته", type: "number", numeric: true },
@@ -72,5 +72,32 @@ describe("defaults / serialize", () => {
     expect(serialize(fields[2], "")).toBeNull();
     expect(serialize(fields[3], true)).toBe(true);
     expect(serialize({ name: "name", labelFa: "نام", type: "text" }, "  ۱۰/۳ ")).toBe("۱۰/۳");
+  });
+});
+
+// QA round 3 (owner): «مدرسه / شعبه» stood on the class form showing one option — a label, not a question. A
+// REQUIRED picker with a single possible value is hidden and sent; an optional one keeps its control.
+describe("isSettled / seedValues (a picker with one possible answer)", () => {
+  const branch: FormField = { name: "branchId", labelFa: "مدرسه", type: "select", optionsKey: "schools", required: true, createOnly: true };
+  const year: FormField = { name: "academicYearId", labelFa: "سال تحصیلی", type: "select", optionsKey: "years", required: true, createOnly: true };
+  const teacher: FormField = { name: "mainTeacherStaffProfileId", labelFa: "دبیر اصلی", type: "select", optionsKey: "staff" };
+  const one = { schools: [{ value: "b1", label: "علامه طباطبایی" }], years: [{ value: "y1", label: "۱۴۰۵-۱۴۰۶ (جاری)" }], staff: [{ value: "s1", label: "زهرا احمدی" }] };
+  const two = { ...one, schools: [...one.schools, { value: "b2", label: "دانش" }] };
+
+  it("is settled only for a required picker whose option list holds exactly one value", () => {
+    expect(isSettled(branch, one)).toBe(true);
+    expect(isSettled(branch, two)).toBe(false);
+    expect(isSettled(branch, { schools: [] })).toBe(false);
+    // «بدون دبیر» is a real answer: an optional picker is never settled, even with one colleague on the list.
+    expect(isSettled(teacher, one)).toBe(false);
+    expect(isSettled({ name: "name", labelFa: "نام کلاس", type: "text", required: true }, one)).toBe(false);
+    // A lone option under a heading stays on the form: the heading says which of the two schools that year is.
+    expect(isSettled(year, { years: [{ value: "y1", label: "۱۴۰۵-۱۴۰۶ (جاری)", group: "علامه طباطبایی" }] })).toBe(false);
+  });
+
+  it("seeds the settled pickers and leaves everything the row already says alone", () => {
+    expect(seedValues([branch, year, teacher], one)).toEqual({ branchId: "b1", academicYearId: "y1" });
+    expect(seedValues([branch, year], two, { branchId: "b2" })).toEqual({ branchId: "b2", academicYearId: "y1" });
+    expect(seedValues([branch], one, { branchId: "" })).toEqual({ branchId: "b1" });
   });
 });

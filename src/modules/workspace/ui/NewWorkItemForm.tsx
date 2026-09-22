@@ -213,10 +213,11 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
 
         {mode === "class" ? (
           <div className="flex flex-col gap-3 rounded-card bg-surface shadow-1 p-3">
+            {/* One ungrouped list, so the class is what tells two «ریاضی» rows apart: «درس — کلاس», each name once. */}
             <SelectNative aria-label="درس و کلاس" value={offeringId} onChange={(e) => selectOffering(e.target.value)}>
               {offerings.map((o) => (
                 <option key={o.id} value={o.id}>
-                  {o.subjectName} {o.classGroupName} ({formatNumberFa(o.studentCount)} دانش‌آموز)
+                  {o.subjectName} — {o.classGroupName} ({formatNumberFa(o.studentCount)} دانش‌آموز)
                 </option>
               ))}
             </SelectNative>

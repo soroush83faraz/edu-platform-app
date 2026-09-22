@@ -7,7 +7,7 @@ import { schoolsLabelFa } from "@/lib/admin/nav";
 import { ResourceForm } from "@/components/admin/ResourceForm";
 import { ResourceTable } from "@/components/admin/ResourceTable";
 import { Button } from "@/components/ui/button";
-import type { AnyResourceDef } from "@/lib/admin/defineResource";
+import { formFieldsOf, type AnyResourceDef } from "@/lib/admin/defineResource";
 import { adminResourceList } from "@/lib/admin/queries";
 import { formatNumberFa } from "@/lib/format";
 
@@ -59,7 +59,7 @@ export async function ResourceListPage({ def, sp, parent, basePath, back }: { de
                 <Link href={l.href}>{l.labelFa}</Link>
               </Button>
             ))}
-            {canCreate ? <ResourceForm resource={def.key} labelFa={def.labelFa} fields={def.formFields} options={options} mode="create" fixed={fixed} /> : null}
+            {canCreate ? <ResourceForm resource={def.key} labelFa={def.labelFa} fields={formFieldsOf(def, options)} options={options} mode="create" fixed={fixed} /> : null}
           </>
         }
       />

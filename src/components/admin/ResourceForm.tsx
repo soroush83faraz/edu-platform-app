@@ -12,7 +12,7 @@ import { SelectNative } from "@/components/ui/select-native";
 import { adminResourceMutate } from "@/lib/admin/actions";
 import { newLabelFa, type FormField, type SelectOption } from "@/lib/admin/defineResource";
 import { flatten } from "@/lib/form-errors";
-import { CLOSED_SESSION, formSessionReducer, serialize, type FormValue } from "./resource-form-state";
+import { CLOSED_SESSION, formSessionReducer, isSettled, seedValues, serialize, type FormValue } from "./resource-form-state";
 import { ResponsiveModal } from "./ResponsiveModal";
 
 export type { FormValue };
@@ -31,6 +31,8 @@ export interface ResourceFormProps {
   fixed?: Record<string, string>;
   /** Trigger rendering: full button (list header), icon (table row) or none — the row's kebab menu opens it through `openSignal`. */
   trigger?: "button" | "icon" | "none";
+  /** `quiet` renders the trigger as an outline button — for a page that offers several «… جدید» at once (the school hub). */
+  tone?: "primary" | "quiet";
   /** Increment to open the dialog from outside (`RowActions`); the values are seeded at that moment, like a click. */
   openSignal?: number;
 }
@@ -41,22 +43,25 @@ export interface ResourceFormProps {
  * dialog OPENS, so after a save (close → `router.refresh()` → fresh props) the next open shows the saved row, and
  * «انصراف» / Escape / the overlay drop edits and errors alike (QA round 2, MAJOR).
  */
-export function ResourceForm({ resource, labelFa, fields, options, mode, id, initial, fixed, trigger = "button", openSignal = 0 }: ResourceFormProps) {
+export function ResourceForm({ resource, labelFa, fields, options, mode, id, initial, fixed, trigger = "button", tone = "primary", openSignal = 0 }: ResourceFormProps) {
   const router = useRouter();
   const ids = useId();
   const [pending, start] = useTransition();
   const [{ open, values, errors }, dispatch] = useReducer(formSessionReducer, CLOSED_SESSION);
   const visible = fields.filter((f) => mode === "create" || !f.createOnly);
+  // A required picker with one possible value is not a choice: it is hidden and its value seeded (`isSettled`).
+  const shown = visible.filter((f) => !isSettled(f, options));
+  const seed = () => seedValues(visible, options, initial);
 
   // `initial` is read HERE, from the props of the render that handles the click — never from a stale closure.
-  const openForm = () => dispatch({ type: "open", fields: visible, initial });
+  const openForm = () => dispatch({ type: "open", fields: visible, initial: seed() });
   const closeForm = () => dispatch({ type: "close" });
   // A menu item elsewhere asked for the dialog: the same open as a click on the trigger, seeded from the props of
   // THIS render (state adjusted during render — React's "derive from a prop" pattern, no effect).
   const [seenSignal, setSeenSignal] = useState(openSignal);
   if (openSignal !== seenSignal) {
     setSeenSignal(openSignal);
-    dispatch({ type: "open", fields: visible, initial });
+    dispatch({ type: "open", fields: visible, initial: seed() });
   }
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -71,7 +76,7 @@ export function ResourceForm({ resource, labelFa, fields, options, mode, id, ini
         router.refresh();
         return;
       }
-      dispatch({ type: "errors", errors: flatten(r.fieldErrors, r.message, visible.map((f) => f.name)) });
+      dispatch({ type: "errors", errors: flatten(r.fieldErrors, r.message, shown.map((f) => f.name)) });
     });
   };
 
@@ -83,14 +88,14 @@ export function ResourceForm({ resource, labelFa, fields, options, mode, id, ini
           <Pencil className="size-4" aria-hidden />
         </Button>
       ) : (
-        <Button type="button" onClick={openForm}>
-          <Plus className="size-4" aria-hidden />
+        <Button type="button" variant={mode === "create" && tone === "primary" ? "default" : "outline"} onClick={openForm}>
+          {mode === "create" ? <Plus className="size-4" aria-hidden /> : <Pencil className="size-4" aria-hidden />}
           {title}
         </Button>
       )}
       <ResponsiveModal open={open} onOpenChange={(o) => (o ? openForm() : closeForm())} title={title}>
         <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
-          {visible.map((f) => (
+          {shown.map((f) => (
             <Field key={f.name} field={f} id={`${ids}-${f.name}`} value={values[f.name]} error={errors[f.name]} options={f.options ?? (f.optionsKey ? options[f.optionsKey] ?? [] : [])} onChange={(v) => dispatch({ type: "change", name: f.name, value: v })} />
           ))}
           <p role="alert" className={cn("text-sm text-danger", !errors.form && "hidden")}>
@@ -163,13 +168,13 @@ export function Field({
           aria-describedby={error ? errId : undefined}
         >
           {!field.required || value === "" ? <option value="">{field.required ? "انتخاب کنید…" : "—"}</option> : null}
-          {groups.length > 0
-            ? groups.map((g) => (
-                <optgroup key={g} label={g}>
-                  {render(options.filter((o) => o.group === g))}
-                </optgroup>
-              ))
-            : render(options)}
+          {/* Ungrouped options first, then one `<optgroup>` per heading — an option under a heading carries only its own name. */}
+          {render(options.filter((o) => !o.group))}
+          {groups.map((g) => (
+            <optgroup key={g} label={g}>
+              {render(options.filter((o) => o.group === g))}
+            </optgroup>
+          ))}
         </SelectNative>
         {field.hint ? <p className="text-sm leading-6 text-text-muted">{field.hint}</p> : null}
         <FieldError id={errId} text={error} />

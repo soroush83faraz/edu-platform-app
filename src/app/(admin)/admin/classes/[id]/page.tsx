@@ -33,7 +33,8 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
     <div className="flex flex-col gap-4">
       <AdminHeader
         title={`کلاس ${cls.name}`}
-        description={`${cls.gradeName} · ${cls.schoolName}${cls.branchName === "مرکزی" ? "" : ` — ${cls.branchName}`} · ${cls.yearName}${cls.capacity ? ` · ظرفیت ${formatNumberFa(cls.capacity)}` : ""}`}
+        // The branch is named only when the school actually has more than one — «— مرکزی» on every class said nothing.
+        description={`${cls.gradeName} · ${cls.schoolName}${cls.schoolBranches > 1 ? ` — ${cls.branchName}` : ""} · ${cls.yearName}${cls.capacity ? ` · ظرفیت ${formatNumberFa(cls.capacity)}` : ""}`}
         back={{ href: "/admin/classes", label: "کلاس‌ها" }}
         actions={
           <>

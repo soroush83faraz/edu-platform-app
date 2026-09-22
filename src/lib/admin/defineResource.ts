@@ -91,6 +91,13 @@ export interface ResourceDef<TRow extends { id: string }, TInput> {
   /** `.strict()` create/edit input; also validates the data of `adminResourceMutate`. */
   schema: z.ZodType<TInput>;
   formFields: FormField[];
+  /**
+   * The fields for a GIVEN option set, when the options decide what the control is and what to call it — the class
+   * form's location picker is «مدرسه» over school names while every school has one branch, and «مدرسه / شعبه» over
+   * branch names grouped by school once one of them has two. Same field `name` (same payload) in every shape.
+   * Defaults to `formFields`; read through `formFieldsOf`.
+   */
+  formFieldsFor?: (options: Record<string, SelectOption[]>) => FormField[];
   list: (tx: Tx, ctx: ResourceCtx, scope: AdminScope, opts: ListOptions) => Promise<ListResult<TRow>>;
   loadOptions?: (tx: Tx, ctx: ResourceCtx, scope: AdminScope, parent?: string) => Promise<Record<string, SelectOption[]>>;
   create: (tx: Tx, ctx: ResourceCtx, scope: AdminScope, input: TInput) => Promise<{ id: string }>;
@@ -110,6 +117,11 @@ export const PAGE_SIZE = 50;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyResourceDef = ResourceDef<any, any>;
+
+/** The form fields of a resource for the options at hand (`formFieldsFor`, else the static list). */
+export function formFieldsOf(def: AnyResourceDef, options: Record<string, SelectOption[]>): FormField[] {
+  return def.formFieldsFor ? def.formFieldsFor(options) : def.formFields;
+}
 
 /** Identity helper that keeps `TRow` / `TInput` inferred from the definition. */
 export function defineResource<TRow extends { id: string }, TInput>(def: ResourceDef<TRow, TInput>): ResourceDef<TRow, TInput> {

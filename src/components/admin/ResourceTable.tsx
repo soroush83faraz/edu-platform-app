@@ -2,7 +2,7 @@ import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { cn } from "cn";
 import { EmptyState } from "@/components/EmptyState";
-import { indefiniteFa, newLabelFa, type AnyResourceDef, type Column, type SelectOption } from "@/lib/admin/defineResource";
+import { formFieldsOf, indefiniteFa, newLabelFa, type AnyResourceDef, type Column, type SelectOption } from "@/lib/admin/defineResource";
 import type { FormValue } from "./ResourceForm";
 import { RowActions } from "./RowActions";
 
@@ -26,7 +26,7 @@ export function ResourceTable({ def, rows, options, canWrite, fixed }: { def: An
       <RowActions
         resource={def.key}
         labelFa={def.labelFa}
-        fields={def.formFields}
+        fields={formFieldsOf(def, options)}
         options={options}
         id={row.id}
         initial={initialOf(def, row)}

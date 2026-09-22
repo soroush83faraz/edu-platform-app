@@ -34,7 +34,7 @@ import {
   updateSubject,
   upsertTerm,
 } from "@/modules/tenancy/service";
-import { defineResource, type AnyResourceDef, type ListOptions, type SelectOption } from "./defineResource";
+import { defineResource, type AnyResourceDef, type FormField, type ListOptions, type SelectOption } from "./defineResource";
 import { adminSectionsFor, type AdminNavItem } from "./nav";
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -99,7 +99,7 @@ export const RESOURCE_MESSAGES = {
   teacherAssignForbidden: "شما اجازهٴ تعیین دبیر در این مدرسه را ندارید.",
 } as const;
 
-const GENDER_LABELS: Record<string, string> = { girls: "دخترانه", boys: "پسرانه", mixed: "مختلط" };
+export const GENDER_LABELS: Record<string, string> = { girls: "دخترانه", boys: "پسرانه", mixed: "مختلط" };
 const GENDER_OPTIONS: SelectOption[] = [
   { value: "girls", label: "دخترانه" },
   { value: "boys", label: "پسرانه" },
@@ -649,6 +649,8 @@ export interface ClassRow {
   branchName: string;
   yearName: string;
   gradeName: string;
+  /** How many branches the school has — the class header names the branch only when there is more than one. */
+  schoolBranches: number;
   capacity: number | null;
   status: string;
   students: number;
@@ -664,11 +666,20 @@ const ClassInput = z
   })
   .strict();
 
-/** `(branch, academic year)` pairs of the schools in scope, labelled «مدرسه — شعبه» / «مدرسه — سال». */
-async function classOptions(tx: Tx, scope: AdminScope): Promise<Record<string, SelectOption[]>> {
+/**
+ * The pickers of the class form. One rule (owner, QA round 3): **an option never repeats its group heading, and
+ * never repeats what the page already says.** So:
+ *   - every school in scope has exactly ONE branch → the branch IS the school: one `schools` option per school
+ *     labelled with the school's name, and the word «شعبه» appears nowhere (`formFieldsFor` picks that field);
+ *   - otherwise `branches`, each labelled with the BRANCH name only, grouped under the school when the scope holds
+ *     more than one school (before: «علامه طباطبایی — شعبهٴ کارگر» *under* a «علامه طباطبایی» heading);
+ *   - years likewise: the group heading carries the school, the option only «۱۴۰۵-۱۴۰۶ (جاری)».
+ * A picker left with a single option is not a choice at all — `ResourceForm` hides it and sends the value.
+ */
+export async function classOptions(tx: Tx, scope: AdminScope): Promise<Record<string, SelectOption[]>> {
   const schools = (await listSchools(tx)).filter((s) => isInScope(scope, s.id));
   const ids = schools.map((s) => s.id);
-  if (ids.length === 0) return { branches: [], years: [], grades: [] };
+  if (ids.length === 0) return { schools: [], branches: [], years: [], grades: [] };
   const branches = await tx
     .select({ id: branch.id, name: branch.name, schoolId: branch.schoolId, isDefault: branch.isDefault })
     .from(branch)
@@ -682,12 +693,29 @@ async function classOptions(tx: Tx, scope: AdminScope): Promise<Record<string, S
   const grades = await tx.select({ id: gradeLevel.id, name: gradeLevel.name }).from(gradeLevel).orderBy(asc(gradeLevel.sequence));
   const schoolName = (id: string) => schools.find((s) => s.id === id)?.name ?? "";
   const many = schools.length > 1;
+  const branchesOf = (schoolId: string) => branches.filter((b) => b.schoolId === schoolId);
+  const oneBranchEach = schools.every((s) => branchesOf(s.id).length === 1);
   return {
-    branches: branches.map((b) => ({ value: b.id, label: many ? `${schoolName(b.schoolId)} — ${b.name}` : b.name, group: many ? schoolName(b.schoolId) : undefined })),
-    years: years.map((y) => ({ value: y.id, label: `${many ? `${schoolName(y.schoolId)} — ` : ""}${y.name}${y.isCurrent ? " (جاری)" : ""}`, group: many ? schoolName(y.schoolId) : undefined })),
+    schools: oneBranchEach ? schools.map((s) => ({ value: branchesOf(s.id)[0].id, label: s.name })) : [],
+    branches: oneBranchEach ? [] : branches.map((b) => ({ value: b.id, label: b.name, group: many ? schoolName(b.schoolId) : undefined })),
+    years: years.map((y) => ({ value: y.id, label: `${y.name}${y.isCurrent ? " (جاری)" : ""}`, group: many ? schoolName(y.schoolId) : undefined })),
     grades: grades.map((g) => ({ value: g.id, label: g.name })),
   };
 }
+
+/** The one field that says WHERE a class lives, in the three shapes `classOptions` can produce (same `name`, same payload). */
+const CLASS_LOCATION_FIELD = {
+  schools: { name: "branchId", labelFa: "مدرسه", type: "select", optionsKey: "schools", required: true, createOnly: true },
+  branches: { name: "branchId", labelFa: "مدرسه / شعبه", type: "select", optionsKey: "branches", required: true, createOnly: true },
+  branchOnly: { name: "branchId", labelFa: "شعبه", type: "select", optionsKey: "branches", required: true, createOnly: true },
+} as const satisfies Record<string, FormField>;
+
+const CLASS_FIELDS: FormField[] = [
+  { name: "academicYearId", labelFa: "سال تحصیلی", type: "select", optionsKey: "years", required: true, createOnly: true },
+  { name: "gradeLevelId", labelFa: "پایه", type: "select", optionsKey: "grades", required: true },
+  { name: "name", labelFa: "نام کلاس", type: "text", required: true, placeholder: "۱۰/۳" },
+  { name: "capacity", labelFa: "ظرفیت", type: "number", numeric: true },
+];
 
 export const classResource = defineResource<ClassRow, z.output<typeof ClassInput>>({
   key: "classes",
@@ -705,13 +733,10 @@ export const classResource = defineResource<ClassRow, z.output<typeof ClassInput
     { key: "status", labelFa: "وضعیت", render: (r) => (r.status === "active" ? "فعال" : "بایگانی"), secondary: true },
   ],
   schema: ClassInput,
-  formFields: [
-    { name: "branchId", labelFa: "مدرسه / شعبه", type: "select", optionsKey: "branches", required: true, createOnly: true },
-    { name: "academicYearId", labelFa: "سال تحصیلی", type: "select", optionsKey: "years", required: true, createOnly: true },
-    { name: "gradeLevelId", labelFa: "پایه", type: "select", optionsKey: "grades", required: true },
-    { name: "name", labelFa: "نام کلاس", type: "text", required: true, placeholder: "۱۰/۳" },
-    { name: "capacity", labelFa: "ظرفیت", type: "number", numeric: true },
-  ],
+  formFields: [CLASS_LOCATION_FIELD.branches, ...CLASS_FIELDS],
+  // The location picker follows the option set (`classOptions`): «مدرسه» over school names while every school has
+  // one branch, «شعبه» inside a single school with two, «مدرسه / شعبه» when both vary and the list is grouped.
+  formFieldsFor: (o) => [(o.schools ?? []).length > 0 ? CLASS_LOCATION_FIELD.schools : (o.branches ?? []).some((b) => b.group) ? CLASS_LOCATION_FIELD.branches : CLASS_LOCATION_FIELD.branchOnly, ...CLASS_FIELDS],
   formValues: (r) => ({ branchId: r.branchId, academicYearId: r.academicYearId, gradeLevelId: r.gradeLevelId, name: r.name, capacity: r.capacity }),
   rowHref: (r) => `/admin/classes/${r.id}`,
   loadOptions: (tx, _ctx, scope) => classOptions(tx, scope),
@@ -768,6 +793,7 @@ export async function listClassRows(tx: Tx, scope: AdminScope, opts: Partial<Lis
       branchName: branch.name,
       yearName: academicYear.name,
       gradeName: gradeLevel.name,
+      schoolBranches: sql<number>`(select count(*)::int from tenancy.branch b2 where b2.school_id = ${school.id})`,
       capacity: classGroup.capacity,
       status: classGroup.status,
       students: sql<number>`(select count(*)::int from academic.class_enrollment ce where ce.class_group_id = ${classGroup.id} and ce.status = 'active')`,
