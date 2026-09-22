@@ -55,7 +55,7 @@ export function JalaliDatePicker({ value, onChange, variant = "field", id, place
   };
 
   if (variant === "inline") {
-    return <Calendar selected={selected} onPick={(d) => onChange(formatJalaliDay(d))} minDate={minDate} className="max-w-none" />;
+    return <Calendar selected={selected} onPick={(d) => onChange(formatJalaliDay(d))} minDate={minDate} />;
   }
 
   const label = selected ? formatJalaliDayWithWeekday(selected) : placeholder;
@@ -205,8 +205,10 @@ export function Calendar({ selected, onPick, minDate, autoFocus = false, classNa
   const selectedKey = selected ? dateKey(selected) : null;
 
   return (
-    <div className={cn("flex w-full max-w-[22rem] flex-col gap-3", className)}>
-      <div className="flex flex-wrap gap-2" role="group" aria-label="انتخاب سریع">
+    // One 22rem box, centred in whatever holds it (an auto-width popover, a full-width sheet, the extend modal) so
+    // the quick chips, the month header and the seven columns all sit on the same left and right edges.
+    <div className={cn("mx-auto flex w-[22rem] max-w-full flex-col gap-3", className)}>
+      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${chips.length}, minmax(0, 1fr))` }} role="group" aria-label="انتخاب سریع">
         {chips.map((q) => {
           const active = selectedKey === q.key;
           const off = isDisabled(q.date);
@@ -219,7 +221,7 @@ export function Calendar({ selected, onPick, minDate, autoFocus = false, classNa
               aria-pressed={active}
               aria-label={`${q.label}، ${formatJalaliDayLong(q.date)}`}
               className={cn(
-                "pressable min-h-10 rounded-full border px-3.5 text-sm transition-base outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-40",
+                "pressable min-h-10 truncate rounded-full border px-2 text-sm transition-base outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-40",
                 active ? "border-primary-600 bg-primary-50 font-semibold text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong hover:text-text",
               )}
             >
@@ -229,9 +231,10 @@ export function Calendar({ selected, onPick, minDate, autoFocus = false, classNa
         })}
       </div>
 
-      <div className="flex items-center justify-between gap-2">
+      {/* Seven columns like the grid below it: each arrow sits exactly over the outer column, the month over the middle five. */}
+      <div className="grid grid-cols-7 items-center">
         <MonthButton label="ماه قبل" onClick={() => shiftMonth(-1)} />
-        <h3 id={headingId} className="text-row font-semibold text-text" aria-live="polite">
+        <h3 id={headingId} className="col-span-5 text-center text-row font-semibold text-text" aria-live="polite">
           {grid.title}
         </h3>
         <MonthButton label="ماه بعد" onClick={() => shiftMonth(1)} mirror />
@@ -294,7 +297,7 @@ function MonthButton({ label, onClick, mirror = false }: { label: string; onClic
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="pressable inline-grid size-11 place-items-center rounded-lg text-text-muted outline-none transition-base hover:bg-surface-sunken hover:text-text focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="pressable grid size-11 justify-self-center place-items-center rounded-lg text-text-muted outline-none transition-base hover:bg-surface-sunken hover:text-text focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <ChevronLeft className={cn("size-5", mirror ? "ltr:-scale-x-100" : "rtl:-scale-x-100")} strokeWidth={1.75} aria-hidden />
     </button>

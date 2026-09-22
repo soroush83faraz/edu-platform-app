@@ -2,7 +2,7 @@
 
 import { useId } from "react";
 import { cn } from "cn";
-import { SelectNative } from "@/components/ui/select-native";
+import { WheelColumn } from "@/components/pickers/WheelColumn";
 import { MINUTE_STEP, defaultTimeMinutes, formatHm, parseHm, snapMinutes } from "@/lib/jalali-grid";
 import { toFaDigits } from "@/lib/format";
 
@@ -10,6 +10,8 @@ export interface TimePickerProps {
   /** ASCII `HH:mm` (the DTO shape) or "" = end of the day (۲۳:۵۹). */
   value: string;
   onChange: (value: string) => void;
+  /** Submits the ASCII value with the form when the caller posts FormData. */
+  name?: string;
   disabled?: boolean;
   "aria-describedby"?: string;
 }
@@ -19,11 +21,12 @@ const MINUTES = Array.from({ length: 60 / MINUTE_STEP }, (_, i) => i * MINUTE_ST
 const two = (n: number) => toFaDigits(String(n).padStart(2, "0"));
 
 /**
- * «ساعت مشخص» — off by default (the due is the end of the day); on, two native selects (hour 0–23, minute in
- * 5-minute steps): the OS wheel on phones, a short list on desktop — no typing, no invalid time possible.
- * A value that is not on the 5-minute grid (an existing ۲۳:۵۹) snaps to the nearest step when the toggle is on.
+ * «ساعت مشخص» — off by default (the due is the end of the day); on, two drums like a phone alarm clock: ساعت 0–23
+ * on the start of the LTR pair and دقیقه in 5-minute steps after it, so the control reads in the same order as the
+ * «۱۳:۵۰» it produces. No typing, no invalid time possible. A value that is not on the 5-minute grid (an existing
+ * ۲۳:۵۹) snaps to the nearest step when the toggle is turned on.
  */
-export function TimePicker({ value, onChange, disabled, ...aria }: TimePickerProps) {
+export function TimePicker({ value, onChange, name, disabled, ...aria }: TimePickerProps) {
   const ids = useId();
   const minutes = value ? parseHm(value) : null;
   const on = minutes !== null;
@@ -34,11 +37,23 @@ export function TimePicker({ value, onChange, disabled, ...aria }: TimePickerPro
   const toggle = (next: boolean) => onChange(next ? formatHm(defaultTimeMinutes()) : "");
 
   return (
-    <div className={cn("flex flex-col gap-3 rounded-lg border border-line bg-surface p-3", disabled && "opacity-50")}>
-      <label htmlFor={`${ids}-toggle`} className="flex min-h-8 cursor-pointer items-center justify-between gap-3">
+    <div className={cn("flex flex-col gap-3", disabled && "opacity-50")}>
+      {name ? <input type="hidden" name={name} value={value} /> : null}
+      <label htmlFor={`${ids}-toggle`} className="flex min-h-11 cursor-pointer items-center justify-between gap-3">
         <span className="flex flex-col">
           <span className="text-sm font-medium text-text">ساعت مشخص</span>
-          <span className="text-meta text-text-muted">{on ? `تا ساعت ${two(hour)}:${two(minute)}` : "خاموش: تا پایان روز (۲۳:۵۹)"}</span>
+          <span className="text-meta text-text-muted">
+            {on ? (
+              <>
+                تا ساعت{" "}
+                <bdi dir="ltr" className="tabular">
+                  {two(hour)}:{two(minute)}
+                </bdi>
+              </>
+            ) : (
+              "خاموش: تا پایان روز (۲۳:۵۹)"
+            )}
+          </span>
         </span>
         <span className="relative inline-flex shrink-0 items-center">
           <input
@@ -59,31 +74,32 @@ export function TimePicker({ value, onChange, disabled, ...aria }: TimePickerPro
       </label>
 
       {on ? (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor={`${ids}-hour`} className="text-meta font-medium text-text-muted">
-              ساعت
-            </label>
-            <SelectNative id={`${ids}-hour`} value={hour} disabled={disabled} className="tabular text-center" onChange={(e) => onChange(formatHm(Number(e.target.value) * 60 + minute))}>
-              {HOURS.map((h) => (
-                <option key={h} value={h}>
-                  {two(h)}
-                </option>
-              ))}
-            </SelectNative>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor={`${ids}-minute`} className="text-meta font-medium text-text-muted">
-              دقیقه
-            </label>
-            <SelectNative id={`${ids}-minute`} value={minute} disabled={disabled} className="tabular text-center" onChange={(e) => onChange(formatHm(hour * 60 + Number(e.target.value)))}>
-              {MINUTES.map((m) => (
-                <option key={m} value={m}>
-                  {two(m)}
-                </option>
-              ))}
-            </SelectNative>
-          </div>
+        // `dir="ltr"`: a clock face is LTR in Persian too — the pair reads ساعت then دقیقه, exactly like «۱۳:۵۰».
+        <div dir="ltr" className="mx-auto grid w-full max-w-[17rem] grid-cols-[1fr_auto_1fr] items-center gap-x-1">
+          <span className="text-center text-meta font-medium text-text-muted">ساعت</span>
+          <span aria-hidden />
+          <span className="text-center text-meta font-medium text-text-muted">دقیقه</span>
+          <WheelColumn
+            options={HOURS}
+            value={hour}
+            onChange={(h) => onChange(formatHm(h * 60 + minute))}
+            format={two}
+            label="ساعت"
+            optionLabel={(h) => `ساعت ${two(h)}`}
+            disabled={disabled}
+          />
+          <span aria-hidden className="px-1 text-section font-semibold text-text-muted">
+            :
+          </span>
+          <WheelColumn
+            options={MINUTES}
+            value={minute}
+            onChange={(m) => onChange(formatHm(hour * 60 + m))}
+            format={two}
+            label="دقیقه"
+            optionLabel={(m) => `${two(m)} دقیقه`}
+            disabled={disabled}
+          />
         </div>
       ) : null}
     </div>

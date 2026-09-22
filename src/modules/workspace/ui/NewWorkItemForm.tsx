@@ -8,7 +8,8 @@ import { v7 as uuidv7 } from "uuid";
 import { cn } from "cn";
 import { JalaliDatePicker } from "@/components/pickers/JalaliDatePicker";
 import { TimePicker, formatTimeFa } from "@/components/pickers/TimePicker";
-import { PRIORITY_LABELS, type Priority } from "@/components/priority";
+import { PrioritySelect } from "@/components/PrioritySelect";
+import type { Priority } from "@/components/priority";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,7 +29,6 @@ export interface NewWorkItemFormProps {
 }
 
 type Mode = "class" | "persons" | "self";
-const PRIORITIES: Priority[] = ["low", "normal", "high", "urgent"];
 /** Every field the form renders; a server error on anything else lands on the form-level line (never silent). */
 const RENDERED = ["title", "description", "priority", "dueDate", "dueTime", "recipients"];
 
@@ -164,18 +164,26 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
         <Label htmlFor={dueF.id}>
           مهلت <span className="text-text-faint">(اختیاری)</span>
         </Label>
-        <JalaliDatePicker
-          id={dueF.id}
-          value={dueDate}
-          onChange={(v) => {
-            setDueDate(v);
-            if (!v) setDueTime("");
-          }}
-          aria-invalid={dueF.error ? true : undefined} aria-describedby={dueF.describedBy} />
+        {/* One «مهلت» panel: the day on top, the clock beneath it once a day exists — never two competing cards. */}
+        <div className="flex flex-col gap-3 rounded-card bg-surface p-3 shadow-1">
+          <JalaliDatePicker
+            id={dueF.id}
+            value={dueDate}
+            onChange={(v) => {
+              setDueDate(v);
+              if (!v) setDueTime("");
+            }}
+            aria-invalid={dueF.error ? true : undefined} aria-describedby={dueF.describedBy} />
+          {dueDay ? (
+            <>
+              <hr className="border-line" />
+              <TimePicker value={dueTime} onChange={setDueTime} name="dueTime" aria-describedby={timeF.describedBy} />
+            </>
+          ) : null}
+        </div>
         <FieldError id={`${dueF.id}-err`} text={dueF.error} />
         {dueDay ? (
           <>
-            <TimePicker value={dueTime} onChange={setDueTime} aria-describedby={timeF.describedBy} />
             <FieldError id={`${timeF.id}-err`} text={timeF.error} />
             <p role="status" className={cn("flex items-center gap-1.5 text-sm leading-6", duePast ? "text-warning-text" : "text-text-muted")}>
               {duePast ? <TriangleAlert className="size-4 shrink-0" aria-hidden /> : null}
@@ -188,23 +196,12 @@ export function NewWorkItemForm({ offerings, canPickPersons, initialOfferingId }
         ) : null}
       </div>
 
-      <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-medium text-text">اولویت</legend>
-        <div className="grid grid-cols-4 gap-2">
-          {PRIORITIES.map((p) => (
-            <label
-              key={p}
-              className={cn(
-                "flex min-h-11 cursor-pointer items-center justify-center rounded-lg border text-sm transition-base has-focus-visible:ring-2 has-focus-visible:ring-primary-400",
-                priority === p ? "border-primary-600 bg-primary-50 font-semibold text-primary-700" : "border-line bg-surface text-text-muted",
-              )}
-            >
-              <input type="radio" name="priority" value={p} checked={priority === p} onChange={() => setPriority(p)} className="sr-only" />
-              {PRIORITY_LABELS[p]}
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <div className="flex flex-col gap-2">
+        <span id={`${ids}-priority`} className="text-sm font-medium text-text">
+          اولویت
+        </span>
+        <PrioritySelect value={priority} onChange={setPriority} name="priority" aria-labelledby={`${ids}-priority`} />
+      </div>
 
       <fieldset className="flex flex-col gap-3">
         <legend className="text-sm font-medium text-text">گیرندگان</legend>

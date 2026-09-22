@@ -257,8 +257,14 @@ function ExtendForm({ workItemId, title, dueAt, onClose, onDone }: { workItemId:
 
   return (
     <div className="flex flex-col gap-4 pt-2">
+      {/* The dialog itself is the «مهلت» panel — a card inside it would be a card inside a card. Just the rule. */}
       <JalaliDatePicker variant="inline" value={dueDate} onChange={setDueDate} minDate={tehranToday()} />
-      {day ? <TimePicker value={dueTime} onChange={setDueTime} /> : null}
+      {day ? (
+        <>
+          <hr className="border-line" />
+          <TimePicker value={dueTime} onChange={setDueTime} />
+        </>
+      ) : null}
       <p role="status" className={cn("min-h-6 text-sm leading-6", inPast || unchanged ? "text-warning-text" : "text-text-muted")}>
         {day ? (
           <>
