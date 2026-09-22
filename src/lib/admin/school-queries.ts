@@ -1,18 +1,19 @@
-// The school hub (/admin/schools/[id]): everything one school needs to be set up, read in ONE gated query —
-// branches, academic years (+ the terms of the current one), the bell schedule, the classes with their rosters,
-// the ارائهٴ درس and کارکنان totals. Each section's «افزودن» reuses the resource definition of the matching list
-// page, so nothing here duplicates validation: the forms post to `adminResourceMutate` like everywhere else.
-import { and, asc, count, desc, eq, isNull, sql } from "drizzle-orm";
+// The school hub (/admin/schools/[id]): what a school's own page still owns after the trim (docs/decisions.md
+// «the hub drops sections that have their own door») — branches, academic years (name/dates/جاری only, no نوبت‌ها)
+// and the ارائهٴ درس summary. زنگ‌بندی, کلاس‌ها, کارکنان and «کاتالوگ سازمان» each already have their own door
+// (a Home tile or an admin nav section) and no longer duplicate it here. Each section's «افزودن» reuses the
+// resource definition of the matching list page, so nothing here duplicates validation: the forms post to
+// `adminResourceMutate` like everywhere else.
+import { and, asc, desc, eq, count, sql } from "drizzle-orm";
 import { z } from "zod";
 import { defineQuery } from "@/lib/actions";
 import { notFound } from "@/lib/errors";
-import { person, staffProfile } from "@/modules/iam/schema";
 import { assertSchoolInScope, getAdminScope } from "@/modules/iam/service";
-import { findSchoolById, listSchoolPeriods, listTerms, type SchoolPeriodRow } from "@/modules/tenancy/repo";
+import { findSchoolById } from "@/modules/tenancy/repo";
 import { academicYear, branch, classGroup, classOffering } from "@/modules/tenancy/schema";
 import { resourceOpGate, type AnyResourceDef, type ResourceOp } from "./defineResource";
 import { schoolsLabelFa } from "./nav";
-import { branchResource, classOptions, classResource, listClassRows, schoolResource, yearResource, type ClassRow } from "./resources";
+import { branchResource, schoolResource, yearResource } from "./resources";
 
 export const SchoolIdInput = z.object({ schoolId: z.uuid("شناسه نامعتبر است.") }).strict();
 
@@ -22,24 +23,16 @@ export interface SchoolHubYear {
   startsOn: string;
   endsOn: string;
   isCurrent: boolean;
-  terms: number;
 }
 
 export interface SchoolHubData {
   school: { id: string; name: string; code: string; genderPolicy: string | null; isDefault: boolean };
   branches: Array<{ id: string; name: string; address: string | null; isDefault: boolean }>;
   years: SchoolHubYear[];
-  /** The year whose نوبت‌ها the hub nests: the current one, else the newest. */
-  focusYear: (Omit<SchoolHubYear, "terms"> & { terms: Array<{ id: string; name: string; sequence: number; startsOn: string; endsOn: string }> }) | null;
-  periods: SchoolPeriodRow[];
-  classes: ClassRow[];
-  students: number;
+  /** The year the header names: the current one, else the newest. No نوبت‌ها here — a school year is enough granularity for this page. */
+  focusYear: SchoolHubYear | null;
   offerings: { total: number; withoutTeacher: number };
-  staff: number;
-  /** Form option sets, already narrowed to this school (so no picker repeats the school's own name). */
-  options: { class: Record<string, Array<{ value: string; label: string; group?: string }>> };
-  can: { school: boolean; structure: boolean; classes: boolean };
-  isOrgAdmin: boolean;
+  can: { school: boolean; structure: boolean };
   /** «مدرسه» / «مدرسه‌ها» — what the list this page came from is called for THIS caller (`schoolsLabelFa`). */
   backLabelFa: string;
 }
@@ -70,14 +63,11 @@ export const schoolHubQuery = defineQuery<SchoolHubData, typeof SchoolIdInput>(
         startsOn: academicYear.startsOn,
         endsOn: academicYear.endsOn,
         isCurrent: academicYear.isCurrent,
-        terms: sql<number>`(select count(*)::int from tenancy.term t where t.academic_year_id = ${academicYear.id})`,
       })
       .from(academicYear)
       .where(eq(academicYear.schoolId, sch.id))
       .orderBy(desc(academicYear.isCurrent), desc(academicYear.startsOn));
     const focus = years.find((y) => y.isCurrent) ?? years[0] ?? null;
-
-    const { rows: classes } = await listClassRows(tx, scope, { schoolId: sch.id });
 
     const [offerings] = await tx
       .select({
@@ -89,27 +79,14 @@ export const schoolHubQuery = defineQuery<SchoolHubData, typeof SchoolIdInput>(
       .innerJoin(branch, eq(branch.id, classGroup.branchId))
       .where(and(eq(branch.schoolId, sch.id), eq(classGroup.status, "active"), sql`${classOffering.status} <> 'closed'`));
 
-    const [staff] = await tx
-      .select({ n: count() })
-      .from(staffProfile)
-      .innerJoin(person, eq(person.id, staffProfile.personId))
-      .where(and(eq(staffProfile.schoolId, sch.id), eq(person.status, "active"), isNull(staffProfile.leftOn)));
-
     const gate = (def: AnyResourceDef, op: ResourceOp) => resourceOpGate(def, op, ctx.assignments, scope).ok;
     return {
       school: { id: sch.id, name: sch.name, code: sch.code, genderPolicy: sch.genderPolicy, isDefault: sch.isDefault },
       branches,
       years,
-      focusYear: focus ? { ...focus, terms: await listTerms(tx, focus.id) } : null,
-      periods: await listSchoolPeriods(tx, sch.id),
-      classes,
-      students: classes.reduce((n, c) => n + c.students, 0),
+      focusYear: focus,
       offerings: { total: Number(offerings?.total ?? 0), withoutTeacher: Number(offerings?.withoutTeacher ?? 0) },
-      staff: staff?.n ?? 0,
-      // One school, its own branches and years: every picker on this page is already unambiguous.
-      options: { class: await classOptions(tx, { kind: "school", schoolIds: [sch.id] }) },
-      can: { school: gate(schoolResource, "update"), structure: gate(branchResource, "create") && gate(yearResource, "create"), classes: gate(classResource, "create") },
-      isOrgAdmin: scope.kind === "organization",
+      can: { school: gate(schoolResource, "update"), structure: gate(branchResource, "create") && gate(yearResource, "create") },
       backLabelFa: schoolsLabelFa(scope),
     };
   },
