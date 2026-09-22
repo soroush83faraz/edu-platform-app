@@ -23,7 +23,9 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { drizzle, type NodePgClient, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../src/db/schema";
-import { assignTeacher, enrollStudent, type ServiceCtx } from "../src/modules/academic/service";
+import { DEFAULT_PERIODS, SCHOOL_WEEKDAYS } from "../src/lib/timetable";
+import { listClassSlots } from "../src/modules/academic/repo";
+import { assignTeacher, enrollStudent, setTimetableSlot, type ServiceCtx } from "../src/modules/academic/service";
 import { IMPLICIT_PERMISSIONS, PERMISSIONS } from "../src/modules/iam/permissions";
 import { generateInitialPassword } from "../src/modules/iam/password";
 import { assignRole, createStaff, createStudent, findAccountOfPerson, setAccountPassword, updatePerson, type IamCtx } from "../src/modules/iam/service";
@@ -57,6 +59,7 @@ import {
   upsertTerm,
 } from "../src/modules/tenancy/service";
 import { SYSTEM_ROLES, catalogCountsWith, formatCatalogSummary, seedCatalogWith, type CatalogCounts, type Queryable } from "./catalog";
+import { planTimetables, type PlanClass } from "./timetable-plan";
 
 export { NOTIFICATION_TYPES, SYSTEM_ROLES, SYSTEM_WORK_ITEM_TYPES, type CatalogCounts } from "./catalog";
 const SYSTEM_ROLE_CODES = SYSTEM_ROLES.map((r) => r.code);
@@ -518,6 +521,25 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
       if (existing.length === 0) await assignTeacher(tx, svcCtx, { ...plan, role: "main", validFrom: demoStart });
     }
 
+    // ---- a small weekly timetable: every offering three sessions over the six default زنگ‌ها, no teacher twice at once ----
+    const teacherOfOffering = new Map(teacherPlans.map((t) => [t.classOfferingId, t.staffProfileId]));
+    const planClasses: PlanClass[] = Object.entries(classIds).map(([key, classGroupId]) => ({
+      key: classGroupId,
+      offerings: spec.offered.map((code) => {
+        const offeringId = offeringIds[`${key}:${code}`];
+        return { key: offeringId, teacherKey: teacherOfOffering.get(offeringId) ?? `none:${offeringId}`, sessions: 3 };
+      }),
+    }));
+    const plan = planTimetables(planClasses, SCHOOL_WEEKDAYS, DEFAULT_PERIODS.map((p) => p.periodNo));
+    for (const cls of planClasses) {
+      const existing = await listClassSlots(tx, cls.key);
+      for (const slot of plan.slots.get(cls.key) ?? []) {
+        const current = existing.find((e) => e.weekday === slot.weekday && e.periodNo === slot.periodNo);
+        if (current?.offeringId === slot.offeringKey) continue;
+        await setTimetableSlot(tx, ctx, { classGroupId: cls.key, weekday: slot.weekday, periodNo: slot.periodNo, classOfferingId: slot.offeringKey });
+      }
+    }
+
     const count = async (table: string, where = ""): Promise<number> => {
       const res = await tx.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table} ${where}`));
       return res.rows[0].n;
@@ -531,6 +553,7 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
       classEnrollments: await count("academic.class_enrollment", "where status = 'active'"),
       teacherAssignments: await count("academic.teacher_assignment", "where valid_to is null"),
       derivedTeacherRoles: await count("iam.role_assignment", "where source_type = 'teacher_assignment' and revoked_at is null"),
+      timetableSlots: await count("academic.timetable_slot"),
     };
     return { logins, counts };
   });
@@ -607,7 +630,7 @@ async function main(): Promise<void> {
       console.log(`[seed] demo: ${logins.length} accounts in 2 organizations`);
       for (const [slug, c] of Object.entries(counts)) {
         console.log(
-          `[seed] demo ${slug}: ${c.school} schools, ${c.classGroup} classes, ${c.classOffering} offerings, ${c.persons} persons, ${c.accounts} accounts, ${c.roleAssignments} role assignments, ${c.schoolEnrollments} school enrollments, ${c.classEnrollments} active class enrollments, ${c.teacherAssignments} teacher assignments, ${c.derivedTeacherRoles} derived teacher roles`,
+          `[seed] demo ${slug}: ${c.school} schools, ${c.classGroup} classes, ${c.classOffering} offerings, ${c.persons} persons, ${c.accounts} accounts, ${c.roleAssignments} role assignments, ${c.schoolEnrollments} school enrollments, ${c.classEnrollments} active class enrollments, ${c.teacherAssignments} teacher assignments, ${c.derivedTeacherRoles} derived teacher roles, ${c.timetableSlots} timetable slots`,
         );
       }
       printLogins(logins, password, generated, process.env.SEED_DEMO_NO_FORCE !== "1");

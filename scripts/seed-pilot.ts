@@ -28,7 +28,9 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../src/db/schema";
-import { assignTeacher } from "../src/modules/academic/service";
+import { listClassSlots } from "../src/modules/academic/repo";
+import { assignTeacher, setTimetableSlot } from "../src/modules/academic/service";
+import { DEFAULT_PERIODS, SCHOOL_WEEKDAYS } from "../src/lib/timetable";
 import type { Assignment } from "../src/modules/iam/can";
 import { hashPassword } from "../src/modules/iam/password";
 import { IMPLICIT_PERMISSIONS, PERMISSIONS } from "../src/modules/iam/permissions";
@@ -48,6 +50,7 @@ import {
 } from "../src/modules/tenancy/service";
 import { addComment, changeStatus, createWorkItem, type WorkspaceCtx } from "../src/modules/workspace/service";
 import { seedCatalog } from "./seed";
+import { hasTeacherClash, planTimetables, type PlanClass } from "./timetable-plan";
 
 type Db = NodePgDatabase<typeof schema>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -347,6 +350,32 @@ export function allocateOfferings(spec: PilotOrgSpec): string[][] {
   return spec.teachers.map((_t, i) => offerings.filter((o) => owner.get(o.key) === i).map((o) => o.key));
 }
 
+/** Sessions per week of one offering: 2, 3 or 4 — deterministic from the key (`weekly_hours` stays 3 on the row). */
+export function sessionsOf(orgKey: string, offeringKey: string): number {
+  return 2 + hashInt(`sessions:${orgKey}:${offeringKey}`, 3);
+}
+
+/**
+ * The weekly timetable of every class of a school over the six default زنگ‌ها: each offering `sessionsOf` cells,
+ * no teacher in two classes at once (`planTimetables`, teacher = the allocation index). Throws when the plan cannot
+ * place every session — the rosters above always fit (asserted by tests/int/seed-pilot.test.ts).
+ */
+export function planPilotTimetable(spec: PilotOrgSpec, allocation: string[][]) {
+  const teacherOf = new Map<string, number>();
+  allocation.forEach((keys, t) => keys.forEach((k) => teacherOf.set(k, t)));
+  const classes: PlanClass[] = spec.classes.map((c) => ({
+    key: c.name,
+    offerings: c.subjects.map((code) => {
+      const key = `${c.name}:${code}`;
+      return { key, teacherKey: String(teacherOf.get(key)), sessions: sessionsOf(spec.key, key) };
+    }),
+  }));
+  const plan = planTimetables(classes, SCHOOL_WEEKDAYS, DEFAULT_PERIODS.map((p) => p.periodNo));
+  if (plan.unplaced.length > 0) throw new Error(`pilot ${spec.key}: ${plan.unplaced.length} timetable sessions could not be placed`);
+  if (hasTeacherClash(plan, classes)) throw new Error(`pilot ${spec.key}: timetable plan double-books a teacher`);
+  return plan;
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // plan (scale-aware numbers the int test asserts)
 // ---------------------------------------------------------------------------------------------------------------
@@ -385,6 +414,8 @@ export interface ExpectedCounts {
   teachers: number;
   students: number;
   workItems: number;
+  /** Timetable cells over all classes: Σ `sessionsOf` per offering. */
+  timetableSlots: number;
 }
 
 export function expectedCounts(scale: number): ExpectedCounts {
@@ -393,14 +424,16 @@ export function expectedCounts(scale: number): ExpectedCounts {
   let teachers = 0;
   let students = 0;
   let workItems = 0;
+  let timetableSlots = 0;
   for (const spec of PILOT_ORGS) {
     classGroups += spec.classes.length;
     offerings += spec.classes.reduce((n, c) => n + c.subjects.length, 0);
     teachers += spec.teachers.length;
     students += spec.classes.length * studentsPerClass(scale);
     workItems += spec.teachers.reduce((n, _t, i) => n + tasksOfTeacher(i, scale), 0) + 2 * STAFF_TODOS.length + ADMIN_TASKS.length;
+    timetableSlots += spec.classes.reduce((n, c) => n + c.subjects.reduce((m, code) => m + sessionsOf(spec.key, `${c.name}:${code}`), 0), 0);
   }
-  return { organizations: PILOT_ORGS.length, schools: PILOT_ORGS.length, classGroups, offerings, teachers, students, workItems };
+  return { organizations: PILOT_ORGS.length, schools: PILOT_ORGS.length, classGroups, offerings, teachers, students, workItems, timetableSlots };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -673,6 +706,27 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
       }
       teachers.push({ ...staff, offerings: offeringKeys.map((key) => `${subjectNames[key.split(":")[1]]} ${key.split(":")[0]}`) });
     }
+
+    // ---- weekly timetable: every class over the six default زنگ‌ها, through the service as the org admin ----
+    // (the permission catalog must already carry `academic.timetable.write` — seedCatalog runs first).
+    const plan = planPilotTimetable(spec, allocation);
+    for (const c of spec.classes) {
+      const classGroupId = classIds[c.name];
+      const existing = await listClassSlots(tx, classGroupId);
+      const planned = plan.slots.get(c.name) ?? [];
+      for (const slot of planned) {
+        const classOfferingId = offeringIds[slot.offeringKey];
+        const current = existing.find((e) => e.weekday === slot.weekday && e.periodNo === slot.periodNo);
+        if (current?.offeringId === classOfferingId) continue;
+        await setTimetableSlot(tx, ctx, { classGroupId, weekday: slot.weekday, periodNo: slot.periodNo, classOfferingId });
+      }
+      // Cells the plan no longer uses (a re-planned seed) are cleared, so the grid always equals the plan.
+      for (const e of existing) {
+        if (!planned.some((p) => p.weekday === e.weekday && p.periodNo === e.periodNo)) {
+          await setTimetableSlot(tx, ctx, { classGroupId, weekday: e.weekday, periodNo: e.periodNo, classOfferingId: null });
+        }
+      }
+    }
     return { admin, principal, vice, teachers, classIds, offeringIds, subjectNames, allocation };
   });
 
@@ -735,6 +789,8 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
         const title = tpl.title(structure.subjectNames[code], cls, 1 + ((t + i) % 4));
         const idx = taskCounter++;
         let workItemId = await findWorkItemByTitle(tx, teacher.personId, title);
+        // Tasks seeded before migration 0015 carry no درس: link them so the subject pages of the pilot are not empty.
+        if (workItemId) await tx.update(workItem).set({ classOfferingId: structure.offeringIds[key] }).where(and(eq(workItem.id, workItemId), isNull(workItem.classOfferingId)));
         if (!workItemId) {
           const res = await createWorkItem(tx, tctx, {
             typeCode: "task",
@@ -803,6 +859,7 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
       accounts: await count("iam.organization_membership"),
       classEnrollments: await count("academic.class_enrollment", "where status = 'active'"),
       teacherAssignments: await count("academic.teacher_assignment", "where valid_to is null"),
+      timetableSlots: await count("academic.timetable_slot"),
       workItems: await count("workspace.work_item"),
       assignees: await count("workspace.work_item_assignee"),
       comments: await count("workspace.work_item_comment"),
@@ -824,7 +881,7 @@ export interface PilotCounts extends Record<string, number> {
 
 /** Global counts (as app_owner, per pilot organization so FORCE RLS lets us see the rows). */
 export async function pilotCounts(db: Db): Promise<PilotCounts> {
-  const totals: PilotCounts = { organizations: 0, schools: 0, classGroups: 0, offerings: 0, staff: 0, students: 0, accounts: 0, classEnrollments: 0, teacherAssignments: 0, workItems: 0, comments: 0, notifications: 0 };
+  const totals: PilotCounts = { organizations: 0, schools: 0, classGroups: 0, offerings: 0, staff: 0, students: 0, accounts: 0, classEnrollments: 0, teacherAssignments: 0, timetableSlots: 0, workItems: 0, comments: 0, notifications: 0 };
   const orgs = await db.select({ id: organization.id }).from(organization).where(inArray(organization.slug, PILOT_ORGS.map((o) => o.slug)));
   totals.organizations = orgs.length;
   for (const { id } of orgs) {
@@ -841,6 +898,7 @@ export async function pilotCounts(db: Db): Promise<PilotCounts> {
       totals.accounts += await count("iam.organization_membership");
       totals.classEnrollments += await count("academic.class_enrollment", "where status = 'active'");
       totals.teacherAssignments += await count("academic.teacher_assignment", "where valid_to is null");
+      totals.timetableSlots += await count("academic.timetable_slot");
       totals.workItems += await count("workspace.work_item");
       totals.comments += await count("workspace.work_item_comment");
       totals.notifications += await count("notif.notification");
@@ -984,7 +1042,7 @@ export function renderAccountsMarkdown(result: SeedPilotResult): string {
     for (const c of s.classes) for (const st of c.students) lines.push(`| ${c.name} | ${st.name} | \`${loginId(st.loginIdentifier)}\` |`);
     lines.push("");
     lines.push(
-      `شمارش: ${s.counts.classGroups} کلاس، ${s.counts.offerings} ارائهٴ درس، ${s.counts.staff} همکار، ${s.counts.students} دانش‌آموز، ${s.counts.accounts} حساب، ${s.counts.teacherAssignments} تخصیص دبیر، ${s.counts.workItems} کار، ${s.counts.comments} نظر، ${s.counts.notifications} اعلان.`,
+      `شمارش: ${s.counts.classGroups} کلاس، ${s.counts.offerings} ارائهٴ درس، ${s.counts.staff} همکار، ${s.counts.students} دانش‌آموز، ${s.counts.accounts} حساب، ${s.counts.teacherAssignments} تخصیص دبیر، ${s.counts.timetableSlots} زنگ برنامه، ${s.counts.workItems} کار، ${s.counts.comments} نظر، ${s.counts.notifications} اعلان.`,
       "",
     );
   }
@@ -995,7 +1053,7 @@ function printSummary(result: SeedPilotResult): void {
   for (const s of result.summaries) {
     console.log(`\n[seed:pilot] ${s.org} / ${s.school} (${s.code}) — ${s.counts.createdAccounts} accounts created this run`);
     console.log(
-      `  ${s.counts.classGroups} classes, ${s.counts.offerings} offerings, ${s.counts.staff} staff, ${s.counts.students} students, ${s.counts.accounts} accounts, ${s.counts.classEnrollments} enrollments, ${s.counts.teacherAssignments} teacher assignments, ${s.counts.workItems} work items, ${s.counts.assignees} assignees, ${s.counts.comments} comments, ${s.counts.notifications} notifications`,
+      `  ${s.counts.classGroups} classes, ${s.counts.offerings} offerings, ${s.counts.staff} staff, ${s.counts.students} students, ${s.counts.accounts} accounts, ${s.counts.classEnrollments} enrollments, ${s.counts.teacherAssignments} teacher assignments, ${s.counts.timetableSlots} timetable slots, ${s.counts.workItems} work items, ${s.counts.assignees} assignees, ${s.counts.comments} comments, ${s.counts.notifications} notifications`,
     );
     console.log(`  phases: structure+staff ${(s.counts.structureMs / 1000).toFixed(1)} s · students ${(s.counts.studentsMs / 1000).toFixed(1)} s · teacher tasks + student reactions ${(s.counts.teacherItemsMs / 1000).toFixed(1)} s · staff items ${(s.counts.staffItemsMs / 1000).toFixed(1)} s`);
     console.log(`  admin ${s.admin.name} ${national(s.admin.phone)} · principal ${s.principal.name} ${national(s.principal.phone)} · vice ${s.vice.name} ${national(s.vice.phone)}`);

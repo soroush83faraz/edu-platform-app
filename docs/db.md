@@ -42,7 +42,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 4. اعمال: محلی `pnpm db:migrate` (و `pnpm seed` برای کاتالوگ)؛ روی سرور سرویس `migrate` (`node scripts/migrate.js`) و سپس سرویس `seed` (`node scripts/seed-catalog.js`، کاتالوگ مجوزها/نقش‌ها) قبل از `app` اجرا می‌شوند. همهٴ مهاجرت‌های معوق در **یک تراکنش** اعمال می‌شوند؛ اجرای دوباره no-op است.
 5. **هرگز `drizzle-kit push` نه.** مهاجرتِ اعمال‌شده هرگز ویرایش نمی‌شود (تا وقتی فقط محلی است، حذف و دوباره generate کنید). تغییرات production فقط **افزودنی**: ستون جدید nullable یا با DEFAULT؛ تغییر نام با expand/contract.
 6. `NOT NULL` در دو گام: (۱) ستون nullable + backfill، (۲) در مهاجرت/ریلیز بعدی `SET NOT NULL`.
-7. قواعد ثابت: `timestamptz` (UTC)، `text + CHECK` نه ENUM، بدون `deleted_at` (از `status`/`archived_at`)، UUID v7 از اپ (`uuid.v7()`) یا `app.uuid_generate_v7()` در SQL، هر FK صریح `ON DELETE RESTRICT`، FK ترکیبی `(organization_id, x_id) → x(organization_id, id)` و والدها `UNIQUE(organization_id, id)`.
+7. قواعد ثابت: `timestamptz` (UTC)، `text + CHECK` نه ENUM، بدون `deleted_at` (از `status`/`archived_at`؛ تنها استثنا: جدول‌های پیکربندی خالصِ `tenancy.school_period` و `academic.timetable_slot` که ردیفشان حذف می‌شود و تاریخچه در `audit_log` است — docs/decisions.md «برنامهٴ کلاسی»)، UUID v7 از اپ (`uuid.v7()`) یا `app.uuid_generate_v7()` در SQL، هر FK صریح `ON DELETE RESTRICT`، FK ترکیبی `(organization_id, x_id) → x(organization_id, id)` و والدها `UNIQUE(organization_id, id)`.
 
 ## جدول‌ها و کلید طبیعی
 

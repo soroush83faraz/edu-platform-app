@@ -45,6 +45,7 @@ describe("seed:pilot", () => {
       expect(first.offerings).toBe(plan.offerings);
       expect(first.students).toBe(plan.students);
       expect(first.teacherAssignments).toBe(plan.offerings); // every offering has its main teacher
+      expect(first.timetableSlots).toBe(plan.timetableSlots); // every offering has its 2–4 sessions on the grid
       expect(first.staff).toBe(plan.teachers + 3 * 3); // + admin, principal, vice per school
       expect(first.accounts).toBe(first.students + first.staff);
       expect(first.workItems).toBe(plan.workItems);
