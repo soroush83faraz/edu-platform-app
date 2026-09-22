@@ -1,5 +1,5 @@
-// Zod v4 `.strict()` inputs of the timetable actions and queries. Persian messages; nothing here is spread into
-// a query — the services map fields explicitly.
+// Zod v4 `.strict()` inputs of the timetable and attendance actions and queries. Persian messages; nothing here
+// is spread into a query — the services map fields explicitly.
 import { z } from "zod";
 import { MAX_PERIODS } from "@/lib/timetable";
 
@@ -47,3 +47,54 @@ export const SetSchoolPeriodsInput = z
   })
   .strict();
 export type SetSchoolPeriodsInput = z.output<typeof SetSchoolPeriodsInput>;
+
+// ---------------------------------------------------------------------------------------------------------------
+// attendance («حضور و غیاب»)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** A PostgreSQL `date` on the wire: ISO `YYYY-MM-DD` (the pages build it from the Tehran calendar). */
+const isoDate = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "تاریخ نامعتبر است.");
+
+/** `""` / `"none"` from a form select = the daily roll call (no زنگ). */
+const periodNo = z.preprocess(
+  (v) => (v === "" || v === "none" || v === null ? null : typeof v === "string" ? Number(v) : v),
+  z.number("شمارهٴ زنگ نامعتبر است.").int().min(1, "شمارهٴ زنگ نامعتبر است.").max(MAX_PERIODS, "شمارهٴ زنگ نامعتبر است.").nullable(),
+);
+
+export const AttendanceStatusEnum = z.enum(["present", "absent", "late", "excused"], { error: "وضعیت حضور و غیاب نامعتبر است." });
+
+export const TakeAttendanceInput = z
+  .object({
+    classGroupId: uuid,
+    date: isoDate,
+    periodNo: periodNo.optional(),
+    classOfferingId: uuid.nullable().optional(),
+    note: z.string().trim().max(300, "یادداشت حداکثر ۳۰۰ نویسه است.").nullable().optional(),
+    entries: z
+      .array(
+        z
+          .object({
+            studentProfileId: uuid,
+            status: AttendanceStatusEnum,
+            minutesLate: z.number().int().min(0).max(600, "دقیقهٴ تأخیر حداکثر ۶۰۰ است.").nullable().optional(),
+            note: z.string().trim().max(300, "یادداشت حداکثر ۳۰۰ نویسه است.").nullable().optional(),
+          })
+          .strict(),
+      )
+      .min(1, "فهرست دانش‌آموزان خالی است.")
+      .max(300, "این فهرست بیش از حد بزرگ است."),
+  })
+  .strict();
+export type TakeAttendanceInput = z.output<typeof TakeAttendanceInput>;
+
+export const AttendanceCellInput = z.object({ classGroupId: uuid, date: isoDate, periodNo: periodNo.optional() }).strict();
+export type AttendanceCellInput = z.output<typeof AttendanceCellInput>;
+
+export const StudentAttendanceInput = z.object({ studentProfileId: uuid, from: isoDate, to: isoDate }).strict();
+export type StudentAttendanceInput = z.output<typeof StudentAttendanceInput>;
+
+export const ClassAttendanceInput = z.object({ classGroupId: uuid, from: isoDate, to: isoDate }).strict();
+export type ClassAttendanceInput = z.output<typeof ClassAttendanceInput>;
+
+export const MyAttendanceInput = z.object({ from: isoDate.optional(), to: isoDate.optional() }).strict();
+export type MyAttendanceInput = z.output<typeof MyAttendanceInput>;

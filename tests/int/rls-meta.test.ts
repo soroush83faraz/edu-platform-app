@@ -5,10 +5,11 @@ const TENANT_SCHEMAS = ["tenancy", "iam", "academic", "workspace", "notif", "fil
 
 /**
  * tenancy (11 - organization; school_period since 0015) + iam (13 - user_account, auth_identity, user_session,
- * login_attempt, permission, role_permission) + academic 4 (timetable_slot since 0015) + workspace
- * (9 - work_item_status) + notif (3 - notification_type) + files 1 + audit 1 + config 2 + integ 3.
+ * login_attempt, permission, role_permission) + academic 6 (timetable_slot since 0015; attendance_session +
+ * attendance_entry since 0016) + workspace (9 - work_item_status) + notif (3 - notification_type) + files 1 +
+ * audit 1 + config 2 + integ 3.
  */
-const EXPECTED_TENANT_TABLES = 10 + 7 + 4 + 8 + 2 + 1 + 1 + 2 + 3;
+const EXPECTED_TENANT_TABLES = 10 + 7 + 6 + 8 + 2 + 1 + 1 + 2 + 3;
 
 /** Tables whose organization_id is nullable: NULL rows are shared system templates (read-only for tenants). */
 const NULLABLE_ORG_TABLES = ["iam.role", "workspace.work_item_type"];
@@ -135,7 +136,7 @@ describe("RLS meta-checks (catalog)", () => {
         [TENANT_SCHEMAS],
       );
       expect(all.rows).toEqual([
-        { schema: "academic", n: 4 },
+        { schema: "academic", n: 6 },
         { schema: "audit", n: 1 },
         { schema: "config", n: 2 },
         { schema: "files", n: 1 },

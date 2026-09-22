@@ -417,14 +417,15 @@ export async function setTimetableSlot(tx: Tx, ctx: TimetableCtx, input: SetTime
   return { slot, warning };
 }
 
-interface ClassGroupRef {
+export interface ClassGroupRef {
   id: string;
   name: string;
   schoolId: string;
   schoolName: string;
 }
 
-async function findClassGroupFacts(tx: Tx, classGroupId: string): Promise<ClassGroupRef | null> {
+/** The class with its school — the one lookup every class-scoped service starts from (unknown id = null). */
+export async function findClassGroupFacts(tx: Tx, classGroupId: string): Promise<ClassGroupRef | null> {
   const [cg] = await tx
     .select({ id: classGroup.id, name: classGroup.name, schoolId: branch.schoolId, schoolName: school.name })
     .from(classGroup)

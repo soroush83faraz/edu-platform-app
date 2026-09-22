@@ -69,6 +69,11 @@ export const SYSTEM_ROLES: SystemRole[] = [
       // Owner: admins (principal + vice) define each class's weekly schedule; the bell schedule itself is structure.
       "academic.timetable.read",
       "academic.timetable.write",
+      // Owner: the vice principal runs the daily roll call of the school — takes it for any class, sees every
+      // report; the teacher only their own زنگ.
+      "academic.attendance.read",
+      "academic.attendance.write",
+      "academic.attendance.report",
       "iam.account.reset_password",
       "iam.account.unlock",
       ...WORK_ITEM_ALL,
@@ -80,14 +85,14 @@ export const SYSTEM_ROLES: SystemRole[] = [
     name: "معلم",
     description: "کارتابل درس‌های خود",
     allowedScopeTypes: ["class_offering", "class_group"],
-    permissions: [...WORK_ITEM_ALL, "notif.notification.read", "iam.person.read", "academic.timetable.read"],
+    permissions: [...WORK_ITEM_ALL, "notif.notification.read", "iam.person.read", "academic.timetable.read", "academic.attendance.read", "academic.attendance.write"],
   },
   {
     code: "student",
     name: "دانش‌آموز",
     description: "کارتابل خود",
     allowedScopeTypes: ["student"],
-    permissions: ["workspace.work_item.read", "workspace.work_item.update", "workspace.work_item.comment", "notif.notification.read", "academic.timetable.read"],
+    permissions: ["workspace.work_item.read", "workspace.work_item.update", "workspace.work_item.comment", "notif.notification.read", "academic.timetable.read", "academic.attendance.read"],
   },
   {
     code: "guardian_full",

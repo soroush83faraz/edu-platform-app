@@ -1,11 +1,13 @@
 // Read-only queries for pages (Server Components). Same gate as actions: session → must-change → permission.
 import { defineQuery } from "@/lib/actions";
+import { listClassRows } from "@/lib/admin/resources";
 import { notFound } from "@/lib/errors";
 import { can } from "@/modules/iam/can";
 import { assertSchoolInScope, getAdminScope } from "@/modules/iam/service";
 import { findSchoolById, listSchoolPeriods } from "@/modules/tenancy/repo";
-import { ClassGroupIdInput, OfferingIdInput, SchoolIdInput } from "./dto";
-import { getMyClass } from "./repo";
+import { attendanceGaps, classAttendanceReport, defaultRange, getSessionForTaking, studentAttendanceSummary, teacherDay } from "./attendance";
+import { AttendanceCellInput, ClassAttendanceInput, ClassGroupIdInput, MyAttendanceInput, OfferingIdInput, SchoolIdInput, StudentAttendanceInput } from "./dto";
+import { findStudentProfile, getMyClass } from "./repo";
 import { getClassTimetable, getMyTimetable, getOfferingPage } from "./service";
 
 export type { MyClass, MyClassTeacher } from "./repo";
@@ -39,3 +41,48 @@ export const schoolPeriodsQuery = defineQuery(
     return { school: { id: school.id, name: school.name }, periods: await listSchoolPeriods(tx, school.id), canEdit };
   },
 );
+
+// ---------------------------------------------------------------------------------------------------------------
+// attendance («حضور و غیاب»)
+// ---------------------------------------------------------------------------------------------------------------
+
+export type { ClassAttendanceReport, ClassReportDay, ClassReportStudent, SessionForTaking, StudentAttendanceSummary, TakingRow, TeacherDayCell, TodayGaps } from "./attendance";
+
+/** The roster of one cell for the taking page; out of scope (a class that is not yours) = NOT_FOUND. */
+export const attendanceSessionQuery = defineQuery({ schema: AttendanceCellInput, permission: "academic.attendance.read", scope: "any" }, async (tx, input, ctx) =>
+  getSessionForTaking(tx, ctx, { classGroupId: input.classGroupId, date: input.date, periodNo: input.periodNo ?? null }),
+);
+
+/** «حضور و غیاب من»: the signed-in student's own summary — null when the person is not a student. */
+export const myAttendanceQuery = defineQuery({ schema: MyAttendanceInput, permission: "academic.attendance.read", scope: "any" }, async (tx, input, ctx) => {
+  const mine = await findStudentProfile(tx, ctx.personId);
+  if (!mine) return null;
+  const range = defaultRange();
+  return studentAttendanceSummary(tx, ctx, { studentProfileId: mine.id, from: input.from ?? range.from, to: input.to ?? range.to });
+});
+
+/** One student's attendance for staff (the admin report's drill-down); the service owns the scope rule. */
+export const studentAttendanceQuery = defineQuery({ schema: StudentAttendanceInput, permission: "academic.attendance.read", scope: "any" }, async (tx, input, ctx) =>
+  studentAttendanceSummary(tx, ctx, { studentProfileId: input.studentProfileId, from: input.from, to: input.to }),
+);
+
+/** Per-student totals and per-day rows of one class (admins of its school, and the teachers who teach in it). */
+export const classAttendanceReportQuery = defineQuery({ schema: ClassAttendanceInput, permission: "academic.attendance.read", scope: "any" }, async (tx, input, ctx) =>
+  classAttendanceReport(tx, ctx, { classGroupId: input.classGroupId, from: input.from, to: input.to }),
+);
+
+/** The teacher's own زنگ‌های today, marked «ثبت‌شده» or not — what `/attendance` opens on for a teacher. */
+export const teacherDayQuery = defineQuery({ permission: "academic.attendance.write", scope: "any" }, async (tx, _input, ctx) => teacherDay(tx, ctx));
+
+/** «امروز ثبت نشده» for the admin page, narrowed to the caller's schools (`academic.attendance.report`). */
+export const attendanceGapsQuery = defineQuery({ permission: "academic.attendance.report", scope: "any" }, async (tx, _input, ctx) => {
+  const scope = await getAdminScope(tx, ctx);
+  return attendanceGaps(tx, scope.kind === "organization" ? null : scope.schoolIds);
+});
+
+/** The class picker of `/admin/attendance`: the caller's active classes (the admin scope filters them). */
+export const attendanceClassesQuery = defineQuery({ permission: "academic.attendance.report", scope: "any" }, async (tx, _input, ctx) => {
+  const scope = await getAdminScope(tx, ctx);
+  const { rows } = await listClassRows(tx, scope, { q: "", page: 1, pageSize: 300 });
+  return rows.map((r) => ({ id: r.id, name: r.name, schoolName: r.schoolName, students: r.students }));
+});

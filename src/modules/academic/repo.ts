@@ -316,3 +316,305 @@ export async function findTeacherClash(tx: Tx, offeringId: string, weekday: numb
   const r = res.rows[0];
   return r ? { classGroupName: r.class_group_name, subjectName: r.subject_name } : null;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// attendance read models («حضور و غیاب», migration 0016)
+// ---------------------------------------------------------------------------------------------------------------
+
+export interface RosterStudent {
+  studentProfileId: string;
+  personId: string;
+  fullName: string;
+  studentNumber: string | null;
+}
+
+/**
+ * The roster of a class ON a date: the students whose class_enrollment is `active` and has not ended before that
+ * date. `starts_on` is deliberately NOT compared — a roll call for a past day still lists today's class (the
+ * enrollment row carries the day the school registered the student, not the day they joined the room), and the
+ * one-active-class-per-day exclusion constraint keeps a student out of two rosters anyway. Ordered like every
+ * other person list: family name, then first name.
+ */
+export async function listClassRoster(tx: Tx, classGroupId: string, date: string): Promise<RosterStudent[]> {
+  const res = await tx.execute<{ student_profile_id: string; person_id: string; first_name: string; last_name: string; student_number: string | null }>(sql`
+    select sp.id as student_profile_id, p.id as person_id, p.first_name, p.last_name, sp.student_number
+    from academic.class_enrollment ce
+    join iam.student_profile sp on sp.id = ce.student_profile_id
+    join iam.person p on p.id = sp.person_id
+    where ce.class_group_id = ${classGroupId}::uuid
+      and ce.status = 'active'
+      and (ce.ends_on is null or ce.ends_on >= ${date}::date)
+      and p.status = 'active'
+    order by p.last_name, p.first_name`);
+  return res.rows.map((r) => ({
+    studentProfileId: r.student_profile_id,
+    personId: r.person_id,
+    fullName: `${r.first_name} ${r.last_name}`,
+    studentNumber: r.student_number,
+  }));
+}
+
+export interface AttendanceSessionRow {
+  id: string;
+  classGroupId: string;
+  classOfferingId: string | null;
+  date: string;
+  periodNo: number | null;
+  takenAt: Date;
+  takenByPersonId: string;
+  takenByName: string | null;
+  note: string | null;
+}
+
+/** The roll call of one cell — `periodNo` null is the daily roll call (`is not distinct from`, like the UNIQUE). */
+export async function findAttendanceSession(tx: Tx, classGroupId: string, date: string, periodNo: number | null): Promise<AttendanceSessionRow | null> {
+  const res = await tx.execute<{
+    id: string;
+    class_group_id: string;
+    class_offering_id: string | null;
+    date: string;
+    period_no: number | null;
+    taken_at: Date;
+    taken_by_person_id: string;
+    taken_by_name: string | null;
+    note: string | null;
+  }>(sql`
+    select s.id, s.class_group_id, s.class_offering_id, s.date::text as date, s.period_no, s.taken_at, s.taken_by_person_id,
+      p.first_name || ' ' || p.last_name as taken_by_name, s.note
+    from academic.attendance_session s
+    left join iam.person p on p.id = s.taken_by_person_id
+    where s.class_group_id = ${classGroupId}::uuid and s.date = ${date}::date and s.period_no is not distinct from ${periodNo}
+    limit 1`);
+  const r = res.rows[0];
+  if (!r) return null;
+  return {
+    id: r.id,
+    classGroupId: r.class_group_id,
+    classOfferingId: r.class_offering_id,
+    date: r.date,
+    periodNo: r.period_no === null ? null : Number(r.period_no),
+    takenAt: new Date(r.taken_at),
+    takenByPersonId: r.taken_by_person_id,
+    takenByName: r.taken_by_name,
+    note: r.note,
+  };
+}
+
+export interface AttendanceEntryRow {
+  id: string;
+  studentProfileId: string;
+  status: string;
+  minutesLate: number | null;
+  note: string | null;
+}
+
+export async function listSessionEntries(tx: Tx, sessionId: string): Promise<AttendanceEntryRow[]> {
+  const res = await tx.execute<{ id: string; student_profile_id: string; status: string; minutes_late: number | null; note: string | null }>(sql`
+    select id, student_profile_id, status, minutes_late, note
+    from academic.attendance_entry
+    where attendance_session_id = ${sessionId}::uuid`);
+  return res.rows.map((r) => ({
+    id: r.id,
+    studentProfileId: r.student_profile_id,
+    status: r.status,
+    minutesLate: r.minutes_late === null ? null : Number(r.minutes_late),
+    note: r.note,
+  }));
+}
+
+export interface StudentAttendanceRow {
+  date: string;
+  periodNo: number | null;
+  status: string;
+  minutesLate: number | null;
+  note: string | null;
+  subjectName: string | null;
+  classGroupName: string;
+}
+
+/** A student's marks in `[from, to]`, newest first — «حضور و غیاب من» and the admin's drill-down read the same rows. */
+export async function listStudentAttendance(tx: Tx, studentProfileId: string, from: string, to: string, limit = 60): Promise<StudentAttendanceRow[]> {
+  const res = await tx.execute<{ date: string; period_no: number | null; status: string; minutes_late: number | null; note: string | null; subject_name: string | null; class_group_name: string }>(sql`
+    select s.date::text as date, s.period_no, e.status, e.minutes_late, e.note, subj.name as subject_name, cg.name as class_group_name
+    from academic.attendance_entry e
+    join academic.attendance_session s on s.id = e.attendance_session_id
+    join tenancy.class_group cg on cg.id = s.class_group_id
+    left join tenancy.class_offering o on o.id = s.class_offering_id
+    left join tenancy.subject subj on subj.id = o.subject_id
+    where e.student_profile_id = ${studentProfileId}::uuid and s.date between ${from}::date and ${to}::date
+    order by s.date desc, s.period_no desc nulls last
+    limit ${limit}`);
+  return res.rows.map((r) => ({
+    date: r.date,
+    periodNo: r.period_no === null ? null : Number(r.period_no),
+    status: r.status,
+    minutesLate: r.minutes_late === null ? null : Number(r.minutes_late),
+    note: r.note,
+    subjectName: r.subject_name,
+    classGroupName: r.class_group_name,
+  }));
+}
+
+/** `status → count` of one student in `[from, to]` (every class they were in). */
+export async function countStudentAttendance(tx: Tx, studentProfileId: string, from: string, to: string): Promise<Array<{ status: string; n: number }>> {
+  const res = await tx.execute<{ status: string; n: number }>(sql`
+    select e.status, count(*)::int as n
+    from academic.attendance_entry e
+    join academic.attendance_session s on s.id = e.attendance_session_id
+    where e.student_profile_id = ${studentProfileId}::uuid and s.date between ${from}::date and ${to}::date
+    group by e.status`);
+  return res.rows.map((r) => ({ status: r.status, n: Number(r.n) }));
+}
+
+export interface ClassStatusCount {
+  studentProfileId: string;
+  fullName: string;
+  status: string;
+  n: number;
+}
+
+/** Per-student `status → count` of ONE class in `[from, to]` — the body of the admin report table. */
+export async function countClassAttendanceByStudent(tx: Tx, classGroupId: string, from: string, to: string): Promise<ClassStatusCount[]> {
+  const res = await tx.execute<{ student_profile_id: string; first_name: string; last_name: string; status: string; n: number }>(sql`
+    select e.student_profile_id, p.first_name, p.last_name, e.status, count(*)::int as n
+    from academic.attendance_entry e
+    join academic.attendance_session s on s.id = e.attendance_session_id
+    join iam.student_profile sp on sp.id = e.student_profile_id
+    join iam.person p on p.id = sp.person_id
+    where s.class_group_id = ${classGroupId}::uuid and s.date between ${from}::date and ${to}::date
+    group by e.student_profile_id, p.first_name, p.last_name, e.status
+    order by p.last_name, p.first_name`);
+  return res.rows.map((r) => ({ studentProfileId: r.student_profile_id, fullName: `${r.first_name} ${r.last_name}`, status: r.status, n: Number(r.n) }));
+}
+
+export interface ClassDateCount {
+  date: string;
+  periodNo: number | null;
+  status: string;
+  n: number;
+}
+
+/** Per-date (and زنگ) `status → count` of one class — the report's day rows. */
+export async function countClassAttendanceByDate(tx: Tx, classGroupId: string, from: string, to: string): Promise<ClassDateCount[]> {
+  const res = await tx.execute<{ date: string; period_no: number | null; status: string; n: number }>(sql`
+    select s.date::text as date, s.period_no, e.status, count(*)::int as n
+    from academic.attendance_entry e
+    join academic.attendance_session s on s.id = e.attendance_session_id
+    where s.class_group_id = ${classGroupId}::uuid and s.date between ${from}::date and ${to}::date
+    group by s.date, s.period_no, e.status
+    order by s.date desc, s.period_no nulls first`);
+  return res.rows.map((r) => ({ date: r.date, periodNo: r.period_no === null ? null : Number(r.period_no), status: r.status, n: Number(r.n) }));
+}
+
+export interface TakenCell {
+  classGroupId: string;
+  periodNo: number | null;
+  entries: number;
+  absent: number;
+  takenAt: Date;
+}
+
+/** Which cells of `classGroupIds` already have a roll call on `date` (with their counts) — the «ثبت‌شده» marks. */
+export async function listTakenCells(tx: Tx, date: string, classGroupIds: readonly string[]): Promise<TakenCell[]> {
+  if (classGroupIds.length === 0) return [];
+  const res = await tx.execute<{ class_group_id: string; period_no: number | null; entries: number; absent: number; taken_at: Date }>(sql`
+    select s.class_group_id, s.period_no, s.taken_at,
+      (select count(*)::int from academic.attendance_entry e where e.attendance_session_id = s.id) as entries,
+      (select count(*)::int from academic.attendance_entry e where e.attendance_session_id = s.id and e.status = 'absent') as absent
+    from academic.attendance_session s
+    where s.date = ${date}::date and s.class_group_id = any(${sql.param([...classGroupIds], undefined)}::uuid[])`);
+  return res.rows.map((r) => ({
+    classGroupId: r.class_group_id,
+    periodNo: r.period_no === null ? null : Number(r.period_no),
+    entries: Number(r.entries),
+    absent: Number(r.absent),
+    takenAt: new Date(r.taken_at),
+  }));
+}
+
+export interface UntakenCell {
+  classGroupId: string;
+  classGroupName: string;
+  schoolId: string;
+  schoolName: string;
+  periodNo: number;
+  offeringId: string;
+  subjectName: string;
+  teacherName: string | null;
+}
+
+/**
+ * Today's timetable cells of the caller's schools that have NO roll call yet — «امروز ثبت نشده» on /admin/attendance.
+ * `schoolIds` null = every school of the tenant (an organization admin); otherwise the caller's schools.
+ */
+export async function listUntakenCells(tx: Tx, date: string, weekday: number, schoolIds: readonly string[] | null): Promise<UntakenCell[]> {
+  const schoolFilter = schoolIds === null ? sql`true` : sql`b.school_id = any(${sql.param([...schoolIds], undefined)}::uuid[])`;
+  const res = await tx.execute<{
+    class_group_id: string;
+    class_group_name: string;
+    school_id: string;
+    school_name: string;
+    period_no: number;
+    offering_id: string;
+    subject_name: string;
+    teacher_name: string | null;
+  }>(sql`
+    select ts.class_group_id, cg.name as class_group_name, sc.id as school_id, sc.name as school_name, ts.period_no,
+      o.id as offering_id, subj.name as subject_name, t.teacher_name
+    from academic.timetable_slot ts
+    join tenancy.class_group cg on cg.id = ts.class_group_id
+    join tenancy.branch b on b.id = cg.branch_id
+    join tenancy.school sc on sc.id = b.school_id
+    join tenancy.class_offering o on o.id = ts.class_offering_id
+    join tenancy.subject subj on subj.id = o.subject_id
+    left join lateral (
+      select p.first_name || ' ' || p.last_name as teacher_name
+      from academic.teacher_assignment ta
+      join iam.staff_profile stp on stp.id = ta.staff_profile_id
+      join iam.person p on p.id = stp.person_id
+      where ta.class_offering_id = o.id and ta.valid_to is null
+      order by case ta.role when 'main' then 0 when 'assistant' then 1 else 2 end, ta.valid_from desc
+      limit 1
+    ) t on true
+    where ts.weekday = ${weekday} and cg.status = 'active' and o.status <> 'closed' and ${schoolFilter}
+      and not exists (
+        select 1 from academic.attendance_session s
+        where s.class_group_id = ts.class_group_id and s.date = ${date}::date and s.period_no = ts.period_no
+      )
+    order by sc.name, cg.name, ts.period_no`);
+  return res.rows.map((r) => ({
+    classGroupId: r.class_group_id,
+    classGroupName: r.class_group_name,
+    schoolId: r.school_id,
+    schoolName: r.school_name,
+    periodNo: Number(r.period_no),
+    offeringId: r.offering_id,
+    subjectName: r.subject_name,
+    teacherName: r.teacher_name,
+  }));
+}
+
+/** The active student profile of a person (the `student` scope of their own reads); null when they are not one. */
+export async function findStudentProfile(tx: Tx, personId: string): Promise<{ id: string; fullName: string } | null> {
+  const res = await tx.execute<{ id: string; first_name: string; last_name: string }>(sql`
+    select sp.id, p.first_name, p.last_name
+    from iam.student_profile sp
+    join iam.person p on p.id = sp.person_id
+    where sp.person_id = ${personId}::uuid and sp.status = 'active'
+    limit 1`);
+  const r = res.rows[0];
+  return r ? { id: r.id, fullName: `${r.first_name} ${r.last_name}` } : null;
+}
+
+/** The class a student profile currently belongs to (active enrollment) — the scope of a staff read about them. */
+export async function findClassOfStudentProfile(tx: Tx, studentProfileId: string): Promise<{ classGroupId: string; classGroupName: string } | null> {
+  const res = await tx.execute<{ class_group_id: string; class_group_name: string }>(sql`
+    select cg.id as class_group_id, cg.name as class_group_name
+    from academic.class_enrollment ce
+    join tenancy.class_group cg on cg.id = ce.class_group_id
+    where ce.student_profile_id = ${studentProfileId}::uuid and ce.status = 'active'
+    order by ce.starts_on desc
+    limit 1`);
+  const r = res.rows[0];
+  return r ? { classGroupId: r.class_group_id, classGroupName: r.class_group_name } : null;
+}
