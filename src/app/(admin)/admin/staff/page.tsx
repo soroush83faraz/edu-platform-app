@@ -14,26 +14,30 @@ import { staffListQuery } from "@/lib/admin/people-queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "کارکنان | مدیریت" };
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function StaffPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
   const q = one(sp.q).slice(0, 80);
   const page = Math.max(1, Number.parseInt(one(sp.page) || "1", 10) || 1);
+  // «کارکنان این مدرسه» from the school hub: the list keeps the filter through search and pagination.
+  const schoolId = UUID_RE.test(one(sp.school)) ? one(sp.school) : undefined;
   const ctx = await requireContext();
-  const result = await staffListQuery({ q, page });
+  const result = await staffListQuery({ q, page, schoolId });
   if (!result.ok) {
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     notFound();
   }
-  const { rows, total, pageSize } = result.data;
+  const { rows, total, pageSize, school } = result.data;
   const canWrite = canAtAnyScope(ctx.assignments, "iam.person.write");
-  const hrefFor = (p: number) => `/admin/staff?${new URLSearchParams({ ...(q ? { q } : {}), ...(p > 1 ? { page: String(p) } : {}) })}`;
+  const hrefFor = (p: number) => `/admin/staff?${new URLSearchParams({ ...(q ? { q } : {}), ...(schoolId ? { school: schoolId } : {}), ...(p > 1 ? { page: String(p) } : {}) })}`;
   if (page > lastPage(total, pageSize)) redirect(hrefFor(lastPage(total, pageSize)));
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         title="کارکنان"
         count={`${formatNumberFa(total)} نفر`}
+        back={school ? { href: `/admin/schools/${school.id}`, label: school.name } : undefined}
         description="دبیران و کادر. حساب کاربری با شمارهٴ موبایل ساخته می‌شود؛ نقش «معلم» از تخصیص درس در صفحهٴ کلاس می‌آید."
         actions={
           canWrite ? (
@@ -46,7 +50,15 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
           ) : null
         }
       />
-      <SearchForm q={q} placeholder="نام همکار" />
+      {school ? (
+        <p className="flex flex-wrap items-center gap-2 text-sm text-text-muted">
+          فقط کارکنان <bdi className="font-medium text-text">{school.name}</bdi>
+          <Link href="/admin/staff" className="inline-flex min-h-11 items-center text-primary-700 hover:underline">
+            همهٴ کارکنان
+          </Link>
+        </p>
+      ) : null}
+      <SearchForm q={q} hidden={{ school: schoolId }} placeholder="نام همکار" />
       {rows.length === 0 ? (
         <EmptyState title={q ? "همکاری با این نام پیدا نشد" : "هنوز همکاری ثبت نشده"} description={canWrite && !q ? "با «همکار جدید» شروع کنید." : undefined} className="surface-work py-10" />
       ) : (

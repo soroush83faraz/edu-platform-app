@@ -3,8 +3,8 @@
 import { z } from "zod";
 import { defineQuery } from "@/lib/actions";
 import { audit } from "@/lib/audit";
-import { getAdminScope, roleGrantOptions } from "@/modules/iam/service";
-import { listSchools } from "@/modules/tenancy/repo";
+import { assertSchoolInScope, getAdminScope, roleGrantOptions } from "@/modules/iam/service";
+import { findSchoolById, listSchools } from "@/modules/tenancy/repo";
 import { PAGE_SIZE } from "./defineResource";
 import { classOptionsInScope, getPersonDetail, listClassCredentials, listStaff, listStudents, personCredential } from "./people";
 import { ClassIdInput, PeopleListInput, PersonIdInput } from "./people-dto";
@@ -18,8 +18,11 @@ export const studentsListQuery = defineQuery({ schema: PeopleListInput, permissi
 
 export const staffListQuery = defineQuery({ schema: PeopleListInput, permission: "iam.person.read", scope: "any" }, async (tx, input, ctx) => {
   const scope = await getAdminScope(tx, ctx);
-  const page = await listStaff(tx, scope, { q: input.q, page: input.page, pageSize: PAGE_SIZE });
-  return { ...page, page: input.page, pageSize: PAGE_SIZE, scope };
+  // `?school=` narrows the list to one school's own staff (the school hub's link); out of scope = NOT_FOUND.
+  if (input.schoolId) assertSchoolInScope(scope, input.schoolId);
+  const page = await listStaff(tx, scope, { q: input.q, page: input.page, pageSize: PAGE_SIZE, schoolId: input.schoolId });
+  const school = input.schoolId ? await findSchoolById(tx, input.schoolId) : null;
+  return { ...page, page: input.page, pageSize: PAGE_SIZE, scope, school: school ? { id: school.id, name: school.name } : null };
 });
 
 /**

@@ -91,6 +91,8 @@ export const PeopleListInput = z
     pending: z.boolean().default(false),
     noClass: z.boolean().default(false),
     classGroupId: uuid.optional(),
+    /** Staff list: only the colleagues anchored to this school (the school hub links here). */
+    schoolId: uuid.optional(),
   })
   .strict();
 

@@ -141,13 +141,14 @@ export interface StaffListRow {
 
 export { roleLabel };
 
-export async function listStaff(tx: Tx, scope: AdminScope, opts: { q: string; page: number; pageSize: number }): Promise<{ rows: StaffListRow[]; total: number }> {
+/** `schoolId` narrows the list to the staff ANCHORED to one school (`staff_profile.school_id`) — the school hub's «کارکنان این مدرسه». */
+export async function listStaff(tx: Tx, scope: AdminScope, opts: { q: string; page: number; pageSize: number; schoolId?: string }): Promise<{ rows: StaffListRow[]; total: number }> {
   const qNumber = toAsciiDigits(opts.q.trim()).replace(/[\s\-().]/g, "");
   const qPhone = /^(\+?98|0)?9\d{2,9}$/.test(qNumber) ? qNumber.replace(/^(\+?98|0)/, "") : null;
   const nameOrNumber = opts.q.trim()
     ? sql`(${faLike(person.searchText, opts.q)} or ${staffProfile.employeeNumber} ilike '%' || ${qNumber} || '%'${qPhone ? sql` or ${userAccount.loginIdentifier} like '%' || ${qPhone} || '%'` : sql``})`
     : undefined;
-  const where = and(eq(person.status, "active"), isNull(staffProfile.leftOn), personInScope(scope, "iam.person.id"), nameOrNumber);
+  const where = and(eq(person.status, "active"), isNull(staffProfile.leftOn), personInScope(scope, "iam.person.id"), opts.schoolId ? eq(staffProfile.schoolId, opts.schoolId) : undefined, nameOrNumber);
   const rows = await tx
     .select({
       personId: person.id,

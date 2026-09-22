@@ -165,8 +165,8 @@ export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolIn
     { name: "isDefault", labelFa: "مدرسهٴ پیش‌فرض سازمان", type: "toggle" },
   ],
   links: [{ href: "/admin/branches", labelFa: "شعبه‌ها" }],
-  /** The school's own page in phase 1 is its زنگ‌بندی (the timetable of every class rests on it). */
-  rowHref: (r) => `/admin/schools/${r.id}/periods`,
+  /** The school's own page: the hub where its شعبه‌ها, سال تحصیلی, زنگ‌بندی, کلاس‌ها and کارکنان are set up. */
+  rowHref: (r) => `/admin/schools/${r.id}`,
   async list(tx, _ctx, scope, opts) {
     const where = and(scopeSchoolIds(scope), faLike(school.name, opts.q));
     const rows = await tx

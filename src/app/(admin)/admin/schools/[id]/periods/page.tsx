@@ -22,7 +22,7 @@ export default async function SchoolPeriodsPage({ params }: { params: Promise<{ 
       <AdminHeader
         title={`زنگ‌بندی ${school.name}`}
         description="ساعت شروع و پایان هر زنگ؛ برنامهٴ هفتگی همهٴ کلاس‌های این مدرسه روی همین زنگ‌ها چیده می‌شود. حداکثر ۱۲ زنگ، بدون هم‌پوشانی."
-        back={{ href: "/admin/schools", label: "مدرسه‌ها" }}
+        back={{ href: `/admin/schools/${school.id}`, label: school.name }}
       />
       <PeriodsEditor schoolId={school.id} initial={periods} canEdit={canEdit} />
     </div>
