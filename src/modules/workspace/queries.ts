@@ -16,13 +16,14 @@ export const listInboxQuery = defineQuery({ schema: ListInboxInput, permission: 
     bucket: input.bucket,
     createdByMe: input.createdByMe,
     unreadOnly: input.unreadOnly,
+    offeringId: input.offeringId ?? null,
     cursor: input.cursor ?? null,
     limit: input.limit,
     viewerIsStaff: staff,
   });
   return {
     ...page,
-    tabCounts: await inboxTabCounts(tx, ctx.personId, { createdByMe: input.createdByMe, unreadOnly: input.unreadOnly }),
+    tabCounts: await inboxTabCounts(tx, ctx.personId, { createdByMe: input.createdByMe, unreadOnly: input.unreadOnly, offeringId: input.offeringId ?? null }),
     isStaff: staff,
     canCreate: canAtAnyScope(ctx.assignments, "workspace.work_item.create"),
   };

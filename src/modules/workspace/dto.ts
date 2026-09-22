@@ -70,6 +70,8 @@ export const ListInboxInput = z
     bucket: z.enum(BUCKETS).optional(),
     createdByMe: z.boolean().default(false),
     unreadOnly: z.boolean().default(false),
+    /** Only the items of one درس — the subject page (`/subjects/[offeringId]`). */
+    offeringId: uuid.optional(),
     cursor: z.string().max(200).optional(),
     limit: z.number().int().min(1).max(100).default(30),
   })

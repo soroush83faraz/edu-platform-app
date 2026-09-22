@@ -156,6 +156,8 @@ export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWor
       createdByPersonId: ctx.personId,
       visibility: "assignees",
       idempotencyKey: input.idempotencyKey ?? null,
+      // A class task belongs to its درس: the subject page lists it (`listInbox({ offeringId })`).
+      classOfferingId: input.recipients.kind === "class_offering" ? input.recipients.id : null,
     })
     .returning({ id: workItem.id });
 

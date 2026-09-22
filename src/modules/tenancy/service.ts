@@ -5,11 +5,12 @@
 //
 // `id?` on the create inputs exists for scripts/seed.ts (deterministic ids → re-runs update in place) and the
 // importer; the admin actions never pass it (their Zod schemas are `.strict()` without `id`).
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
 import { conflict, invalidReference, notFound, validation } from "@/lib/errors";
 import { normalizeFa, toAsciiDigits } from "@/lib/normalize";
+import { DEFAULT_PERIODS, normalizeTime, validatePeriods, type PeriodInput } from "@/lib/timetable";
 import { assignTeacher } from "@/modules/academic/service";
 import {
   findBranchByName,
@@ -22,8 +23,9 @@ import {
   findSchoolById,
   findSubjectByCode,
   findTermBySequence,
+  listSchoolPeriods,
 } from "./repo";
-import { academicYear, branch, classGroup, classOffering, educationLevel, gradeLevel, school, subject, term } from "./schema";
+import { academicYear, branch, classGroup, classOffering, educationLevel, gradeLevel, school, schoolPeriod, subject, term } from "./schema";
 
 export type ServiceCtx = AuditCtx & { orgId: string; personId: string };
 
@@ -73,8 +75,47 @@ export async function createSchool(tx: Tx, ctx: ServiceCtx, input: CreateSchoolI
     .insert(branch)
     .values({ ...(input.branchId ? { id: input.branchId } : {}), organizationId: ctx.orgId, schoolId: row.id, name: "مرکزی", isDefault: true })
     .returning({ id: branch.id });
-  await audit(ctx, "tenancy.school.created", { schema: "tenancy", table: "school", id: row.id }, null, { name: input.name, code, branchId: br.id }, tx);
+  // Every school starts with the six default زنگ‌ها so a class timetable can be filled right away (docs/admin.md).
+  await tx.insert(schoolPeriod).values(DEFAULT_PERIODS.map((p) => ({ organizationId: ctx.orgId, schoolId: row.id, periodNo: p.periodNo, label: p.label, startsAt: p.startsAt, endsAt: p.endsAt })));
+  await audit(ctx, "tenancy.school.created", { schema: "tenancy", table: "school", id: row.id }, null, { name: input.name, code, branchId: br.id, periods: DEFAULT_PERIODS.length }, tx);
   return { schoolId: row.id, branchId: br.id };
+}
+
+/**
+ * Replaces the bell schedule («زنگ‌بندی») of a school with `periods` (1–12 rows, numbered 1..n, `HH:mm`, no overlap —
+ * `validatePeriods`). Rows are matched by `period_no`: existing ones are updated in place, missing ones inserted,
+ * surplus ones deleted — a timetable slot keeps its `period_no`, so shortening the day hides those slots from the
+ * grid until a period with that number exists again (they are not deleted). Structure permission
+ * (`tenancy.structure.write`): organization admin + principal; the vice principal reads only.
+ */
+export async function setSchoolPeriods(tx: Tx, ctx: ServiceCtx, schoolId: string, periods: PeriodInput[]): Promise<{ count: number }> {
+  if (!(await findSchoolById(tx, schoolId))) throw notFound();
+  const cleaned = periods.map((p) => ({ periodNo: p.periodNo, label: normalizeFa(p.label.trim()), startsAt: normalizeTime(toAsciiDigits(p.startsAt)), endsAt: normalizeTime(toAsciiDigits(p.endsAt)) }));
+  const problem = validatePeriods(cleaned);
+  if (problem) throw validation({ fieldErrors: { periods: [problem] } }, problem);
+  const before = await listSchoolPeriods(tx, schoolId);
+  const keep = new Set(cleaned.map((p) => p.periodNo));
+  const surplus = before.filter((p) => !keep.has(p.periodNo)).map((p) => p.id);
+  if (surplus.length > 0) await tx.delete(schoolPeriod).where(and(eq(schoolPeriod.schoolId, schoolId), inArray(schoolPeriod.id, surplus)));
+  for (const p of cleaned) {
+    const existing = before.find((b) => b.periodNo === p.periodNo);
+    if (existing) {
+      if (existing.label !== p.label || existing.startsAt !== p.startsAt || existing.endsAt !== p.endsAt) {
+        await tx.update(schoolPeriod).set({ label: p.label, startsAt: p.startsAt, endsAt: p.endsAt }).where(eq(schoolPeriod.id, existing.id));
+      }
+    } else {
+      await tx.insert(schoolPeriod).values({ organizationId: ctx.orgId, schoolId, periodNo: p.periodNo, label: p.label, startsAt: p.startsAt, endsAt: p.endsAt });
+    }
+  }
+  await audit(
+    ctx,
+    "tenancy.school_period.replaced",
+    { schema: "tenancy", table: "school", id: schoolId },
+    before.map(({ periodNo, label, startsAt, endsAt }) => ({ periodNo, label, startsAt, endsAt })),
+    cleaned,
+    tx,
+  );
+  return { count: cleaned.length };
 }
 
 export interface UpdateSchoolInput {

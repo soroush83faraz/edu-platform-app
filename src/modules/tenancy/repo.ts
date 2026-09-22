@@ -2,7 +2,8 @@
 // are what the admin scope rule (`getAdminScope` in iam/service) checks against before any structure mutation.
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
-import { academicYear, branch, classGroup, classOffering, educationLevel, gradeLevel, school, subject, term } from "./schema";
+import { normalizeTime } from "@/lib/timetable";
+import { academicYear, branch, classGroup, classOffering, educationLevel, gradeLevel, school, schoolPeriod, subject, term } from "./schema";
 
 export interface SchoolRow {
   id: string;
@@ -199,4 +200,23 @@ export async function findOffering(tx: Tx, classGroupId: string, subjectId: stri
     .where(and(eq(classOffering.classGroupId, classGroupId), eq(classOffering.subjectId, subjectId), eq(classOffering.termId, termId)))
     .limit(1);
   return rows[0] ?? null;
+}
+
+export interface SchoolPeriodRow {
+  id: string;
+  periodNo: number;
+  label: string;
+  /** `HH:mm`. */
+  startsAt: string;
+  endsAt: string;
+}
+
+/** The bell schedule of a school, in period order; times normalized to `HH:mm`. */
+export async function listSchoolPeriods(tx: Tx, schoolId: string): Promise<SchoolPeriodRow[]> {
+  const rows = await tx
+    .select({ id: schoolPeriod.id, periodNo: schoolPeriod.periodNo, label: schoolPeriod.label, startsAt: schoolPeriod.startsAt, endsAt: schoolPeriod.endsAt })
+    .from(schoolPeriod)
+    .where(eq(schoolPeriod.schoolId, schoolId))
+    .orderBy(asc(schoolPeriod.periodNo));
+  return rows.map((r) => ({ ...r, startsAt: normalizeTime(r.startsAt), endsAt: normalizeTime(r.endsAt) }));
 }

@@ -220,6 +220,8 @@ export interface ListInboxOptions {
   unreadOnly?: boolean;
   /** Only items still open for the caller (effective category todo/doing) — the Home «کارهای نزدیک» list. */
   openOnly?: boolean;
+  /** Only items of one درس (`work_item.class_offering_id`) — the subject page. */
+  offeringId?: string | null;
   cursor?: string | null;
   limit?: number;
   now?: Date;
@@ -262,6 +264,7 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
   if (opts.createdByMe) filters.push(sql`r.created_by_me`);
   if (opts.unreadOnly) filters.push(sql`r.unread`);
   if (opts.openOnly) filters.push(sql`r.category in ('todo', 'doing')`);
+  if (opts.offeringId) filters.push(sql`r.class_offering_id = ${opts.offeringId}::uuid`);
   if (after) {
     filters.push(
       after.dueAt
@@ -295,7 +298,7 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
   }>(sql`
     select * from (
       select
-        wi.id, wi.title, wi.priority, wi.due_at, wi.created_at,
+        wi.id, wi.title, wi.priority, wi.due_at, wi.created_at, wi.class_offering_id,
         t.code as type_code, t.name as type_name,
         s.code as status_code, s.name as status_name,
         eff.category,
@@ -405,10 +408,11 @@ export interface InboxTabCounts {
  * The «فقط کارهایی که دادم» / «خوانده‌نشده» filters narrow the counts too, so the tabs never promise rows the
  * filtered list does not show.
  */
-export async function inboxTabCounts(tx: Tx, personId: string, opts: { createdByMe?: boolean; unreadOnly?: boolean } = {}): Promise<InboxTabCounts> {
+export async function inboxTabCounts(tx: Tx, personId: string, opts: { createdByMe?: boolean; unreadOnly?: boolean; offeringId?: string | null } = {}): Promise<InboxTabCounts> {
   const filters = [sql`ie.person_id = ${personId}::uuid and ie.state <> 'archived' and wi.archived_at is null`];
   if (opts.createdByMe) filters.push(sql`wi.created_by_person_id = ie.person_id`);
   if (opts.unreadOnly) filters.push(sql`ie.state = 'unread'`);
+  if (opts.offeringId) filters.push(sql`wi.class_offering_id = ${opts.offeringId}::uuid`);
   const res = await tx.execute<{ todo: number; done: number }>(sql`
     select
       (count(*) filter (where eff.category in ('todo', 'doing')))::int as todo,

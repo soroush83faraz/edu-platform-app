@@ -5,13 +5,29 @@
 // teacher_assignment is the source of truth for "who teaches what"; authorization only reads iam.role_assignment.
 // Therefore assignTeacher writes BOTH rows in one transaction (role `teacher`, scope `class_offering`,
 // source_type `teacher_assignment`, source_id = the assignment id) and endTeacherAssignment revokes the derived row.
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
-import { conflict, invalidReference, validation } from "@/lib/errors";
+import { conflict, invalidReference, notFound, validation } from "@/lib/errors";
+import { normalizeFa } from "@/lib/normalize";
+import { SCHOOL_WEEKDAYS, currentPeriodOf, nextSessionOf, tehranClock, type Weekday } from "@/lib/timetable";
+import { can, canAtAnyScope, type CanContext } from "@/modules/iam/can";
 import { role, roleAssignment, staffProfile } from "@/modules/iam/schema";
-import { branch, classGroup } from "@/modules/tenancy/schema";
-import { classEnrollment, schoolEnrollment, teacherAssignment } from "./schema";
+import { branch, classGroup, classOffering, school } from "@/modules/tenancy/schema";
+import {
+  findOfferingFacts,
+  findStudentClass,
+  findTeacherClash,
+  listClassSlots,
+  listOfferingSlots,
+  listPeriodsOfSchools,
+  listTaughtSlots,
+  teachesOffering,
+  type OfferingFacts,
+  type PeriodRow,
+  type SlotRow,
+} from "./repo";
+import { classEnrollment, schoolEnrollment, teacherAssignment, timetableSlot } from "./schema";
 
 /** What the service needs from the request context (src/lib/ctx `Ctx` satisfies it; the seed builds one). */
 export type ServiceCtx = AuditCtx & { orgId: string; personId: string };
@@ -297,4 +313,287 @@ export async function moveEnrollment(tx: Tx, ctx: ServiceCtx, input: MoveEnrollm
     tx,
   );
   return { classEnrollmentId: next.id };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// weekly timetable («برنامهٴ کلاسی»)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Timetable functions decide scope themselves (`can()` inside), so they need the caller's assignments too. */
+export type TimetableCtx = ServiceCtx & CanContext;
+
+export const TIMETABLE_MESSAGES = {
+  offeringNotOfClass: "این درس برای این کلاس تعریف نشده است.",
+  offeringClosed: "این درس پایان یافته و در برنامه قرار نمی‌گیرد.",
+  periodUnknown: "این زنگ در زنگ‌بندی مدرسه وجود ندارد.",
+  weekdayUnknown: "روز هفته نامعتبر است.",
+  /** `(teacher, class, subject)` — the double-booking warning (allowed, flagged). */
+  teacherClash: (teacher: string, cls: string, subject: string) => `${teacher} در همین زنگ در کلاس ${cls} (${subject}) هم درس دارد.`,
+} as const;
+
+export interface SetTimetableSlotInput {
+  classGroupId: string;
+  /** 0 = شنبه … 5 = پنجشنبه. */
+  weekday: number;
+  periodNo: number;
+  /** null = clear the cell (the row is deleted). */
+  classOfferingId: string | null;
+  room?: string | null;
+}
+
+export interface SetTimetableSlotResult {
+  /** The slot after the change; null when the cell was cleared. */
+  slot: SlotRow | null;
+  /** Persian double-booking warning: the offering's teacher already has another class at this cell. */
+  warning: string | null;
+}
+
+/**
+ * Upserts or clears one cell of a class's weekly timetable. Scope: `academic.timetable.write` must hold at the
+ * class group (through the school — org admin, principal, vice principal of that school); an unknown class or one
+ * outside the caller's scope is NOT_FOUND alike (no existence oracle). The offering must be an open offering OF
+ * THIS class and the period must exist in the school's زنگ‌بندی (VALIDATION otherwise). A teacher already booked
+ * elsewhere at the same cell is ALLOWED — the database has no constraint for it — but the result carries a Persian
+ * `warning` the UI shows as a toast (docs/decisions.md «برنامهٴ کلاسی»: substitutes and split classes are real).
+ * Audited on the class group (`academic.timetable_slot.set` / `.cleared`).
+ */
+export async function setTimetableSlot(tx: Tx, ctx: TimetableCtx, input: SetTimetableSlotInput): Promise<SetTimetableSlotResult> {
+  const cg = await findClassGroupFacts(tx, input.classGroupId);
+  if (!cg) throw notFound();
+  if (!(await can(tx, ctx, "academic.timetable.write", { scopeType: "class_group", id: cg.id }))) throw notFound();
+  if (!SCHOOL_WEEKDAYS.includes(input.weekday as (typeof SCHOOL_WEEKDAYS)[number])) throw validation({ fieldErrors: { weekday: [TIMETABLE_MESSAGES.weekdayUnknown] } }, TIMETABLE_MESSAGES.weekdayUnknown);
+  const periods = (await listPeriodsOfSchools(tx, [cg.schoolId])).get(cg.schoolId) ?? [];
+  if (!periods.some((p) => p.periodNo === input.periodNo)) throw validation({ fieldErrors: { periodNo: [TIMETABLE_MESSAGES.periodUnknown] } }, TIMETABLE_MESSAGES.periodUnknown);
+
+  const [before] = await tx
+    .select({ id: timetableSlot.id, classOfferingId: timetableSlot.classOfferingId, room: timetableSlot.room })
+    .from(timetableSlot)
+    .where(and(eq(timetableSlot.classGroupId, cg.id), eq(timetableSlot.weekday, input.weekday), eq(timetableSlot.periodNo, input.periodNo)))
+    .limit(1);
+  const entity = { schema: "academic", table: "timetable_slot" } as const;
+  const cell = { classGroupId: cg.id, weekday: input.weekday, periodNo: input.periodNo };
+
+  if (input.classOfferingId === null) {
+    if (!before) return { slot: null, warning: null };
+    await tx.delete(timetableSlot).where(eq(timetableSlot.id, before.id));
+    await audit(ctx, "academic.timetable_slot.cleared", { ...entity, id: before.id }, { ...cell, classOfferingId: before.classOfferingId, room: before.room }, null, tx);
+    return { slot: null, warning: null };
+  }
+
+  const [offering] = await tx
+    .select({ id: classOffering.id, classGroupId: classOffering.classGroupId, status: classOffering.status })
+    .from(classOffering)
+    .where(eq(classOffering.id, input.classOfferingId))
+    .limit(1);
+  if (!offering || offering.classGroupId !== cg.id) throw validation({ fieldErrors: { classOfferingId: [TIMETABLE_MESSAGES.offeringNotOfClass] } }, TIMETABLE_MESSAGES.offeringNotOfClass);
+  if (offering.status === "closed") throw validation({ fieldErrors: { classOfferingId: [TIMETABLE_MESSAGES.offeringClosed] } }, TIMETABLE_MESSAGES.offeringClosed);
+  const room = input.room?.trim() ? normalizeFa(input.room.trim()) : null;
+
+  let id: string;
+  if (before) {
+    id = before.id;
+    await tx.update(timetableSlot).set({ classOfferingId: offering.id, room }).where(eq(timetableSlot.id, before.id));
+  } else {
+    const [row] = await tx
+      .insert(timetableSlot)
+      .values({ organizationId: ctx.orgId, classGroupId: cg.id, weekday: input.weekday, periodNo: input.periodNo, classOfferingId: offering.id, room })
+      .returning({ id: timetableSlot.id });
+    id = row.id;
+  }
+  await audit(
+    ctx,
+    "academic.timetable_slot.set",
+    { ...entity, id },
+    before ? { ...cell, classOfferingId: before.classOfferingId, room: before.room } : null,
+    { ...cell, classOfferingId: offering.id, room },
+    tx,
+  );
+  const slot = (await listClassSlots(tx, cg.id)).find((s) => s.slotId === id) ?? null;
+  let warning: string | null = null;
+  if (slot?.teacherName) {
+    const clash = await findTeacherClash(tx, offering.id, input.weekday, input.periodNo);
+    if (clash) warning = TIMETABLE_MESSAGES.teacherClash(slot.teacherName, clash.classGroupName, clash.subjectName);
+  }
+  return { slot, warning };
+}
+
+interface ClassGroupRef {
+  id: string;
+  name: string;
+  schoolId: string;
+  schoolName: string;
+}
+
+async function findClassGroupFacts(tx: Tx, classGroupId: string): Promise<ClassGroupRef | null> {
+  const [cg] = await tx
+    .select({ id: classGroup.id, name: classGroup.name, schoolId: branch.schoolId, schoolName: school.name })
+    .from(classGroup)
+    .innerJoin(branch, eq(branch.id, classGroup.branchId))
+    .innerJoin(school, eq(school.id, branch.schoolId))
+    .where(eq(classGroup.id, classGroupId))
+    .limit(1);
+  return cg ?? null;
+}
+
+export interface TimetableOffering {
+  id: string;
+  subjectName: string;
+  teacherName: string | null;
+  status: string;
+}
+
+export interface ClassTimetable {
+  classGroup: ClassGroupRef;
+  periods: PeriodRow[];
+  slots: SlotRow[];
+  /** Open offerings of the class — the choices of the editor's selects. */
+  offerings: TimetableOffering[];
+  /** Whether the caller may edit (`academic.timetable.write` at the class). */
+  canEdit: boolean;
+}
+
+/** The whole grid of one class for the admin editor. Read scope: `academic.timetable.read` at the class group. */
+export async function getClassTimetable(tx: Tx, ctx: TimetableCtx, classGroupId: string): Promise<ClassTimetable> {
+  const cg = await findClassGroupFacts(tx, classGroupId);
+  if (!cg) throw notFound();
+  if (!(await can(tx, ctx, "academic.timetable.read", { scopeType: "class_group", id: cg.id }))) throw notFound();
+  const periods = (await listPeriodsOfSchools(tx, [cg.schoolId])).get(cg.schoolId) ?? [];
+  const slots = await listClassSlots(tx, cg.id);
+  const rows = await tx.execute<{ id: string; subject_name: string; teacher_name: string | null; status: string }>(sql`
+    select o.id, subj.name as subject_name, o.status,
+      (
+        select p.first_name || ' ' || p.last_name
+        from academic.teacher_assignment ta
+        join iam.staff_profile stp on stp.id = ta.staff_profile_id
+        join iam.person p on p.id = stp.person_id
+        where ta.class_offering_id = o.id and ta.valid_to is null
+        order by case ta.role when 'main' then 0 when 'assistant' then 1 else 2 end, ta.valid_from desc
+        limit 1
+      ) as teacher_name
+    from tenancy.class_offering o
+    join tenancy.subject subj on subj.id = o.subject_id
+    where o.class_group_id = ${cg.id}::uuid and o.status <> 'closed'
+    order by subj.name`);
+  const canEdit = await can(tx, ctx, "academic.timetable.write", { scopeType: "class_group", id: cg.id });
+  return {
+    classGroup: cg,
+    periods,
+    slots,
+    offerings: rows.rows.map((r) => ({ id: r.id, subjectName: r.subject_name, teacherName: r.teacher_name, status: r.status })),
+    canEdit,
+  };
+}
+
+/** One session as the student/teacher pages render it: the slot plus the bell times of its school. */
+export interface Session extends SlotRow {
+  label: string;
+  startsAt: string;
+  endsAt: string;
+}
+
+export interface DayPlan {
+  weekday: Weekday;
+  sessions: Session[];
+}
+
+export interface MyTimetable {
+  /** Student view: the class of the active enrollment; null when the person is not an enrolled student. */
+  student: { classGroupName: string; schoolName: string; periods: PeriodRow[]; days: DayPlan[] } | null;
+  /** Teacher view: every session of the offerings the person teaches; null when they teach nothing on the grid. */
+  teacher: { days: DayPlan[]; sessions: number } | null;
+  /** Tehran clock at the time of the read. */
+  today: Weekday;
+  nowMinutes: number;
+  /** Ringing / next زنگ of the STUDENT's school (teachers span schools: the pages compute per session). */
+  currentPeriodNo: number | null;
+  nextPeriodNo: number | null;
+}
+
+function toDays(slots: readonly SlotRow[], periodsOf: (schoolId: string) => PeriodRow[], schoolOfClass: (classGroupId: string) => string): DayPlan[] {
+  const days: DayPlan[] = SCHOOL_WEEKDAYS.map((weekday) => ({ weekday, sessions: [] }));
+  for (const s of slots) {
+    const p = periodsOf(schoolOfClass(s.classGroupId)).find((x) => x.periodNo === s.periodNo);
+    if (!p) continue; // a slot beyond the current زنگ‌بندی stays invisible until a period with that number exists again
+    const day = days.find((d) => d.weekday === s.weekday);
+    if (!day) continue;
+    day.sessions.push({ ...s, label: p.label, startsAt: p.startsAt, endsAt: p.endsAt });
+  }
+  for (const d of days) d.sessions.sort((a, b) => a.periodNo - b.periodNo || a.classGroupName.localeCompare(b.classGroupName, "fa"));
+  return days;
+}
+
+/**
+ * «برنامهٴ من»: a student's class timetable and/or a teacher's teaching sessions across classes, grouped by weekday
+ * with `today` and the ringing period (Tehran). Personal read — the person's own enrollment / assignments are the
+ * boundary; the caller holds `academic.timetable.read` at some scope (checked by the query).
+ */
+export async function getMyTimetable(tx: Tx, ctx: TimetableCtx, now = new Date()): Promise<MyTimetable> {
+  const clock = tehranClock(now);
+  const cls = await findStudentClass(tx, ctx.personId);
+  const taught = await listTaughtSlots(tx, ctx.personId);
+  const schoolIds = new Set<string>();
+  if (cls) schoolIds.add(cls.schoolId);
+  const classSchool = new Map<string, string>();
+  if (cls) classSchool.set(cls.classGroupId, cls.schoolId);
+  if (taught.length > 0) {
+    const ids = [...new Set(taught.map((s) => s.classGroupId))];
+    const rows = await tx
+      .select({ id: classGroup.id, schoolId: branch.schoolId })
+      .from(classGroup)
+      .innerJoin(branch, eq(branch.id, classGroup.branchId))
+      .where(inArray(classGroup.id, ids));
+    for (const r of rows) {
+      classSchool.set(r.id, r.schoolId);
+      schoolIds.add(r.schoolId);
+    }
+  }
+  const periodsBySchool = await listPeriodsOfSchools(tx, [...schoolIds]);
+  const periodsOf = (schoolId: string) => periodsBySchool.get(schoolId) ?? [];
+  const schoolOf = (classGroupId: string) => classSchool.get(classGroupId) ?? "";
+
+  let student: MyTimetable["student"] = null;
+  if (cls) {
+    const slots = await listClassSlots(tx, cls.classGroupId);
+    student = { classGroupName: cls.classGroupName, schoolName: cls.schoolName, periods: periodsOf(cls.schoolId), days: toDays(slots, periodsOf, schoolOf) };
+  }
+  const teacher: MyTimetable["teacher"] = taught.length > 0 ? { days: toDays(taught, periodsOf, schoolOf), sessions: taught.length } : null;
+  const ref = cls ? periodsOf(cls.schoolId) : teacher ? periodsOf(schoolOf(taught[0].classGroupId)) : [];
+  const { currentPeriodNo, nextPeriodNo } = currentPeriodOf(ref, clock.minutes);
+  return { student, teacher, today: clock.weekday, nowMinutes: clock.minutes, currentPeriodNo, nextPeriodNo };
+}
+
+export interface OfferingPage {
+  offering: OfferingFacts;
+  /** All sessions of the درس in the week, with times. */
+  sessions: Session[];
+  /** The next session from now (Tehran), with how many days ahead it is (0 = today). */
+  nextSession: (Session & { daysAhead: number }) | null;
+  viewer: { isTeacher: boolean; isStudent: boolean; canCreate: boolean };
+}
+
+/**
+ * The subject page: who may see it — the offering's teacher, a student of its class, or anyone holding
+ * `academic.timetable.read` through the class/school/organization (admins); everyone else gets NOT_FOUND. Work
+ * items of the درس are listed by the workspace query with `offeringId` (each viewer sees their own inbox rows).
+ */
+export async function getOfferingPage(tx: Tx, ctx: TimetableCtx, offeringId: string, now = new Date()): Promise<OfferingPage> {
+  const offering = await findOfferingFacts(tx, offeringId);
+  if (!offering) throw notFound();
+  const isTeacher = await teachesOffering(tx, ctx.personId, offeringId);
+  const cls = await findStudentClass(tx, ctx.personId);
+  const isStudent = cls !== null && cls.classGroupId === offering.classGroupId;
+  if (!isTeacher && !isStudent && !(await can(tx, ctx, "academic.timetable.read", { scopeType: "class_offering", id: offeringId }))) throw notFound();
+  const periods = (await listPeriodsOfSchools(tx, [offering.schoolId])).get(offering.schoolId) ?? [];
+  const slots = await listOfferingSlots(tx, offeringId);
+  const sessions: Session[] = slots.flatMap((s) => {
+    const p = periods.find((x) => x.periodNo === s.periodNo);
+    return p ? [{ ...s, label: p.label, startsAt: p.startsAt, endsAt: p.endsAt }] : [];
+  });
+  const nextSession = nextSessionOf(sessions, periods, now);
+  return {
+    offering,
+    sessions,
+    nextSession,
+    viewer: { isTeacher, isStudent, canCreate: isTeacher && canAtAnyScope(ctx.assignments, "workspace.work_item.create") },
+  };
 }
