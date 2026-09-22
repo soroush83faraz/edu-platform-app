@@ -46,6 +46,9 @@ describe("seed:pilot", () => {
       expect(first.students).toBe(plan.students);
       expect(first.teacherAssignments).toBe(plan.offerings); // every offering has its main teacher
       expect(first.timetableSlots).toBe(plan.timetableSlots); // every offering has its 2–4 sessions on the grid
+      // حضور و غیاب: three weeks of roll calls, one per class per school day, every student marked, ~۹۲٪ حاضر.
+      expect(first.attendanceSessions).toBeGreaterThan(0);
+      expect(first.attendanceEntries).toBe(first.attendanceSessions * (first.students / plan.classGroups));
       expect(first.staff).toBe(plan.teachers + 3 * 3); // + admin, principal, vice per school
       expect(first.accounts).toBe(first.students + first.staff);
       expect(first.workItems).toBe(plan.workItems);

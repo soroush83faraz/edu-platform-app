@@ -430,6 +430,110 @@ rail under «مدیریت»), and Home carried the school counters that /admin c
   been a second personal door to a page the header already opens. `/notifications`, the poller and the
   `document.title` mirror are unchanged.
 
+## 2026-09-22 — Navigation round 4: three items (role · خانه · بیشتر); «پنل من» follows «اعلان‌ها» onto Home
+
+- **Three items (owner).** Bottom bar and rail, the SAME order, RTL (first = start/right): the **role item** —
+  «مدیریت» `/admin` for an admin, «کلاس‌ها» `/classes` for a teacher, «کلاس من» `/my-class` for a student,
+  «راهنما» `/help` with no hat (`navRoleFor`, unchanged) — then **خانه** `/home`, then **بیشتر** `/more`. The nav
+  carries PLACES now; the two work surfaces («پنل من», «اعلان‌ها») live on Home. `AppNav` no longer reads the
+  summary poller at all — no nav badge is left — while `InboxSummaryProvider`, the 45 s poll and the
+  `document.title` mirror are untouched and feed the «امروز» strip and the two Home doors instead.
+- **«پنل من» became a header control, not a tile** (the pick the owner left open). At 390 px a bare `/inbox` tile
+  would have been the THIRD کارتابل icon in the same grid — a student already has «تکالیف من» `?tab=todo` and
+  «انجام‌شده» `?tab=done`, a teacher «تکالیف داده‌شده» and «تکلیف جدید» — so it read as a duplicate of its own
+  neighbours, in the one area reserved for a hat's work VIEWS. As a control it pairs with the bell that left the
+  nav one round earlier, reads as a single «my stuff» cluster in the greeting row, and keeps the unread pill where
+  the eye already learnt to find a badge. `src/components/home/InboxDoor.tsx` mirrors `NotificationsBell`: a 44 px
+  outline کارتابل glyph, the yellow `CountBadge` («۹۹+» cap), quiet and pill-less at zero, two tones — `hero` in
+  the phone banner's start corner (کارتابل then bell, `gap-0.5`), the default in the desktop `PageHeader` actions —
+  never both at once. Exactly ONE door each: no «پنل من» tile, no «اعلان‌ها» tile.
+- **The «امروز» strip keeps its three links** (`?bucket=overdue`, `?bucket=today`, `?unread=1`): they are FILTERS
+  of the same destination, not a second door — the same reading that lets the student's tab tiles stay.
+- **Home IS the middle again, and the drift comes back.** Three cells have a centre, so «خانه» returns to it with
+  its one cue — the bare 28 px glyph, `primary-600` while current — and the neighbour drift that round 3 dropped
+  for want of a middle is restored at ±4 px (`--nav-drift` on the relatively-positioned link, read by the logical
+  `start-*` utility: no reflow, no RTL sign flip; `motion-reduce` pins every cell at rest). The sliding
+  `primary-50` cell tracks three columns (`w-1/3`, 0/33.3/66.6 %) and still only fades on off-tab routes.
+- **Nothing orphaned.** `/inbox` = the Home control + the three strip filters + the tab tiles; `/inbox/new` = the
+  teacher tile and the subject pages; `/notifications` = the Home bell. Deep links, the PWA start URL and the
+  `document.title` badge mirror are unchanged.
+- **Tests.** `tests/unit/app-nav.test.ts`: three cells in role · خانه · بیشتر order on BOTH renderings, the role
+  item per `navRoleFor`, `aria-current` on nested routes, the bare 28 px glyph, `grid-cols-3` / `w-1/3`, the ±4 px
+  drift on /home and all-zero elsewhere, and no `/inbox`, `/notifications` or badge anywhere in the nav.
+  `tests/unit/home-tiles.test.ts`: the nav-duplication rule updated to the three items (`/help` added, `/inbox`
+  removed), plus «no tile owns the bare `/inbox` or `/notifications`» — the two header doors do.
+- **Verified.** `pnpm typecheck` clean, `eslint` clean over the five changed files, `tests/unit/app-nav.test.ts` +
+  `tests/unit/home-tiles.test.ts` green (18 tests). The full `pnpm test:unit` run and the live browser pass are
+  pending — the host ran out of memory with three agents on it (see below).
+- **NOT verified — owner pass still needed.** The live 390 px / 1280 px check per role did not happen: the Browser
+  pane's session was logged out, the agent does not type credentials into login forms (the same limit recorded in
+  the 2026-09-22 navigation entry), and minting a dev session row was refused by the tooling. What the static
+  render cannot answer is left open: the three cells' measured width and 44 px targets at 390 px, the sliding
+  indicator landing on the middle column, the ±4 px drift reading right at three cells (the owner may still want
+  it dropped), and the two-glyph cluster in the banner's start corner against the hero gradient.
+
+## 2026-09-22 — حضور و غیاب: roll call by زنگ, the student's own month, the admin report (migration 0016)
+
+Owner's ask: the teacher marks the class زنگ by زنگ on their phone in a few seconds; the student sees their own
+حضور و غیاب; the principal sees which classes have not been taken today and a per-student absence percentage.
+Delivered in phase 1 and moved off the «به‌زودی» list (`/roadmap` now shows it under فاز ۱). Docs: **docs/attendance.md**
+(the whole module), docs/admin.md «حضور و غیاب», docs/db.md. Tests: `tests/int/attendance.test.ts`,
+`tests/unit/attendance.test.ts`, plus the table-count guards in `tests/int/{rls-meta,guards}.test.ts`.
+
+- **Data (additive, `drizzle/0016_attendance.sql`).** `academic.attendance_session` — one roll call:
+  `(organization_id, class_group_id, date, period_no)` **UNIQUE NULLS NOT DISTINCT**. The NULLS NOT DISTINCT is the
+  decision: `period_no` NULL means «حضور و غیاب روزانه» (the homeroom roll call), and a plain UNIQUE would treat
+  every NULL as distinct, so the same day could collect a dozen identical daily roll calls. With it, re-taking a
+  cell UPDATES the row — the product never has two versions of one roll call. `class_offering_id` (nullable,
+  composite FK) records the درس of that زنگ; `taken_by_person_id` / `taken_at` is the «ثبت‌شده در …» signature.
+  `academic.attendance_entry` — one mark per student (`present / absent / late / excused` by CHECK, optional
+  `minutes_late` and note), unique per (session, student), indexed on
+  `(organization_id, student_profile_id, status)` for «حضور و غیاب من» and the report totals. No soft delete and
+  no history table: a correction is a re-take (the row is updated), and the trail lives in `audit.audit_log`
+  (`academic.attendance_session.taken` / `.retaken`, before/after counts).
+- **The scope rule — the hard part.** A roll call belongs to a CLASS, but a teacher's role is scoped to a
+  `class_offering`. So the service resolves the درس of the cell from `academic.timetable_slot` (weekday of the
+  date + period number) and then asks `can()` TWICE: at the `class_group` (org admin, principal, vice — through
+  the school) or at that `class_offering` (the teacher of exactly that زنگ). Neither → `NOT_FOUND`, never
+  `FORBIDDEN` (docs/admin.md «قانون دامنه»). That is what «the teacher of their own offering at the right period»
+  means mechanically: the teacher of زنگ ۲ cannot take زنگ ۴, and a teacher of another class cannot even see the
+  class exists. The one widening: the class REPORT is also open to anyone teaching an open offering of that class.
+- **Roll-call rules.** The date may never be in the future (Tehran calendar, `isFutureIso`); the زنگ must exist in
+  the school's زنگ‌بندی; an explicit درس must belong to the class and not be closed; every student must have an
+  active enrollment in that class. `minutes_late` is stored only on «تأخیر». Students dropped from the submitted
+  list lose their entry (a roster change), students added get one — the saved roll call always equals the roster
+  the teacher confirmed. **Nobody is notified:** phase 1 keeps attendance silent; telling the family is the
+  «والدین» module's job, and a notification per absence per day would drown the کارتابل.
+- **The roster of a past day ignores `starts_on`.** `listClassRoster(classGroupId, date)` takes the class's active
+  enrollments that have not ENDED before that date, but does not require the enrollment to have started by then.
+  A `class_enrollment.starts_on` is the day the school registered the student, not the day they walked into the
+  room; requiring it would make every seeded (and every freshly imported) class unable to record last week. The
+  one-active-class-per-day exclusion constraint still keeps a student out of two rosters.
+- **The two percentages are a product decision, not arithmetic.** «درصد غیبت» counts UNEXCUSED absence only
+  (`absent / total`) — an absence the school accepted (`excused`) is not held against the student, but it stays in
+  the denominator and keeps its own column. «درصد حضور» is `(present + late) / total`: a late student was in
+  class. Both live in `src/lib/attendance.ts`, pure and unit-tested, together with the Tehran ISO-date arithmetic
+  (`tehranToday`, `weekdayOfIso`, `addDaysIso`, `schoolDaysBetween`) — the same fixed +۰۳:۳۰ the timetable uses.
+- **UI.** The teacher's roster is ONE screen: a four-way segmented control per student (each button ≥ 44 px, the
+  whole row reachable with a thumb), «همه حاضر», a minutes field that appears only on «تأخیر», and a sticky footer
+  with the live count and one primary action — nothing is written until that button, and the whole roll call goes
+  in ONE action (one transaction). Chosen over per-row auto-save (25 round trips, no way to see the class as a
+  whole before committing) and over a swipe gesture (undiscoverable, and impossible to audit visually).
+  A saved roll call reopens pre-filled with «ثبت‌شده در …» above it. The student's page is the month's four
+  counts plus the recent marks; the admin page is a GET form (class + range) so a report is shareable and
+  printable, with «امروز ثبت نشده» above it.
+- **IA.** `/attendance` is one route with three faces, like `/timetable`: the teacher's today, the student's
+  month, and a redirect to `/admin/attendance` for an admin who is neither. Home therefore gets exactly ONE tile
+  for it — and to keep «one home per destination» literal, `HomeTile.role` now accepts a LIST of hats
+  (`role: ["student", "teacher"]`) instead of forcing two tiles at the same href. The admin section has no Home
+  tile at all: it lives in `/admin` (`ADMIN_SECTIONS`, after «کلاس‌ها»), the management hub, and there only.
+- **Seed.** `scripts/attendance-plan.ts` (pure, hashed) decides every mark: ~۹۲٪ present, ~۴٪ absent, ~۲٫۵٪ late,
+  ~۱٫۵٪ excused. `pnpm seed:pilot` writes three weeks for every class — one roll call per school day at the
+  class's FIRST زنگ of that weekday, taken through the service by the teacher of that درس with their own ctx, so
+  the seeded data exercises the real scope rule and leaves a real audit trail. `pnpm seed:demo` writes the last
+  eight school days. Both skip a day that already has a session, so a second run writes nothing
+  (`tests/int/seed-pilot.test.ts` compares two runs).
+
 ## 2026-09-22 — QA round 3 (admin): the school hub, pickers that never repeat a name, scopes that show every school
 
 Three owner asks after living with the admin area: «a school must be editable in one place», «the dropdowns say

@@ -92,7 +92,7 @@ describe("seed --catalog", () => {
   });
 });
 
-describe("seed --demo (weekly timetable)", () => {
+describe("seed --demo (weekly timetable + حضور و غیاب)", () => {
   afterAll(async () => {
     await dropAppSchemas();
     await runMigrations({ test: true, connectionString: OWNER_URL });
@@ -110,6 +110,10 @@ describe("seed --demo (weekly timetable)", () => {
       const noor = first.counts["noor-demo"];
       expect(danesh.timetableSlots).toBeGreaterThan(0);
       expect(noor.timetableSlots).toBeGreaterThan(0);
+      // The light attendance history: one roll call per class per past school day, ~۹۲٪ of the marks «حاضر».
+      expect(danesh.attendanceSessions).toBeGreaterThan(0);
+      expect(danesh.attendanceEntries).toBeGreaterThan(danesh.attendanceSessions);
+      expect(noor.attendanceSessions).toBeGreaterThan(0);
 
       // Every active class of both demo organizations — not just the ones a spec names — has at least one slot.
       const client = await pool.connect();
@@ -121,6 +125,12 @@ describe("seed --demo (weekly timetable)", () => {
           for (const { id } of classes.rows) {
             const slots = await client.query<{ n: string }>("select count(*)::int as n from academic.timetable_slot where class_group_id = $1", [id]);
             expect(Number(slots.rows[0].n)).toBeGreaterThan(0);
+            // …and a roll call on every past school day the class has a session on — never two for one cell.
+            const dupes = await client.query<{ n: string }>(
+              "select count(*)::int as n from (select date, period_no from academic.attendance_session where class_group_id = $1 group by date, period_no having count(*) > 1) d",
+              [id],
+            );
+            expect(Number(dupes.rows[0].n)).toBe(0);
           }
         }
       } finally {

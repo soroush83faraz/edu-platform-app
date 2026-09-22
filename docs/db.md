@@ -46,9 +46,9 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 
 ## جدول‌ها و کلید طبیعی
 
-شمار جدول‌ها: **۴۵** (tenancy ۱۰ · iam ۱۳ · academic ۳ · workspace ۹ · notif ۳ · files ۱ · audit ۱ · config ۲ · integ ۳). جدول‌های مستأجری (زیر RLS): ۳۶.
+شمار جدول‌ها: **۴۹** (tenancy ۱۱ · iam ۱۳ · academic ۶ · workspace ۹ · notif ۳ · files ۱ · audit ۱ · config ۲ · integ ۳). جدول‌های مستأجری (زیر RLS): ۴۰. (`school_period` و `timetable_slot` از مهاجرت `0015`؛ `attendance_session` و `attendance_entry` از `0016`.)
 
-### tenancy (۱۰)
+### tenancy (۱۱)
 | جدول | کلید طبیعی / یکتایی | یادداشت |
 |---|---|---|
 | organization (سراسری) | `slug` (`^[a-z0-9-]{3,40}$`) | `status ∈ active,suspended,trial` |
@@ -79,12 +79,15 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 | role_permission | `(role_id, permission_code)` (PK) | فقط‌خواندنی برای app_rw؛ ایندکس `(permission_code)` |
 | role_assignment | `(person_id, role_id, scope_type, scope_id) WHERE revoked_at IS NULL` | `scope_id` تولیدی = `coalesce(…, organization_id)`؛ CHECK قوس انحصاری (دقیقاً ستونِ متناظر با `scope_type` پر باشد)؛ CHECK `valid_to IS NULL OR valid_from <= valid_to`؛ `role_id` فقط الگو یا نقشِ همان سازمان (تریگر `role_assignment_role_tenant_trg`)؛ ایندکس‌های `(role_id)` و `(organization_id, <scope>_id) WHERE … IS NOT NULL` برای هر ستون scope |
 
-### academic (۳)
+### academic (۶)
 | جدول | کلید طبیعی / یکتایی | یادداشت |
 |---|---|---|
 | school_enrollment | `(organization_id, student_profile_id, academic_year_id)` | `status ∈ registered,active,transferred_out,withdrawn,graduated`؛ `starts_on <= ends_on`؛ FK ترکیبی به student_profile, school, academic_year, grade_level؛ `grade_level_id` از `0012` nullable است: دانش‌آموزِ بدون کلاس یک ردیف `registered` بدون پایه برای سال جاری مدرسه می‌گیرد (لنگر دامنه) و `enrollStudent` با اولین کلاس آن را پر و `active` می‌کند |
 | class_enrollment | — (`(organization_id, id)`) | **Exclusion** `class_enrollment_active_excl` (btree_gist, `0011`): `(student_profile_id WITH =, daterange(starts_on, ends_on, '[)') WITH &&) WHERE status='active'` → هر دانش‌آموز در هر روز حداکثر یک کلاس فعال؛ `status ∈ active,ended,transferred`؛ `change_reason ∈ transfer,level_change,admin`؛ `previous_enrollment_id` خودارجاع ترکیبی؛ `changed_by_person_id` FK ترکیبی به person؛ ایندکس `(organization_id, class_group_id) WHERE status='active'`. سرویس `enrollStudent` / `moveEnrollment` (`src/modules/academic/service.ts`) |
 | teacher_assignment | `(class_offering_id, staff_profile_id, role) WHERE valid_to IS NULL` | `role ∈ main,assistant,substitute`؛ `valid_from <= valid_to`. **مبنای نقش معلم:** `assignTeacher` هم این ردیف و هم `iam.role_assignment(role=teacher الگو, scope_type=class_offering, source_type=teacher_assignment, source_id=id)` را در یک تراکنش می‌نویسد؛ `endTeacherAssignment` روی هر دو `valid_to` و روی ردیف مشتق `revoked_at` می‌گذارد. مجوزدهی فقط `role_assignment` را می‌خواند |
+| timetable_slot | `(organization_id, class_group_id, weekday, period_no)` | برنامهٴ هفتگی (مهاجرت `0015`): هر خانه → `class_offering` + `room` اختیاری؛ `weekday` ۰..۶، `period_no` ۱..۱۲ (عدد، نه FK به `school_period`). پاک کردن خانه = حذف ردیف |
+| attendance_session | `(organization_id, class_group_id, date, period_no)` **NULLS NOT DISTINCT** | حضور و غیاب (مهاجرت `0016`؛ docs/attendance.md): `period_no` خالی = ثبت روزانه، و چون کلید `NULLS NOT DISTINCT` است ثبت دوباره همان ردیف را به‌روز می‌کند؛ `class_offering_id` درس همان زنگ (nullable)، `taken_by_person_id` / `taken_at` امضای ثبت؛ ایندکس‌های `(organization_id, date)` و `(organization_id, class_offering_id)` |
+| attendance_entry | `(organization_id, attendance_session_id, student_profile_id)` | `status ∈ present,absent,late,excused`؛ `minutes_late` ۰..۶۰۰ (فقط روی `late`)؛ `note` تا ۳۰۰ نویسه؛ ایندکس `(organization_id, student_profile_id, status)` برای «حضور و غیاب من» و جمع‌های گزارش. سرویس `takeAttendance` (`src/modules/academic/attendance.ts`) |
 
 ### workspace (۹)
 | جدول | کلید طبیعی / یکتایی | یادداشت |

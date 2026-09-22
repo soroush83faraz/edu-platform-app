@@ -23,8 +23,10 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { drizzle, type NodePgClient, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../src/db/schema";
+import { weekdayOfIso } from "../src/lib/attendance";
 import { DEFAULT_PERIODS, SCHOOL_WEEKDAYS } from "../src/lib/timetable";
-import { listClassSlots } from "../src/modules/academic/repo";
+import { takeAttendance } from "../src/modules/academic/attendance";
+import { findAttendanceSession, listClassRoster, listClassSlots } from "../src/modules/academic/repo";
 import { assignTeacher, enrollStudent, setTimetableSlot, type ServiceCtx } from "../src/modules/academic/service";
 import { IMPLICIT_PERMISSIONS, PERMISSIONS } from "../src/modules/iam/permissions";
 import { generateInitialPassword } from "../src/modules/iam/password";
@@ -59,6 +61,7 @@ import {
   upsertTerm,
 } from "../src/modules/tenancy/service";
 import { SYSTEM_ROLES, catalogCountsWith, formatCatalogSummary, seedCatalogWith, type CatalogCounts, type Queryable } from "./catalog";
+import { attendanceStatusFor, minutesLateFor, pastSchoolDays, rollCallPeriod } from "./attendance-plan";
 import { planTimetables, type PlanClass } from "./timetable-plan";
 
 export { NOTIFICATION_TYPES, SYSTEM_ROLES, SYSTEM_WORK_ITEM_TYPES, type CatalogCounts } from "./catalog";
@@ -116,6 +119,9 @@ export function demoId(key: string): string {
 
 /** +98912 3xx xxxx, unique per index. */
 export const demoPhone = (i: number) => `+98912${String(3000000 + i)}`;
+
+/** School days of حضور و غیاب the DEMO seed writes (the pilot writes three weeks). */
+export const DEMO_ATTENDANCE_DAYS = 8;
 
 /** 2–4 sessions per week for a demo offering, deterministic from its id (like the pilot's `sessionsOf`). */
 export function demoSessionCount(offeringId: string): number {
@@ -276,6 +282,8 @@ export interface DemoCounts extends Record<string, number> {
   classEnrollments: number;
   teacherAssignments: number;
   derivedTeacherRoles: number;
+  attendanceSessions: number;
+  attendanceEntries: number;
   linkedTasks: number;
 }
 
@@ -609,6 +617,34 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
       }
     }
 
+    // ---- حضور و غیاب: a light history (the last DEMO_ATTENDANCE_DAYS school days), one roll call per class per
+    // day at the class's FIRST زنگ of that weekday, taken by the org admin (the demo has no homeroom teachers to
+    // impersonate here). ~۹۲٪ present from `scripts/attendance-plan.ts`; a day that already has a session is
+    // skipped, so a second `pnpm seed:demo` writes nothing. The pilot seed writes three full weeks instead. ----
+    for (const cls of planClasses) {
+      const slots = await listClassSlots(tx, cls.key);
+      if (slots.length === 0) continue;
+      for (const date of pastSchoolDays(DEMO_ATTENDANCE_DAYS)) {
+        const weekday = weekdayOfIso(date);
+        if (weekday === null) continue;
+        const periodNo = rollCallPeriod(slots, weekday);
+        if (periodNo === null) continue;
+        if (await findAttendanceSession(tx, cls.key, date, periodNo)) continue;
+        const roster = await listClassRoster(tx, cls.key, date);
+        if (roster.length === 0) continue;
+        await takeAttendance(tx, ctx, {
+          classGroupId: cls.key,
+          date,
+          periodNo,
+          entries: roster.map((r) => {
+            const key = `${spec.key}:${r.studentProfileId}:${date}:${periodNo}`;
+            const status = attendanceStatusFor(key);
+            return { studentProfileId: r.studentProfileId, status, minutesLate: status === "late" ? minutesLateFor(key) : null };
+          }),
+        });
+      }
+    }
+
     const count = async (table: string, where = ""): Promise<number> => {
       const res = await tx.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table} ${where}`));
       return res.rows[0].n;
@@ -623,6 +659,8 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
       teacherAssignments: await count("academic.teacher_assignment", "where valid_to is null"),
       derivedTeacherRoles: await count("iam.role_assignment", "where source_type = 'teacher_assignment' and revoked_at is null"),
       timetableSlots: await count("academic.timetable_slot"),
+      attendanceSessions: await count("academic.attendance_session"),
+      attendanceEntries: await count("academic.attendance_entry"),
       linkedTasks: await count("workspace.work_item", "where class_offering_id is not null"),
     };
     return { logins, counts };
@@ -700,7 +738,7 @@ async function main(): Promise<void> {
       console.log(`[seed] demo: ${logins.length} accounts in 2 organizations`);
       for (const [slug, c] of Object.entries(counts)) {
         console.log(
-          `[seed] demo ${slug}: ${c.school} schools, ${c.classGroup} classes, ${c.classOffering} offerings, ${c.persons} persons, ${c.accounts} accounts, ${c.roleAssignments} role assignments, ${c.schoolEnrollments} school enrollments, ${c.classEnrollments} active class enrollments, ${c.teacherAssignments} teacher assignments, ${c.derivedTeacherRoles} derived teacher roles, ${c.timetableSlots} timetable slots, ${c.linkedTasks} tasks linked to a درس`,
+          `[seed] demo ${slug}: ${c.school} schools, ${c.classGroup} classes, ${c.classOffering} offerings, ${c.persons} persons, ${c.accounts} accounts, ${c.roleAssignments} role assignments, ${c.schoolEnrollments} school enrollments, ${c.classEnrollments} active class enrollments, ${c.teacherAssignments} teacher assignments, ${c.derivedTeacherRoles} derived teacher roles, ${c.timetableSlots} timetable slots, ${c.attendanceSessions} attendance sessions, ${c.attendanceEntries} attendance entries, ${c.linkedTasks} tasks linked to a درس`,
         );
       }
       printLogins(logins, password, generated, process.env.SEED_DEMO_NO_FORCE !== "1");

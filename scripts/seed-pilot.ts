@@ -28,8 +28,10 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../src/db/schema";
-import { listClassSlots } from "../src/modules/academic/repo";
+import { findAttendanceSession, listClassRoster, listClassSlots } from "../src/modules/academic/repo";
+import { takeAttendance } from "../src/modules/academic/attendance";
 import { assignTeacher, setTimetableSlot } from "../src/modules/academic/service";
+import { weekdayOfIso } from "../src/lib/attendance";
 import { DEFAULT_PERIODS, SCHOOL_WEEKDAYS } from "../src/lib/timetable";
 import type { Assignment } from "../src/modules/iam/can";
 import { hashPassword } from "../src/modules/iam/password";
@@ -50,6 +52,7 @@ import {
 } from "../src/modules/tenancy/service";
 import { addComment, changeStatus, createWorkItem, type WorkspaceCtx } from "../src/modules/workspace/service";
 import { seedCatalog } from "./seed";
+import { attendanceStatusFor, minutesLateFor, pastSchoolDays, rollCallPeriod } from "./attendance-plan";
 import { hasTeacherClash, planTimetables, type PlanClass } from "./timetable-plan";
 
 type Db = NodePgDatabase<typeof schema>;
@@ -846,6 +849,14 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
 
   lap("staffItemsMs");
 
+  // ---- 5. حضور و غیاب: the last three weeks of roll calls, one per class per school day ----
+  // The FIRST زنگ of each class's day carries the roll call (where a homeroom teacher takes it) and the teacher of
+  // that درس is the one who takes it — through the service, with their own ctx, so the scope rule and the audit
+  // trail are the real ones. Idempotent: a day that already has a session is skipped, so a second run writes
+  // nothing (tests/int/seed-pilot.test.ts compares the counts of two runs).
+  await seedAttendance(db, orgId, spec, structure, ctxCache, ATTENDANCE_DAYS);
+  lap("attendanceMs");
+
   const counts = await withOrg(db, orgId, async (tx) => {
     const count = async (table: string, where = ""): Promise<number> => {
       const res = await tx.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table} ${where}`));
@@ -860,6 +871,8 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
       classEnrollments: await count("academic.class_enrollment", "where status = 'active'"),
       teacherAssignments: await count("academic.teacher_assignment", "where valid_to is null"),
       timetableSlots: await count("academic.timetable_slot"),
+      attendanceSessions: await count("academic.attendance_session"),
+      attendanceEntries: await count("academic.attendance_entry"),
       workItems: await count("workspace.work_item"),
       assignees: await count("workspace.work_item_assignee"),
       comments: await count("workspace.work_item_comment"),
@@ -872,6 +885,65 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
   return { org: spec.name, school: spec.school.name, code: spec.school.code, admin: structure.admin, principal: structure.principal, vice: structure.vice, teachers: structure.teachers, classes, counts };
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// حضور و غیاب (the last three weeks)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** School days of history the pilot writes; the demo seed uses a shorter window. */
+export const ATTENDANCE_DAYS = 21;
+
+interface AttendanceStructure {
+  classIds: Record<string, string>;
+  offeringIds: Record<string, string>;
+  teachers: TeacherOut[];
+  allocation: string[][];
+  principal: StaffOut;
+}
+
+/**
+ * One roll call per class per past school day: the class's FIRST زنگ that weekday, taken by the teacher of that
+ * درس (the principal stands in when the درس has no teacher), ~۹۲٪ present with a few absent / late / excused —
+ * `scripts/attendance-plan.ts` decides every mark from a hash, so the dataset is identical on every machine.
+ * One transaction per class; a day whose session already exists is skipped (idempotent).
+ */
+async function seedAttendance(db: Db, orgId: string, spec: PilotOrgSpec, structure: AttendanceStructure, ctxCache: Map<string, ActorCtx>, days: number): Promise<void> {
+  const teacherOfOffering = new Map<string, string>();
+  structure.allocation.forEach((keys, t) => {
+    for (const key of keys) teacherOfOffering.set(structure.offeringIds[key], structure.teachers[t].personId);
+  });
+  const schoolDays = pastSchoolDays(days);
+
+  for (const c of spec.classes) {
+    const classGroupId = structure.classIds[c.name];
+    await withOrg(db, orgId, async (tx) => {
+      const slots = await listClassSlots(tx, classGroupId);
+      if (slots.length === 0) return;
+      for (const date of schoolDays) {
+        const weekday = weekdayOfIso(date);
+        if (weekday === null) continue;
+        const periodNo = rollCallPeriod(slots, weekday);
+        if (periodNo === null) continue;
+        if (await findAttendanceSession(tx, classGroupId, date, periodNo)) continue;
+        const slot = slots.find((s) => s.weekday === weekday && s.periodNo === periodNo);
+        const takerPersonId = (slot && teacherOfOffering.get(slot.offeringId)) ?? structure.principal.personId;
+        const roster = await listClassRoster(tx, classGroupId, date);
+        if (roster.length === 0) continue;
+        const ctx = await actorCtx(tx, orgId, takerPersonId, ctxCache);
+        await takeAttendance(tx, ctx, {
+          classGroupId,
+          date,
+          periodNo,
+          entries: roster.map((r) => {
+            const key = `${spec.key}:${r.studentProfileId}:${date}:${periodNo}`;
+            const status = attendanceStatusFor(key);
+            return { studentProfileId: r.studentProfileId, status, minutesLate: status === "late" ? minutesLateFor(key) : null };
+          }),
+        });
+      }
+    });
+  }
+}
+
 export interface PilotCounts extends Record<string, number> {
   organizations: number;
   schools: number;
@@ -881,7 +953,7 @@ export interface PilotCounts extends Record<string, number> {
 
 /** Global counts (as app_owner, per pilot organization so FORCE RLS lets us see the rows). */
 export async function pilotCounts(db: Db): Promise<PilotCounts> {
-  const totals: PilotCounts = { organizations: 0, schools: 0, classGroups: 0, offerings: 0, staff: 0, students: 0, accounts: 0, classEnrollments: 0, teacherAssignments: 0, timetableSlots: 0, workItems: 0, comments: 0, notifications: 0 };
+  const totals: PilotCounts = { organizations: 0, schools: 0, classGroups: 0, offerings: 0, staff: 0, students: 0, accounts: 0, classEnrollments: 0, teacherAssignments: 0, timetableSlots: 0, attendanceSessions: 0, attendanceEntries: 0, workItems: 0, comments: 0, notifications: 0 };
   const orgs = await db.select({ id: organization.id }).from(organization).where(inArray(organization.slug, PILOT_ORGS.map((o) => o.slug)));
   totals.organizations = orgs.length;
   for (const { id } of orgs) {
@@ -899,6 +971,8 @@ export async function pilotCounts(db: Db): Promise<PilotCounts> {
       totals.classEnrollments += await count("academic.class_enrollment", "where status = 'active'");
       totals.teacherAssignments += await count("academic.teacher_assignment", "where valid_to is null");
       totals.timetableSlots += await count("academic.timetable_slot");
+      totals.attendanceSessions += await count("academic.attendance_session");
+      totals.attendanceEntries += await count("academic.attendance_entry");
       totals.workItems += await count("workspace.work_item");
       totals.comments += await count("workspace.work_item_comment");
       totals.notifications += await count("notif.notification");
