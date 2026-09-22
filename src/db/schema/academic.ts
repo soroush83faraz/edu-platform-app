@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, date, foreignKey, index, pgSchema, smallint, text, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { check, date, foreignKey, index, pgSchema, smallint, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { id, timestamps } from "./_common";
 import { person, staffProfile, studentProfile } from "./iam";
 import { academicYear, classGroup, classOffering, gradeLevel, orgFk, school } from "./tenancy";
@@ -191,6 +191,92 @@ export const timetableSlot = academic.table(
       name: "timetable_slot_offering_fk",
       columns: [t.organizationId, t.classOfferingId],
       foreignColumns: [classOffering.organizationId, classOffering.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
+ * One roll call («حضور و غیاب») — a class group on a date, either at one زنگ (`period_no` = the bell number of
+ * `tenancy.school_period`, the session the timetable puts there) or for the whole day (`period_no` NULL = the
+ * homeroom roll call). `class_offering_id` is the درس the roll call belongs to when it was taken at a زنگ; it stays
+ * NULL for a daily roll call. The natural key `(organization_id, class_group_id, date, period_no)` is
+ * NULLS NOT DISTINCT, so re-taking the same roll call UPDATES the row instead of adding a second one.
+ * `taken_by_person_id` / `taken_at` are the signature shown as «ثبت‌شده در …»; the trail of every change is in
+ * `audit.audit_log` (`academic.attendance_session.taken`).
+ */
+export const attendanceSession = academic.table(
+  "attendance_session",
+  {
+    id: id(),
+    organizationId: orgFk(),
+    classGroupId: uuid("class_group_id").notNull(),
+    classOfferingId: uuid("class_offering_id"),
+    date: date("date").notNull(),
+    periodNo: smallint("period_no"),
+    takenByPersonId: uuid("taken_by_person_id").notNull(),
+    takenAt: timestamp("taken_at", { withTimezone: true }).defaultNow().notNull(),
+    note: text("note"),
+    ...timestamps(),
+  },
+  (t) => [
+    unique("attendance_session_cell_uq").on(t.organizationId, t.classGroupId, t.date, t.periodNo).nullsNotDistinct(),
+    unique("attendance_session_org_id_uq").on(t.organizationId, t.id),
+    index("attendance_session_org_date_idx").on(t.organizationId, t.date),
+    index("attendance_session_org_offering_idx").on(t.organizationId, t.classOfferingId),
+    check("attendance_session_period_chk", sql`${t.periodNo} IS NULL OR ${t.periodNo} BETWEEN 1 AND 12`),
+    check("attendance_session_note_chk", sql`${t.note} IS NULL OR char_length(${t.note}) BETWEEN 1 AND 300`),
+    foreignKey({
+      name: "attendance_session_class_group_fk",
+      columns: [t.organizationId, t.classGroupId],
+      foreignColumns: [classGroup.organizationId, classGroup.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "attendance_session_offering_fk",
+      columns: [t.organizationId, t.classOfferingId],
+      foreignColumns: [classOffering.organizationId, classOffering.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "attendance_session_taken_by_fk",
+      columns: [t.organizationId, t.takenByPersonId],
+      foreignColumns: [person.organizationId, person.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
+ * One student's mark in a roll call: `present` / `absent` / `late` / `excused` (+ optional `minutes_late` and a
+ * short note). One row per (session, student) — re-taking updates it in place; a student who left the class is
+ * removed from the session. The `(organization_id, student_profile_id, status)` index serves «حضور و غیاب من» and
+ * the per-student totals of the admin report.
+ */
+export const attendanceEntry = academic.table(
+  "attendance_entry",
+  {
+    id: id(),
+    organizationId: orgFk(),
+    attendanceSessionId: uuid("attendance_session_id").notNull(),
+    studentProfileId: uuid("student_profile_id").notNull(),
+    status: text("status").notNull(),
+    minutesLate: smallint("minutes_late"),
+    note: text("note"),
+    ...timestamps(),
+  },
+  (t) => [
+    unique("attendance_entry_session_student_uq").on(t.organizationId, t.attendanceSessionId, t.studentProfileId),
+    unique("attendance_entry_org_id_uq").on(t.organizationId, t.id),
+    index("attendance_entry_org_student_idx").on(t.organizationId, t.studentProfileId, t.status),
+    check("attendance_entry_status_chk", sql`${t.status} IN ('present', 'absent', 'late', 'excused')`),
+    check("attendance_entry_minutes_chk", sql`${t.minutesLate} IS NULL OR ${t.minutesLate} BETWEEN 0 AND 600`),
+    check("attendance_entry_note_chk", sql`${t.note} IS NULL OR char_length(${t.note}) BETWEEN 1 AND 300`),
+    foreignKey({
+      name: "attendance_entry_session_fk",
+      columns: [t.organizationId, t.attendanceSessionId],
+      foreignColumns: [attendanceSession.organizationId, attendanceSession.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "attendance_entry_student_fk",
+      columns: [t.organizationId, t.studentProfileId],
+      foreignColumns: [studentProfile.organizationId, studentProfile.id],
     }).onDelete("restrict"),
   ],
 );

@@ -113,6 +113,13 @@
       "when": 1790063697514,
       "tag": "0015_timetable",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790085154773,
+      "tag": "0016_attendance",
+      "breakpoints": true
     }
   ]
 }
