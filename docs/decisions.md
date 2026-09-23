@@ -762,3 +762,111 @@ Owner's asks: (A) the item a **teacher** creates stays «تکلیف», but a **�
 - **Deferred.** The manifest `id` stays `"/"` (changing it re-registers every install). The phone Home shows the role
   glyph twice — the header square and the banner plate — exactly as it showed the school twice before; collapsing
   the two is a layout decision for the owner, not part of the swap.
+
+## 2026-09-22 — the work-item overflow menu goes, and سنجاق / بایگانی leave the UI with it
+
+Owner: «منوی «بیشتر» را دوست ندارم، بی‌اثر است» — and, on the archive item specifically, «اگر معلم بخواهد، می‌تواند
+حذفش کند». So the kebab on `/inbox/[id]` is gone, with both of its items.
+
+- **What disappeared.** `WorkItemActions` lost the `DropdownMenu` trigger («بیشتر» with an `Ellipsis`) and its two
+  entries — «سنجاق به بالای پنل من» / «برداشتن سنجاق» and «بایگانی در پنل من». `InboxRow` lost the small `Pin`
+  glyph («سنجاق‌شده») from its meta line, so the state is not rendered anywhere either. The visible action row is
+  untouched: «اتمام» (primary), «تمدید», «حذف» (ghost, red), «بازگشایی» on a closed item, and the assignee's
+  «انجام شد». There was no «بایگانی‌شده» filter or chip on `/inbox` to remove — the list has always excluded
+  `state='archived'` in SQL (`repo.ts`), which is why a row archived by the old menu simply vanished.
+- **Nothing leaves the data model.** `inbox_entry.is_pinned`, `state='archived'`, the index that carries
+  `is_pinned`, the audit actions `workspace.inbox_entry.pinned` / `.archived`, the services `setPinned` /
+  `archiveInbox`, `SetPinnedInput` and both Server Actions all stay exactly as they were, each marked
+  «INTENTIONALLY UNWIRED» in `src/modules/workspace/{actions,service}.ts`. `findMyInboxEntry` still returns
+  `isPinned`; only the detail page stopped reading it. **To restore:** add a caller — the actions are live and
+  gated as before (`workspace.work_item.read`, scope `any`) — and re-render the pin in `InboxRow`.
+- **One prop simplification.** `WorkItemActions` took `inbox: { state, isPinned } | null` purely for the menu; it
+  now takes `inboxState: string | null`, the single fact it still needs (fire `markInboxRead` on mount when the
+  row is `unread`).
+- No behaviour was moved, renamed or reinterpreted: this is a subtraction. `tests/int/workspace-service.test.ts`
+  never asserted pin/archive through the UI layer, so no test lost coverage.
+
+## 2026-09-23 — the product is «دانینو»: the owner's «D» monogram, and the mark at the top says which kind of account you are
+
+- **The name.** The product is **«دانینو»** (the printed logo's Latin wordmark is lowercase «donino»; Latin appears only
+  where a Latin string is already acceptable — code identifiers, file names, the README — never as a UI label).
+  `DEFAULT_PRODUCT_NAME` in `src/lib/product.ts` is the ONE place it lives, `PRODUCT_NAME_LATIN` holds «donino», and
+  `PRODUCT_NAME` still overrides the name for a white-labelled deployment. «سامانهٴ مدرسه» survives only as the
+  CATEGORY in prose (the root `description`, the README's subtitle) — never as the name.
+- **Titles came off the pages.** `src/app/layout.tsx` carries `title: { default, template: "%s | دانینو" }` and every
+  page's metadata is just its own name («خانه», «ورود», «راهنما»), so an override renames every tab. The manifest's
+  `name` / `short_name`, `apple-mobile-web-app-title`, the login / offline / help / privacy headers and the docs all
+  read the same helper.
+- **The mark is the owner's logo**, reproduced as inline SVG — no raster, no dependency. `src/lib/brand/mark.ts` holds
+  the geometry on a 64×64 grid: a monogram **D** of two interlocking strokes, an outer rounded D (stem on the start
+  side, 3-unit corner radii, bowl r = 26, stroke 9) whose stem carries a second, smaller D (bowl r = 11, stroke 6)
+  inside its counter, with a 6-unit channel between them and a small eye (r = 5) in the middle. It is ONE path, filled
+  `evenodd`, of THREE sub-paths: the outer silhouette, the C-shaped channel (which runs from the stem round the bowl
+  and back to the stem on both arms) and the inner counter. The first cut drew it as four sub-paths whose inner D
+  shared the stem edge x = 15 with the outer counter; a coincident edge between two even-odd contours is exactly
+  where an analytic anti-aliasing rasteriser leaves a hairline seam at fractional scales (15 × 40/64 = 9.375 px in the
+  rail), so the channel was traced as one contour instead — same pixels, no shared edge
+  (`tests/unit/brand.test.ts` pins the three sub-paths and the channel's shape).
+- **Two renderings, one geometry.** `DoninoMark` (`src/components/brand/DoninoMark.tsx`) fills with `currentColor`
+  and defaults to the `primary-700` navy token — no hex in any component; `DoninoWordmark` sets the mark beside the
+  Persian «دانینو» in Vazirmatn (`script="latin"` renders «donino» in a `<bdi dir="ltr">`, unused in the UI today).
+  `markSvg()` is the self-contained string satori needs (`ImageResponse` has no CSS variables and cannot render our
+  component): the white monogram on the persian-blue squircle, whose two stops ARE the `.clay-icon` gradient.
+  **Where it appears:** the desktop rail header, the auth layout (login, change-password), `/~offline`, the public
+  shell (`/help`, `/privacy` — it still drew the old book glyph), the phone header of a person with no hat, and
+  every PWA icon path — `src/app/icon.tsx`, `apple-icon.tsx`, `src/app/icons/[file]/route.tsx`, the new
+  `src/app/splash/[file]/route.tsx` — all through `src/lib/pwa/app-icon.tsx`, so the installed icon IS the rail's
+  mark. The maskable icon widens the viewBox to 80 so the mark sits inside the 80 % safe zone.
+- **The role mark is not a new element — it is the school mark wearing the hat's glyph** (owner: «one mark up there,
+  no box, no text»). `src/components/brand/RoleMark.tsx` renders exactly the markup the school mark had — the phone
+  header's 32 px `bg-hero` square at the start corner, the Home banner's white 52 px plate — and only swaps the glyph;
+  on the desktop rail it is the quiet 24 px `surface-panel` circle that opens the school line under the «دانینو»
+  wordmark (`tone="line"`), because a second blue square beside the product's own mark would compete with it. No new
+  icon material, no ring, no chip, no visible text: **the hats differ by GLYPH alone**, and the role is named only in
+  `aria-label` and the `title` tooltip. The «دانینو» mark in the rail stays the product's, never the role's.
+- **The mapping** (`src/components/brand/roles.ts`, pure, unit-tested): دانش‌آموز `GraduationCap` · دبیر
+  `Presentation` · معاون `ClipboardCheck` · مدیر مدرسه `School` · مدیر سازمان `Landmark` (and ولی `Users`, phase 2,
+  so the map is complete). `roleHatsFor(ctx.assignments)` derives the hats from the session alone — no query — and
+  tells the admin hats apart the way the rest of the product does: an ORGANIZATION-scoped `iam.admin.access` is
+  «مدیر سازمان», `school_principal` (or any narrower assignment carrying admin access) «مدیر مدرسه»,
+  `vice_principal` «معاون». A multi-hat person is drawn as the highest hat (admin > teacher > student) and every
+  hat is named in the label («مدیر مدرسه · دبیر»). An account with no hat keeps the mark it had.
+- **Home tiles, final state** (`src/lib/modules-registry.ts`, `homeTilesFor`). «تکالیف من», «انجام‌شده» and
+  «مدیریت» are gone — the first two were FILTERS of the کارتابل, the third a second door to the nav's first cell.
+  «پنل من» is first, with its unread badge (`InboxTileBadge`). The creation tile (`new-item`, `NEW_ITEM_TILE_ROLES`
+  = teacher · admin · student, gated by `workspace.work_item.create`) is labelled by `newItemLabel(hats)`; its mirror
+  `given` (`GIVEN_TILE_ROLES` = teacher · admin) by `workItemWordsForHats(hats).given`. Per person:
+  - دانش‌آموز: پنل من · تسک جدید · حضور و غیاب
+  - دبیر: پنل من · تکالیف داده‌شده · تکلیف جدید · حضور و غیاب
+  - مدیر مدرسه (one school): پنل من · تسک‌های داده‌شده · تسک جدید · حضور و غیاب (the report) · مدرسه · سال تحصیلی · زنگ‌بندی
+  - معاون (no `create`): پنل من · حضور و غیاب (the report) · مدرسه / مدرسه‌ها
+  - مدیر سازمان: پنل من · تسک‌های داده‌شده · تسک جدید · حضور و غیاب · مدرسه‌ها · سال تحصیلی · پایه‌ها · درس‌ها ·
+    مقطع‌ها · راه‌اندازی مدرسه
+  - a principal who teaches: the teacher's words («تکلیف جدید») with the admin's structure tiles after them.
+- **Deferred.** The manifest `id` stays `"/"` (changing it re-registers every install). The phone Home shows the role
+  glyph twice — the header square and the banner plate — exactly as it showed the school twice before; collapsing
+  the two is a layout decision for the owner, not part of the swap.
+
+## 2026-09-23 — a student opens their own «تسک» (round 6)
+
+Owner: a student must be able to note work for **themselves**, and that is a «تسک», never a «تکلیف».
+
+- **The word comes from the ITEM where there is one, from the VIEWER where there is not.** `workItemVoice` is
+  unchanged, so a `task` a دبیر or the school gave the student still reads «تکلیف» in their کارتابل, notifications and
+  detail page. `createVoice(ctx.assignments)` is the new third voice, `personal`, for a person whose ONLY hat is
+  `student` (any teaching or admin hat outranks it): «تسک», «تسک‌ها», «تسک جدید», «تسک‌های من», the example
+  «مثلاً: مرور فصل ۳», recipients «خودم». It speaks on every surface about an item not yet made — the Home tile
+  (`voiceForHats`), the «تسک جدید» button on `/inbox`, the `/inbox/new` form and its toasts — and names the student's
+  personal `todo` rows (`personalItemLabel`); for everyone else a `todo` keeps the catalog's «کار شخصی» /
+  «یادداشت شخصی». Routes, permission codes, type codes and DB values are untouched.
+- **Permission.** The `student` system role gained `workspace.work_item.create` (`scripts/catalog.ts`; the permission
+  itself already existed in `src/modules/iam/permissions.ts`). `pnpm seed` (catalog only) was run against the dev
+  DB and the template role now carries it; the idempotent catalog seed runs on every deploy.
+- **The service keeps it to `{ kind: 'self' }`** with the checks it already had, now pinned for a student:
+  `class_offering` needs `assign_class` on that offering, which no student holds → `FORBIDDEN`; `persons` needs a
+  BROAD create (`canBroadly`), which a `student`-scoped assignment never is → `FORBIDDEN` — including a list that
+  contains the student themselves. Nothing is written by a refusal (`tests/int/workspace-service.test.ts`, «a student
+  opens their own «تسک»»; the file reuses the global fixtures' `todo` type and adds only the statuses a student
+  needs to close it, instead of inserting a second `todo` type that collided with the fixture's).
+- **The form** gets no offerings and no person search for a student, so it opens on «خودم», writes a `todo`, and
+  reads «ثبت تسک» / «تسک ثبت شد». The «فقط … داده‌شده» filter on `/inbox` stays staff-only.

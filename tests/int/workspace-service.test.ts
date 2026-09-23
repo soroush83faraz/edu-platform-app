@@ -17,16 +17,29 @@ import * as f from "./fixtures";
 import { Rollback, asAppOwner } from "./helpers";
 
 const TASK_TYPE = "0199a000-00f0-7000-8000-000000000a5c";
+/**
+ * The personal type: what a «خودم» item is written as — a student's «تسک», anyone else's «یادداشت شخصی». The global
+ * fixtures own it (`f.WIT_TEMPLATE`, with only its `open` status); this file adds the statuses a student needs to
+ * close their own تسک and removes exactly those again.
+ */
+const TODO_TYPE = f.WIT_TEMPLATE;
 const ST = {
   open: "0199a000-00f1-7000-8000-000000000001",
   in_progress: "0199a000-00f1-7000-8000-000000000002",
   done: "0199a000-00f1-7000-8000-000000000003",
   cancelled: "0199a000-00f1-7000-8000-000000000004",
 };
+const TODO_ST = {
+  in_progress: "0199a000-00f3-7000-8000-000000000002",
+  done: "0199a000-00f3-7000-8000-000000000003",
+  cancelled: "0199a000-00f3-7000-8000-000000000004",
+};
 const NT = ["work_item.assigned", "work_item.comment", "work_item.status_changed", "work_item.due_extended"];
 
 const WORK_PERMS = ["workspace.work_item.read", "workspace.work_item.create", "workspace.work_item.update", "workspace.work_item.comment", "workspace.work_item.assign_class"];
-const STUDENT_PERMS = ["workspace.work_item.read", "workspace.work_item.update", "workspace.work_item.comment"];
+// Since round 6 the catalog grants a student `workspace.work_item.create` too — for a PERSONAL «تسک» and
+// nothing else; the recipient checks below are what keep it to `{ kind: 'self' }` (scripts/catalog.ts).
+const STUDENT_PERMS = ["workspace.work_item.read", "workspace.work_item.create", "workspace.work_item.update", "workspace.work_item.comment"];
 
 const teacherOf = (offeringId: string): Assignment => ({ roleCode: "teacher", roleId: "r-teacher", scopeType: "class_offering", scopeId: offeringId, permissions: WORK_PERMS });
 const studentRole = (profileId: string): Assignment => ({ roleCode: "student", roleId: "r-student", scopeType: "student", scopeId: profileId, permissions: STUDENT_PERMS });
@@ -101,6 +114,12 @@ beforeAll(async () => {
         `insert into workspace.work_item_status (id, work_item_type_id, code, name, category, sequence, is_terminal) values ($1, $2, $3, $4, $5, $6, $7) on conflict (work_item_type_id, code) do nothing`,
         [id, TASK_TYPE, code, name, category, seq, terminal],
       );
+      if (code !== "open") {
+        await c.query(
+          `insert into workspace.work_item_status (id, work_item_type_id, code, name, category, sequence, is_terminal) values ($1, $2, $3, $4, $5, $6, $7) on conflict (work_item_type_id, code) do nothing`,
+          [TODO_ST[code as keyof typeof TODO_ST], TODO_TYPE, code, name, category, seq, terminal],
+        );
+      }
     }
     for (const code of NT) {
       await c.query(`insert into notif.notification_type (code, module, name) values ($1, 'workspace', $1) on conflict (code) do nothing`, [code]);
@@ -110,7 +129,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await asAppOwner(async (c) => {
-    await c.query(`delete from workspace.work_item_status where work_item_type_id = $1`, [TASK_TYPE]);
+    await c.query(`delete from workspace.work_item_status where work_item_type_id = $1 or id = any($2::uuid[])`, [TASK_TYPE, Object.values(TODO_ST)]);
     await c.query(`delete from workspace.work_item_type where id = $1`, [TASK_TYPE]);
     await c.query(`delete from notif.notification_type where code = any($1::text[])`, [NT]);
   });
@@ -196,6 +215,46 @@ describe("createWorkItem for a class offering", () => {
       expect(entries).toEqual([{ relation: "assignee", state: "read" }]);
       const done = await changeStatus(tx, teacher, { workItemId: res.id, toStatusCode: "done" });
       expect(done).toMatchObject({ statusCode: "done", itemChanged: true, assigneesDone: 1, assigneesTotal: 1 });
+    });
+  });
+});
+
+describe("a student opens their own «تسک» (round 6)", () => {
+  it("a personal `todo` for «خودم»: one assignee row, one read inbox entry, no notification, one audit row", async () => {
+    await rolledBack(async (tx) => {
+      const [s] = await enrollStudents(tx, 1);
+      const res = await createWorkItem(tx, s.ctx, { typeCode: "todo", title: "مرور فصل ۳", priority: "normal", recipients: { kind: "self" } });
+      expect(res).toMatchObject({ assigneeCount: 1, notified: 0 });
+      const assignees = await tx.select({ personId: workItemAssignee.personId }).from(workItemAssignee).where(eq(workItemAssignee.workItemId, res.id));
+      expect(assignees).toEqual([{ personId: s.personId }]);
+      const entries = await tx.select({ personId: inboxEntry.personId, relation: inboxEntry.relation, state: inboxEntry.state }).from(inboxEntry).where(eq(inboxEntry.workItemId, res.id));
+      expect(entries).toEqual([{ personId: s.personId, relation: "assignee", state: "read" }]);
+      expect(await tx.select({ id: notification.id }).from(notification).where(eq(notification.sourceId, res.id))).toEqual([]);
+      // It is theirs: they can open it and close it themselves.
+      expect((await canViewWorkItem(tx, s.ctx, res.id)).title).toBe("مرور فصل ۳");
+      expect(await changeStatus(tx, s.ctx, { workItemId: res.id, toStatusCode: "done" })).toMatchObject({ statusCode: "done", itemChanged: true });
+      const trail = await tx.select({ action: auditLog.action }).from(auditLog).where(eq(auditLog.entityId, res.id));
+      expect(trail.map((r) => r.action)).toContain("workspace.work_item.created");
+    });
+  });
+
+  it("and nobody else's: a class is FORBIDDEN, named persons are FORBIDDEN", async () => {
+    await rolledBack(async (tx) => {
+      const [s, other] = await enrollStudents(tx, 2);
+      // `assign_class` is not in the student role at any scope — the scoped check refuses the class.
+      await expect(
+        createWorkItem(tx, s.ctx, { typeCode: "task", title: "برای همهٴ کلاس", priority: "normal", recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: [] } }),
+      ).rejects.toSatisfy(isCode("FORBIDDEN"));
+      // Free-form recipients need a BROAD create; a `student`-scoped assignment is never broad.
+      await expect(createWorkItem(tx, s.ctx, { typeCode: "task", title: "برای هم‌کلاسی", priority: "normal", recipients: { kind: "persons", ids: [other.personId] } })).rejects.toSatisfy(
+        isCode("FORBIDDEN"),
+      );
+      // Not even to themselves plus someone else: the same broad check covers it.
+      await expect(
+        createWorkItem(tx, s.ctx, { typeCode: "todo", title: "من و او", priority: "normal", recipients: { kind: "persons", ids: [s.personId, other.personId] } }),
+      ).rejects.toSatisfy(isCode("FORBIDDEN"));
+      // Nothing was written by any of the three refusals.
+      expect(await tx.select({ id: workItem.id }).from(workItem).where(eq(workItem.createdByPersonId, s.personId))).toEqual([]);
     });
   });
 });

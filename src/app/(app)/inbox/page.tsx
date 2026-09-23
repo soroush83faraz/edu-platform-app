@@ -65,9 +65,12 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     return <EmptyState title="پنل من در دسترس نیست" description={result.message} />;
   }
-  const { rows, nextCursor, tabCounts, isStaff, canCreate, voice } = result.data;
+  const { rows, nextCursor, tabCounts, isStaff, canCreate, voice, createVoice } = result.data;
   // «تکلیف» for a teacher, «تسک» for مدیر/معاون — one noun set for the header, the tabs, the filters, the empties.
   const words = workItemWords(voice);
+  // What THIS person opens, which differs only for a student: the تکالیف in the list keep their name while
+  // the button above them says «تسک جدید» (src/lib/work-item-words, round 6).
+  const createWords = workItemWords(createVoice);
   const filtered = Boolean(f.bucket || f.unread || f.mine);
   const grouped = groupByBucket(rows, f.tab);
 
@@ -80,7 +83,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
             <Button asChild>
               <Link href="/inbox/new">
                 <Plus aria-hidden />
-                {words.new}
+                {createWords.new}
               </Link>
             </Button>
           ) : undefined
@@ -128,7 +131,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       ) : null}
 
       {rows.length === 0 ? (
-        <Empty tab={f.tab} filtered={filtered} canCreate={canCreate} clearHref={href({ tab: f.tab })} words={words} />
+        <Empty tab={f.tab} filtered={filtered} canCreate={canCreate} clearHref={href({ tab: f.tab })} words={words} createWords={createWords} personal={createVoice === "personal"} />
       ) : (
         <div className="mt-2 flex flex-col">
           {grouped.map(([bucket, items]) => (
@@ -140,7 +143,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
               )}
               <ul className="reveal-rows surface-work divide-y divide-line/70">
                 {items.map((row) => (
-                  <InboxRow key={row.id} row={row} words={words} />
+                  <InboxRow key={row.id} row={row} words={words} createVoice={createVoice} />
                 ))}
               </ul>
             </section>
@@ -188,7 +191,24 @@ function FilterChip({ href, active, label, removable }: { href: string; active: 
   );
 }
 
-function Empty({ tab, filtered, canCreate, clearHref, words }: { tab: InboxTab; filtered: boolean; canCreate: boolean; clearHref: string; words: WorkItemWords }) {
+function Empty({
+  tab,
+  filtered,
+  canCreate,
+  clearHref,
+  words,
+  createWords,
+  personal,
+}: {
+  tab: InboxTab;
+  filtered: boolean;
+  canCreate: boolean;
+  clearHref: string;
+  words: WorkItemWords;
+  createWords: WorkItemWords;
+  /** The viewer opens تسک‌های شخصی, not تکالیف for others — a student (round 6). */
+  personal: boolean;
+}) {
   if (filtered) {
     return (
       <EmptyState
@@ -207,11 +227,17 @@ function Empty({ tab, filtered, canCreate, clearHref, words }: { tab: InboxTab; 
       <EmptyState
         illustration={<EmptyClay size={128} />}
         title={`${words.indefinite} در انتظار شما نیست`}
-description={canCreate ? `وقتی ${words.indefinite} به شما داده شود یا خودتان ${words.indefinite} بدهید، همین‌جا می‌آید.` : `وقتی دبیر یا مدرسه ${words.indefinite} بدهد، همین‌جا می‌آید.`}
+        description={
+          !canCreate
+            ? `وقتی دبیر یا مدرسه ${words.indefinite} بدهد، همین‌جا می‌آید.`
+            : personal
+              ? `وقتی ${words.indefinite} به شما داده شود یا خودتان ${createWords.indefinite} بنویسید، همین‌جا می‌آید.`
+              : `وقتی ${words.indefinite} به شما داده شود یا خودتان ${words.indefinite} بدهید، همین‌جا می‌آید.`
+        }
         action={
           canCreate ? (
             <Button asChild>
-              <Link href="/inbox/new">{words.new}</Link>
+              <Link href="/inbox/new">{createWords.new}</Link>
             </Button>
           ) : undefined
         }

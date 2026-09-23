@@ -92,7 +92,19 @@ export const SYSTEM_ROLES: SystemRole[] = [
     name: "دانش‌آموز",
     description: "کارتابل خود",
     allowedScopeTypes: ["student"],
-    permissions: ["workspace.work_item.read", "workspace.work_item.update", "workspace.work_item.comment", "notif.notification.read", "academic.timetable.read", "academic.attendance.read"],
+    // `workspace.work_item.create` is the student's own «تسک جدید» (owner, round 6): a PERSONAL todo and
+    // nothing else. Giving work to a class needs `assign_class`, which no student holds, and giving it to
+    // named persons needs a BROAD create (`canBroadly`), which a `student`-scoped assignment can never be —
+    // so the grant widens exactly one recipient kind: `{ kind: 'self' }` (tests/int/workspace-service).
+    permissions: [
+      "workspace.work_item.read",
+      "workspace.work_item.create",
+      "workspace.work_item.update",
+      "workspace.work_item.comment",
+      "notif.notification.read",
+      "academic.timetable.read",
+      "academic.attendance.read",
+    ],
   },
   {
     code: "guardian_full",

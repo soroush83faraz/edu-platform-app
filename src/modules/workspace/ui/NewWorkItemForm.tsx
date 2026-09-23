@@ -25,7 +25,7 @@ import type { OfferingRow, PersonHit, RosterRow } from "../repo";
 export interface NewWorkItemFormProps {
   offerings: OfferingRow[];
   canPickPersons: boolean;
-  /** The reader's noun set: «تکلیف» for a teacher, «تسک» for مدیر/معاون (src/lib/work-item-words). */
+  /** The CREATE noun set: «تکلیف» for a teacher, «تسک» for مدیر/معاون and for a student (work-item-words). */
   words: WorkItemWords;
   /** A درس to start on (the subject page's «کار جدید برای این درس»); must be one of `offerings`. */
   initialOfferingId?: string;
@@ -133,7 +133,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, words, initialOffer
         idempotencyKey,
       });
       if (r.ok) {
-        toast.success(r.data.duplicate ? `این ${words.singular} قبلاً ایجاد شده بود` : mode === "self" ? "یادداشت شخصی ثبت شد" : `${words.singular} ایجاد شد`);
+        toast.success(r.data.duplicate ? `این ${words.singular} قبلاً ایجاد شده بود` : mode === "self" ? `${words.selfNoun} ثبت شد` : `${words.singular} ایجاد شد`);
         router.push(`/inbox/${r.data.id}`);
         return;
       }
@@ -334,7 +334,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, words, initialOffer
           </div>
         ) : null}
 
-        {mode === "self" ? <p className="text-sm text-text-muted">یک یادداشت شخصی فقط در پنل خودتان می‌ماند.</p> : null}
+        {mode === "self" ? <p className="text-sm text-text-muted">{`یک ${words.selfNoun} فقط در پنل خودتان می‌ماند.`}</p> : null}
         <FieldError id={`${ids}-recipients-err`} text={errors.recipients} />
       </fieldset>
 
@@ -342,7 +342,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, words, initialOffer
         {errors.form}
       </p>
       <Button type="submit" size="lg" disabled={pending || (mode === "class" && roster === null)}>
-        {pending ? "در حال ارسال…" : mode === "class" && roster ? `ارسال ${words.singular} به ${formatNumberFa(selectedCount)} نفر` : mode === "self" ? "ثبت یادداشت شخصی" : `ارسال ${words.singular}`}
+        {pending ? "در حال ارسال…" : mode === "class" && roster ? `ارسال ${words.singular} به ${formatNumberFa(selectedCount)} نفر` : mode === "self" ? `ثبت ${words.selfNoun}` : `ارسال ${words.singular}`}
       </Button>
     </form>
   );

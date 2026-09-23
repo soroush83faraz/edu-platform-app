@@ -14,7 +14,7 @@ import { chunk } from "@/lib/collections";
 import { forbidden, invalidReference, notFound, validation } from "@/lib/errors";
 import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
 import { can, canAtAnyScope, canBroadly, type CanContext } from "@/modules/iam/can";
-import { type WorkItemVoice, type WorkItemWords, workItemStatusLabel, workItemVoice, workItemWords } from "@/lib/work-item-words";
+import { type WorkItemVoice, type WorkItemWords, createVoice, workItemStatusLabel, workItemVoice, workItemWords } from "@/lib/work-item-words";
 import { staffProfile } from "@/modules/iam/schema";
 import { notifyMany } from "@/modules/notif/service";
 import type { Recipients } from "./dto";
@@ -473,6 +473,7 @@ export async function markInboxRead(tx: Tx, ctx: WorkspaceCtx, input: { workItem
   return { changed: rows.length > 0 };
 }
 
+/** Pins MY inbox row. NO UI calls this (owner, round 5 — the «بیشتر» menu is gone); kept whole, see docs/workspace.md. */
 export async function setPinned(tx: Tx, ctx: WorkspaceCtx, input: { workItemId: string; pinned: boolean }): Promise<{ pinned: boolean }> {
   const [row] = await tx
     .update(inboxEntry)
@@ -484,7 +485,10 @@ export async function setPinned(tx: Tx, ctx: WorkspaceCtx, input: { workItemId: 
   return { pinned: input.pinned };
 }
 
-/** Hides the item from MY list only (state = archived); the item itself and everyone else's view are untouched. */
+/**
+ * Hides the item from MY list only (state = archived); the item itself and everyone else's view are untouched.
+ * NO UI calls this either (owner, round 5): «حذف» is the creator's answer, not a personal archive.
+ */
 export async function archiveInbox(tx: Tx, ctx: WorkspaceCtx, input: { workItemId: string }): Promise<{ archived: true }> {
   const [row] = await tx
     .update(inboxEntry)
@@ -518,6 +522,8 @@ export interface WorkItemDetail {
     canUpdate: boolean;
     /** «تکلیف» or «تسک» — the noun this reader sees for the item (src/lib/work-item-words). */
     voice: WorkItemVoice;
+    /** The reader's word for a کار of their OWN: `personal` for a student, whose todo is a «تسک». */
+    createVoice: WorkItemVoice;
   };
 }
 
@@ -553,6 +559,7 @@ export async function getWorkItemDetail(tx: Tx, ctx: WorkspaceCtx, workItemId: s
       canComment: canAtAnyScope(ctx.assignments, "workspace.work_item.comment"),
       canUpdate: canAtAnyScope(ctx.assignments, "workspace.work_item.update"),
       voice: workItemVoice(ctx.assignments),
+      createVoice: createVoice(ctx.assignments),
     },
   };
 }

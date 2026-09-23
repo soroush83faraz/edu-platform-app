@@ -45,21 +45,21 @@ describe("homeTilesFor", () => {
   });
 
   it("the organization admin: the structure tiles the nav gave up, in that order — and no «مدیریت» tile", () => {
-    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["inbox", "admin-attendance", "schools", "years", "grades", "subjects", "levels", "onboarding"]);
+    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["inbox", "given", "new-item", "admin-attendance", "schools", "years", "grades", "subjects", "levels", "onboarding"]);
     // «مدرسه‌ها» plural, the list; «زنگ‌بندی» has no organization-wide page, so no tile.
     expect(tile(homeTilesFor(orgAdmin, has(ADMIN_PERMS)), "schools")).toMatchObject({ labelFa: "مدرسه‌ها", href: "/admin/schools" });
   });
 
   it("a principal of ONE school gets «مدرسه» and that school's زنگ‌بندی, and no organization catalog", () => {
     const tiles = homeTilesFor(principal, has(ADMIN_PERMS));
-    expect(codes(tiles)).toEqual(["inbox", "admin-attendance", "schools", "years", "periods"]);
+    expect(codes(tiles)).toEqual(["inbox", "given", "new-item", "admin-attendance", "schools", "years", "periods"]);
     expect(tile(tiles, "schools")).toMatchObject({ labelFa: "مدرسه", href: "/admin/schools/s1" });
     expect(tile(tiles, "periods")).toMatchObject({ href: "/admin/schools/s1/periods" });
   });
 
   it("two schools: «مدرسه‌ها» plural and no زنگ‌بندی tile — a bell schedule belongs to one school", () => {
     const tiles = homeTilesFor(twoSchools, has(ADMIN_PERMS));
-    expect(codes(tiles)).toEqual(["inbox", "admin-attendance", "schools", "years"]);
+    expect(codes(tiles)).toEqual(["inbox", "given", "new-item", "admin-attendance", "schools", "years"]);
     expect(tile(tiles, "schools")).toMatchObject({ labelFa: "مدرسه‌ها", href: "/admin/schools" });
   });
 
@@ -89,9 +89,36 @@ describe("homeTilesFor", () => {
     }
   });
 
-  it("a student sees their own two work views; a teacher the two they give", () => {
-    expect(codes(homeTilesFor(student, has(["workspace.work_item.read", "academic.timetable.read"])))).toEqual(["inbox", "my-todo", "my-done"]);
+  it("a student's own work is ONE door — «پنل من»; a teacher keeps the two they give", () => {
+    // «تکالیف من» and «انجام‌شده» left the grid (owner, branding round): both were FILTERS of the کارتابل, and
+    // «پنل من» opens it with those very two tabs at the top.
+    expect(codes(homeTilesFor(student, has(["workspace.work_item.read", "academic.timetable.read"])))).toEqual(["inbox"]);
+    expect(HOME_TILES.filter((t) => t.href.startsWith("/inbox?tab="))).toEqual([]);
     expect(codes(homeTilesFor(teacher, has(["workspace.work_item.create", "iam.admin.access", "academic.timetable.read"])))).toEqual(["given", "new-item"]);
+  });
+
+  it("the ONE creation tile is for admins and students too, and says the person's own word", () => {
+    const label = (hats: TileHats) => tile(homeTilesFor(hats, has(ADMIN_PERMS)), "new-item")?.labelFa;
+    expect(label(teacher)).toBe("تکلیف جدید");
+    expect(label(orgAdmin)).toBe("تسک جدید");
+    expect(label(principal)).toBe("تسک جدید");
+    // Round 6: a student opens work for THEMSELVES, and that is a «تسک».
+    expect(label(student)).toBe("تسک جدید");
+    // A teaching principal is a teacher first.
+    expect(label({ isStudent: false, isTeacher: true, isAdmin: true, adminScope: "school", singleSchoolId: "s1" })).toBe("تکلیف جدید");
+    // The permission still decides: without `workspace.work_item.create` nobody sees it (a vice principal,
+    // and a student in a deployment whose catalog has not been re-seeded).
+    expect(codes(homeTilesFor(principal, has(VICE_PERMS)))).not.toContain("new-item");
+    expect(codes(homeTilesFor(student, has(["workspace.work_item.read"])))).not.toContain("new-item");
+    // Still ONE door to the form.
+    expect(HOME_TILES.filter((t) => t.href === "/inbox/new")).toHaveLength(1);
+    // Its mirror — «what I have given» — is for the hats that give work to OTHER people only.
+    const given = (hats: TileHats) => tile(homeTilesFor(hats, has(ADMIN_PERMS)), "given")?.labelFa;
+    expect(given(teacher)).toBe("تکالیف داده‌شده");
+    expect(given(orgAdmin)).toBe("تسک‌های داده‌شده");
+    expect(codes(homeTilesFor(principal, has(VICE_PERMS)))).not.toContain("given");
+    // A student gives work to nobody: the create tile without its mirror.
+    expect(codes(homeTilesFor(student, has(ADMIN_PERMS)))).toEqual(["inbox", "new-item"]);
   });
 
   it("a teaching principal reads personal tiles first, then the school's structure", () => {

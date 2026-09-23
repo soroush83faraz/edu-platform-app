@@ -1,11 +1,11 @@
-import { ClipboardList, Clock, ListTodo, MessageSquare, Pin } from "lucide-react";
+import { ClipboardList, Clock, ListTodo, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { cn } from "cn";
 import { Chip } from "@/components/Chip";
 import { RelativeTime } from "@/components/RelativeTime";
 import { PriorityDot, RowMark } from "@/components/RowMark";
 import { formatNumberFa } from "@/lib/format";
-import { type WorkItemWords, workItemWords } from "@/lib/work-item-words";
+import { type WorkItemVoice, type WorkItemWords, personalItemLabel, workItemWords } from "@/lib/work-item-words";
 import type { InboxRow as Row } from "../repo";
 
 /**
@@ -14,9 +14,12 @@ import type { InboxRow as Row } from "../repo";
  * (bold when unread) with a small priority dot beside it for high / urgent, one meta line
  * (due on a clock chip — red when overdue — then who gave it or my progress on it), and the unread dot at the end.
  * 64 px minimum, the whole row is the target.
+ *
+ * `words` is the reader's noun set; it defaults to «تکلیف» for the lists that are a teaching context anyway.
+ * `createVoice` is the reader's word for a کار of their own — it names the PERSONAL rows (`todo`): «تسک» for a
+ * student, the catalog's own «کار شخصی» for everyone else.
  */
-/** `words` is the reader's noun set; it defaults to «تکلیف» for the lists that are a teaching context anyway. */
-export function InboxRow({ row, words = workItemWords("assignment") }: { row: Row; words?: WorkItemWords }) {
+export function InboxRow({ row, words = workItemWords("assignment"), createVoice = "assignment" }: { row: Row; words?: WorkItemWords; createVoice?: WorkItemVoice }) {
   const overdue = row.bucket === "overdue";
   const closed = row.category === "done" || row.category === "cancelled";
   const showProgress = row.createdByMe && row.assigneesTotal > 0 && !(row.assigneesTotal === 1 && row.myAssigneeState);
@@ -29,7 +32,7 @@ export function InboxRow({ row, words = workItemWords("assignment") }: { row: Ro
           closed && "opacity-70",
         )}
       >
-        <RowMark icon={row.typeCode === "todo" ? ListTodo : ClipboardList} label={row.typeCode === "todo" ? row.typeName : words.singular} />
+        <RowMark icon={row.typeCode === "todo" ? ListTodo : ClipboardList} label={row.typeCode === "todo" ? personalItemLabel(createVoice, row.typeName) : words.singular} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <p className={cn("line-clamp-2 text-row text-text", row.unread ? "font-semibold" : "font-medium")}>
             {!closed ? <PriorityDot priority={row.priority} className="me-1.5 align-middle" /> : null}
@@ -57,7 +60,6 @@ export function InboxRow({ row, words = workItemWords("assignment") }: { row: Ro
                 <span className="tabular">{formatNumberFa(row.commentsCount)}</span>
               </span>
             ) : null}
-            {row.isPinned ? <Pin className="size-3.5 text-sky-strong" aria-label="سنجاق‌شده" /> : null}
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">

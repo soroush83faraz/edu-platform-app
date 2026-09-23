@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { PRIORITY_LABELS, priorityTone } from "@/components/priority";
 import { RelativeTime } from "@/components/RelativeTime";
 import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
-import { workItemStatusLabel, workItemWords } from "@/lib/work-item-words";
+import { personalItemLabel, workItemStatusLabel, workItemWords } from "@/lib/work-item-words";
 import { workItemDetailQuery } from "@/modules/workspace/queries";
 import type { StatusCategory } from "@/modules/workspace/repo";
 import { CommentForm } from "@/modules/workspace/ui/CommentForm";
@@ -64,9 +64,10 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
         title={<bdi>{item.title}</bdi>}
         description={
           <>
-            {/* The type in the READER's word: the catalog name for a personal کار, «تکلیف» / «تسک» for a task. */}
+            {/* The type in the READER's word: a personal کار is the student's «تسک» or the catalog name,
+                «تکلیف» / «تسک» for a task given to someone. */}
             <Chip tone={item.typeCode === "todo" ? "neutral" : "primary"} className="me-1.5 align-middle">
-              {item.typeCode === "todo" ? item.typeName : words.singular}
+              {item.typeCode === "todo" ? personalItemLabel(viewer.createVoice, item.typeName) : words.singular}
             </Chip>
             از <bdi className="text-text">{creatorName}</bdi>
             <span aria-hidden> · </span>
@@ -97,7 +98,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
           isManager={viewer.isManager}
           canUpdate={viewer.canUpdate}
           words={words}
-          inbox={myInbox ? { state: myInbox.state, isPinned: myInbox.isPinned } : null}
+          inboxState={myInbox?.state ?? null}
         />
       </header>
 

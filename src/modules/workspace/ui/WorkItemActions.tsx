@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, CalendarPlus, Check, CheckCheck, Ellipsis, Pin, PinOff, RotateCcw, Trash2 } from "lucide-react";
+import { CalendarPlus, Check, CheckCheck, RotateCcw, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -9,12 +9,11 @@ import { ResponsiveModal } from "@/components/admin/ResponsiveModal";
 import { JalaliDatePicker } from "@/components/pickers/JalaliDatePicker";
 import { TimePicker, formatTimeFa } from "@/components/pickers/TimePicker";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { flatten } from "@/lib/form-errors";
 import { formatJalaliDateTime, parseJalaliToInstant, tehranNow } from "@/lib/format";
 import { formatHm, formatJalaliDay, formatJalaliDayLong, parseJalaliDay, tehranToday } from "@/lib/jalali-grid";
 import type { WorkItemWords } from "@/lib/work-item-words";
-import { archiveInboxAction, changeStatusAction, extendDueAtAction, markInboxReadAction, setPinnedAction } from "../actions";
+import { changeStatusAction, extendDueAtAction, markInboxReadAction } from "../actions";
 import type { StatusCategory } from "../repo";
 
 export interface WorkItemActionsProps {
@@ -26,7 +25,8 @@ export interface WorkItemActionsProps {
   myAssigneeState: "pending" | "accepted" | "done" | null;
   isManager: boolean;
   canUpdate: boolean;
-  inbox: { state: string; isPinned: boolean } | null;
+  /** My inbox row's state, or `null` when I have none — the only thing left of the personal entry in this row. */
+  inboxState: string | null;
   /** The reader's noun set: «تکلیف» for a teacher, «تسک» for مدیر/معاون (src/lib/work-item-words). */
   words: WorkItemWords;
 }
@@ -36,23 +36,23 @@ export interface WorkItemActionsProps {
  * (or a broad admin) gets the three creator actions — «اتمام» (primary: closes it for everyone), «تمدید»
  * (secondary: a later due date), «حذف» (ghost, red) — or «بازگشایی» once it is closed. «حذف» is a LABEL: the
  * stored status is still `cancelled`, nothing leaves the database and «بازگشایی» brings the item back (owner,
- * round 4). Pin / archive stay in the personal «بیشتر» menu. Full-width and stacked on phones, one inline row
- * from `sm:`, every target 44 px. Marks my inbox row read once on mount.
+ * round 4). There is no overflow menu: سنجاق / بایگانی left the UI (owner, round 5 — «if the teacher wants, they
+ * can delete it»); `setPinned` / `archiveInbox` stay in the service, unwired. Full-width and stacked on phones,
+ * one inline row from `sm:`, every target 44 px. Marks my inbox row read once on mount.
  */
-export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assigneeCount, myAssigneeState, isManager, canUpdate, inbox, words }: WorkItemActionsProps) {
+export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assigneeCount, myAssigneeState, isManager, canUpdate, inboxState, words }: WorkItemActionsProps) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [pinned, setPinned] = useState(inbox?.isPinned ?? false);
   // `"cancel"` is the `cancelled` transition — the button that used to read «کنسل» and now reads «حذف».
   const [confirm, setConfirm] = useState<"done" | "cancel" | null>(null);
   const [extending, setExtending] = useState(false);
 
   useEffect(() => {
-    if (inbox?.state !== "unread") return;
+    if (inboxState !== "unread") return;
     void markInboxReadAction({ workItemId }).then((r) => {
       if (r.ok && r.data.changed) router.refresh();
     });
-  }, [inbox?.state, workItemId, router]);
+  }, [inboxState, workItemId, router]);
 
   const run = (label: string, fn: () => Promise<{ ok: boolean; message?: string }>) =>
     start(async () => {
@@ -111,48 +111,6 @@ export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assi
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
       {buttons}
-      {inbox ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className={cn(buttonClass, "text-text-muted sm:ms-auto")} aria-label="گزینه‌های بیشتر">
-              <Ellipsis aria-hidden />
-              بیشتر
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              className="min-h-11"
-              onSelect={() =>
-                run(pinned ? "سنجاق برداشته شد" : "سنجاق شد", async () => {
-                  const r = await setPinnedAction({ workItemId, pinned: !pinned });
-                  if (r.ok) setPinned(r.data.pinned);
-                  return r;
-                })
-              }
-            >
-              {pinned ? <PinOff aria-hidden /> : <Pin aria-hidden />}
-              {pinned ? "برداشتن سنجاق" : "سنجاق به بالای پنل من"}
-            </DropdownMenuItem>
-            {inbox.state !== "archived" ? (
-              <DropdownMenuItem
-                className="min-h-11"
-                onSelect={() =>
-                  start(async () => {
-                    const r = await archiveInboxAction({ workItemId });
-                    if (r.ok) {
-                      toast.success("از پنل شما بایگانی شد");
-                      router.push("/inbox");
-                    } else toast.error(r.message);
-                  })
-                }
-              >
-                <Archive aria-hidden />
-                بایگانی در پنل من
-              </DropdownMenuItem>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : null}
 
       {/* «اتمام» — closes the item for everyone: the creator-authoritative `done` transition. */}
       <ResponsiveModal

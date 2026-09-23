@@ -13,8 +13,6 @@ import {
   Inbox,
   Layers,
   Library,
-  ListChecks,
-  ListTodo,
   type LucideIcon,
   Megaphone,
   MessagesSquare,
@@ -33,6 +31,7 @@ import {
 } from "lucide-react";
 import type { ClayShade } from "@/components/ClayIcon";
 import { schoolsLabelFa } from "@/lib/admin/nav";
+import { GIVEN_TILE_ROLES, NEW_ITEM_TILE_ROLES, newItemLabel, workItemWordsForHats } from "@/lib/work-item-words";
 import type { Permission } from "@/modules/iam/permissions";
 
 /**
@@ -390,35 +389,28 @@ export const HOME_TILES: readonly HomeTile[] = [
   },
 
   {
-    code: "my-todo",
-    labelFa: "تکالیف من",
-    href: "/inbox?tab=todo",
-    icon: ListTodo,
-    role: "student",
-  },
-  {
-    code: "my-done",
-    labelFa: "انجام‌شده",
-    href: "/inbox?tab=done",
-    icon: ListChecks,
-    role: "student",
-  },
-
-  {
+    // The mirror of the creation tile: what I have given. The hats that give work to OTHER people
+    // (`GIVEN_TILE_ROLES`) — never the student, whose تسک is their own — and the same role-aware word:
+    // «تکالیف داده‌شده» for a teaching hat, «تسک‌های داده‌شده» otherwise.
     code: "given",
     labelFa: "تکالیف داده‌شده",
     href: "/inbox?mine=1",
     icon: Send,
-    role: "teacher",
+    role: GIVEN_TILE_ROLES,
+    permission: "workspace.work_item.create",
     mirror: true,
   },
   {
+    // The ONE creation door on Home, for every hat that may open a کار (`NEW_ITEM_TILE_ROLES`): a دبیر, an
+    // admin — and, since round 6, a student, whose own item is a personal «تسک». The label is role-aware
+    // and `homeTilesFor` rewrites it per person (`newItemLabel`); the permission check is unchanged, so the
+    // tile appears for a student only once the catalog grants them `workspace.work_item.create`.
     code: "new-item",
     shade: "yellow",
     labelFa: "تکلیف جدید",
     href: "/inbox/new",
     icon: ClipboardPlus,
-    role: "teacher",
+    role: NEW_ITEM_TILE_ROLES,
     permission: "workspace.work_item.create",
   },
 
@@ -536,11 +528,15 @@ export function homeTilesFor(
       (!t.permission || has(t.permission)) &&
       (!t.adminScope || hats.adminScope === t.adminScope) &&
       (!t.oneSchool?.only || schoolId !== null),
-  ).map((t) =>
-    t.oneSchool && schoolId
+  ).map((t) => {
+    // The creation tile speaks the person's own word: «تکلیف جدید» for a teaching hat, «تسک جدید» for an
+    // admin who does not teach and for a student (`newItemLabel` — the same rule as the form and the کارتابل).
+    if (t.code === "new-item") return { ...t, labelFa: newItemLabel(hats) };
+    if (t.code === "given") return { ...t, labelFa: workItemWordsForHats(hats).given };
+    return t.oneSchool && schoolId
       ? { ...t, href: t.oneSchool.href(schoolId), ...(t.oneSchool.label ? { labelFa: schoolsLabelFa({ kind: "school", schoolIds: [schoolId] }) } : {}) }
-      : t,
-  );
+      : t;
+  });
 }
 
 /** The muted «به‌زودی» tiles: the owner's list of the competitor's modules we do not have yet, in phase/month order. */

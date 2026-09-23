@@ -57,10 +57,14 @@ export const markInboxReadAction = defineAction({ schema: WorkItemIdInput, permi
   markInboxRead(tx, ctx, { workItemId: input.workItemId }),
 );
 
+// INTENTIONALLY UNWIRED (owner, round 5): the «بیشتر» overflow menu on `/inbox/[id]` was removed, so nothing in
+// the UI calls سنجاق or بایگانی any more. Action, service, DTO and the `inbox_entry.is_pinned` / `state='archived'`
+// columns are all kept intact so the affordance can come back by re-adding a caller — see docs/workspace.md.
 export const setPinnedAction = defineAction({ schema: SetPinnedInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) =>
   setPinned(tx, ctx, { workItemId: input.workItemId, pinned: input.pinned }),
 );
 
+/** INTENTIONALLY UNWIRED — see the note on `setPinnedAction` above. */
 export const archiveInboxAction = defineAction({ schema: WorkItemIdInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) =>
   archiveInbox(tx, ctx, { workItemId: input.workItemId }),
 );
