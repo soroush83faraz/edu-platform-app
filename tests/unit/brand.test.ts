@@ -1,0 +1,170 @@
+// The branding round: the product is «دانینو», and the emblem that used to stand for the school now says which
+// KIND OF ACCOUNT you are signed in as. Two things are pinned here — the product name default (everything else
+// reads it) and the role→glyph/label mapping, a pure function of the session's assignments (no query).
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, describe, expect, it } from "vitest";
+import { DoninoMark, DoninoWordmark } from "@/components/brand/DoninoMark";
+import { RoleMark } from "@/components/brand/RoleMark";
+import { ROLE_LABELS, ROLE_ORDER, type RoleHatSource, type RoleKey, roleHatsFor, roleHatsLabel } from "@/components/brand/roles";
+import { MARK_BOTTOM, MARK_TOP, MONOGRAM_PATH, markSvg } from "@/lib/brand/mark";
+import { DEFAULT_PRODUCT_NAME, productName } from "@/lib/product";
+
+const ADMIN = "iam.admin.access";
+const a = (roleCode: string, scopeType: RoleHatSource["scopeType"], permissions: string[] = []): RoleHatSource => ({ roleCode, scopeType, permissions });
+
+describe("the product is «دانینو»", () => {
+  const before = process.env.PRODUCT_NAME;
+  afterEach(() => {
+    if (before === undefined) delete process.env.PRODUCT_NAME;
+    else process.env.PRODUCT_NAME = before;
+  });
+
+  it("defaults to «دانینو» — never the category «سامانهٴ مدرسه», never the competitor", () => {
+    delete process.env.PRODUCT_NAME;
+    expect(DEFAULT_PRODUCT_NAME).toBe("دانینو");
+    expect(productName()).toBe("دانینو");
+    expect(DEFAULT_PRODUCT_NAME).not.toContain("همکلاسی");
+  });
+
+  it("the PRODUCT_NAME override still wins, and an empty one falls back", () => {
+    process.env.PRODUCT_NAME = "مدرسهٴ نمونه";
+    expect(productName()).toBe("مدرسهٴ نمونه");
+    process.env.PRODUCT_NAME = "   ";
+    expect(productName()).toBe(DEFAULT_PRODUCT_NAME);
+  });
+});
+
+describe("the brand mark — the owner's «D» monogram", () => {
+  it("is one geometry in two renderings: the JSX component and the satori SVG string", () => {
+    const jsx = renderToStaticMarkup(createElement(DoninoMark, { size: 40 }));
+    const svg = markSvg();
+    for (const html of [jsx, svg]) expect(html).toContain(MONOGRAM_PATH);
+    // No external asset; the UI rendering inherits its colour instead of carrying a hex.
+    expect(jsx).not.toContain("<img");
+    expect(jsx).toContain('viewBox="0 0 64 64"');
+    expect(jsx).toContain('fill="currentColor"');
+    expect(jsx).toContain("text-primary-700");
+    expect(jsx).not.toContain("#");
+    // The icon is the same monogram in white on the clay material's two stops.
+    expect(svg.toUpperCase()).toContain(MARK_TOP);
+    expect(svg.toUpperCase()).toContain(MARK_BOTTOM);
+  });
+
+  it("is two interlocking strokes: three even-odd sub-paths, and no edge shared between two of them", () => {
+    // 1 the outer D's silhouette · 2 the C-shaped channel · 3 the inner counter — both holes sit at depth 2.
+    const subpaths = MONOGRAM_PATH.split(/(?=M)/).map((d) => d.trim());
+    expect(subpaths).toHaveLength(3);
+    expect(renderToStaticMarkup(createElement(DoninoMark, {}))).toContain('fill-rule="evenodd"');
+    expect(markSvg()).toContain('fill-rule="evenodd"');
+    // The channel runs from the stem (x = 15) round the bowl and back to the stem on BOTH arms — top (15…21) and
+    // bottom (43…49) — so the inner D grows out of the stem without a second contour on x = 15 (no AA seam).
+    expect(subpaths[1]).toMatch(/^M15 15H32.*H15V43H32.*H15V15Z$/);
+    // The inner counter starts to the end of the stem, never on it.
+    expect(subpaths[2].startsWith("M21 27")).toBe(true);
+    // Every sub-path closes.
+    for (const d of subpaths) expect(d.endsWith("Z")).toBe(true);
+  });
+
+  it("the maskable icon keeps the mark inside the 80% safe zone and squares its corners", () => {
+    const maskable = markSvg(true);
+    expect(maskable).toContain('viewBox="-8 -8 80 80"');
+    expect(maskable).not.toContain("rx=");
+    expect(markSvg(false)).toContain('rx="16.64"');
+  });
+
+  it("the wordmark puts the name beside the mark — Persian by default, «donino» only when asked", () => {
+    const fa = renderToStaticMarkup(createElement(DoninoWordmark, { name: "دانینو", size: 32 }));
+    expect(fa).toContain("دانینو");
+    expect(fa).toContain(MONOGRAM_PATH);
+    expect(fa).not.toContain("donino");
+    const latin = renderToStaticMarkup(createElement(DoninoWordmark, { script: "latin" as const }));
+    expect(latin).toContain("donino");
+    expect(latin).toContain('dir="ltr"');
+  });
+});
+
+describe("roleHatsFor — the hats the emblem speaks for", () => {
+  it("names each hat from its role assignment", () => {
+    expect(roleHatsFor([a("org_admin", "organization", [ADMIN])])).toEqual(["org_admin"]);
+    expect(roleHatsFor([a("school_principal", "school", [ADMIN])])).toEqual(["principal"]);
+    expect(roleHatsFor([a("vice_principal", "school", [ADMIN])])).toEqual(["vice"]);
+    expect(roleHatsFor([a("teacher", "class_offering", ["workspace.work_item.read"])])).toEqual(["teacher"]);
+    expect(roleHatsFor([a("student", "student", ["iam.account.self"])])).toEqual(["student"]);
+    expect(roleHatsFor([a("guardian", "family", [])])).toEqual(["guardian"]);
+    expect(roleHatsFor([])).toEqual([]);
+  });
+
+  it("«مدیر سازمان» is the ORGANIZATION-scoped admin — a school-scoped one is «مدیر مدرسه»", () => {
+    // The same rule as `isOrganizationAdmin`: the scope decides, not the role code.
+    expect(roleHatsFor([a("custom_admin", "organization", [ADMIN])])).toEqual(["org_admin"]);
+    expect(roleHatsFor([a("custom_admin", "school", [ADMIN])])).toEqual(["principal"]);
+    expect(roleHatsFor([a("custom_admin", "branch", [ADMIN])])).toEqual(["principal"]);
+    // A narrow assignment WITHOUT admin access is no admin hat at all.
+    expect(roleHatsFor([a("counselor", "school", ["workspace.work_item.read"])])).toEqual([]);
+  });
+
+  it("a multi-hat person is introduced by the highest hat, the rest follow in order", () => {
+    const hats = roleHatsFor([a("teacher", "class_offering", []), a("school_principal", "school", [ADMIN]), a("student", "student", [])]);
+    expect(hats).toEqual(["principal", "teacher", "student"]);
+    expect(roleHatsLabel(hats)).toBe("مدیر مدرسه · دبیر · دانش‌آموز");
+    // admin > teacher > student, whatever order the assignments arrive in.
+    expect(roleHatsFor([a("student", "student", []), a("org_admin", "organization", [ADMIN])])[0]).toBe("org_admin");
+    // The same hat twice (two offerings, two schools) is still one hat.
+    expect(roleHatsFor([a("teacher", "class_offering", []), a("teacher", "class_offering", [])])).toEqual(["teacher"]);
+  });
+
+  it("ROLE_ORDER is the whole mapping, highest first, and every hat has a Persian label", () => {
+    expect(ROLE_ORDER).toEqual(["org_admin", "principal", "vice", "teacher", "student", "guardian"]);
+    expect(ROLE_ORDER.map((k) => ROLE_LABELS[k])).toEqual(["مدیر سازمان", "مدیر مدرسه", "معاون", "دبیر", "دانش‌آموز", "ولی"]);
+  });
+});
+
+describe("RoleMark — the school emblem, wearing the hat's glyph", () => {
+  const render = (hats: readonly RoleKey[], tone?: "header" | "plate" | "line") => renderToStaticMarkup(createElement(RoleMark, { hats, tone }));
+
+  it("is the app header's 32 px hero square — exactly the markup the school mark had", () => {
+    const html = render(["principal"]);
+    expect(html).toContain("size-8");
+    expect(html).toContain("rounded-xl");
+    expect(html).toContain("bg-hero");
+    // No new icon material, no ring, no chip, no visible text.
+    expect(html).not.toContain("clay-icon");
+    expect(html).not.toContain("outline-");
+    expect(html).not.toContain("مدیر مدرسه<");
+  });
+
+  it("on the hero banner it keeps the white plate the clay school mark sat on", () => {
+    const html = render(["student"], "plate");
+    expect(html).toContain("size-13");
+    expect(html).toContain("bg-surface");
+    expect(html).toContain("text-primary-600");
+  });
+
+  it("on the desktop rail it is the quiet line mark under the «دانینو» wordmark — never a second blue square", () => {
+    const html = render(["teacher"], "line");
+    expect(html).toContain("size-6");
+    expect(html).toContain("bg-surface-sunken");
+    expect(html).not.toContain("bg-hero");
+  });
+
+  it("carries one distinct glyph per hat — the ONLY thing that differs between roles", () => {
+    const glyphs = ROLE_ORDER.map((key) => [...render([key]).matchAll(/<(?:path|circle|rect|line|polyline|polygon)[^>]*>/g)].join(""));
+    expect(new Set(glyphs).size).toBe(ROLE_ORDER.length);
+  });
+
+  it("names the role for a screen reader and in the tooltip; a second hat rides along", () => {
+    const one = render(["vice"]);
+    expect(one).toContain('aria-label="معاون"');
+    expect(one).toContain('title="معاون"');
+    expect(one).toContain('role="img"');
+    const two = render(["principal", "teacher"]);
+    expect(two).toContain('aria-label="مدیر مدرسه · دبیر"');
+    expect(render(["vice"], "plate")).toContain('title="معاون"');
+  });
+
+  it("renders nothing with no hat — the caller keeps the mark it had", () => {
+    expect(render([])).toBe("");
+    expect(render([], "plate")).toBe("");
+  });
+});

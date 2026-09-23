@@ -701,3 +701,64 @@ Owner's asks: (A) the item a **teacher** creates stays «تکلیف», but a **�
 - **Verified** on the running dev server (signed in as an ORGANIZATION ADMIN, so the «تسک» side is a real visual pass; the teacher side is covered by the unit tests and by the unchanged teacher strings). At 1280 px: `/inbox` reads «تسک جدید» and «فقط تسک‌های داده‌شده», `/inbox/new` is «تسک جدید» with «مثلاً: تحویل گزارش ماهانه»; the time popover opens with the hour drum focused, ArrowUp/Down turn it, the field previews «۱۹:۵۰» while the hidden input still reads "", Enter and «تأیید» commit it, «انصراف» and Esc put «۲۳:۵۹» and the off switch back, and a click outside commits «۲۰:۵۰». In «تمدید»: Esc closes only the popover, «تأیید» enables «تمدید مهلت» with «مهلت جدید: چهارشنبه ۱ مهر، ساعت ۱۸:۳۰». At 390 px the same flows run in the bottom sheet (44 px buttons, 125×200 drums) including the sheet-inside-sheet of «تمدید». `pnpm typecheck`, `pnpm lint`, `pnpm test:unit` (202) green — one run died of an out-of-memory worker under host pressure and passed on its own; `tests/int/workspace-service.test.ts` (12) and `tests/int/workspace-visibility.test.ts` (4) green individually.
 - **Handed over, not done here.** `src/lib/modules-registry.ts` and `src/components/home/**` belonged to another agent this round, so the Home tiles still say «تکلیف». `work-item-words.ts` exports what they need — `newItemLabel(hats)`, `workItemWordsForHats(hats)`, `voiceForHats(hats)` and `NEW_ITEM_TILE_ROLES` — and the report names the exact tile edits: `new-item` becomes `role: NEW_ITEM_TILE_ROLES` (an admin had no door to the form on Home at all) with its label from `newItemLabel(hats)` in `homeTilesFor`, and `given` / `my-todo` take `.given` / `.mine` the same way.
 - **Deferred.** `/subjects/[offeringId]`, `/classes`, `/more`, `/notifications` and the public `/help` and `/privacy` pages keep the plain «تکلیف» (a درس page IS a teaching context; the public pages have no viewer); the «تمدید» dialog's own copy is role-neutral already; and the stored `work_item_type.name` («تکلیف») is still what a `todo`-vs-`task` chip falls back to for any type other than those two.
+
+## 2026-09-23 — the product is «دانینو»: the owner's «D» monogram, and the mark at the top says which kind of account you are
+
+- **The name.** The product is **«دانینو»** (the printed logo's Latin wordmark is lowercase «donino»; Latin appears only
+  where a Latin string is already acceptable — code identifiers, file names, the README — never as a UI label).
+  `DEFAULT_PRODUCT_NAME` in `src/lib/product.ts` is the ONE place it lives, `PRODUCT_NAME_LATIN` holds «donino», and
+  `PRODUCT_NAME` still overrides the name for a white-labelled deployment. «سامانهٴ مدرسه» survives only as the
+  CATEGORY in prose (the root `description`, the README's subtitle) — never as the name.
+- **Titles came off the pages.** `src/app/layout.tsx` carries `title: { default, template: "%s | دانینو" }` and every
+  page's metadata is just its own name («خانه», «ورود», «راهنما»), so an override renames every tab. The manifest's
+  `name` / `short_name`, `apple-mobile-web-app-title`, the login / offline / help / privacy headers and the docs all
+  read the same helper.
+- **The mark is the owner's logo**, reproduced as inline SVG — no raster, no dependency. `src/lib/brand/mark.ts` holds
+  the geometry on a 64×64 grid: a monogram **D** of two interlocking strokes, an outer rounded D (stem on the start
+  side, 3-unit corner radii, bowl r = 26, stroke 9) whose stem carries a second, smaller D (bowl r = 11, stroke 6)
+  inside its counter, with a 6-unit channel between them and a small eye (r = 5) in the middle. It is ONE path, filled
+  `evenodd`, of THREE sub-paths: the outer silhouette, the C-shaped channel (which runs from the stem round the bowl
+  and back to the stem on both arms) and the inner counter. The first cut drew it as four sub-paths whose inner D
+  shared the stem edge x = 15 with the outer counter; a coincident edge between two even-odd contours is exactly
+  where an analytic anti-aliasing rasteriser leaves a hairline seam at fractional scales (15 × 40/64 = 9.375 px in the
+  rail), so the channel was traced as one contour instead — same pixels, no shared edge
+  (`tests/unit/brand.test.ts` pins the three sub-paths and the channel's shape).
+- **Two renderings, one geometry.** `DoninoMark` (`src/components/brand/DoninoMark.tsx`) fills with `currentColor`
+  and defaults to the `primary-700` navy token — no hex in any component; `DoninoWordmark` sets the mark beside the
+  Persian «دانینو» in Vazirmatn (`script="latin"` renders «donino» in a `<bdi dir="ltr">`, unused in the UI today).
+  `markSvg()` is the self-contained string satori needs (`ImageResponse` has no CSS variables and cannot render our
+  component): the white monogram on the persian-blue squircle, whose two stops ARE the `.clay-icon` gradient.
+  **Where it appears:** the desktop rail header, the auth layout (login, change-password), `/~offline`, the public
+  shell (`/help`, `/privacy` — it still drew the old book glyph), the phone header of a person with no hat, and
+  every PWA icon path — `src/app/icon.tsx`, `apple-icon.tsx`, `src/app/icons/[file]/route.tsx`, the new
+  `src/app/splash/[file]/route.tsx` — all through `src/lib/pwa/app-icon.tsx`, so the installed icon IS the rail's
+  mark. The maskable icon widens the viewBox to 80 so the mark sits inside the 80 % safe zone.
+- **The role mark is not a new element — it is the school mark wearing the hat's glyph** (owner: «one mark up there,
+  no box, no text»). `src/components/brand/RoleMark.tsx` renders exactly the markup the school mark had — the phone
+  header's 32 px `bg-hero` square at the start corner, the Home banner's white 52 px plate — and only swaps the glyph;
+  on the desktop rail it is the quiet 24 px `surface-panel` circle that opens the school line under the «دانینو»
+  wordmark (`tone="line"`), because a second blue square beside the product's own mark would compete with it. No new
+  icon material, no ring, no chip, no visible text: **the hats differ by GLYPH alone**, and the role is named only in
+  `aria-label` and the `title` tooltip. The «دانینو» mark in the rail stays the product's, never the role's.
+- **The mapping** (`src/components/brand/roles.ts`, pure, unit-tested): دانش‌آموز `GraduationCap` · دبیر
+  `Presentation` · معاون `ClipboardCheck` · مدیر مدرسه `School` · مدیر سازمان `Landmark` (and ولی `Users`, phase 2,
+  so the map is complete). `roleHatsFor(ctx.assignments)` derives the hats from the session alone — no query — and
+  tells the admin hats apart the way the rest of the product does: an ORGANIZATION-scoped `iam.admin.access` is
+  «مدیر سازمان», `school_principal` (or any narrower assignment carrying admin access) «مدیر مدرسه»,
+  `vice_principal` «معاون». A multi-hat person is drawn as the highest hat (admin > teacher > student) and every
+  hat is named in the label («مدیر مدرسه · دبیر»). An account with no hat keeps the mark it had.
+- **Home tiles, final state** (`src/lib/modules-registry.ts`, `homeTilesFor`). «تکالیف من», «انجام‌شده» and
+  «مدیریت» are gone — the first two were FILTERS of the کارتابل, the third a second door to the nav's first cell.
+  «پنل من» is first, with its unread badge (`InboxTileBadge`). The creation tile (`new-item`, `NEW_ITEM_TILE_ROLES`
+  = teacher · admin · student, gated by `workspace.work_item.create`) is labelled by `newItemLabel(hats)`; its mirror
+  `given` (`GIVEN_TILE_ROLES` = teacher · admin) by `workItemWordsForHats(hats).given`. Per person:
+  - دانش‌آموز: پنل من · تسک جدید · حضور و غیاب
+  - دبیر: پنل من · تکالیف داده‌شده · تکلیف جدید · حضور و غیاب
+  - مدیر مدرسه (one school): پنل من · تسک‌های داده‌شده · تسک جدید · حضور و غیاب (the report) · مدرسه · سال تحصیلی · زنگ‌بندی
+  - معاون (no `create`): پنل من · حضور و غیاب (the report) · مدرسه / مدرسه‌ها
+  - مدیر سازمان: پنل من · تسک‌های داده‌شده · تسک جدید · حضور و غیاب · مدرسه‌ها · سال تحصیلی · پایه‌ها · درس‌ها ·
+    مقطع‌ها · راه‌اندازی مدرسه
+  - a principal who teaches: the teacher's words («تکلیف جدید») with the admin's structure tiles after them.
+- **Deferred.** The manifest `id` stays `"/"` (changing it re-registers every install). The phone Home shows the role
+  glyph twice — the header square and the banner plate — exactly as it showed the school twice before; collapsing
+  the two is a layout decision for the owner, not part of the swap.

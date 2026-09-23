@@ -10,9 +10,10 @@ import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { InstallPrompt } from "@/components/shell/InstallPrompt";
 import { requireContext } from "@/lib/ctx";
+import { roleHatsFor } from "@/components/brand/roles";
 import { canAtAnyScope } from "@/modules/iam/can";
 
-export const metadata: Metadata = { title: "خانه | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "خانه" };
 
 /**
  * Home is an icon grid (product-owner decision, docs/decisions.md): the school banner (phones; from `lg:` the
@@ -38,7 +39,7 @@ export default async function HomePage() {
         // «پنل من» is a TILE in the grid / dashboard aside since round 5, not a control.
         actions={<NotificationsBell />}
       />
-      <SchoolBanner schoolName={ctx.schoolName ?? ctx.orgName} firstName={ctx.firstName} />
+      <SchoolBanner schoolName={ctx.schoolName ?? ctx.orgName} firstName={ctx.firstName} hats={roleHatsFor(ctx.assignments)} />
       {canAtAnyScope(ctx.assignments, "workspace.work_item.read") ? <TodayStrip /> : null}
       {/* Phones and tablets: the tile grid, exactly as decided. From lg: the per-role dashboard (the reads are shared). */}
       <div className="flex flex-col gap-5 lg:hidden">

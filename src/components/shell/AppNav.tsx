@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "cn";
 import { DoninoWordmark } from "@/components/brand/DoninoMark";
+import { RoleMark } from "@/components/brand/RoleMark";
+import type { RoleKey } from "@/components/brand/roles";
 import { formatNumberFa } from "@/lib/format";
 import { ADMIN_SECTION_ICONS, type AdminNavItem } from "@/lib/admin/nav";
 import type { NavRole } from "@/modules/iam/can";
@@ -51,10 +53,11 @@ const DRIFT = ["-4px", "0px", "4px"];
  * its two neighbours ease 4 px outwards and settle back when another tab takes over (`--nav-drift` on the
  * relatively-positioned link, read by the logical `start-*` utility — no reflow, no RTL sign flip;
  * `motion-reduce` pins every cell at rest). The rail (264 px from `lg:`) opens with the «دانینو» wordmark — the
- * PRODUCT's own mark, never the role's — and the school under it, lists the same three, and inside /admin nests
- * the admin sections under «مدیریت».
+ * PRODUCT's own mark, never the role's — and the school under it, carrying the ROLE mark so the desktop says the
+ * same thing the phone header does; it lists the same three, and inside /admin nests the admin sections under
+ * «مدیریت».
  */
-export function AppNav({ schoolName, productName, role, adminItems }: { schoolName: string; productName?: string; role: NavRole | null; adminItems?: readonly AdminNavItem[] }) {
+export function AppNav({ schoolName, productName, role, hats = [], adminItems }: { schoolName: string; productName?: string; role: NavRole | null; hats?: readonly RoleKey[]; adminItems?: readonly AdminNavItem[] }) {
   const pathname = usePathname();
   const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
   const roleItem = ROLE_ITEMS[role ?? "none"];
@@ -87,9 +90,16 @@ export function AppNav({ schoolName, productName, role, adminItems }: { schoolNa
         </ul>
       </nav>
       <aside className="hidden w-rail shrink-0 flex-col border-e border-line bg-surface lg:sticky lg:top-0 lg:flex lg:h-screen">
-        {/* The «دانینو» wordmark, the school under it — the one place the product introduces itself. */}
-        <div className="flex min-h-20 items-center px-5 pt-1">
-          <DoninoWordmark name={productName ?? schoolName} sub={productName ? <bdi>{schoolName}</bdi> : null} size={40} />
+        {/* The «دانینو» wordmark — the one place the product introduces itself — with the school on its own line
+            under it, opened by the ROLE mark (the desktop's answer to the phone header's emblem). */}
+        <div className="flex min-h-20 flex-col justify-center gap-1.5 px-5 py-2">
+          <DoninoWordmark name={productName ?? schoolName} size={40} />
+          {productName ? (
+            <span className="flex min-w-0 items-center gap-2">
+              {hats.length > 0 ? <RoleMark hats={hats} tone="line" /> : null}
+              <bdi className="truncate text-meta text-text-muted">{schoolName}</bdi>
+            </span>
+          ) : null}
         </div>
         <nav aria-label="پیمایش اصلی" className="flex-1 overflow-y-auto px-3 py-2">
           <ul className="flex flex-col gap-1">

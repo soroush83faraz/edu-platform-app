@@ -1,4 +1,6 @@
-import { BookOpen } from "lucide-react";
+import { DoninoMark } from "@/components/brand/DoninoMark";
+import { RoleMark } from "@/components/brand/RoleMark";
+import { roleHatsFor } from "@/components/brand/roles";
 import { AppNav } from "@/components/shell/AppNav";
 import { InboxSummaryProvider } from "@/components/shell/InboxSummaryProvider";
 import type { AdminNavItem } from "@/lib/admin/nav";
@@ -10,7 +12,8 @@ import { inboxSummaryQuery } from "@/modules/workspace/queries";
 
 /**
  * The signed-in frame shared by the (app) and (admin) route groups: the summary provider (server-rendered initial
- * counts, one client poller), nav (bottom bar / start rail), the mobile header, and the content column; pages cap
+ * counts, one client poller), nav (bottom bar / start rail), the mobile header — whose start corner carries the
+ * ROLE MARK, the emblem that says which hat you are signed in with — and the content column; pages cap
  * their own width with `ContentWidth` (1200 px, or the reading measure). The admin layout passes `adminItems`
  * (sections with counts) so the rail can nest them under «مدیریت».
  */
@@ -23,6 +26,9 @@ export async function AppShell({ ctx, children, adminItems }: { ctx: Ctx; childr
   const title = (shell.schools.length > 1 ? ctx.orgName : ctx.schoolName) ?? ctx.orgName;
   // The nav's role item («مدیریت» / «کلاس‌ها» / «کلاس من»), decided once here from the session — no query.
   const navRole = navRoleFor(ctx.assignments);
+  // The hats the top-start emblem speaks for, from the same assignments — «مدیر سازمان» / «مدیر مدرسه» / «معاون» /
+  // «دبیر» / «دانش‌آموز». Still no query; `navRoleFor` collapses the three admin hats, this does not.
+  const hats = roleHatsFor(ctx.assignments);
 
   return (
     <InboxSummaryProvider initial={initial}>
@@ -34,12 +40,12 @@ export async function AppShell({ ctx, children, adminItems }: { ctx: Ctx; childr
         پرش به محتوا
       </a>
       <h1 className="sr-only">{title}</h1>
-      <AppNav schoolName={title} productName={productName()} role={navRole} adminItems={adminItems} />
+      <AppNav schoolName={title} productName={productName()} role={navRole} hats={hats} adminItems={adminItems} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-14 items-center gap-3 bg-canvas/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm lg:hidden">
-          <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-xl bg-hero text-white shadow-1">
-            <BookOpen className="size-4" />
-          </span>
+          {/* The square that stood for the school is now the ROLE mark (owner): same place, same 32 px, glyph
+              swapped for the hat's — the school NAME beside it is untouched. No chip, no second element. */}
+          {hats.length > 0 ? <RoleMark hats={hats} /> : <DoninoMark size={32} />}
           <p className="truncate text-base font-semibold text-text">{title}</p>
         </header>
         <main id="main" tabIndex={-1} className="flex w-full flex-1 flex-col pb-24 outline-none lg:pb-8">
