@@ -17,7 +17,6 @@ import {
   Megaphone,
   MessagesSquare,
   NotebookPen,
-  Rocket,
   Scale,
   School,
   Send,
@@ -440,12 +439,15 @@ export const HOME_TILES: readonly HomeTile[] = [
   },
   {
     // «مدرسه» for an admin of exactly one school — straight to that school's hub, where its structure is edited.
+    // SCHOOL-SCOPED admins only (round 7): the organization admin, who defines the schools, reaches the list
+    // through the «مدرسه‌ها» admin SECTION instead, so neither of them meets the destination twice.
     code: "schools",
     labelFa: "مدرسه‌ها",
     href: "/admin/schools",
     icon: School,
     role: "admin",
     permission: "tenancy.structure.read",
+    adminScope: "school",
     oneSchool: { href: (id) => `/admin/schools/${id}`, label: true },
   },
   {
@@ -496,15 +498,8 @@ export const HOME_TILES: readonly HomeTile[] = [
     permission: "tenancy.structure.write",
     adminScope: "organization",
   },
-  {
-    code: "onboarding",
-    labelFa: "راه‌اندازی مدرسه",
-    href: "/admin/onboarding",
-    icon: Rocket,
-    role: "admin",
-    permission: "tenancy.structure.write",
-    adminScope: "organization",
-  },
+  // No «راه‌اندازی مدرسه» tile (round 7): the setup checklist is an admin SECTION now, beside «مدرسه‌ها» —
+  // one door, and it is inside /admin where the rest of the organization admin's setup work already is.
 ];
 
 /**

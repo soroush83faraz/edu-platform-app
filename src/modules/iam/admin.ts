@@ -65,10 +65,9 @@ export async function adminCreateStaff(tx: Tx, ctx: AdminCtx, input: CreateStaff
   const scope = await getAdminScope(tx, ctx);
   const schoolId = input.schoolId ?? input.roles?.find((r) => r.schoolId)?.schoolId ?? null;
   for (const r of input.roles ?? []) {
-    if (r.roleCode === "org_admin") {
-      if (scope.kind === "school") throw forbidden(MESSAGES.orgRoleForbidden);
-      continue;
-    }
+    // No admin screen hands out «مدیر سازمان» (round 7): the organization has exactly one, established at seed
+    // time. Refused here as well as in `resolveRoleGrant`, so the answer is the same sentence at both layers.
+    if (r.roleCode === "org_admin") throw forbidden(MESSAGES.orgRoleNotGrantable);
     if (!r.schoolId) throw fieldError("roles", MESSAGES.roleSchoolRequired);
     assertSchoolInScope(scope, r.schoolId);
   }

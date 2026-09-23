@@ -842,3 +842,44 @@ installed app, which must open with none. So:
   `apple-mobile-web-app-status-bar-style` `black-translucent`, `theme-color` `#072AC8`, `viewport-fit=cover` and the
   16 startup-image links. `tests/unit/pwa-install.test.ts` pins the manifest and the splash table. Not verifiable
   here: a real device install (Android and iOS) — the first owner install is the check.
+
+## 2026-09-23 — Admin round 7: «مدرسه‌ها» and «راه‌اندازی» are sections, setup creates a school, the org admin is unique
+
+- **«مدرسه‌ها» and «راه‌اندازی مدرسه» came back into `/admin` as ordinary SECTIONS, organization-admin only**
+  (`ADMIN_SECTIONS`, `orgOnly: true`). They have the same entry shape, the same glyph treatment and the same
+  pill/rail rendering as دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها, and the landing page draws them as two more rows
+  of the one section list. The setup checklist therefore lost its `OnboardingProgress` panel on `/admin` (the
+  component is deleted); its row carries the number the panel carried — **how many steps are still missing** — with
+  the hint «گام‌های مانده تا آمادگی برای شروع سال», and the progress bar itself stays on `/admin/onboarding`.
+  `SchoolBreakdown` also dropped its «فهرست مدرسه‌ها» link, which would have been a second door to the new row.
+- **Both Home tiles are gone for the organization admin**, because one door per destination is a rule *per person*:
+  `HOME_TILES.onboarding` is deleted outright, and the `schools` tile is now `adminScope: "school"`. A principal is
+  unchanged — a one-school principal still gets «مدرسه» → their own school's hub, a two-school one «مدرسه‌ها» → the
+  list — and that is a different destination from the organization's list. `ResourceListPage`'s back link follows
+  the same split through `isAdminSectionFor(key, { org })`: no «خانه» back for the organization admin (the rail is
+  their way around), «خانه» for a school-scoped admin whose door is the tile. The unit tests now assert the rule as
+  «no PERSON sees a destination twice», per persona, instead of a global nav∩tiles check.
+- **`/admin/onboarding` step one is actionable.** «مدرسهٴ جدید» is the page's primary action and opens the SAME
+  `ResourceForm` dialog the schools list opens — `schoolResource`, its strict `SchoolInput`, `adminResourceMutate`,
+  and therefore the same gate (`tenancy.structure.write` + `createNeedsOrgScope`). The page reads `canCreate` from
+  `adminResourceList` rather than deciding for itself, so the button and the action agree. After a save the form
+  refreshes the route, every computed step recomputes, and with exactly one school step one links on to **that
+  school's hub** (`onboardingSteps(counts, schoolId)`) so the admin continues with سال تحصیلی → کلاس‌ها → کارکنان.
+  No other step changed. The page also lost its «خانه» back link: it is a section now.
+- **An organization has exactly ONE «مدیر سازمان», and nobody grants that role.** `org_admin` left
+  `ORG_GRANTED_ROLES` and `roleGrantOptions`, so no picker offers it, and `resolveRoleGrant` refuses it with
+  `FORBIDDEN` «نقش مدیر سازمان از این بخش داده نمی‌شود.» — from `assignRoleAction`, from the `roles` field of
+  `createStaff`/`adminCreateStaff`, and from the importer alike. **Exception: the bootstrap**, `personId ===
+  ctx.personId`. That is the one case the owner's «seeds keep creating the single org admin» requires: both
+  `scripts/seed.ts` and `scripts/seed-pilot.ts` act AS the organization's admin and establish the role on that very
+  person, and neither script changed. The exception grants nothing to anybody: only an organization-scoped holder of
+  `iam.role_assignment.write` gets past the permission step at all, and for such a caller it is a no-op on a role
+  they already hold. `createStaff` passes `input.id` into the up-front `resolveRoleGrant` so the bootstrap is
+  decided before the person is written, exactly like every other refusal. Revoking is untouched — an `org_admin`
+  assignment is organization-scoped, so `revokeRoleAssignment`'s `orgLevel` rule still covers it.
+- **Role picker copy:** the empty option is «بدون نقش مدیریتی»; the «(دبیر عادی)» gloss is gone. With `org_admin`
+  unofferable, every role the picker can show is school-scoped, so `StaffForm` and `PersonPanels` dropped their
+  `roleCode === "org_admin"` special cases (the school `<select>` is disabled only when no role is chosen).
+- **Not done, deliberately:** «مدرسه‌ها» still has no archive. `tenancy.school` has no `status`/`archived_at`
+  column, so an archive would need a migration and a `archiveSchool` service — out of the round's scope and still
+  «بایگانی مدرسه در فاز ۱ وجود ندارد» (docs/admin.md). Add and edit are unchanged.

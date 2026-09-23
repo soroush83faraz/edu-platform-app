@@ -53,13 +53,15 @@ export function StaffForm({ schools, detail, roleGrant }: { schools: SchoolOptio
   });
   const set = (name: string) => (val: FormValue) => setV((p) => ({ ...p, [name]: val }));
   const f = (name: string) => ({ id: `${ids}-${name}`, value: v[name], error: errors[name], onChange: set(name) });
-  const roleOptions = [{ value: "", label: "بدون نقش مدیریتی (دبیر عادی)" }, ...roleGrant.roles.map((code) => ({ value: code, label: roleLabel(code) }))];
+  const roleOptions = [{ value: "", label: "بدون نقش مدیریتی" }, ...roleGrant.roles.map((code) => ({ value: code, label: roleLabel(code) }))];
 
+  // Every role this picker can offer is school-scoped: «مدیر سازمان» is granted by nobody (round 7), so
+  // `roleGrantOptions` never returns it and the form has no organization-scoped case to handle.
   const addRole = () => {
     if (!roleDraft.roleCode) return;
     const code = roleDraft.roleCode as AssignableRole;
-    const schoolId = code === "org_admin" ? null : roleDraft.schoolId || null;
-    if (code !== "org_admin" && !schoolId) {
+    const schoolId = roleDraft.schoolId || null;
+    if (!schoolId) {
       setErrors((p) => ({ ...p, roles: "برای این نقش، مدرسه را انتخاب کنید." }));
       return;
     }
@@ -157,7 +159,7 @@ export function StaffForm({ schools, detail, roleGrant }: { schools: SchoolOptio
                 </option>
               ))}
             </select>
-            <select aria-label="مدرسهٴ نقش" value={roleDraft.schoolId} onChange={(e) => setRoleDraft((p) => ({ ...p, schoolId: e.target.value }))} disabled={roleDraft.roleCode === "org_admin" || !roleDraft.roleCode} className="h-11 rounded-lg border border-line bg-surface px-3 text-base disabled:opacity-50">
+            <select aria-label="مدرسهٴ نقش" value={roleDraft.schoolId} onChange={(e) => setRoleDraft((p) => ({ ...p, schoolId: e.target.value }))} disabled={!roleDraft.roleCode} className="h-11 rounded-lg border border-line bg-surface px-3 text-base disabled:opacity-50">
               {roleGrant.schools.map((s) => (
                 <option key={s.value} value={s.value}>
                   {s.label}

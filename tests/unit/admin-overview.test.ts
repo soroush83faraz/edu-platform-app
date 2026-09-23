@@ -1,7 +1,7 @@
 // The /admin landing page under the IA rule (docs/decisions.md «one home per destination»): every admin SECTION
-// gets exactly one row, «نمای کلی» none (it IS this page), and — since round 5 — no structure row at all: those
-// destinations are Home tiles. «راه‌اندازی مدرسه» keeps only the setup PANEL, whose «گام‌ها» link is the same
-// door the Home tile opens. Rendered statically, inspected as a string.
+// gets exactly one row and «نمای کلی» none (it IS this page). Round 7: «مدرسه‌ها» and «راه‌اندازی مدرسه» are
+// ordinary rows of that list for the organization admin — the setup checklist has no panel of its own any more —
+// while the remaining structure destinations stay Home tiles. Rendered statically, inspected as a string.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -12,7 +12,6 @@ import type { AdminScope } from "@/modules/iam/service";
 vi.mock("@/components/layout/PageHeader", () => ({ PageHeader: ({ title }: { title: React.ReactNode }) => createElement("h2", null, title) }));
 
 const { AdminOverview } = await import("@/components/admin/AdminOverview");
-const { OnboardingProgress } = await import("@/components/admin/OnboardingProgress");
 const { adminSectionsFor } = await import("@/lib/admin/nav");
 
 const counts: AdminCounts = {
@@ -43,35 +42,38 @@ const itemsFor = (org: boolean) => adminSectionsFor({ org }).filter((i) => i.key
 
 function render(org: boolean) {
   const scope: AdminScope = org ? { kind: "organization" } : { kind: "school", schoolIds: ["s1"] };
-  const progress = org ? createElement(OnboardingProgress, { progress: { done: 7, total: 11 } }) : null;
-  return renderToStaticMarkup(createElement(AdminOverview, { data: { scope, counts }, items: itemsFor(org) }, progress));
+  return renderToStaticMarkup(createElement(AdminOverview, { data: { scope, counts }, items: itemsFor(org) }));
 }
 
 const hrefs = (html: string) => [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
 
 describe("AdminOverview (/admin landing)", () => {
-  it("links to «راه‌اندازی» exactly once for the organization admin — the setup panel, not a second section row", () => {
+  it("«راه‌اندازی مدرسه» and «مدرسه‌ها» are ordinary section rows for the organization admin — each linked exactly once, neither a panel of its own", () => {
     const html = render(true);
     expect(hrefs(html).filter((h) => h === "/admin/onboarding")).toEqual(["/admin/onboarding"]);
+    expect(hrefs(html).filter((h) => h === "/admin/schools")).toEqual(["/admin/schools"]);
     expect(html).toContain("راه‌اندازی مدرسه");
+    // The progress bar lived in a panel above the list; the section row replaced it («progressbar» was its mark).
+    expect(html).not.toContain("progressbar");
   });
 
-  it("carries no moved row: مدرسه‌ها، سال تحصیلی، پایه‌ها، درس‌ها، مقطع‌ها and حضور و غیاب are Home tiles now", () => {
+  it("carries no moved row: سال تحصیلی، پایه‌ها، درس‌ها، مقطع‌ها and حضور و غیاب are Home tiles now", () => {
     const html = render(true);
-    for (const href of ["/admin/attendance", "/admin/schools", "/admin/years", "/admin/grades", "/admin/subjects", "/admin/levels"]) {
+    for (const href of ["/admin/attendance", "/admin/years", "/admin/grades", "/admin/subjects", "/admin/levels"]) {
       expect(hrefs(html)).not.toContain(href);
     }
   });
 
-  it("shows a school-scoped admin no «راه‌اندازی» at all", () => {
+  it("shows a school-scoped admin neither «راه‌اندازی» nor the organization's «مدرسه‌ها» list (their door to their own school is a Home tile)", () => {
     const html = render(false);
     expect(hrefs(html)).not.toContain("/admin/onboarding");
+    expect(hrefs(html)).not.toContain("/admin/schools");
     expect(html).not.toContain("راه‌اندازی");
   });
 
   it("lists every other section once and never «نمای کلی» (this page)", () => {
     const html = render(true);
-    // The section list is the last block: everything after the counters panel (`surface-panel`) and the setup panel.
+    // The section list is the last block: everything after the counters panel (`surface-panel`).
     const rows = hrefs(html.slice(html.indexOf('class="surface-work'))).filter((h) => h.startsWith("/admin/"));
     // Every section the nav carries, in its order — whatever sections `nav.ts` holds today.
     expect(rows).toEqual(itemsFor(true).map((i) => i.href));

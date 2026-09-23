@@ -104,7 +104,10 @@ async function buildWorld(tx: Tx): Promise<World> {
   const cg = await createClassGroup(tx, orgAdmin, { branchId: s2.branchId, academicYearId: year.academicYearId, gradeLevelId: f.GRADE_A, name: "۱۰/۱" });
   const off = await createClassOffering(tx, orgAdmin, { classGroupId: cg.classGroupId, subjectId: f.SUBJECT_A, termId: year.termIds[0] });
 
-  const admin = await createStaff(tx, orgAdmin, { firstName: "محمد", lastName: "امینی", phone: "09127200001", roles: [{ roleCode: "org_admin" }] });
+  // The organization's one مدیر سازمان is BOOTSTRAPPED, not granted: nobody may put `org_admin` on another
+  // person (round 7), so the fixture does what the seeds do — the actor establishes the role on ITSELF.
+  const admin = await createStaff(tx, orgAdmin, { firstName: "محمد", lastName: "امینی", phone: "09127200001" });
+  await assignRole(tx, asAdmin(admin.personId, orgAdminRole), { personId: admin.personId, roleCode: "org_admin" });
   const s1p = await createStaff(tx, orgAdmin, { firstName: "مریم", lastName: "رضایی", phone: "09127200002", roles: [{ roleCode: "school_principal", schoolId: f.SCHOOL_A }] });
   const s2p = await createStaff(tx, orgAdmin, { firstName: "زهرا", lastName: "موسوی", phone: "09127200003", roles: [{ roleCode: "school_principal", schoolId: s2.schoolId }] });
   const s2v = await createStaff(tx, orgAdmin, { firstName: "سارا", lastName: "کاظمی", phone: "09127200004", roles: [{ roleCode: "vice_principal", schoolId: s2.schoolId }] });
@@ -393,8 +396,8 @@ describe("admin scope hardening", () => {
         // …and cannot promote an existing colleague either.
         await expect(sub(tx, (sp) => assignRole(sp, vice, { personId: w.s2Principal.personId, roleCode, schoolId: w.s2.schoolId }))).rejects.toSatisfy(isError("FORBIDDEN", refusal[roleCode]));
       }
-      await expect(sub(tx, (sp) => adminCreateStaff(sp, vice, { ...intruder, roles: [{ roleCode: "org_admin" }] }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.orgRoleForbidden));
-      await expect(sub(tx, (sp) => assignRole(sp, vice, { personId: w.s2Principal.personId, roleCode: "org_admin" }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.orgRoleForbidden));
+      await expect(sub(tx, (sp) => adminCreateStaff(sp, vice, { ...intruder, roles: [{ roleCode: "org_admin" }] }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.orgRoleNotGrantable));
+      await expect(sub(tx, (sp) => assignRole(sp, vice, { personId: w.s2Principal.personId, roleCode: "org_admin" }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.orgRoleNotGrantable));
       const before = await tx.select({ id: roleAssignment.id }).from(roleAssignment).where(and(eq(roleAssignment.personId, w.s2Principal.personId), isNull(roleAssignment.revokedAt)));
       expect(before).toHaveLength(1);
       // The vice principal still registers plain staff at their school (iam.person.write).
@@ -423,10 +426,26 @@ describe("admin scope hardening", () => {
       });
       await expect(sub(tx, (sp) => assignRole(sp, principal, { personId: w.s2Vice.personId, roleCode: "school_principal", schoolId: f.SCHOOL_A }))).rejects.toSatisfy(isError("NOT_FOUND"));
       // …and never an organization role.
-      await expect(sub(tx, (sp) => assignRole(sp, principal, { personId: w.s2Vice.personId, roleCode: "org_admin" }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.orgRoleForbidden));
-      // The organization admin grants everything everywhere.
+      await expect(sub(tx, (sp) => assignRole(sp, principal, { personId: w.s2Vice.personId, roleCode: "org_admin" }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.orgRoleNotGrantable));
+      // The organization admin grants every SCHOOL role everywhere…
       expect((await assignRole(tx, orgAdmin, { personId: w.s1Teacher.personId, roleCode: "vice_principal", schoolId: f.SCHOOL_A })).created).toBe(true);
-      expect((await assignRole(tx, orgAdmin, { personId: w.s1Teacher.personId, roleCode: "org_admin" })).created).toBe(true);
+      // …but «مدیر سازمان» is nobody's to give — an organization has exactly ONE, and not even its own admin may
+      // appoint a second one, from the admin surface or from the service (round 7). Nothing is written.
+      await expect(sub(tx, (sp) => assignRole(sp, orgAdmin, { personId: w.s1Teacher.personId, roleCode: "org_admin" }))).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.orgRoleNotGrantable));
+      await expect(sub(tx, (sp) => adminCreateStaff(sp, orgAdmin, { firstName: "دومی", lastName: "سازمان", phone: "09127200099", roles: [{ roleCode: "org_admin" }] }))).rejects.toSatisfy(
+        isError("FORBIDDEN", MESSAGES.orgRoleNotGrantable),
+      );
+      await sub(tx, async (sp) => {
+        const err = await createStaff(sp, orgAdmin, { firstName: "دومی", lastName: "سازمان", phone: "09127200099", roles: [{ roleCode: "org_admin" }] }).catch((e: unknown) => e);
+        expect(err).toSatisfy(isError("FORBIDDEN", MESSAGES.orgRoleNotGrantable));
+        const people = await sp.execute<{ n: number }>(sql`select count(*)::int as n from iam.person where first_name = ${"دومی"}`);
+        expect(Number(people.rows[0].n)).toBe(0);
+      });
+      const stillOne = await tx
+        .select({ id: roleAssignment.id })
+        .from(roleAssignment)
+        .where(and(eq(roleAssignment.scopeType, "organization"), eq(roleAssignment.sourceType, "manual"), isNull(roleAssignment.revokedAt)));
+      expect(stillOne).toHaveLength(1);
 
       // The pickers are computed from the same assignments (docs/admin.md «ماتریس اعطای نقش»).
       const schools = [
@@ -435,7 +454,8 @@ describe("admin scope hardening", () => {
       ];
       expect(roleGrantOptions(vice.assignments, schools)).toEqual({ roles: [], schools: [] });
       expect(roleGrantOptions(principal.assignments, schools)).toEqual({ roles: ["vice_principal"], schools: [schools[1]] });
-      expect(roleGrantOptions(orgAdmin.assignments, schools)).toEqual({ roles: ["school_principal", "vice_principal", "org_admin"], schools });
+      // No picker offers «مدیر سازمان» — not even the organization admin's.
+      expect(roleGrantOptions(orgAdmin.assignments, schools)).toEqual({ roles: ["school_principal", "vice_principal"], schools });
       throw new Rollback();
     });
   });

@@ -44,10 +44,12 @@ describe("homeTilesFor", () => {
     expect(codes(homeTilesFor(student, has(["academic.timetable.read"])))).not.toContain("inbox");
   });
 
-  it("the organization admin: the structure tiles the nav gave up, in that order — and no «مدیریت» tile", () => {
-    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["inbox", "given", "new-item", "admin-attendance", "schools", "years", "grades", "subjects", "levels", "onboarding"]);
-    // «مدرسه‌ها» plural, the list; «زنگ‌بندی» has no organization-wide page, so no tile.
-    expect(tile(homeTilesFor(orgAdmin, has(ADMIN_PERMS)), "schools")).toMatchObject({ labelFa: "مدرسه‌ها", href: "/admin/schools" });
+  it("the organization admin: the structure tiles the nav gave up, in that order — and no «مدیریت», «مدرسه‌ها» or «راه‌اندازی» tile", () => {
+    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["inbox", "given", "new-item", "admin-attendance", "years", "grades", "subjects", "levels"]);
+    // Round 7: «مدرسه‌ها» (the organization's list) and «راه‌اندازی مدرسه» are admin SECTIONS for this person, so
+    // Home carries neither — one door each. «زنگ‌بندی» has no organization-wide page, so it has no tile either.
+    expect(tile(homeTilesFor(orgAdmin, has(ADMIN_PERMS)), "schools")).toBeUndefined();
+    expect(HOME_TILES.filter((t) => t.href === "/admin/onboarding")).toEqual([]);
   });
 
   it("a principal of ONE school gets «مدرسه» and that school's زنگ‌بندی, and no organization catalog", () => {
@@ -65,6 +67,12 @@ describe("homeTilesFor", () => {
 
   it("a vice principal reads the structure but edits none of it: the roll-call report and «مدرسه»", () => {
     expect(codes(homeTilesFor(principal, has(VICE_PERMS)))).toEqual(["inbox", "admin-attendance", "schools"]);
+  });
+
+  it("«مدرسه‌ها»/«مدرسه» is a tile for SCHOOL-scoped admins only — the organization admin has the section instead", () => {
+    // The same permission, the same hat: only the SCOPE decides, so neither person meets the destination twice.
+    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).not.toContain("schools");
+    for (const hats of [principal, twoSchools]) expect(codes(homeTilesFor(hats, has(ADMIN_PERMS)))).toContain("schools");
   });
 
   it("no tile is a second door to a nav destination («مدیریت», «کلاس من», «کلاس‌ها», «راهنما», «بیشتر», «خانه»)", () => {
