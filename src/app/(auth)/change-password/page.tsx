@@ -6,7 +6,7 @@ import { getRequestContext } from "@/lib/ctx";
 import { logoutAction } from "@/modules/iam/actions";
 import { ChangePasswordForm } from "@/modules/iam/ui/ChangePasswordForm";
 
-export const metadata: Metadata = { title: "تغییر رمز | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "تغییر رمز" };
 
 export default async function ChangePasswordPage() {
   const ctx = await getRequestContext();

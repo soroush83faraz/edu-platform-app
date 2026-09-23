@@ -10,7 +10,7 @@ import { PrintButton } from "@/components/admin/PrintButton";
 import { MODULES, PHASES, type ModuleEntry } from "@/lib/modules-registry";
 import { productName } from "@/lib/product";
 
-export const metadata: Metadata = { title: "نقشهٴ راه | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "نقشهٴ راه" };
 
 const PHASE_ORDER: ModuleEntry["phase"][] = [1, 2, 3, 4];
 

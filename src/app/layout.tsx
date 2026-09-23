@@ -16,8 +16,10 @@ const vazir = localFont({
   variable: "--font-vazir",
 });
 
+// Every page sets only its own name («خانه»); the template appends the product («خانه | دانینو»), so the name
+// lives in ONE place — `PRODUCT_NAME` / `src/lib/product.ts`.
 export const metadata: Metadata = {
-  title: productName(),
+  title: { default: productName(), template: `%s | ${productName()}` },
   description: "سامانهٴ مدیریت آموزشی مدرسه",
   applicationName: productName(),
   manifest: "/manifest.webmanifest",

@@ -16,7 +16,7 @@ import { listInboxQuery } from "@/modules/workspace/queries";
 import type { InboxRow as Row } from "@/modules/workspace/repo";
 import { InboxRow } from "@/modules/workspace/ui/InboxRow";
 
-export const metadata: Metadata = { title: "پنل من | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "پنل من" };
 
 const TAB_LABELS: Record<InboxTab, string> = { todo: "انجام‌نشده", done: "انجام‌شده", all: "همه" };
 const TAB_ICONS: Record<Exclude<InboxTab, "all">, LucideIcon> = { todo: ListTodo, done: CircleCheck };

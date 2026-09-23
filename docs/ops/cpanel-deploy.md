@@ -91,7 +91,7 @@ public_html/extra/66/school/          ← Application Root
 | `NODE_ENV` | بله | `production` |
 | `DB_POOL_MAX` | پیشنهادی | روی هاست اشتراکی `5` (پیش‌فرض ۲۰ برای این حافظه زیاد است) |
 | `APP_VERSION` | پیشنهادی | sha کوتاه نسخه؛ در `/api/health` و لاگ `app.js` دیده می‌شود |
-| `PRODUCT_NAME` | اختیاری | پیش‌فرض «سامانهٴ مدرسه» |
+| `PRODUCT_NAME` | اختیاری | پیش‌فرض «دانینو» |
 | `LOG_LEVEL` | اختیاری | پیش‌فرض `info` |
 | `FILES_DIR` | اختیاری | پیش‌فرض `/data/files`؛ روی cPanel به مسیری داخل هوم ست کنید، مثلاً `/home/dul/app-files` |
 | `TZ` | اختیاری | `UTC` — تاریخ‌ها UTC ذخیره می‌شوند و در نمایش به Asia/Tehran تبدیل می‌شوند |

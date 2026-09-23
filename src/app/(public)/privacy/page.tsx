@@ -5,7 +5,7 @@ import { RowMark } from "@/components/RowMark";
 import { PublicBackLink } from "@/components/shell/PublicBackLink";
 import { productName } from "@/lib/product";
 
-export const metadata: Metadata = { title: "حریم خصوصی | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "حریم خصوصی" };
 
 /**
  * The privacy notice of phase 1 — the client's own text (edu-platform-architecture/docs/client/06-etelaieh-harim-

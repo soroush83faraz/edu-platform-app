@@ -8,7 +8,7 @@ import { onboardingSteps } from "@/lib/admin/onboarding";
 import { adminOverviewQuery } from "@/lib/admin/overview";
 import { formatNumberFa } from "@/lib/format";
 
-export const metadata: Metadata = { title: "راه‌اندازی مدرسه | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "راه‌اندازی مدرسه" };
 
 /**
  * /admin/onboarding — what is done and what is missing before students can log in on ۱ مهر. Organization admins

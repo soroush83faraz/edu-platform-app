@@ -15,7 +15,7 @@ import { myTimetableQuery } from "@/modules/academic/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 import { hatsQuery } from "@/modules/iam/hats";
 
-export const metadata: Metadata = { title: "کلاس‌های من | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "کلاس‌های من" };
 
 /**
  * «کلاس‌های من» for a teacher: first «برنامهٴ هفتگی من» — the week of teaching sessions across classes, today's

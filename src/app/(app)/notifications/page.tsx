@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { listNotificationsQuery } from "@/modules/notif/queries";
 import { MarkAllReadButton, NotificationList } from "@/modules/notif/ui/NotificationList";
 
-export const metadata: Metadata = { title: "اعلان‌ها | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "اعلان‌ها" };
 
 export default async function NotificationsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;

@@ -7,7 +7,7 @@ import { adminNavItems, getAdminShell } from "@/lib/admin/admin-shell";
 import { getRequestContext, loginRedirectHref } from "@/lib/ctx";
 import { canAtAnyScope } from "@/modules/iam/can";
 
-export const metadata: Metadata = { title: "مدیریت | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "مدیریت" };
 
 /**
  * /admin shell: same frame as (app), plus the admin sections — nested under «مدیریت» in the desktop rail, a pill

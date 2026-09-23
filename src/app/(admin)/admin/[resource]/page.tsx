@@ -7,7 +7,7 @@ import { RESOURCES } from "@/lib/admin/resources";
 export async function generateMetadata({ params }: { params: Promise<{ resource: string }> }): Promise<Metadata> {
   const { resource } = await params;
   const def = RESOURCES[resource];
-  return { title: def && resource !== "offerings" ? `${def.labelFaPlural} | مدیریت` : "مدیریت | سامانهٴ مدرسه" };
+  return { title: def && resource !== "offerings" ? `${def.labelFaPlural} | مدیریت` : "مدیریت" };
 }
 
 /** Generic list page of every structure resource: /admin/schools, /admin/years, /admin/terms?year=…, … */

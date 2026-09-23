@@ -12,7 +12,7 @@ import { formatTimeRangeFa, WEEKDAY_LABELS } from "@/lib/timetable";
 import { attendanceSessionQuery } from "@/modules/academic/queries";
 import { AttendanceRoster } from "@/modules/academic/ui/AttendanceRoster";
 
-export const metadata: Metadata = { title: "ثبت حضور و غیاب | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "ثبت حضور و غیاب" };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
 

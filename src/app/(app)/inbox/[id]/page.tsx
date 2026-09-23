@@ -16,7 +16,7 @@ import { CommentForm } from "@/modules/workspace/ui/CommentForm";
 import { WorkItemActions } from "@/modules/workspace/ui/WorkItemActions";
 
 // Role-neutral in the tab title (the page itself says «تکلیف» / «تسک» once it knows the reader).
-export const metadata: Metadata = { title: "کار | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "کار" };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

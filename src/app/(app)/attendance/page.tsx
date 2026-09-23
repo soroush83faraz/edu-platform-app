@@ -16,7 +16,7 @@ import { formatTimeRangeFa, WEEKDAY_LABELS } from "@/lib/timetable";
 import { myAttendanceQuery, teacherDayQuery } from "@/modules/academic/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 
-export const metadata: Metadata = { title: "حضور و غیاب | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "حضور و غیاب" };
 
 /**
  * «حضور و غیاب» — one route, each hat its own view (the rule of `/timetable`): a teacher sees TODAY's زنگ‌ها with

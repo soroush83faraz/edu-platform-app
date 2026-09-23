@@ -16,7 +16,7 @@ type AdminNavItem = import("@/lib/admin/nav").AdminNavItem;
 
 function render(role: "admin" | "teacher" | "student" | null, at = "/home", adminItems?: readonly AdminNavItem[]) {
   pathname = at;
-  const html = renderToStaticMarkup(createElement(AppNav, { schoolName: "دبستان", productName: "سامانهٴ مدرسه", role, adminItems }));
+  const html = renderToStaticMarkup(createElement(AppNav, { schoolName: "دبستان", productName: "دانینو", role, adminItems }));
   const links = [...html.matchAll(/<a([^>]*)href="([^"]+)"([^>]*)>(.*?)<\/a>/g)].map((m) => ({
     href: m[2],
     current: /aria-current="page"/.test(m[1] + m[3]),

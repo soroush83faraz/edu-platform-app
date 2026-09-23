@@ -7,6 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
     name,
+    // «دانینو» is 6 characters, so the product's own name is its own short name; a long `PRODUCT_NAME` override
+    // falls back to the category word, which is what a launcher can fit.
     short_name: name.length > 12 ? "مدرسه" : name,
     description: "پنل من، اعلان‌ها و مدیریت مدرسه — روی گوشی",
     lang: "fa",

@@ -16,7 +16,7 @@ import type { InboxTab } from "@/modules/workspace/dto";
 import { listInboxQuery } from "@/modules/workspace/queries";
 import { InboxRow } from "@/modules/workspace/ui/InboxRow";
 
-export const metadata: Metadata = { title: "درس | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "درس" };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const TABS: Array<{ tab: Exclude<InboxTab, "all">; label: string; icon: LucideIcon }> = [

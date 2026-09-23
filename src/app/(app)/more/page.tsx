@@ -11,7 +11,7 @@ import { UPCOMING_MODULES } from "@/lib/modules-registry";
 import { myLoginIdentifierQuery } from "@/lib/profile-queries";
 import { logoutAction } from "@/modules/iam/actions";
 
-export const metadata: Metadata = { title: "بیشتر | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "بیشتر" };
 
 const ROLE_NAMES: Record<string, string> = {
   org_admin: "مدیر سازمان",

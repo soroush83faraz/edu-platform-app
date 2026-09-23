@@ -8,7 +8,7 @@ import { getRequestContext } from "@/lib/ctx";
 import { productName } from "@/lib/product";
 import { canAtAnyScope } from "@/modules/iam/can";
 
-export const metadata: Metadata = { title: "راهنما | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "راهنما" };
 
 interface Topic {
   id: string;

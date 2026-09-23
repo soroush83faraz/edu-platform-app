@@ -1,9 +1,10 @@
 "use client";
 
-import { BookOpen, CircleHelp, Ellipsis, LayoutGrid, type LucideIcon, Presentation, School, Settings2 } from "lucide-react";
+import { CircleHelp, Ellipsis, LayoutGrid, type LucideIcon, Presentation, School, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "cn";
+import { DoninoWordmark } from "@/components/brand/DoninoMark";
 import { formatNumberFa } from "@/lib/format";
 import { ADMIN_SECTION_ICONS, type AdminNavItem } from "@/lib/admin/nav";
 import type { NavRole } from "@/modules/iam/can";
@@ -49,8 +50,9 @@ const DRIFT = ["-4px", "0px", "4px"];
  * cell between its three columns. The neighbour drift comes back with the middle: while Home IS the current tab
  * its two neighbours ease 4 px outwards and settle back when another tab takes over (`--nav-drift` on the
  * relatively-positioned link, read by the logical `start-*` utility — no reflow, no RTL sign flip;
- * `motion-reduce` pins every cell at rest). The rail (264 px from `lg:`) opens with the product mark and name,
- * lists the same three, and inside /admin nests the admin sections under «مدیریت».
+ * `motion-reduce` pins every cell at rest). The rail (264 px from `lg:`) opens with the «دانینو» wordmark — the
+ * PRODUCT's own mark, never the role's — and the school under it, lists the same three, and inside /admin nests
+ * the admin sections under «مدیریت».
  */
 export function AppNav({ schoolName, productName, role, adminItems }: { schoolName: string; productName?: string; role: NavRole | null; adminItems?: readonly AdminNavItem[] }) {
   const pathname = usePathname();
@@ -85,19 +87,9 @@ export function AppNav({ schoolName, productName, role, adminItems }: { schoolNa
         </ul>
       </nav>
       <aside className="hidden w-rail shrink-0 flex-col border-e border-line bg-surface lg:sticky lg:top-0 lg:flex lg:h-screen">
-        {/* The product mark and name, the school under it — the one place the product introduces itself. */}
-        <div className="flex min-h-20 items-center gap-3 px-5 pt-1">
-          <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-xl bg-hero text-white shadow-1">
-            <BookOpen className="size-5" strokeWidth={2} />
-          </span>
-          <span className="flex min-w-0 flex-col">
-            <span className="truncate text-row font-bold text-text">{productName ?? schoolName}</span>
-            {productName ? (
-              <span className="truncate text-meta text-text-muted">
-                <bdi>{schoolName}</bdi>
-              </span>
-            ) : null}
-          </span>
+        {/* The «دانینو» wordmark, the school under it — the one place the product introduces itself. */}
+        <div className="flex min-h-20 items-center px-5 pt-1">
+          <DoninoWordmark name={productName ?? schoolName} sub={productName ? <bdi>{schoolName}</bdi> : null} size={40} />
         </div>
         <nav aria-label="پیمایش اصلی" className="flex-1 overflow-y-auto px-3 py-2">
           <ul className="flex flex-col gap-1">

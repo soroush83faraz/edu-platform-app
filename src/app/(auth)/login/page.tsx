@@ -8,7 +8,7 @@ import { LOGGED_OUT_MESSAGE } from "@/modules/iam/messages";
 import { safeNextPath } from "@/modules/iam/next-path";
 import { LoginForm } from "@/modules/iam/ui/LoginForm";
 
-export const metadata: Metadata = { title: "ورود | سامانهٴ مدرسه" };
+export const metadata: Metadata = { title: "ورود" };
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
