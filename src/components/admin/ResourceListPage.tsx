@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { Pagination, SearchForm, lastPage } from "@/components/admin/AdminPage";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { getAdminShell } from "@/lib/admin/admin-shell";
-import { ADMIN_SECTION_KEYS, schoolsLabelFa } from "@/lib/admin/nav";
+import { isAdminSectionFor, schoolsLabelFa } from "@/lib/admin/nav";
 import { ResourceForm } from "@/components/admin/ResourceForm";
 import { ResourceTable } from "@/components/admin/ResourceTable";
 import { Button } from "@/components/ui/button";
@@ -19,9 +19,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * A structure page still renders inside the admin shell but is no longer one of its SECTIONS (round 5: the admin
  * nav is people and roles, the structure pages are Home tiles). Its way back is therefore Home — the place its
  * tile is on — never a section list that no longer contains it. Nested resources keep their parent's back link.
+ *
+ * Per CALLER since round 7: «مدرسه‌ها» is a section for the organization admin (no back link — the rail and the
+ * pill row are its way around) and a Home tile for a school-scoped admin (back to Home, where their tile is).
  */
-function backOutOfAdmin(key: string): { href: string; label: string } | undefined {
-  return ADMIN_SECTION_KEYS.has(key) ? undefined : { href: "/home", label: "خانه" };
+function backOutOfAdmin(key: string, org: boolean): { href: string; label: string } | undefined {
+  return isAdminSectionFor(key, { org }) ? undefined : { href: "/home", label: "خانه" };
 }
 
 /**
@@ -53,14 +56,15 @@ export async function ResourceListPage({ def, sp, parent, basePath, back }: { de
   };
   if (page > lastPage(total, pageSize)) redirect(hrefFor(lastPage(total, pageSize)));
   // «مدرسه» for a principal of exactly one school, «مدرسه‌ها» otherwise (owner's rule; the same cached scope read as the nav).
-  const title = def.key === "schools" ? schoolsLabelFa((await getAdminShell()).scope ?? { kind: "organization" }) : def.labelFaPlural;
+  const scope = (await getAdminShell()).scope ?? { kind: "organization" };
+  const title = def.key === "schools" ? schoolsLabelFa(scope) : def.labelFaPlural;
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         title={title}
         count={`${formatNumberFa(total)} مورد`}
         description={def.descriptionFa}
-        back={back ?? (def.parentParam ? { href: def.parentParam.backHref(parentId), label: def.parentParam.labelFa } : backOutOfAdmin(def.key))}
+        back={back ?? (def.parentParam ? { href: def.parentParam.backHref(parentId), label: def.parentParam.labelFa } : backOutOfAdmin(def.key, scope.kind === "organization"))}
         actions={
           <>
             {def.links?.map((l) => (

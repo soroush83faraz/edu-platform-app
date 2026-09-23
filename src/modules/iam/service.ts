@@ -54,7 +54,12 @@ export const MESSAGES = {
   roleNotManual: "این نقش به‌صورت دستی داده نمی‌شود.",
   roleScopeNotAllowed: "این نقش در این دامنه قابل تخصیص نیست.",
   roleSchoolRequired: "برای این نقش، مدرسه را انتخاب کنید.",
-  orgRoleForbidden: "فقط مدیر سازمان می‌تواند نقش سطح سازمان بدهد.",
+  /**
+   * Owner's rule (round 7): an organization has EXACTLY ONE مدیر سازمان and no screen hands that role out. This
+   * replaced `orgRoleForbidden` («فقط مدیر سازمان می‌تواند نقش سطح سازمان بدهد.»), which only said WHO could —
+   * and now nobody can.
+   */
+  orgRoleNotGrantable: "نقش مدیر سازمان از این بخش داده نمی‌شود.",
   orgRoleRevokeForbidden: "فقط مدیر سازمان می‌تواند نقش سطح سازمان را لغو کند.",
   principalRoleForbidden: "فقط مدیر سازمان می‌تواند نقش مدیر مدرسه بدهد.",
   principalRoleRevokeForbidden: "فقط مدیر سازمان می‌تواند نقش مدیر مدرسه را لغو کند.",
@@ -384,10 +389,14 @@ export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 /** Manager roles scoped to a school (they need a `schoolId`), in picker order. */
 export const SCHOOL_ROLES: readonly AssignableRole[] = ["school_principal", "vice_principal"];
 /**
- * Owner's matrix (docs/admin.md «ماتریس اعطای نقش»): `org_admin` AND `school_principal` are granted and revoked by
- * an ORGANIZATION-scoped holder of `iam.role_assignment.write` only — a principal cannot mint or unseat a principal.
+ * Owner's matrix (docs/admin.md «ماتریس اعطای نقش»): `school_principal` is granted and revoked by an
+ * ORGANIZATION-scoped holder of `iam.role_assignment.write` only — a principal cannot mint or unseat a principal.
+ *
+ * `org_admin` is NOT in this list any more (round 7): an organization has exactly ONE مدیر سازمان and no screen
+ * grants that role to anybody — `resolveRoleGrant` refuses it outright, above this check. Revoking is untouched:
+ * an `org_admin` assignment is organization-SCOPED, so `revokeRoleAssignment`'s `orgLevel` rule still catches it.
  */
-export const ORG_GRANTED_ROLES: readonly AssignableRole[] = ["org_admin", "school_principal"];
+export const ORG_GRANTED_ROLES: readonly AssignableRole[] = ["school_principal"];
 /** What a SCHOOL-scoped holder of `iam.role_assignment.write` (a principal) may grant/revoke, at their own schools. */
 export const SCHOOL_GRANTABLE_ROLES: readonly AssignableRole[] = ["vice_principal"];
 
@@ -423,14 +432,17 @@ export interface RoleGrantOptions<S> {
 
 /**
  * Which manager roles the caller may grant and where — the picker-side mirror of the `can(iam.role_assignment.write)`
- * check `assignRole` enforces (docs/admin.md «ماتریس اعطای نقش»): an organization-scoped holder grants every role
- * at every school; a school-scoped holder (a principal) grants `vice_principal` only, at the schools of the
+ * check `assignRole` enforces (docs/admin.md «ماتریس اعطای نقش»): an organization-scoped holder grants the SCHOOL
+ * roles at every school; a school-scoped holder (a principal) grants `vice_principal` only, at the schools of the
  * assignments that carry the permission; anyone else (vice principals) grants nothing. `schools` are the scope's
  * schools, so an option here is never a school the caller cannot see.
+ *
+ * `org_admin` is offered by NOBODY (round 7): the organization has one مدیر سازمان, established at seed time, and
+ * `resolveRoleGrant` refuses the role to every caller — so no picker may show it.
  */
 export function roleGrantOptions<S extends { value: string }>(assignments: readonly Assignment[], schools: readonly S[]): RoleGrantOptions<S> {
   const holders = assignments.filter((a) => a.permissions.includes("iam.role_assignment.write"));
-  if (holders.some((a) => a.scopeType === "organization")) return { roles: [...SCHOOL_ROLES, "org_admin"], schools: [...schools] };
+  if (holders.some((a) => a.scopeType === "organization")) return { roles: [...SCHOOL_ROLES], schools: [...schools] };
   const grantable = schools.filter((s) => canManageRole(assignments, SCHOOL_GRANTABLE_ROLES[0], s.value));
   if (grantable.length === 0) return { roles: [], schools: [] };
   return { roles: [...SCHOOL_GRANTABLE_ROLES], schools: grantable };
@@ -458,19 +470,26 @@ interface ResolvedRoleGrant {
  * up-front check of `createStaff` (so nothing is written for a grant the caller may not make):
  *   1. the caller is an admin at all (`getAdminScope`, FORBIDDEN otherwise — checked first so a non-admin learns
  *      nothing about school ids);
+ *   1b. the role is not `org_admin` (FORBIDDEN, «نقش مدیر سازمان از این بخش داده نمی‌شود.»): an organization has
+ *      EXACTLY ONE مدیر سازمان and no caller of this service hands that role to another person. The single
+ *      exception is the BOOTSTRAP — the actor establishing itself, `personId === ctx.personId`, which is what the
+ *      seeds do when they create an organization's first admin and is a no-op for anyone who already holds it
+ *      (only an organization-scoped holder of `iam.role_assignment.write` gets past step 4 at all);
  *   2. the code is manual and the role's `allowed_scope_types` accept the target scope;
  *   3. a school role's school exists here (NOT_FOUND) and, for a school-scoped caller, is one of theirs
  *      (NOT_FOUND — another school's id must look nonexistent, whether or not it exists);
  *   4. the caller holds the permission the grant needs (FORBIDDEN — the caller is known and the permission is a
- *      declared capability): `iam.role_assignment.write` at the ORGANIZATION for `org_admin` and `school_principal`
- *      (owner's rule: only the organization admin appoints principals — a principal may not mint a principal), at
- *      the school for `vice_principal`; for the `student` role `iam.person.write` at any scope (the role is the
- *      marker of a registered student, not an admin capability — the person must additionally be in scope, which
- *      `assignRole` checks once the person exists). docs/admin.md «ماتریس اعطای نقش».
+ *      declared capability): `iam.role_assignment.write` at the ORGANIZATION for `school_principal` (owner's rule:
+ *      only the organization admin appoints principals — a principal may not mint a principal), at the school for
+ *      `vice_principal`; for the `student` role `iam.person.write` at any scope (the role is the marker of a
+ *      registered student, not an admin capability — the person must additionally be in scope, which `assignRole`
+ *      checks once the person exists). docs/admin.md «ماتریس اعطای نقش».
  */
-async function resolveRoleGrant(tx: Tx, ctx: IamCtx, input: Omit<AssignRoleInput, "personId">): Promise<ResolvedRoleGrant> {
+async function resolveRoleGrant(tx: Tx, ctx: IamCtx, input: Omit<AssignRoleInput, "personId"> & { personId?: string }): Promise<ResolvedRoleGrant> {
   const adminScope = await getAdminScope(tx, ctx);
   if (!MANUAL_ROLE_CODES.has(input.roleCode)) throw validation(undefined, MESSAGES.roleNotManual);
+  // The one مدیر سازمان is bootstrapped, never granted: nobody may put this role on another person.
+  if (input.roleCode === "org_admin" && input.personId !== ctx.personId) throw forbidden(MESSAGES.orgRoleNotGrantable);
   const tpl = await findSystemRole(tx, input.roleCode);
   let target: RoleTarget;
   if (input.roleCode === "org_admin") {
@@ -487,9 +506,11 @@ async function resolveRoleGrant(tx: Tx, ctx: IamCtx, input: Omit<AssignRoleInput
   if (!tpl.allowedScopeTypes.includes(target.scopeType)) throw validation(undefined, MESSAGES.roleScopeNotAllowed);
   if (target.scopeType === "student") {
     if (!canAtAnyScope(ctx.assignments, "iam.person.write")) throw forbidden(MESSAGES.roleGrantForbidden);
-  } else if ((ORG_GRANTED_ROLES as readonly string[]).includes(input.roleCode)) {
-    // Organization-level permission only (no school ref): a school-scoped principal fails here even at their own school.
-    if (!(await can(tx, ctx, "iam.role_assignment.write"))) throw forbidden(input.roleCode === "org_admin" ? MESSAGES.orgRoleForbidden : MESSAGES.principalRoleForbidden);
+  } else if (target.scopeType === "organization" || (ORG_GRANTED_ROLES as readonly string[]).includes(input.roleCode)) {
+    // Organization-level permission only (no school ref): a school-scoped principal fails here even at their own
+    // school. An organization-scoped TARGET lands here too — only the `org_admin` bootstrap reaches it, and it
+    // needs the very permission only an organization admin holds.
+    if (!(await can(tx, ctx, "iam.role_assignment.write"))) throw forbidden(input.roleCode === "org_admin" ? MESSAGES.orgRoleNotGrantable : MESSAGES.principalRoleForbidden);
   } else {
     if (target.scopeType !== "school") throw validation(undefined, MESSAGES.roleScopeNotAllowed);
     if (!(await can(tx, ctx, "iam.role_assignment.write", { scopeType: "school", id: target.schoolId }))) throw forbidden(MESSAGES.roleGrantForbidden);
@@ -794,8 +815,10 @@ export async function createStaff(tx: Tx, ctx: IamCtx, input: CreateStaffInput):
   const schoolId = input.schoolId ?? input.roles?.find((r) => r.schoolId)?.schoolId ?? null;
   if (schoolId && !(await findSchoolById(tx, schoolId))) throw invalidReference(MESSAGES.schoolNotFound);
   // A grant the caller may not make (school outside their scope → NOT_FOUND, missing `iam.role_assignment.write`
-  // → FORBIDDEN) is refused BEFORE anything is written; assignRole re-checks per role once the person exists.
-  for (const r of input.roles ?? []) await resolveRoleGrant(tx, ctx, { roleCode: r.roleCode, schoolId: r.schoolId ?? null });
+  // → FORBIDDEN, `org_admin` for anyone but the bootstrap actor itself → FORBIDDEN) is refused BEFORE anything is
+  // written; assignRole re-checks per role once the person exists. `input.id` is the person-to-be, so the
+  // bootstrap («the seed creates the organization's own admin as itself») is decided here too, not only below.
+  for (const r of input.roles ?? []) await resolveRoleGrant(tx, ctx, { roleCode: r.roleCode, schoolId: r.schoolId ?? null, personId: input.id });
   const [p] = await tx
     .insert(person)
     .values({ ...(input.id ? { id: input.id } : {}), organizationId: ctx.orgId, ...names, gender: input.gender ?? null, externalRef, status: "active" })

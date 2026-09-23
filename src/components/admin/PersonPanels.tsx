@@ -207,7 +207,8 @@ export function RolesCard({ detail, caps, roleGrant }: { detail: PersonDetail; c
     start(async () => {
       if (!draft.roleCode) return;
       const code = draft.roleCode as AssignableRole;
-      const r = await assignRoleAction({ personId: detail.id, roleCode: code, schoolId: code === "org_admin" ? null : draft.schoolId || null });
+      // Every role the picker can offer is school-scoped: «مدیر سازمان» is granted by nobody (round 7).
+      const r = await assignRoleAction({ personId: detail.id, roleCode: code, schoolId: draft.schoolId || null });
       if (r.ok) {
         toast.success(r.data.created ? "نقش داده شد." : "این نقش از قبل وجود داشت.");
         setDraft((p) => ({ ...p, roleCode: "" }));
@@ -280,7 +281,7 @@ export function RolesCard({ detail, caps, roleGrant }: { detail: PersonDetail; c
               </option>
             ))}
           </SelectNative>
-          <SelectNative aria-label="مدرسهٴ نقش" value={draft.schoolId} onChange={(e) => setDraft((p) => ({ ...p, schoolId: e.target.value }))} disabled={draft.roleCode === "org_admin" || !draft.roleCode}>
+          <SelectNative aria-label="مدرسهٴ نقش" value={draft.schoolId} onChange={(e) => setDraft((p) => ({ ...p, schoolId: e.target.value }))} disabled={!draft.roleCode}>
             {roleGrant.schools.map((s) => (
               <option key={s.value} value={s.value}>
                 {s.label}

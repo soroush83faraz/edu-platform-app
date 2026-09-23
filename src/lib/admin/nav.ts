@@ -2,20 +2,27 @@
 // admin layout and the tests all read the same order and glyphs. «نمای کلی» is the /admin landing.
 //
 // Owner, QA round 5: «مدیریت» is a focused area for PEOPLE AND THEIR ROLES — دانش‌آموزان · کارکنان · کلاس‌ها ·
-// نقش‌ها, and nothing else. Everything that describes the school's STRUCTURE (مدرسه‌ها، سال تحصیلی، پایه‌ها،
-// درس‌ها، مقطع‌ها، راه‌اندازی) and the admin's «حضور و غیاب» report left this nav and became its own Home tile —
-// one door per destination, and that door is now on Home (docs/decisions.md «one home per destination»). The
-// pages themselves are untouched and still render inside the admin shell.
-import { GraduationCap, LayoutGrid, type LucideIcon, ShieldCheck, Users, UsersRound } from "lucide-react";
+// نقش‌ها. Everything that describes the school's STRUCTURE (سال تحصیلی، پایه‌ها، درس‌ها، مقطع‌ها) and the admin's
+// «حضور و غیاب» report left this nav and became its own Home tile — one door per destination, and that door is
+// now on Home (docs/decisions.md «one home per destination»). The pages themselves are untouched and still
+// render inside the admin shell.
+//
+// Round 7 (owner) brought TWO of them back, for the ORGANIZATION ADMIN alone: «مدرسه‌ها» (the list where schools
+// are defined) and «راه‌اندازی مدرسه» (the setup checklist). Both are ordinary sections here — same shape, same
+// glyph, same pill/rail rendering as their neighbours, no panel of their own on the landing page — and both are
+// `orgOnly`, so a school-scoped admin never meets them. Their Home tiles are gone: one door per destination
+// still holds, per person (a principal keeps the «مدرسه» tile that opens THEIR school's hub, which is a
+// different destination from the organization's list).
+import { GraduationCap, LayoutGrid, type LucideIcon, Rocket, School, ShieldCheck, Users, UsersRound } from "lucide-react";
 
-export type AdminSectionKey = "overview" | "students" | "staff" | "classes" | "roles";
+export type AdminSectionKey = "overview" | "students" | "staff" | "classes" | "roles" | "schools" | "setup";
 
 export interface AdminSection {
   key: AdminSectionKey;
   href: string;
   labelFa: string;
   icon: LucideIcon;
-  /** Organization admins only. Nothing in the people area is organization-only today; the filter stays for the next one. */
+  /** Organization admins only: whoever defines the schools of the organization and sets them up. */
   orgOnly?: boolean;
 }
 
@@ -25,10 +32,21 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
   { key: "staff", href: "/admin/staff", labelFa: "کارکنان", icon: UsersRound },
   { key: "classes", href: "/admin/classes", labelFa: "کلاس‌ها", icon: Users },
   { key: "roles", href: "/admin/roles", labelFa: "نقش‌ها", icon: ShieldCheck },
+  { key: "schools", href: "/admin/schools", labelFa: "مدرسه‌ها", icon: School, orgOnly: true },
+  { key: "setup", href: "/admin/onboarding", labelFa: "راه‌اندازی مدرسه", icon: Rocket, orgOnly: true },
 ];
 
 /** Every key the admin nav still owns — a resource page NOT in this set moved to Home and needs its own way back. */
 export const ADMIN_SECTION_KEYS: ReadonlySet<string> = new Set(ADMIN_SECTIONS.map((s) => s.key));
+
+/**
+ * Is this resource page one of THIS caller's sections? A section page needs no «خانه» back link (the pill row /
+ * rail is its way around), a page that is only a Home tile does. «مدرسه‌ها» is both, depending on the caller:
+ * a section for the organization admin, a Home tile for a school-scoped admin.
+ */
+export function isAdminSectionFor(key: string, opts: { org: boolean }): boolean {
+  return ADMIN_SECTIONS.some((s) => s.key === key && (!s.orgOnly || opts.org));
+}
 
 /** The serializable shape the client nav components receive (icons resolve by `key` on the client). */
 export interface AdminNavItem {

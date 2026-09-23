@@ -72,16 +72,19 @@ describe("B1 — offering edit through the mutation path", () => {
   });
 });
 
-describe("admin sub-navigation (owner's rule, QA round 2): «راه‌اندازی» is for the organization admin only", () => {
+describe("admin sub-navigation (owner's rule, QA round 2): «مدرسه‌ها» and «راه‌اندازی» are for the organization admin only", () => {
   const orgAdmin: Assignment = { roleCode: "org_admin", roleId: "r-org", scopeType: "organization", scopeId: f.ORG_A, permissions: ALL };
   it("school-scoped admins lose the organization-only entries; the organization admin keeps the whole list", () => {
     expect(adminNavFor([orgAdmin]).map((i) => i.href)).toEqual(ADMIN_NAV.map((i) => i.href));
     for (const assignments of [[principalOf(f.SCHOOL_A)], [viceOf(f.SCHOOL_A)]]) {
       const hrefs = adminNavFor(assignments).map((i) => i.href);
       expect(hrefs).not.toContain("/admin/onboarding");
+      // Round 7: the organization's schools LIST is organization-only too — a principal's door to their own
+      // school is the Home tile that opens that school's hub, never this list.
+      expect(hrefs).not.toContain("/admin/schools");
       expect(hrefs).toEqual(ADMIN_NAV.filter((i) => !i.orgOnly).map((i) => i.href));
     }
-    expect(ADMIN_NAV.filter((i) => i.orgOnly).map((i) => i.href)).toEqual(["/admin/onboarding"]);
+    expect(ADMIN_NAV.filter((i) => i.orgOnly).map((i) => i.href)).toEqual(["/admin/schools", "/admin/onboarding"]);
   });
 });
 
