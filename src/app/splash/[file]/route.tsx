@@ -14,5 +14,5 @@ export async function GET(_request: Request, { params }: { params: Promise<{ fil
   const { file } = await params;
   const size = splashSize(file);
   if (!size) return new Response(null, { status: 404 });
-  return renderSplash(size.width, size.height);
+  return renderSplash(size.width, size.height, size.dpr);
 }

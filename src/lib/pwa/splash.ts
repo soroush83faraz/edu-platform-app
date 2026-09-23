@@ -50,8 +50,8 @@ export function splashStartupImages(): Array<{ url: string; media: string }> {
   return SPLASH_SCREENS.map((s) => ({ url: `/splash/${splashFile(s)}`, media: splashMedia(s) }));
 }
 
-/** Device-pixel size of a splash file name, or null for a name this table does not produce. */
-export function splashSize(file: string): { width: number; height: number } | null {
+/** Device-pixel size of a splash file name (with the ratio that produced it), or null for an unknown name. */
+export function splashSize(file: string): { width: number; height: number; dpr: number } | null {
   const s = SPLASH_SCREENS.find((x) => splashFile(x) === file);
-  return s ? { width: s.width * s.dpr, height: s.height * s.dpr } : null;
+  return s ? { width: s.width * s.dpr, height: s.height * s.dpr, dpr: s.dpr } : null;
 }

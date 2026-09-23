@@ -34,11 +34,14 @@ export function renderAppIcon(size: number, maskable = false): ImageResponse {
 /**
  * An iOS launch screen (`src/lib/pwa/splash.ts`): the installed icon — the same squircle the Home Screen shows —
  * centred on the page ground, so the jump from tapping the icon to the first paint is the icon growing into the
- * app, never a white flash. Sized off the short side (26 %), so a phone and an iPad read alike. No text: satori
- * would not join Persian letters, and the name is under the icon on the Home Screen already.
+ * app, never a white flash. No text: the mark alone, the owner's call.
+ *
+ * It is the SAME composition the animated splash settles on (`src/components/brand/SplashScreen.tsx`), down to
+ * the size: `min(46vmin, 320px)` there is 46 % of the short side capped at 320 CSS pixels here, so the still the
+ * OS paints and the animation that takes over from it are one picture and nothing jumps between them.
  */
-export function renderSplash(width: number, height: number): ImageResponse {
-  const mark = Math.round(Math.min(width, height) * 0.26);
+export function renderSplash(width: number, height: number, dpr: number): ImageResponse {
+  const mark = Math.round(Math.min(Math.min(width, height) * 0.46, 320 * dpr));
   return new ImageResponse(
     (
       <div style={{ display: "flex", width, height, alignItems: "center", justifyContent: "center", background: MARK_CANVAS }}>

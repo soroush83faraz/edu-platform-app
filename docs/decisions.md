@@ -842,3 +842,60 @@ installed app, which must open with none. So:
   `apple-mobile-web-app-status-bar-style` `black-translucent`, `theme-color` `#072AC8`, `viewport-fit=cover` and the
   16 startup-image links. `tests/unit/pwa-install.test.ts` pins the manifest and the splash table. Not verifiable
   here: a real device install (Android and iOS) — the first owner install is the check.
+
+## 2026-09-23 — the opening splash: «دانینو» draws itself, and the owner's video is not shipped
+
+Owner: a 10-second video (640×360 h264, 572 KB) as «the opening splash when the app starts» — thin blue
+construction lines draw a geometric «D» inside crossing elliptical orbits, the strokes resolve into the solid mark,
+it settles. Then, after watching the first build: no wordmark, a much bigger mark, more life (orbits, a bloom, a
+settle, a shine), and — the bug — it must never hold the app up, must be there from the very first frame, and must
+play once per session and never again on a return to «خانه».
+
+- **The video is not shipped.** 572 KB before the first paint is most of a day's budget on the weak connections
+  our phones are on; a PWA launch screen cannot play video at all (Android paints `background_color` + icon, iOS
+  a still PNG); and a video would be a second drawing of the logo to keep in step with `src/lib/brand/mark.ts`.
+  The same idea is rebuilt from our own geometry as CSS over inline SVG — no dependency, no raster, no font.
+- **What plays** (`src/components/brand/SplashScreen.tsx`, keyframes in `globals.css` «Opening splash»):
+  0–520 ms the monogram's three sub-paths draw on as thin sky strokes (`pathLength="1"` + `stroke-dashoffset`,
+  `--ease-out`; `MONOGRAM_STROKES` keeps them apart because a dash pattern restarts on every sub-path of one `d`);
+  0–1000 ms three orbits at −26°/34°/78° draw on and sweep at 820/880/940 ms, fading; 480–760 ms the installed
+  icon (clay squircle, rim, white glyph — `markSvg`'s own stops) lands, settling from scale 1.06, while the strokes
+  fade; 500–900 ms one soft sky bloom pulses behind it; 760–1080 ms a shine crosses the glyph, clipped to the
+  squircle; 1000–1200 ms the layer fades. The mark is `min(46vmin, 320px)`; strokes are `non-scaling-stroke`
+  hairlines. Cost: ≈3.5 KB of markup (≈1.1 KB gzip) in each full document load plus its copy in the RSC payload,
+  ≈0.65 KB gzip of CSS, and two tiny client components — against 572 KB of video.
+- **An overlay, never a gate — and in the first frame.** The first build mounted after hydration from a client
+  effect, so the page appeared first and the splash a beat later. Now the overlay is server-rendered at the top of
+  `<body>` in the ROOT layout (which never remounts), preceded by `SPLASH_BOOT_SCRIPT`
+  (`src/lib/pwa/splash-gate.ts`), an inline script the parser runs before the first paint. It sets
+  `data-splash="on"` on `<html>` only for an installed app (`display-mode: standalone` / `minimal-ui` /
+  `navigator.standalone`) whose session has not had one, and CLAIMS the session in `sessionStorage` in the same
+  breath — before anything plays, so no refresh and no client-side navigation can start a second one. The overlay
+  is `display: none` unless that attribute is present, so a browser tab (any page, `/login` included) never lays
+  it out and cannot flash it. Anything that throws shows nothing. The decision is also the pure, unit-tested
+  `shouldShowSplash`; the script cannot import it, so `tests/unit/splash-gate.test.ts` pins what it contains.
+  The script goes through `InlineScript` (`src/components/InlineScript.tsx`) — Next's own «Preventing flash
+  before hydration» pattern: `text/javascript` on the server, `text/plain` on the client so a navigation never
+  re-runs it, a string child rather than `dangerouslySetInnerHTML` (ESLint `react/no-danger`), and
+  `suppressHydrationWarning` on `<html>` for the attribute. The CSP already allows inline scripts.
+- **It cannot hang.** The layer is `pointer-events: none` for its whole life and the app underneath renders and
+  takes input from the start. Its 1200 ms `splash-leave` is a CSS animation on the layer itself — ends at
+  `opacity: 0; visibility: hidden` with no listener and no JS, so a bundle that never arrives, a lost event or a
+  throttled timer cannot leave it standing. `SplashTimer` then only clears the attribute to take it out of the
+  render tree. With `prefers-reduced-motion: reduce` the global clamp collapses every animation, the leave
+  included, and `SplashTimer` clears it at once: the app simply opens, with no splash.
+- **The iOS launch images agree.** `renderSplash` draws the same picture at the same size — the installed icon
+  alone (no wordmark, the owner's call) centred on `canvas`, 46 % of the short side capped at 320 CSS px (was
+  26 %) — so the still the OS paints and the animation that takes over are one picture. `splashSize` now returns
+  the device-pixel ratio for that cap. (Tried along the way: satori DOES shape Persian with Vazirmatn's TTF handed
+  to it, so a wordmark on the launch image is possible later if the owner wants one.)
+- **Verified** on the dev server, with the boot script's standalone test temporarily forced true and then
+  reverted: the overlay and the script are in the server HTML (curl), the script runs before the overlay in the
+  body, and `splash-leave` starts at 0 on the document timeline — it was running from the first frame, not
+  mounted by React; with the overlay displayed, a real click and typing reached the login field underneath; the
+  overlay is out of the render tree by 1.2 s; a second full load in the same session and a client-side
+  navigation (/login → /help, with the flag deliberately cleared) did not replay it; frames at 380/640/810 ms
+  were inspected. With the real script, a plain browser tab on /login and /help lays nothing out, runs no splash
+  animation and does not claim the session. Not verifiable here: a real installed launch on Android/iOS, the
+  reduced-motion path in a browser (the pane cannot emulate it), and frame cost on a low-end phone — if the
+  owner's phone stutters, drop the bloom first, then the shine; never lengthen the timeline.

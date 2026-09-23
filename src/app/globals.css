@@ -542,6 +542,153 @@
     }
   }
 }
+/* ---- Opening splash. The owner's launch animation (`src/components/brand/SplashScreen.tsx`), rebuilt from our
+   own monogram: the «D» draws itself in thin sky construction lines while three tilted orbits sweep past, the
+   finished clay icon lands with a soft bloom, a shine crosses it, and the whole layer leaves. The overlay is in
+   the server-rendered HTML, so it is painted with the FIRST frame; the boot script in the root layout sets
+   `data-splash="on"` before that frame and only then — installed app, first document load of the session — so a
+   browser tab lays nothing out and never flashes it (`src/lib/pwa/splash-gate.ts`).
+
+   `splash-leave` on the layer itself IS the hard cap: 1200 ms of CSS, no listener, no timer, nothing a throttled
+   tab or a bundle that never arrives can lose. Everything below must finish inside it. The layer is
+   `pointer-events: none` for its whole life and the app underneath is live and interactive throughout. With
+   reduced motion the base-layer clamp collapses every one of these, the leave included: the app just opens. ---- */
+.splash-layer {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  place-items: center;
+  background-color: var(--color-canvas);
+  pointer-events: none;
+}
+html[data-splash="on"] .splash-layer {
+  display: grid;
+  animation: splash-leave 1200ms linear both;
+}
+@keyframes splash-leave {
+  0%,
+  83.34% {
+    opacity: 1;
+    animation-timing-function: var(--ease-out);
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+/* The mark dominates the screen (the owner) but never touches an edge, and the orbits reach past the square. */
+.splash-art {
+  inline-size: min(46vmin, 320px);
+  block-size: min(46vmin, 320px);
+  overflow: visible;
+}
+.splash-bloom-core {
+  stop-color: var(--color-sky);
+  stop-opacity: 0.4;
+}
+.splash-bloom-edge {
+  stop-color: var(--color-sky);
+  stop-opacity: 0;
+}
+.splash-bloom {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: splash-pulse 400ms var(--ease-out) 500ms both;
+}
+@keyframes splash-pulse {
+  from {
+    opacity: 0;
+    scale: 0.82;
+  }
+  45% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 1.16;
+  }
+}
+/* Each orbit turns about the mark at its own speed and fades; the lean is the ellipse's own attribute. */
+.splash-orbit {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: splash-sweep 820ms var(--ease-out) both;
+}
+@keyframes splash-sweep {
+  from {
+    opacity: 0;
+    rotate: -30deg;
+  }
+  25% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    rotate: 16deg;
+  }
+}
+/* Orbits and outlines arrive the same way: `pathLength="1"` normalises every element, so one dash of 1 with the
+   offset running 1 → 0 draws each of them end to end — and `non-scaling-stroke` keeps the line a hairline at any
+   screen size instead of thickening with the mark. */
+.splash-trace {
+  fill: none;
+  stroke: var(--color-sky);
+  stroke-width: 1.25;
+  stroke-opacity: 0.5;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: splash-draw 560ms var(--ease-out) both;
+}
+.splash-ink {
+  fill: none;
+  stroke: var(--color-sky);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation:
+    splash-draw 520ms var(--ease-out) both,
+    splash-ink-out 220ms var(--ease-out) 480ms both;
+}
+@keyframes splash-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+@keyframes splash-ink-out {
+  to {
+    stroke-opacity: 0;
+  }
+}
+/* The icon lands as the lines leave: it fades in and settles the last 6 % of its size. */
+.splash-solid {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: splash-land 280ms var(--ease-out) 480ms both;
+}
+@keyframes splash-land {
+  from {
+    opacity: 0;
+    scale: 1.06;
+  }
+}
+/* One shine across the glyph, clipped to the squircle — it starts and ends outside it. */
+.splash-shine {
+  animation: splash-shine 320ms var(--ease-in-out) 760ms both;
+}
+@keyframes splash-shine {
+  from {
+    translate: 0;
+  }
+  to {
+    translate: 120px;
+  }
+}
+
 /* Credentials sheets (/admin/…/credentials): A4, RTL, 3×4 cut-out slips per page; the app frame disappears. */
 @media print {
   @page {

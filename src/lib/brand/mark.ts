@@ -47,6 +47,14 @@ const INNER_COUNTER = "M21 27H32C34.76 27 37 29.24 37 32C37 34.76 34.76 37 32 37
 export const MONOGRAM_PATH = [OUTER, CHANNEL, INNER_COUNTER].join(" ");
 
 /**
+ * The same three sub-paths kept apart, for the ONE rendering that strokes the monogram instead of filling it: the
+ * opening splash draws each outline with `stroke-dasharray`/`stroke-dashoffset` (`SplashScreen`). They must be
+ * separate elements there — a dash pattern restarts on every sub-path of a single `d`, so the short counter would
+ * finish long before the outer D; one `pathLength="1"` per element makes all three draw in the same time.
+ */
+export const MONOGRAM_STROKES: readonly string[] = [OUTER, CHANNEL, INNER_COUNTER];
+
+/**
  * How much of the icon square the monogram takes (its ink spans 6…58 of the 64 grid, so 0.78 lands it on ~63 %
  * of the square — the proportion a launcher icon wants). `translate(32,32) scale(s) translate(-32,-32)`, folded.
  */
@@ -57,7 +65,9 @@ export const MONOGRAM_ICON_TRANSFORM = `translate(${OFFSET.toFixed(2)} ${OFFSET.
 /** The rim light of the clay material: a hairline of white inside the edge. */
 export const MARK_RIM_OPACITY = 0.22;
 
-const RADIUS = (MARK_RADIUS_PCT / 100) * 64;
+/** The squircle's corner radius in grid units — the icon, and the splash that settles on it, share it. */
+export const MARK_RADIUS_UNITS = (MARK_RADIUS_PCT / 100) * 64;
+const RADIUS = MARK_RADIUS_UNITS;
 
 /**
  * The installed icon as a self-contained SVG string, for satori (`ImageResponse` cannot render our JSX component:

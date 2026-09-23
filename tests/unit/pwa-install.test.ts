@@ -42,7 +42,7 @@ describe("iOS launch screens", () => {
     for (const s of SPLASH_SCREENS) {
       expect(s.height).toBeGreaterThan(s.width);
       expect(splashMedia(s)).toContain("(orientation: portrait)");
-      expect(splashSize(splashFile(s))).toEqual({ width: s.width * s.dpr, height: s.height * s.dpr });
+      expect(splashSize(splashFile(s))).toEqual({ width: s.width * s.dpr, height: s.height * s.dpr, dpr: s.dpr });
     }
     expect(splashSize("apple-splash-1x1.png")).toBeNull();
   });
