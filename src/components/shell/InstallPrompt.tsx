@@ -33,7 +33,9 @@ function remember(): void {
 
 /**
  * «نصب برنامه روی گوشی»: Android/Chrome gets the native prompt (deferred `beforeinstallprompt`); iOS Safari gets
- * the three-step sheet. Hidden when already installed (`display-mode: standalone`) or dismissed within 7 days.
+ * the three-step sheet. Hidden when already installed (`display-mode: standalone` / `minimal-ui`, iOS
+ * `navigator.standalone`) or dismissed within 7 days. Installing IS the answer to «the address bar is ugly»: only
+ * the Home Screen icon opens without browser chrome (manifest `display`, docs/pwa.md «نصب روی گوشی»).
  */
 export function InstallPrompt() {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
@@ -89,7 +91,7 @@ export function InstallPrompt() {
           <h3 id="install-heading" className="text-sm font-semibold text-primary-900">
             نصب برنامه روی گوشی
           </h3>
-          <p className="text-meta text-primary-800">بدون فروشگاه؛ یک آیکون روی صفحهٴ اصلی و باز شدن سریع.</p>
+          <p className="text-meta text-primary-800">بدون فروشگاه؛ یک آیکون روی صفحهٴ اصلی که بدون نوار مرورگر باز می‌شود.</p>
           <div className="mt-2 flex items-center gap-1">
             <Button type="button" size="sm" className="font-semibold" onClick={install}>
               {mode === "ios" ? "راهنمای نصب" : "نصب"}

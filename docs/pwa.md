@@ -1,14 +1,22 @@
 # نصب روی گوشی (PWA) — فاز ۱
 
-منبع حقیقت: `src/app/manifest.ts`، `src/app/{icon,apple-icon}.tsx` + `src/app/icons/[file]/route.tsx` (نشان برنامه از `src/lib/pwa/app-icon.tsx`)، `src/lib/pwa/{sw,should-cache,client}.ts`، `scripts/build-sw.ts`، `src/components/shell/{ServiceWorkerRegistration,InstallPrompt,LogoutButton}.tsx`، صفحهٴ `src/app/~offline/page.tsx`، سرآیندهای امنیتی در `next.config.ts`. تست: `tests/unit/should-cache.test.ts`.
+منبع حقیقت: `src/app/manifest.ts`، `src/app/layout.tsx` (`appleWebApp`، `viewport`، نوار وضعیت)، `src/app/{icon,apple-icon}.tsx` + `src/app/icons/[file]/route.tsx` + `src/app/splash/[file]/route.tsx` (نشان برنامه و صفحهٴ آغاز از `src/lib/pwa/app-icon.tsx`، جدولِ اندازه‌ها در `src/lib/pwa/splash.ts`)، `src/lib/pwa/{sw,should-cache,client}.ts`، `scripts/build-sw.ts`، `src/components/shell/{ServiceWorkerRegistration,InstallPrompt,LogoutButton}.tsx`، صفحهٴ `src/app/~offline/page.tsx`، سرآیندهای امنیتی در `next.config.ts`. تست: `tests/unit/should-cache.test.ts`، `tests/unit/pwa-install.test.ts`، `tests/unit/brand.test.ts`.
 
-## نصب
+## نصب روی گوشی
 
-- **اندروید / کروم**: در صفحهٴ خانه کارت «نصب برنامه روی گوشی» نشان داده می‌شود (رویداد `beforeinstallprompt` نگه داشته می‌شود و با دکمهٴ «نصب» به مرورگر داده می‌شود). «بعداً» کارت را ۷ روز پنهان می‌کند (`localStorage`، در `try/catch`). کروم خودش هم گزینهٴ «افزودن به صفحهٴ اصلی» را در منو دارد.
-- **آیفون / سافاری**: همان کارت با دکمهٴ «راهنمای نصب» یک برگهٴ سه‌مرحله‌ای نشان می‌دهد: هم‌رسانی ← «افزودن به صفحهٴ اصلی» ← «افزودن». سافاری رویداد نصب ندارد؛ راه دیگری نیست.
-- وقتی برنامه از صفحهٴ اصلی باز شود (`display-mode: standalone`) کارت پنهان است.
-- مانیفست: `/manifest.webmanifest` با `lang: fa`، `dir: rtl`، `start_url: /home`، `display: standalone`، رنگ تم `#072AC8` (persian-blue)، پس‌زمینه `#F4F7FD`. نام از `PRODUCT_NAME` (اختیاری؛ پیش‌فرض «دانینو»؛ هرگز «همکلاسی»).
-- آیکون‌ها با `ImageResponse` در زمان build ساخته می‌شوند (بدون فایل PNG در مخزن، بدون وابستگی تازه): `/icons/icon-192.png`، `/icons/icon-512.png`، `/icons/icon-512-maskable.png`، `/apple-icon` (۱۸۰) و `/icon/32` برای تب مرورگر. نشان: مربع گردِ آبی با کتاب باز سفید و نقطهٴ زرد.
+نوارِ نشانیِ مرورگر و خطِ سرآیندش **مالِ مرورگر است، نه برنامه**: در یک زبانهٴ معمولیِ کروم یا سافاری هیچ صفحه‌ای نمی‌تواند آن را بردارد. تنها راهِ دیدنِ برنامه **بدون نوار مرورگر** این است که یک‌بار روی صفحهٴ اصلیِ گوشی نصب شود و از همان آیکون باز شود.
+
+- **اندروید (کروم)**: منوی سه‌نقطهٔ کروم ← «افزودن به صفحهٴ اصلی» (یا «نصب برنامه») ← «نصب». یا در صفحهٴ خانه روی کارت «نصب برنامه روی گوشی» دکمهٴ «نصب» را بزنید.
+- **آیفون و آی‌پد (سافاری)**: دکمهٴ «هم‌رسانی» (Share) در نوار پایین ← «افزودن به صفحهٴ اصلی» (Add to Home Screen) ← «افزودن». نصب فقط از خودِ سافاری ممکن است. کارت خانه با «راهنمای نصب» همین سه گام را نشان می‌دهد.
+- **بعد از نصب** فقط آیکونِ «دانینو» روی صفحهٴ اصلی برنامه را بی‌نوارِ مرورگر باز می‌کند؛ اگر همان نشانی را در زبانهٴ مرورگر باز کنید، نوار نشانی سرِ جایش است — این رفتارِ مرورگر است و از سمت ما برداشتنی نیست.
+
+### چه چیزی آن را بی‌نوار می‌کند
+
+- **مانیفست** (`/manifest.webmanifest`): `display: standalone` با `display_override: ["standalone", "minimal-ui"]` (مرورگری که standalone ندارد، نوارِ کوچکِ برگشت/بارگذاری می‌گیرد نه زبانهٴ کامل)؛ `id: "/"` (شناسهٴ نصب‌های قبلی — عوض نمی‌شود)، `start_url: /home`، `scope: /` (هیچ پیوندی از برنامه بیرون نمی‌افتد)، `orientation: portrait`، `lang: fa`، `dir: rtl`؛ `theme_color` = `#072AC8` (persian-blue — رنگِ نوار وضعیتِ اندروید)، `background_color` = `#E8EEF9` (`canvas`، زمینهٴ صفحه‌ها — صفحهٴ آغازِ اندروید بی‌پرش به اولین نقاشی می‌رسد). نام از `PRODUCT_NAME` (اختیاری؛ پیش‌فرض «دانینو»؛ هرگز «همکلاسی»).
+- **آیفون** (`metadata.appleWebApp` در `src/app/layout.tsx`): `apple-mobile-web-app-capable` (Next 16 خودش فقط `mobile-web-app-capable` را می‌نویسد؛ نامِ اپل برای iOS پیش از ۱۶٫۴ از `metadata.other` می‌آید)، `apple-mobile-web-app-status-bar-style: black-translucent` (صفحه زیرِ نوار وضعیت کشیده می‌شود و متنِ نوار سفید است)، `apple-mobile-web-app-title` = «دانینو»، و برای هر اندازهٴ آیفون/آی‌پد یک `apple-touch-startup-image` با media query دقیقِ دستگاه (۱۶ اندازه، فقط عمودی) تا به‌جای صفحهٴ سفید، آیکونِ برنامه روی زمینهٴ `canvas` دیده شود.
+- **نوار وضعیت رنگ می‌گیرد، نه نوار سفید**: `viewport-fit=cover` و `theme-color` = persian-blue؛ در `body` یک نوارِ ثابت به بلندیِ `env(safe-area-inset-top)` با `bg-primary-600` هست — روی آیفونِ نصب‌شده همان‌جایی را که نوار وضعیتِ شفاف رویش می‌نشیند آبی می‌کند، و هر جای دیگر (زبانهٴ مرورگر، دسکتاپ، اندروید) بلندی‌اش صفر است. سرآیندِ گوشی در `AppShell` بلندی‌اش `3.5rem + safe-area-inset-top` است و محتوایش را با همان مقدار پایین می‌برد؛ `PublicShell` هم همین را دارد، صفحه‌های ورود با `max(2rem, safe-area-inset-top)` و نوار پایین با `safe-area-inset-bottom`.
+- کارت «نصب برنامه روی گوشی» (`InstallPrompt`، فقط در خانه): اندروید رویداد `beforeinstallprompt` را نگه می‌دارد و با «نصب» به مرورگر می‌دهد؛ آیفون برگهٴ سه‌گامی می‌گیرد. «بعداً» کارت را ۷ روز پنهان می‌کند (`localStorage`، در `try/catch`). وقتی برنامه نصب‌شده باز شده (`display-mode: standalone` یا `minimal-ui`، یا `navigator.standalone` در iOS) کارت نیست.
+- آیکون‌ها با `ImageResponse` ساخته می‌شوند (بدون فایل PNG در مخزن، بدون وابستگی تازه): `/icons/icon-192.png`، `/icons/icon-512.png` (`purpose: any`)، `/icons/icon-512-maskable.png` (`purpose: maskable`، تمام‌رخ با نشان در ناحیهٴ امنِ ۸۰٪)، `/apple-icon` (۱۸۰، تمام‌رخ — iOS گوشه‌ها را خودش گرد می‌کند)، `/icon/32` و `/icon/192` برای تب مرورگر، و `/splash/apple-splash-<عرض>x<ارتفاع>.png`. نشان: مونوگرامِ «D»ِ «دانینو»، سفید روی مربعِ گردِ persian-blue (هندسه در `src/lib/brand/mark.ts`، همان نشانِ ریل دسکتاپ).
 
 ## چه چیزی روی گوشی نگه داشته می‌شود؟ (فقط پوسته)
 

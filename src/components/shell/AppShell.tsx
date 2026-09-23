@@ -42,7 +42,7 @@ export async function AppShell({ ctx, children, adminItems }: { ctx: Ctx; childr
       <h1 className="sr-only">{title}</h1>
       <AppNav schoolName={title} productName={productName()} role={navRole} hats={hats} adminItems={adminItems} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex h-14 items-center gap-3 bg-canvas/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm lg:hidden">
+        <header className="sticky top-0 z-10 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-3 bg-canvas/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm lg:hidden">
           {/* The square that stood for the school is now the ROLE mark (owner): same place, same 32 px, glyph
               swapped for the hat's — the school NAME beside it is untouched. No chip, no second element. */}
           {hats.length > 0 ? <RoleMark hats={hats} /> : <DoninoMark size={32} />}

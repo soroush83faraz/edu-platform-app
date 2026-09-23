@@ -14,7 +14,9 @@ export async function clearAllCaches(): Promise<void> {
 export function isStandalone(): boolean {
   if (typeof window === "undefined") return false;
   const nav = window.navigator as Navigator & { standalone?: boolean };
-  return window.matchMedia?.("(display-mode: standalone)").matches === true || nav.standalone === true;
+  // `minimal-ui` is the manifest's `display_override` fallback — installed too, just with a back/reload strip.
+  const installed = (mode: string) => window.matchMedia?.(`(display-mode: ${mode})`).matches === true;
+  return installed("standalone") || installed("minimal-ui") || nav.standalone === true;
 }
 
 export function isIosSafari(): boolean {
