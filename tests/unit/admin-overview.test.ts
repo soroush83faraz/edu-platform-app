@@ -32,6 +32,7 @@ const counts: AdminCounts = {
   teacherAssignments: 40,
   staff: 18,
   students: 175,
+  managerRoles: 3,
   activeEnrollments: 175,
   studentsWithoutClass: 0,
   accountsPending: 0,

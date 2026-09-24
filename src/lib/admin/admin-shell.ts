@@ -40,6 +40,7 @@ export function adminNavItems(assignments: readonly Assignment[], shell: AdminSh
     .map((item) => {
       if (!c) return item;
       if (item.key === "students" || item.key === "staff" || item.key === "classes" || item.key === "schools") return { ...item, count: c[item.key] };
+      if (item.key === "roles") return { ...item, count: c.managerRoles };
       if (item.key === "setup") {
         const p = onboardingProgress(c);
         return { ...item, count: p.total - p.done };
