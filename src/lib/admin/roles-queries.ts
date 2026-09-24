@@ -44,6 +44,8 @@ export const rolesPageQuery = defineQuery({ permission: "iam.person.read", scope
         isNull(roleAssignment.revokedAt),
         eq(roleAssignment.sourceType, "manual"),
         sql`${roleAssignment.scopeType} in ('organization', 'school', 'branch')`,
+        // نقش مدیر سازمان از این فهرست حذف است: یکتاست و فقط با کد تعریف/حذف می‌شود، نه از رابط کاربری (owner).
+        sql`${role.code} <> 'org_admin'`,
         // School scope: only school-/branch-scoped assignments inside the caller's schools (organization roles never).
         scope.kind === "organization"
           ? undefined
