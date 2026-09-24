@@ -55,7 +55,7 @@ export const SYSTEM_ROLES: SystemRole[] = [
   {
     code: "vice_principal",
     name: "معاون",
-    description: "کارتابل، افراد، ثبت‌نام، حساب‌ها و تعیین دبیر در سطح مدرسه یا شعبه",
+    description: "کارتابل، افراد، ثبت‌نام، حساب‌ها و تعیین دبیر در سطح مدرسه",
     allowedScopeTypes: ["school", "branch"],
     permissions: [
       "iam.admin.access",

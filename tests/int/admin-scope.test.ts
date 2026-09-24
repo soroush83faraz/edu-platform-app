@@ -622,7 +622,8 @@ describe("admin scope hardening", () => {
       expect(canManageRole(principal.assignments, "org_admin", null)).toBe(false);
       expect(canManageRole(w.ctx.s2Vice.assignments, "vice_principal", w.s2.schoolId)).toBe(false);
       expect(canManageRole(orgAdmin.assignments, "school_principal", w.s2.schoolId)).toBe(true);
-      expect(canManageRole(orgAdmin.assignments, "org_admin", null)).toBe(true);
+      // نقش مدیر سازمان از هیچ رابط کاربری‌ای مدیریت نمی‌شود — حتی توسط یک مدیر سازمان (owner؛ یکتا و کد-محور).
+      expect(canManageRole(orgAdmin.assignments, "org_admin", null)).toBe(false);
       const detail = await getPersonDetail(tx, await getAdminScope(tx, principal), staff.personId, principal.assignments);
       expect(detail.roles.map((r) => [r.roleCode, r.schoolId, r.revocable])).toEqual([
         ["school_principal", w.s2.schoolId, false],

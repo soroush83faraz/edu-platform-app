@@ -78,13 +78,13 @@ describe("admin sub-navigation (owner's rule, QA round 2): «مدرسه‌ها»
     expect(adminNavFor([orgAdmin]).map((i) => i.href)).toEqual(ADMIN_NAV.map((i) => i.href));
     for (const assignments of [[principalOf(f.SCHOOL_A)], [viceOf(f.SCHOOL_A)]]) {
       const hrefs = adminNavFor(assignments).map((i) => i.href);
-      expect(hrefs).not.toContain("/admin/onboarding");
+      expect(hrefs).not.toContain("/admin/infrastructure");
       // Round 7: the organization's schools LIST is organization-only too — a principal's door to their own
       // school is the Home tile that opens that school's hub, never this list.
       expect(hrefs).not.toContain("/admin/schools");
       expect(hrefs).toEqual(ADMIN_NAV.filter((i) => !i.orgOnly).map((i) => i.href));
     }
-    expect(ADMIN_NAV.filter((i) => i.orgOnly).map((i) => i.href)).toEqual(["/admin/schools", "/admin/onboarding"]);
+    expect(ADMIN_NAV.filter((i) => i.orgOnly).map((i) => i.href)).toEqual(["/admin/schools", "/admin/infrastructure"]);
   });
 });
 
@@ -141,12 +141,12 @@ describe("every admin resource: edit payload ⊆ schema (no required key the edi
     }
   });
 
-  it("QA round 2: the empty class create names the create-only selects too («مدرسه / شعبه», «سال تحصیلی»)", async () => {
+  it("QA round 2: the empty class create names the create-only selects too («مدرسه», «سال تحصیلی»)", async () => {
     await rolledBack(async (tx) => {
       const principal = ctxOf(principalOf(f.SCHOOL_A));
       const base = { gradeLevelId: f.GRADE_A, name: "۱۰/۹", capacity: null };
       await expect(mutateResource(tx, principal, { resource: "classes", op: "create", data: { ...base, branchId: "", academicYearId: "" } })).rejects.toSatisfy(
-        (e: unknown) => AppError.is(e) && e.code === "VALIDATION" && JSON.stringify(e.details) === JSON.stringify({ fieldErrors: { branchId: ["مدرسه / شعبه را انتخاب کنید."], academicYearId: ["سال تحصیلی را انتخاب کنید."] } }),
+        (e: unknown) => AppError.is(e) && e.code === "VALIDATION" && JSON.stringify(e.details) === JSON.stringify({ fieldErrors: { branchId: ["مدرسه را انتخاب کنید."], academicYearId: ["سال تحصیلی را انتخاب کنید."] } }),
       );
       await expect(mutateResource(tx, principal, { resource: "classes", op: "create", data: { ...base, branchId: f.BRANCH_A, academicYearId: "" } })).rejects.toSatisfy(
         (e: unknown) => AppError.is(e) && e.code === "VALIDATION" && e.message === "سال تحصیلی را انتخاب کنید.",

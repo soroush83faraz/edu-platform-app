@@ -12,8 +12,11 @@ import { staffOptions } from "./resources";
 
 export const studentsListQuery = defineQuery({ schema: PeopleListInput, permission: "iam.person.read", scope: "any" }, async (tx, input, ctx) => {
   const scope = await getAdminScope(tx, ctx);
-  const page = await listStudents(tx, scope, { q: input.q, page: input.page, pageSize: PAGE_SIZE, pending: input.pending, noClass: input.noClass, classGroupId: input.classGroupId });
-  return { ...page, page: input.page, pageSize: PAGE_SIZE, scope };
+  // `?school=` narrows the list to one school's own students (the school hub's link); out of scope = NOT_FOUND.
+  if (input.schoolId) assertSchoolInScope(scope, input.schoolId);
+  const page = await listStudents(tx, scope, { q: input.q, page: input.page, pageSize: PAGE_SIZE, pending: input.pending, noClass: input.noClass, classGroupId: input.classGroupId, schoolId: input.schoolId });
+  const school = input.schoolId ? await findSchoolById(tx, input.schoolId) : null;
+  return { ...page, page: input.page, pageSize: PAGE_SIZE, scope, school: school ? { id: school.id, name: school.name } : null };
 });
 
 export const staffListQuery = defineQuery({ schema: PeopleListInput, permission: "iam.person.read", scope: "any" }, async (tx, input, ctx) => {

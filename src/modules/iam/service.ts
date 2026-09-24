@@ -61,6 +61,7 @@ export const MESSAGES = {
    */
   orgRoleNotGrantable: "نقش مدیر سازمان از این بخش داده نمی‌شود.",
   orgRoleRevokeForbidden: "فقط مدیر سازمان می‌تواند نقش سطح سازمان را لغو کند.",
+  orgAdminRoleNotRevocable: "نقش مدیر سازمان از رابط کاربری لغو نمی‌شود؛ فقط با کد تعریف و حذف می‌شود.",
   principalRoleForbidden: "فقط مدیر سازمان می‌تواند نقش مدیر مدرسه بدهد.",
   principalRoleRevokeForbidden: "فقط مدیر سازمان می‌تواند نقش مدیر مدرسه را لغو کند.",
   roleGrantForbidden: "شما اجازهٴ دادن نقش مدیریتی در این مدرسه را ندارید.",
@@ -407,6 +408,8 @@ export const SCHOOL_GRANTABLE_ROLES: readonly AssignableRole[] = ["vice_principa
  * schools of the assignments that carry the permission; anyone else (vice principals) manages nothing.
  */
 export function canManageRole(assignments: readonly Assignment[], roleCode: string, schoolId: string | null): boolean {
+  // مدیر سازمان یکتاست و فقط با کد (seed) تعریف/حذف می‌شود؛ از هیچ رابط کاربری‌ای لغو نمی‌شود (owner).
+  if (roleCode === "org_admin") return false;
   const holders = assignments.filter((a) => a.permissions.includes("iam.role_assignment.write"));
   if (holders.some((a) => a.scopeType === "organization")) return true;
   if (!(SCHOOL_GRANTABLE_ROLES as readonly string[]).includes(roleCode) || !schoolId) return false;
@@ -600,6 +603,8 @@ export async function revokeRoleAssignment(tx: Tx, ctx: IamCtx, input: { roleAss
     .where(and(eq(roleAssignment.id, input.roleAssignmentId), isNull(roleAssignment.revokedAt)))
     .limit(1);
   if (!ra) throw notFound();
+  // مدیر سازمان یکتاست و با کد (seed) مدیریت می‌شود — هرگز از این‌جا لغو نمی‌شود، حتی توسط یک مدیر سازمان دیگر.
+  if (ra.roleCode === "org_admin") throw forbidden(MESSAGES.orgAdminRoleNotRevocable);
   const adminScope = await getAdminScope(tx, ctx);
   if (adminScope.kind === "school" && ra.scopeType === "organization") throw forbidden(MESSAGES.orgRoleRevokeForbidden);
   await requirePersonInScope(tx, adminScope, ra.personId);

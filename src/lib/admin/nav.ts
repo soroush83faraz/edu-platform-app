@@ -15,7 +15,7 @@
 // different destination from the organization's list).
 import { GraduationCap, LayoutGrid, type LucideIcon, Rocket, School, ShieldCheck, Users, UsersRound } from "lucide-react";
 
-export type AdminSectionKey = "overview" | "students" | "staff" | "classes" | "roles" | "schools" | "setup";
+export type AdminSectionKey = "overview" | "students" | "staff" | "classes" | "roles" | "schools" | "infrastructure";
 
 export interface AdminSection {
   key: AdminSectionKey;
@@ -33,7 +33,7 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
   { key: "classes", href: "/admin/classes", labelFa: "کلاس‌ها", icon: Users },
   { key: "roles", href: "/admin/roles", labelFa: "نقش‌ها", icon: ShieldCheck },
   { key: "schools", href: "/admin/schools", labelFa: "مدرسه‌ها", icon: School, orgOnly: true },
-  { key: "setup", href: "/admin/onboarding", labelFa: "راه‌اندازی مدرسه", icon: Rocket, orgOnly: true },
+  { key: "infrastructure", href: "/admin/infrastructure", labelFa: "تنظیمات زیرساختی", icon: Rocket, orgOnly: true },
 ];
 
 /** Every key the admin nav still owns — a resource page NOT in this set moved to Home and needs its own way back. */

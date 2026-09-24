@@ -16,16 +16,18 @@ import { findClassGroup, listSchools, listTerms, schoolIdOfAcademicYear, schoolI
 import { academicYear, branch, classGroup, classOffering, educationLevel, gradeLevel, school, subject, term } from "@/modules/tenancy/schema";
 import {
   createAcademicYear,
-  createBranch,
   createClassGroup,
   createClassOffering,
   createEducationLevel,
   createGradeLevel,
   createSchool,
   createSubject,
+  deleteAcademicYear,
+  deleteEducationLevel,
+  deleteGradeLevel,
+  deleteSubject,
   deleteTerm,
   updateAcademicYear,
-  updateBranch,
   updateClassGroup,
   updateClassOffering,
   updateEducationLevel,
@@ -125,7 +127,6 @@ interface SchoolRow {
   code: string;
   genderPolicy: string | null;
   isDefault: boolean;
-  branches: number;
 }
 
 const SchoolInput = z
@@ -147,14 +148,13 @@ export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolIn
   key: "schools",
   labelFa: "مدرسه",
   labelFaPlural: "مدرسه‌ها",
-  descriptionFa: "هر مدرسه یک شعبهٴ پیش‌فرض «مرکزی» دارد؛ کد مدرسه پیشوند نام‌کاربری دانش‌آموزان بدون موبایل است.",
+  descriptionFa: "کد مدرسه پیشوند نام‌کاربری دانش‌آموزان بدون موبایل است. روی هر مدرسه بزنید تا وارد صفحهٴ مدیریت همان مدرسه شوید.",
   permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
   createNeedsOrgScope: true,
   columns: [
     { key: "name", labelFa: "نام" },
     { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, mobileMeta: 1 },
     { key: "genderPolicy", labelFa: "جنسیت", render: (r) => GENDER_LABELS[r.genderPolicy ?? ""] ?? "—", secondary: true, mobileMeta: 2 },
-    { key: "branches", labelFa: "شعبه", render: (r) => `${formatNumberFa(r.branches)} شعبه`, secondary: true, mobileMeta: 2 },
     { key: "isDefault", labelFa: "پیش‌فرض", render: (r) => (r.isDefault ? "✓" : ""), secondary: true, mobileMeta: 1 },
   ],
   schema: SchoolInput,
@@ -164,17 +164,14 @@ export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolIn
     { name: "genderPolicy", labelFa: "جنسیت", type: "select", options: GENDER_OPTIONS, required: true },
     { name: "isDefault", labelFa: "مدرسهٴ پیش‌فرض سازمان", type: "toggle" },
   ],
-  links: [{ href: "/admin/branches", labelFa: "شعبه‌ها" }],
-  /** The school's own page: the hub where its شعبه‌ها, سال تحصیلی, زنگ‌بندی, کلاس‌ها and کارکنان are set up. */
+  /** The school's own page: the management hub where its سال تحصیلی, کلاس‌ها, کارکنان, دانش‌آموزان and برنامه are set up. */
   rowHref: (r) => `/admin/schools/${r.id}`,
   async list(tx, _ctx, scope, opts) {
     const where = and(scopeSchoolIds(scope), faLike(school.name, opts.q));
     const rows = await tx
-      .select({ id: school.id, name: school.name, code: school.code, genderPolicy: school.genderPolicy, isDefault: school.isDefault, branches: count(branch.id) })
+      .select({ id: school.id, name: school.name, code: school.code, genderPolicy: school.genderPolicy, isDefault: school.isDefault })
       .from(school)
-      .leftJoin(branch, eq(branch.schoolId, school.id))
       .where(where)
-      .groupBy(school.id)
       .orderBy(desc(school.isDefault), asc(school.name))
       .limit(paginate(opts).limit)
       .offset(paginate(opts).offset);
@@ -190,75 +187,6 @@ export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolIn
   async update(tx, ctx, scope, id, input) {
     assertSchoolInScope(scope, id);
     await updateSchool(tx, ctx, id, { name: input.name, genderPolicy: input.genderPolicy, isDefault: input.isDefault });
-  },
-});
-
-// ---------------------------------------------------------------------------------------------------------------
-// branch
-// ---------------------------------------------------------------------------------------------------------------
-
-interface BranchRow {
-  id: string;
-  name: string;
-  schoolId: string;
-  schoolName: string;
-  address: string | null;
-  isDefault: boolean;
-}
-
-const BranchInput = z
-  .object({
-    schoolId: optionalRef,
-    name: name("نام شعبه"),
-    address: z.string().trim().max(300, "نشانی حداکثر ۳۰۰ نویسه است.").nullable().optional(),
-    isDefault: z.boolean().default(false),
-  })
-  .strict();
-
-export const branchResource = defineResource<BranchRow, z.output<typeof BranchInput>>({
-  key: "branches",
-  labelFa: "شعبه",
-  labelFaPlural: "شعبه‌ها",
-  descriptionFa: "فقط اگر مدرسه بیش از یک ساختمان/شعبه دارد؛ وگرنه شعبهٴ «مرکزی» کافی است.",
-  permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
-  columns: [
-    { key: "name", labelFa: "نام" },
-    { key: "schoolName", labelFa: "مدرسه", mobileMeta: 1 },
-    { key: "address", labelFa: "نشانی", render: (r) => r.address ?? "—", secondary: true, mobileMeta: 2 },
-    { key: "isDefault", labelFa: "پیش‌فرض", render: (r) => (r.isDefault ? "✓" : ""), secondary: true, mobileMeta: 1 },
-  ],
-  schema: BranchInput,
-  formFields: [
-    { name: "schoolId", labelFa: "مدرسه", type: "select", optionsKey: "schools", required: true, createOnly: true },
-    { name: "name", labelFa: "نام شعبه", type: "text", required: true },
-    { name: "address", labelFa: "نشانی", type: "text" },
-    { name: "isDefault", labelFa: "شعبهٴ پیش‌فرض مدرسه", type: "toggle" },
-  ],
-  async loadOptions(tx, _ctx, scope) {
-    return { schools: await schoolOptions(tx, scope) };
-  },
-  async list(tx, _ctx, scope, opts) {
-    const where = and(scopeSchoolIds(scope), faLike(branch.name, opts.q));
-    const rows = await tx
-      .select({ id: branch.id, name: branch.name, schoolId: branch.schoolId, schoolName: school.name, address: branch.address, isDefault: branch.isDefault })
-      .from(branch)
-      .innerJoin(school, eq(school.id, branch.schoolId))
-      .where(where)
-      .orderBy(asc(school.name), desc(branch.isDefault), asc(branch.name))
-      .limit(paginate(opts).limit)
-      .offset(paginate(opts).offset);
-    const [{ n }] = await tx.select({ n: count() }).from(branch).innerJoin(school, eq(school.id, branch.schoolId)).where(where);
-    return { rows, total: n };
-  },
-  async create(tx, ctx, scope, input) {
-    if (!input.schoolId) throw validation({ fieldErrors: { schoolId: [pickMessage("مدرسه")] } }, pickMessage("مدرسه"));
-    assertSchoolInScope(scope, input.schoolId);
-    const res = await createBranch(tx, ctx, { schoolId: input.schoolId, name: input.name, address: input.address ?? null, isDefault: input.isDefault });
-    return { id: res.branchId };
-  },
-  async update(tx, ctx, scope, id, input) {
-    assertSchoolInScope(scope, await schoolIdOfBranch(tx, id));
-    await updateBranch(tx, ctx, id, { name: input.name, address: input.address ?? null, isDefault: input.isDefault });
   },
 });
 
@@ -374,6 +302,14 @@ export const yearResource = defineResource<YearRow, z.output<typeof YearInput>>(
   async update(tx, ctx, scope, id, input) {
     assertSchoolInScope(scope, await schoolIdOfAcademicYear(tx, id));
     await updateAcademicYear(tx, ctx, id, { name: input.name, startsOn: input.startsOn, endsOn: input.endsOn, isCurrent: input.isCurrent });
+  },
+  archive: {
+    labelFa: "حذف",
+    confirmFa: "این سال تحصیلی و نوبت‌هایش حذف شوند؟ (فقط وقتی کلاس یا ثبت‌نامی به آن وصل نیست)",
+    async run(tx, ctx, scope, id) {
+      assertSchoolInScope(scope, await schoolIdOfAcademicYear(tx, id));
+      await deleteAcademicYear(tx, ctx, id);
+    },
   },
 });
 
@@ -515,6 +451,14 @@ export const levelResource = defineResource<LevelRow, z.output<typeof LevelInput
     requireOrgScope(scope);
     await updateEducationLevel(tx, ctx, id, { name: input.name, sequence: input.sequence });
   },
+  archive: {
+    labelFa: "حذف",
+    confirmFa: "این مقطع حذف شود؟ (فقط وقتی هیچ پایه‌ای زیر آن نیست)",
+    async run(tx, ctx, scope, id) {
+      requireOrgScope(scope);
+      await deleteEducationLevel(tx, ctx, id);
+    },
+  },
 });
 
 interface GradeRow {
@@ -582,6 +526,14 @@ export const gradeResource = defineResource<GradeRow, z.output<typeof GradeInput
     requireOrgScope(scope);
     await updateGradeLevel(tx, ctx, id, { name: input.name, sequence: input.sequence, educationLevelId: input.educationLevelId });
   },
+  archive: {
+    labelFa: "حذف",
+    confirmFa: "این پایه حذف شود؟ (فقط وقتی در کلاس یا ثبت‌نامی استفاده نشده)",
+    async run(tx, ctx, scope, id) {
+      requireOrgScope(scope);
+      await deleteGradeLevel(tx, ctx, id);
+    },
+  },
 });
 
 interface SubjectRow {
@@ -633,6 +585,14 @@ export const subjectResource = defineResource<SubjectRow, z.output<typeof Subjec
     requireOrgScope(scope);
     await updateSubject(tx, ctx, id, { name: input.name });
   },
+  archive: {
+    labelFa: "حذف",
+    confirmFa: "این درس حذف شود؟ (فقط وقتی در ارائهٴ درسی استفاده نشده)",
+    async run(tx, ctx, scope, id) {
+      requireOrgScope(scope);
+      await deleteSubject(tx, ctx, id);
+    },
+  },
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -667,21 +627,18 @@ const ClassInput = z
   .strict();
 
 /**
- * The pickers of the class form. One rule (owner, QA round 3): **an option never repeats its group heading, and
- * never repeats what the page already says.** So:
- *   - every school in scope has exactly ONE branch → the branch IS the school: one `schools` option per school
- *     labelled with the school's name, and the word «شعبه» appears nowhere (`formFieldsFor` picks that field);
- *   - otherwise `branches`, each labelled with the BRANCH name only, grouped under the school when the scope holds
- *     more than one school (before: «علامه طباطبایی — شعبهٴ کارگر» *under* a «علامه طباطبایی» heading);
- *   - years likewise: the group heading carries the school, the option only «۱۴۰۵-۱۴۰۶ (جاری)».
- * A picker left with a single option is not a choice at all — `ResourceForm` hides it and sends the value.
+ * The pickers of the class form. A class belongs to a SCHOOL (the branch is an internal, always-one-per-school
+ * detail — the UI never mentions it): the `schools` picker carries one option per school, labelled with the
+ * school's name, and its VALUE is that school's default branch id (what `class_group.branch_id` stores). Years
+ * carry the school as a group heading when the scope holds more than one school. A required picker left with a
+ * single option is not a choice — `ResourceForm` hides it and sends the value.
  */
 export async function classOptions(tx: Tx, scope: AdminScope): Promise<Record<string, SelectOption[]>> {
   const schools = (await listSchools(tx)).filter((s) => isInScope(scope, s.id));
   const ids = schools.map((s) => s.id);
-  if (ids.length === 0) return { schools: [], branches: [], years: [], grades: [] };
+  if (ids.length === 0) return { schools: [], years: [], grades: [] };
   const branches = await tx
-    .select({ id: branch.id, name: branch.name, schoolId: branch.schoolId, isDefault: branch.isDefault })
+    .select({ id: branch.id, schoolId: branch.schoolId, isDefault: branch.isDefault })
     .from(branch)
     .where(inArray(branch.schoolId, ids))
     .orderBy(desc(branch.isDefault), asc(branch.name));
@@ -693,21 +650,20 @@ export async function classOptions(tx: Tx, scope: AdminScope): Promise<Record<st
   const grades = await tx.select({ id: gradeLevel.id, name: gradeLevel.name }).from(gradeLevel).orderBy(asc(gradeLevel.sequence));
   const schoolName = (id: string) => schools.find((s) => s.id === id)?.name ?? "";
   const many = schools.length > 1;
-  const branchesOf = (schoolId: string) => branches.filter((b) => b.schoolId === schoolId);
-  const oneBranchEach = schools.every((s) => branchesOf(s.id).length === 1);
+  const defaultBranchOf = (schoolId: string) => branches.find((b) => b.schoolId === schoolId && b.isDefault) ?? branches.find((b) => b.schoolId === schoolId);
   return {
-    schools: oneBranchEach ? schools.map((s) => ({ value: branchesOf(s.id)[0].id, label: s.name })) : [],
-    branches: oneBranchEach ? [] : branches.map((b) => ({ value: b.id, label: b.name, group: many ? schoolName(b.schoolId) : undefined })),
+    schools: schools.flatMap((s) => {
+      const b = defaultBranchOf(s.id);
+      return b ? [{ value: b.id, label: s.name }] : [];
+    }),
     years: years.map((y) => ({ value: y.id, label: `${y.name}${y.isCurrent ? " (جاری)" : ""}`, group: many ? schoolName(y.schoolId) : undefined })),
     grades: grades.map((g) => ({ value: g.id, label: g.name })),
   };
 }
 
-/** The one field that says WHERE a class lives, in the three shapes `classOptions` can produce (same `name`, same payload). */
+/** The field that says WHICH SCHOOL a class lives in (its VALUE is the school's default branch id — `class_group.branch_id`). */
 const CLASS_LOCATION_FIELD = {
   schools: { name: "branchId", labelFa: "مدرسه", type: "select", optionsKey: "schools", required: true, createOnly: true },
-  branches: { name: "branchId", labelFa: "مدرسه / شعبه", type: "select", optionsKey: "branches", required: true, createOnly: true },
-  branchOnly: { name: "branchId", labelFa: "شعبه", type: "select", optionsKey: "branches", required: true, createOnly: true },
 } as const satisfies Record<string, FormField>;
 
 const CLASS_FIELDS: FormField[] = [
@@ -721,7 +677,7 @@ export const classResource = defineResource<ClassRow, z.output<typeof ClassInput
   key: "classes",
   labelFa: "کلاس",
   labelFaPlural: "کلاس‌ها",
-  descriptionFa: "کلاس = پایه + نام در یک سال تحصیلی و شعبه. روی هر کلاس: دانش‌آموزان و ارائهٴ درس‌ها.",
+  descriptionFa: "کلاس = پایه + نام در یک سال تحصیلی از یک مدرسه. روی هر کلاس: دانش‌آموزان و ارائهٴ درس‌ها.",
   permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
   columns: [
     { key: "name", labelFa: "کلاس" },
@@ -733,10 +689,8 @@ export const classResource = defineResource<ClassRow, z.output<typeof ClassInput
     { key: "status", labelFa: "وضعیت", render: (r) => (r.status === "active" ? "فعال" : "بایگانی"), secondary: true },
   ],
   schema: ClassInput,
-  formFields: [CLASS_LOCATION_FIELD.branches, ...CLASS_FIELDS],
-  // The location picker follows the option set (`classOptions`): «مدرسه» over school names while every school has
-  // one branch, «شعبه» inside a single school with two, «مدرسه / شعبه» when both vary and the list is grouped.
-  formFieldsFor: (o) => [(o.schools ?? []).length > 0 ? CLASS_LOCATION_FIELD.schools : (o.branches ?? []).some((b) => b.group) ? CLASS_LOCATION_FIELD.branches : CLASS_LOCATION_FIELD.branchOnly, ...CLASS_FIELDS],
+  formFields: [CLASS_LOCATION_FIELD.schools, ...CLASS_FIELDS],
+  formFieldsFor: () => [CLASS_LOCATION_FIELD.schools, ...CLASS_FIELDS],
   formValues: (r) => ({ branchId: r.branchId, academicYearId: r.academicYearId, gradeLevelId: r.gradeLevelId, name: r.name, capacity: r.capacity }),
   rowHref: (r) => `/admin/classes/${r.id}`,
   loadOptions: (tx, _ctx, scope) => classOptions(tx, scope),
@@ -744,7 +698,7 @@ export const classResource = defineResource<ClassRow, z.output<typeof ClassInput
   async create(tx, ctx, scope, input) {
     if (!input.branchId || !input.academicYearId) {
       const fieldErrors: Record<string, string[]> = {};
-      if (!input.branchId) fieldErrors.branchId = [pickMessage("مدرسه / شعبه")];
+      if (!input.branchId) fieldErrors.branchId = [pickMessage("مدرسه")];
       if (!input.academicYearId) fieldErrors.academicYearId = [pickMessage("سال تحصیلی")];
       throw validation({ fieldErrors }, fieldErrors.branchId?.[0] ?? fieldErrors.academicYearId[0]);
     }
@@ -993,7 +947,7 @@ export async function listOfferingRows(tx: Tx, scope: AdminScope, classGroupId: 
 // ---------------------------------------------------------------------------------------------------------------
 
 export const RESOURCES: Record<string, AnyResourceDef> = Object.fromEntries(
-  [schoolResource, branchResource, yearResource, termResource, levelResource, gradeResource, subjectResource, classResource, offeringResource].map((r) => [r.key, r]),
+  [schoolResource, yearResource, termResource, levelResource, gradeResource, subjectResource, classResource, offeringResource].map((r) => [r.key, r]),
 );
 
 export const RESOURCE_KEYS = Object.keys(RESOURCES) as [string, ...string[]];

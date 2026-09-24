@@ -15,6 +15,7 @@ import { studentsListQuery } from "@/lib/admin/people-queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "دانش‌آموزان | مدیریت" };
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function StudentsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;
@@ -22,17 +23,18 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   const page = Math.max(1, Number.parseInt(one(sp.page) || "1", 10) || 1);
   const pending = one(sp.pending) === "1";
   const noClass = one(sp.noclass) === "1";
+  const schoolId = UUID_RE.test(one(sp.school)) ? one(sp.school) : undefined;
   const ctx = await requireContext();
-  const result = await studentsListQuery({ q, page, pending, noClass });
+  const result = await studentsListQuery({ q, page, pending, noClass, schoolId });
   if (!result.ok) {
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     notFound();
   }
-  const { rows, total, pageSize } = result.data;
+  const { rows, total, pageSize, school } = result.data;
   const canWrite = canAtAnyScope(ctx.assignments, "iam.person.write");
   const href = (over: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
-    const merged = { q, pending: pending ? "1" : undefined, noclass: noClass ? "1" : undefined, ...over };
+    const merged = { q, pending: pending ? "1" : undefined, noclass: noClass ? "1" : undefined, school: schoolId, ...over };
     for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v);
     const s = p.toString();
     return `/admin/students${s ? `?${s}` : ""}`;
@@ -45,6 +47,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
       <PageHeader
         title="دانش‌آموزان"
         count={`${formatNumberFa(total)} نفر`}
+        back={school ? { href: `/admin/schools/${school.id}`, label: school.name } : undefined}
         description="ثبت دانش‌آموز با حساب کاربری و کلاس در یک فرم؛ رمز اولیه فقط یک‌بار نمایش داده می‌شود و بعداً از صفحهٴ کلاس چاپ می‌شود."
         actions={
           canWrite ? (
@@ -57,7 +60,15 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
           ) : null
         }
       />
-      <SearchForm q={q} hidden={{ pending: pending ? "1" : undefined, noclass: noClass ? "1" : undefined }} placeholder="نام یا شمارهٴ دانش‌آموزی" />
+      {school ? (
+        <p className="flex flex-wrap items-center gap-2 text-sm text-text-muted">
+          فقط دانش‌آموزان <bdi className="font-medium text-text">{school.name}</bdi>
+          <Link href="/admin/students" className="inline-flex min-h-11 items-center text-primary-700 hover:underline">
+            همهٴ دانش‌آموزان
+          </Link>
+        </p>
+      ) : null}
+      <SearchForm q={q} hidden={{ pending: pending ? "1" : undefined, noclass: noClass ? "1" : undefined, school: schoolId }} placeholder="نام یا شمارهٴ دانش‌آموزی" />
       <div className="flex flex-wrap gap-2 text-sm">
         <FilterChip href={href({ pending: undefined, noclass: undefined, page: undefined })} active={!pending && !noClass} label="همهٴ دانش‌آموزان" />
         <FilterChip href={href({ pending: "1", noclass: undefined, page: undefined })} active={pending} label="حساب فعال‌نشده" />
