@@ -4,7 +4,7 @@
 // (a Home tile or an admin nav section) and no longer duplicate it here. Each section's «افزودن» reuses the
 // resource definition of the matching list page, so nothing here duplicates validation: the forms post to
 // `adminResourceMutate` like everywhere else.
-import { and, asc, desc, eq, count, sql } from "drizzle-orm";
+import { and, desc, eq, count, sql } from "drizzle-orm";
 import { z } from "zod";
 import { defineQuery } from "@/lib/actions";
 import { notFound } from "@/lib/errors";
@@ -13,7 +13,7 @@ import { findSchoolById } from "@/modules/tenancy/repo";
 import { academicYear, branch, classGroup, classOffering } from "@/modules/tenancy/schema";
 import { resourceOpGate, type AnyResourceDef, type ResourceOp } from "./defineResource";
 import { schoolsLabelFa } from "./nav";
-import { branchResource, schoolResource, yearResource } from "./resources";
+import { schoolResource, yearResource } from "./resources";
 
 export const SchoolIdInput = z.object({ schoolId: z.uuid("شناسه نامعتبر است.") }).strict();
 
@@ -27,7 +27,6 @@ export interface SchoolHubYear {
 
 export interface SchoolHubData {
   school: { id: string; name: string; code: string; genderPolicy: string | null; isDefault: boolean };
-  branches: Array<{ id: string; name: string; address: string | null; isDefault: boolean }>;
   years: SchoolHubYear[];
   /** The year the header names: the current one, else the newest. No نوبت‌ها here — a school year is enough granularity for this page. */
   focusYear: SchoolHubYear | null;
@@ -49,12 +48,6 @@ export const schoolHubQuery = defineQuery<SchoolHubData, typeof SchoolIdInput>(
     assertSchoolInScope(scope, input.schoolId);
     const sch = await findSchoolById(tx, input.schoolId);
     if (!sch) throw notFound();
-
-    const branches = await tx
-      .select({ id: branch.id, name: branch.name, address: branch.address, isDefault: branch.isDefault })
-      .from(branch)
-      .where(eq(branch.schoolId, sch.id))
-      .orderBy(desc(branch.isDefault), asc(branch.name));
 
     const years: SchoolHubYear[] = await tx
       .select({
@@ -82,11 +75,10 @@ export const schoolHubQuery = defineQuery<SchoolHubData, typeof SchoolIdInput>(
     const gate = (def: AnyResourceDef, op: ResourceOp) => resourceOpGate(def, op, ctx.assignments, scope).ok;
     return {
       school: { id: sch.id, name: sch.name, code: sch.code, genderPolicy: sch.genderPolicy, isDefault: sch.isDefault },
-      branches,
       years,
       focusYear: focus,
       offerings: { total: Number(offerings?.total ?? 0), withoutTeacher: Number(offerings?.withoutTeacher ?? 0) },
-      can: { school: gate(schoolResource, "update"), structure: gate(branchResource, "create") && gate(yearResource, "create") },
+      can: { school: gate(schoolResource, "update"), structure: gate(yearResource, "create") },
       backLabelFa: schoolsLabelFa(scope),
     };
   },

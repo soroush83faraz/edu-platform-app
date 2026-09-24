@@ -141,12 +141,12 @@ describe("every admin resource: edit payload ⊆ schema (no required key the edi
     }
   });
 
-  it("QA round 2: the empty class create names the create-only selects too («مدرسه / شعبه», «سال تحصیلی»)", async () => {
+  it("QA round 2: the empty class create names the create-only selects too («مدرسه», «سال تحصیلی»)", async () => {
     await rolledBack(async (tx) => {
       const principal = ctxOf(principalOf(f.SCHOOL_A));
       const base = { gradeLevelId: f.GRADE_A, name: "۱۰/۹", capacity: null };
       await expect(mutateResource(tx, principal, { resource: "classes", op: "create", data: { ...base, branchId: "", academicYearId: "" } })).rejects.toSatisfy(
-        (e: unknown) => AppError.is(e) && e.code === "VALIDATION" && JSON.stringify(e.details) === JSON.stringify({ fieldErrors: { branchId: ["مدرسه / شعبه را انتخاب کنید."], academicYearId: ["سال تحصیلی را انتخاب کنید."] } }),
+        (e: unknown) => AppError.is(e) && e.code === "VALIDATION" && JSON.stringify(e.details) === JSON.stringify({ fieldErrors: { branchId: ["مدرسه را انتخاب کنید."], academicYearId: ["سال تحصیلی را انتخاب کنید."] } }),
       );
       await expect(mutateResource(tx, principal, { resource: "classes", op: "create", data: { ...base, branchId: f.BRANCH_A, academicYearId: "" } })).rejects.toSatisfy(
         (e: unknown) => AppError.is(e) && e.code === "VALIDATION" && e.message === "سال تحصیلی را انتخاب کنید.",

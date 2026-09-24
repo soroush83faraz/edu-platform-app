@@ -9,7 +9,8 @@ import { rolesPageQuery } from "@/lib/admin/roles-queries";
 
 export const metadata: Metadata = { title: "نقش‌ها | مدیریت" };
 
-const SCOPE_LABELS: Record<string, string> = { organization: "سازمان", school: "مدرسه", branch: "شعبه", class_group: "کلاس", class_offering: "کلاس‌درس", student: "دانش‌آموز", family: "خانواده" };
+// «branch» is an internal, always-one-per-school detail and is never named in the UI: it collapses to «مدرسه».
+const SCOPE_LABELS: Record<string, string> = { organization: "سازمان", school: "مدرسه", branch: "مدرسه", class_group: "کلاس", class_offering: "کلاس‌درس", student: "دانش‌آموز", family: "خانواده" };
 
 /** /admin/roles — system roles (read-only) and the manual manager assignments of the scope. */
 export default async function RolesPage() {
@@ -69,7 +70,7 @@ export default async function RolesPage() {
               <span className="text-meta text-text-muted">
                 {t.description}
                 {" · دامنه: "}
-                {t.allowedScopeTypes.map((s) => SCOPE_LABELS[s] ?? s).join("، ")}
+                {[...new Set(t.allowedScopeTypes.map((s) => SCOPE_LABELS[s] ?? s))].join("، ")}
               </span>
             </li>
           ))}

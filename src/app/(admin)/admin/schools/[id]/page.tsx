@@ -1,4 +1,4 @@
-import { BookOpen, CalendarDays, Layers } from "lucide-react";
+import { BookOpen, CalendarDays } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -6,7 +6,7 @@ import { PageSection } from "@/components/layout/PageSection";
 import { ResourceForm } from "@/components/admin/ResourceForm";
 import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
-import { branchResource, GENDER_LABELS, schoolResource, yearResource } from "@/lib/admin/resources";
+import { GENDER_LABELS, schoolResource, yearResource } from "@/lib/admin/resources";
 import { schoolHubQuery, type SchoolHubData } from "@/lib/admin/school-queries";
 import { formatNumberFa, isoDateToJalali } from "@/lib/format";
 
@@ -15,12 +15,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const n = formatNumberFa;
 
 /**
- * /admin/schools/[id] — the school hub: شعبه‌ها → سال تحصیلی → ارائهٴ درس, top to bottom for one school. Every
- * «افزودن» opens the SAME dialog its list page opens — the resource definition, the strict schema and
- * `adminResourceMutate` are shared, so nothing is validated twice. زنگ‌بندی (Home tile for a single-school admin),
- * کارکنان and کلاس‌ها (admin nav sections) and «کاتالوگ سازمان» (an organization admin's own Home tiles) each
- * already have their own door and no longer duplicate it here (docs/decisions.md «the hub drops sections that
- * have their own door»). Scope: a school outside the caller's scope is NOT_FOUND (`schoolHubQuery`).
+ * /admin/schools/[id] — the school's own management hub: سال تحصیلی → ارائهٴ درس for one school. Every «افزودن»
+ * opens the SAME dialog its list page opens — the resource definition, the strict schema and `adminResourceMutate`
+ * are shared, so nothing is validated twice. There is no شعبه here any more (a branch is an internal, always-one
+ * detail; owner). Scope: a school outside the caller's scope is NOT_FOUND (`schoolHubQuery`).
  */
 export default async function SchoolHubPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -36,7 +34,6 @@ export default async function SchoolHubPage({ params }: { params: Promise<{ id: 
       {d.school.code}
     </bdi>,
     GENDER_LABELS[d.school.genderPolicy ?? ""] ?? null,
-    d.branches.length > 1 ? `${n(d.branches.length)} شعبه` : null,
     d.focusYear?.name ?? null,
   ].filter(Boolean);
 
@@ -62,7 +59,6 @@ export default async function SchoolHubPage({ params }: { params: Promise<{ id: 
         }
       />
 
-      <Branches d={d} />
       <Years d={d} />
       <Offerings d={d} />
     </div>
@@ -92,36 +88,6 @@ function NotYet({ what, action }: { what: string; action?: React.ReactNode }) {
 function List({ children }: { children: React.ReactNode }) {
   // `overflow-hidden` keeps a row's hover tint inside the card's 16 px corners (the section box is `flush`).
   return <ul className="divide-y divide-line/70 overflow-hidden rounded-card">{children}</ul>;
-}
-
-function Branches({ d }: { d: SchoolHubData }) {
-  // The school id travels as a `fixed` value and its picker leaves the form: on this page the school is the page.
-  // The heading's trigger is quiet; the same form is the primary button of an empty state.
-  const form = (tone: "primary" | "quiet") =>
-    d.can.structure ? (
-      <ResourceForm
-        resource={branchResource.key}
-        labelFa={branchResource.labelFa}
-        fields={branchResource.formFields.filter((f) => f.name !== "schoolId")}
-        options={{}}
-        mode="create"
-        tone={tone}
-        fixed={{ schoolId: d.school.id }}
-      />
-    ) : null;
-  return (
-    <PageSection id="branches" title="شعبه‌ها" icon={Layers} count={d.branches.length} surface="work" flush trailing={form("quiet")}>
-      {d.branches.length === 0 ? (
-        <NotYet what="هر مدرسه دست‌کم یک شعبه دارد." action={form("primary")} />
-      ) : (
-        <List>
-          {d.branches.map((b) => (
-            <Row key={b.id} title={<bdi>{b.name}</bdi>} meta={b.address ?? undefined} trailing={b.isDefault ? <Chip tone="neutral">پیش‌فرض</Chip> : null} />
-          ))}
-        </List>
-      )}
-    </PageSection>
-  );
 }
 
 /** سال تحصیلی only — نام، بازه، «جاری». نوبت‌ها نمایش داده نمی‌شوند (view-level؛ خودِ داده و صفحهٴ نوبت‌ها دست‌نخورده است). */
