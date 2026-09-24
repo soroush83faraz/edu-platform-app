@@ -1,5 +1,5 @@
 // The /admin landing page under the IA rule (docs/decisions.md «one home per destination»): every admin SECTION
-// gets exactly one row and «نمای کلی» none (it IS this page). Round 7: «مدرسه‌ها» and «راه‌اندازی مدرسه» are
+// gets exactly one row and «نمای کلی» none (it IS this page). Round 7: «مدرسه‌ها» and «تنظیمات زیرساختی» are
 // ordinary rows of that list for the organization admin — the setup checklist has no panel of its own any more —
 // while the remaining structure destinations stay Home tiles. Rendered statically, inspected as a string.
 import { createElement } from "react";
@@ -49,11 +49,11 @@ function render(org: boolean) {
 const hrefs = (html: string) => [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
 
 describe("AdminOverview (/admin landing)", () => {
-  it("«راه‌اندازی مدرسه» and «مدرسه‌ها» are ordinary section rows for the organization admin — each linked exactly once, neither a panel of its own", () => {
+  it("«تنظیمات زیرساختی» and «مدرسه‌ها» are ordinary section rows for the organization admin — each linked exactly once, neither a panel of its own", () => {
     const html = render(true);
-    expect(hrefs(html).filter((h) => h === "/admin/onboarding")).toEqual(["/admin/onboarding"]);
+    expect(hrefs(html).filter((h) => h === "/admin/infrastructure")).toEqual(["/admin/infrastructure"]);
     expect(hrefs(html).filter((h) => h === "/admin/schools")).toEqual(["/admin/schools"]);
-    expect(html).toContain("راه‌اندازی مدرسه");
+    expect(html).toContain("تنظیمات زیرساختی");
     // The progress bar lived in a panel above the list; the section row replaced it («progressbar» was its mark).
     expect(html).not.toContain("progressbar");
   });
@@ -67,7 +67,7 @@ describe("AdminOverview (/admin landing)", () => {
 
   it("shows a school-scoped admin neither «راه‌اندازی» nor the organization's «مدرسه‌ها» list (their door to their own school is a Home tile)", () => {
     const html = render(false);
-    expect(hrefs(html)).not.toContain("/admin/onboarding");
+    expect(hrefs(html)).not.toContain("/admin/infrastructure");
     expect(hrefs(html)).not.toContain("/admin/schools");
     expect(html).not.toContain("راه‌اندازی");
   });

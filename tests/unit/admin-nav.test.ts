@@ -1,5 +1,5 @@
 // The admin sections (src/lib/admin/nav.ts). Round 5 made «مدیریت» a focused area for PEOPLE AND THEIR ROLES and
-// moved every structure destination to a Home tile; round 7 brought «مدرسه‌ها» and «راه‌اندازی مدرسه» back as
+// moved every structure destination to a Home tile; round 7 brought «مدرسه‌ها» and «تنظیمات زیرساختی» back as
 // ORGANIZATION-ONLY sections. The rules asserted here are the IA contract, not today's list: the people sections
 // belong to every admin, the organization-only ones to the organization admin alone, and NO PERSON ever has two
 // doors to one destination across nav + tiles + «بیشتر» (docs/decisions.md «one home per destination»).
@@ -9,9 +9,9 @@ import { ADMIN_SECTIONS, ADMIN_SECTION_KEYS, adminSectionsFor, isAdminSectionFor
 import { HOME_TILES, homeTilesFor, type TileHats } from "@/lib/modules-registry";
 
 /** Every section, in order: the people area first, then what only the organization admin sees. */
-const SECTIONS = ["overview", "students", "staff", "classes", "roles", "schools", "setup"];
+const SECTIONS = ["overview", "students", "staff", "classes", "roles", "schools", "infrastructure"];
 /** Sections a school-scoped admin never gets — the organization's own structure and its setup. */
-const ORG_ONLY = ["schools", "setup"];
+const ORG_ONLY = ["schools", "infrastructure"];
 /** What left the admin nav in round 5 and stayed out — each of these is a Home tile and nothing else. */
 const MOVED = ["/admin/attendance", "/admin/years", "/admin/grades", "/admin/subjects", "/admin/levels"];
 
@@ -33,7 +33,7 @@ describe("schoolsLabelFa", () => {
 });
 
 describe("adminSectionsFor", () => {
-  it("the people area belongs to every admin; «مدرسه‌ها» and «راه‌اندازی مدرسه» to the organization admin alone", () => {
+  it("the people area belongs to every admin; «مدرسه‌ها» and «تنظیمات زیرساختی» to the organization admin alone", () => {
     expect(ADMIN_SECTIONS.map((s) => s.key)).toEqual(SECTIONS);
     expect(adminSectionsFor({ org: true }).map((s) => s.key)).toEqual(SECTIONS);
     expect(adminSectionsFor({ org: false }).map((s) => s.key)).toEqual(SECTIONS.filter((k) => !ORG_ONLY.includes(k)));
@@ -42,7 +42,7 @@ describe("adminSectionsFor", () => {
       adminSectionsFor({ org: true })
         .filter((s) => s.orgOnly)
         .map((s) => s.labelFa),
-    ).toEqual(["مدرسه‌ها", "راه‌اندازی مدرسه"]);
+    ).toEqual(["مدرسه‌ها", "تنظیمات زیرساختی"]);
   });
   it("`isAdminSectionFor` answers per caller — «مدرسه‌ها» is a section for the organization admin, not for a principal", () => {
     expect(isAdminSectionFor("schools", { org: true })).toBe(true);
@@ -81,13 +81,13 @@ describe("one home per destination (nav · Home tiles · بیشتر)", () => {
     const orgTiles = homeTilesFor(orgAdmin, () => true).map((t) => t.href);
     expect(orgTiles).not.toContain("/admin/schools");
     expect(navHrefs).toContain("/admin/schools");
-    expect(navHrefs).toContain("/admin/onboarding");
+    expect(navHrefs).toContain("/admin/infrastructure");
     // A principal of one school keeps the tile, pointed at THAT school's hub — a different destination.
     expect(homeTilesFor(principal, () => true).map((t) => t.href)).toContain("/admin/schools/s1");
     expect(homeTilesFor(twoSchools, () => true).map((t) => t.href)).toContain("/admin/schools");
     // …and no admin of any scope ever gets the setup checklist as a tile.
     for (const hats of [orgAdmin, principal, twoSchools]) {
-      expect(homeTilesFor(hats, () => true).map((t) => t.href)).not.toContain("/admin/onboarding");
+      expect(homeTilesFor(hats, () => true).map((t) => t.href)).not.toContain("/admin/infrastructure");
     }
   });
 

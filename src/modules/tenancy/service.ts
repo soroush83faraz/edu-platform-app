@@ -395,6 +395,53 @@ export async function updateSubject(tx: Tx, ctx: ServiceCtx, id: string, input: 
   await audit(ctx, "tenancy.subject.updated", { schema: "tenancy", table: "subject", id }, before, input, tx);
 }
 
+// Deleting an organization catalog is a HARD delete guarded against every reference (FKs are ON DELETE RESTRICT),
+// the same shape as `deleteTerm`. A friendly Persian «CONFLICT» tells the admin what to remove first.
+export async function deleteEducationLevel(tx: Tx, ctx: ServiceCtx, id: string): Promise<void> {
+  const [before] = await tx.select({ id: educationLevel.id, name: educationLevel.name }).from(educationLevel).where(eq(educationLevel.id, id)).limit(1);
+  if (!before) throw notFound();
+  const grade = await tx.select({ id: gradeLevel.id }).from(gradeLevel).where(eq(gradeLevel.educationLevelId, id)).limit(1);
+  if (grade[0]) throw conflict("این مقطع پایه دارد و حذف‌شدنی نیست؛ ابتدا پایه‌هایش را حذف کنید.");
+  await tx.delete(educationLevel).where(eq(educationLevel.id, id));
+  await audit(ctx, "tenancy.education_level.deleted", { schema: "tenancy", table: "education_level", id }, before, null, tx);
+}
+
+export async function deleteGradeLevel(tx: Tx, ctx: ServiceCtx, id: string): Promise<void> {
+  const [before] = await tx.select({ id: gradeLevel.id, name: gradeLevel.name }).from(gradeLevel).where(eq(gradeLevel.id, id)).limit(1);
+  if (!before) throw notFound();
+  const inClass = await tx.select({ id: classGroup.id }).from(classGroup).where(eq(classGroup.gradeLevelId, id)).limit(1);
+  if (inClass[0]) throw conflict("این پایه در کلاس‌ها استفاده شده و حذف‌شدنی نیست.");
+  const enrolled = await tx.execute<{ n: number }>(sql`select 1 as n from academic.school_enrollment where grade_level_id = ${id} limit 1`);
+  if (enrolled.rows[0]) throw conflict("این پایه در ثبت‌نام دانش‌آموزان استفاده شده و حذف‌شدنی نیست.");
+  await tx.delete(gradeLevel).where(eq(gradeLevel.id, id));
+  await audit(ctx, "tenancy.grade_level.deleted", { schema: "tenancy", table: "grade_level", id }, before, null, tx);
+}
+
+export async function deleteSubject(tx: Tx, ctx: ServiceCtx, id: string): Promise<void> {
+  const [before] = await tx.select({ id: subject.id, name: subject.name }).from(subject).where(eq(subject.id, id)).limit(1);
+  if (!before) throw notFound();
+  const inOffering = await tx.select({ id: classOffering.id }).from(classOffering).where(eq(classOffering.subjectId, id)).limit(1);
+  if (inOffering[0]) throw conflict("این درس در ارائهٴ درس‌ها استفاده شده و حذف‌شدنی نیست.");
+  const child = await tx.select({ id: subject.id }).from(subject).where(eq(subject.parentSubjectId, id)).limit(1);
+  if (child[0]) throw conflict("این درس زیرشاخه دارد و حذف‌شدنی نیست.");
+  await tx.delete(subject).where(eq(subject.id, id));
+  await audit(ctx, "tenancy.subject.deleted", { schema: "tenancy", table: "subject", id }, before, null, tx);
+}
+
+/** Delete a school's academic year and its (auto-created) terms. Blocked once a class or enrollment hangs off it. */
+export async function deleteAcademicYear(tx: Tx, ctx: ServiceCtx, id: string): Promise<void> {
+  const [before] = await tx.select({ id: academicYear.id, schoolId: academicYear.schoolId, name: academicYear.name }).from(academicYear).where(eq(academicYear.id, id)).limit(1);
+  if (!before) throw notFound();
+  const inClass = await tx.select({ id: classGroup.id }).from(classGroup).where(eq(classGroup.academicYearId, id)).limit(1);
+  if (inClass[0]) throw conflict("این سال تحصیلی کلاس دارد و حذف‌شدنی نیست.");
+  const enrolled = await tx.execute<{ n: number }>(sql`select 1 as n from academic.school_enrollment where academic_year_id = ${id} limit 1`);
+  if (enrolled.rows[0]) throw conflict("این سال تحصیلی ثبت‌نام دارد و حذف‌شدنی نیست.");
+  // No class_group ⇒ no offering references any of its terms, so the terms delete cleanly with the year.
+  await tx.delete(term).where(eq(term.academicYearId, id));
+  await tx.delete(academicYear).where(eq(academicYear.id, id));
+  await audit(ctx, "tenancy.academic_year.deleted", { schema: "tenancy", table: "academic_year", id }, before, null, tx);
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // class group + class offering
 // ---------------------------------------------------------------------------------------------------------------

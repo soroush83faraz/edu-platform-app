@@ -46,10 +46,10 @@ describe("homeTilesFor", () => {
 
   it("the organization admin: the structure tiles the nav gave up, in that order — and no «مدیریت», «مدرسه‌ها» or «راه‌اندازی» tile", () => {
     expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["inbox", "given", "new-item", "admin-attendance", "years", "grades", "subjects", "levels"]);
-    // Round 7: «مدرسه‌ها» (the organization's list) and «راه‌اندازی مدرسه» are admin SECTIONS for this person, so
+    // Round 7: «مدرسه‌ها» (the organization's list) and «تنظیمات زیرساختی» are admin SECTIONS for this person, so
     // Home carries neither — one door each. «زنگ‌بندی» has no organization-wide page, so it has no tile either.
     expect(tile(homeTilesFor(orgAdmin, has(ADMIN_PERMS)), "schools")).toBeUndefined();
-    expect(HOME_TILES.filter((t) => t.href === "/admin/onboarding")).toEqual([]);
+    expect(HOME_TILES.filter((t) => t.href === "/admin/infrastructure")).toEqual([]);
   });
 
   it("a principal of ONE school gets «مدرسه» and that school's زنگ‌بندی, and no organization catalog", () => {

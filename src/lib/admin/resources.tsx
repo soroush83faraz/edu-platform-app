@@ -23,6 +23,10 @@ import {
   createGradeLevel,
   createSchool,
   createSubject,
+  deleteAcademicYear,
+  deleteEducationLevel,
+  deleteGradeLevel,
+  deleteSubject,
   deleteTerm,
   updateAcademicYear,
   updateBranch,
@@ -375,6 +379,14 @@ export const yearResource = defineResource<YearRow, z.output<typeof YearInput>>(
     assertSchoolInScope(scope, await schoolIdOfAcademicYear(tx, id));
     await updateAcademicYear(tx, ctx, id, { name: input.name, startsOn: input.startsOn, endsOn: input.endsOn, isCurrent: input.isCurrent });
   },
+  archive: {
+    labelFa: "حذف",
+    confirmFa: "این سال تحصیلی و نوبت‌هایش حذف شوند؟ (فقط وقتی کلاس یا ثبت‌نامی به آن وصل نیست)",
+    async run(tx, ctx, scope, id) {
+      assertSchoolInScope(scope, await schoolIdOfAcademicYear(tx, id));
+      await deleteAcademicYear(tx, ctx, id);
+    },
+  },
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -515,6 +527,14 @@ export const levelResource = defineResource<LevelRow, z.output<typeof LevelInput
     requireOrgScope(scope);
     await updateEducationLevel(tx, ctx, id, { name: input.name, sequence: input.sequence });
   },
+  archive: {
+    labelFa: "حذف",
+    confirmFa: "این مقطع حذف شود؟ (فقط وقتی هیچ پایه‌ای زیر آن نیست)",
+    async run(tx, ctx, scope, id) {
+      requireOrgScope(scope);
+      await deleteEducationLevel(tx, ctx, id);
+    },
+  },
 });
 
 interface GradeRow {
@@ -582,6 +602,14 @@ export const gradeResource = defineResource<GradeRow, z.output<typeof GradeInput
     requireOrgScope(scope);
     await updateGradeLevel(tx, ctx, id, { name: input.name, sequence: input.sequence, educationLevelId: input.educationLevelId });
   },
+  archive: {
+    labelFa: "حذف",
+    confirmFa: "این پایه حذف شود؟ (فقط وقتی در کلاس یا ثبت‌نامی استفاده نشده)",
+    async run(tx, ctx, scope, id) {
+      requireOrgScope(scope);
+      await deleteGradeLevel(tx, ctx, id);
+    },
+  },
 });
 
 interface SubjectRow {
@@ -632,6 +660,14 @@ export const subjectResource = defineResource<SubjectRow, z.output<typeof Subjec
   async update(tx, ctx, scope, id, input) {
     requireOrgScope(scope);
     await updateSubject(tx, ctx, id, { name: input.name });
+  },
+  archive: {
+    labelFa: "حذف",
+    confirmFa: "این درس حذف شود؟ (فقط وقتی در ارائهٴ درسی استفاده نشده)",
+    async run(tx, ctx, scope, id) {
+      requireOrgScope(scope);
+      await deleteSubject(tx, ctx, id);
+    },
   },
 });
 
