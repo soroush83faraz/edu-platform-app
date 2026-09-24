@@ -61,6 +61,8 @@ export interface StudentListOptions {
   /** Only students without an active class enrollment. */
   noClass?: boolean;
   classGroupId?: string;
+  /** Narrow to one school's own students (the school hub's «دانش‌آموزان این مدرسه») — by school enrollment. */
+  schoolId?: string;
 }
 
 function faLike(column: SQL | AnyPgColumn, q: string): SQL | undefined {
@@ -88,6 +90,7 @@ export async function listStudents(tx: Tx, scope: AdminScope, opts: StudentListO
     opts.pending ? eq(userAccount.mustChangePassword, true) : undefined,
     opts.noClass ? isNull(activeCe.classGroupId) : undefined,
     opts.classGroupId ? eq(activeCe.classGroupId, opts.classGroupId) : undefined,
+    opts.schoolId ? sql`exists (select 1 from academic.school_enrollment se where se.student_profile_id = ${studentProfile.id} and se.school_id = ${opts.schoolId})` : undefined,
   );
   const base = tx
     .with(activeCe)

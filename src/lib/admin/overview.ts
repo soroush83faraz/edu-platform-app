@@ -140,6 +140,21 @@ export async function schoolCounts(tx: Tx, scope: AdminScope): Promise<SchoolCou
   return res.rows.map((r) => ({ id: r.id, name: r.name, classes: Number(r.classes), students: Number(r.students), staff: Number(r.staff) }));
 }
 
+/** The same three numbers as `schoolCounts`, for a SINGLE school — what the school hub's stat row shows. */
+export async function oneSchoolCounts(tx: Tx, schoolId: string): Promise<{ classes: number; students: number; staff: number }> {
+  const res = await tx.execute<{ classes: number; students: number; staff: number }>(sql`
+    select
+      (select count(*)::int from tenancy.class_group cg join tenancy.branch b on b.id = cg.branch_id where b.school_id = ${schoolId} and cg.status = 'active') as classes,
+      (select count(*)::int from academic.school_enrollment se
+         join iam.student_profile sp on sp.id = se.student_profile_id
+         join iam.person p on p.id = sp.person_id
+        where se.school_id = ${schoolId} and p.status = 'active' and sp.status = 'active' and ${liveSchoolEnrollmentSql("se")}) as students,
+      (select count(*)::int from iam.staff_profile st join iam.person p2 on p2.id = st.person_id
+        where st.school_id = ${schoolId} and p2.status = 'active' and st.left_on is null) as staff`);
+  const r = res.rows[0];
+  return { classes: Number(r?.classes ?? 0), students: Number(r?.students ?? 0), staff: Number(r?.staff ?? 0) };
+}
+
 export interface AdminOverviewData {
   scope: AdminScope;
   counts: AdminCounts;
