@@ -4,8 +4,11 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { cn } from "cn";
 import { EmptyState } from "@/components/EmptyState";
+import { CrossFade } from "@/components/motion/CrossFade";
+import { LeavingList } from "@/components/motion/LeavingList";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { SegmentedLinks } from "@/components/SegmentedLinks";
 import { SubjectStamp } from "@/components/SubjectStamp";
 import { Button } from "@/components/ui/button";
 import { formatNumberFa } from "@/lib/format";
@@ -112,27 +115,18 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
         <h3 id="items-heading" className="px-1 text-section font-semibold text-text">
           تکالیف این درس
         </h3>
-        <nav aria-label="وضعیت تکالیف">
-          <ul className="grid grid-cols-2 gap-1 rounded-2xl bg-neutral-200/60 p-1">
-            {TABS.map(({ tab: t, label, icon: Icon }) => {
-              const current = tab === t;
-              const count = tabCounts[t];
-              return (
-                <li key={t}>
-                  <Link
-                    href={t === "todo" ? `/subjects/${offering.id}` : `/subjects/${offering.id}?tab=${t}`}
-                    aria-current={current ? "page" : undefined}
-                    className={cn("pressable flex h-11 items-center justify-center gap-1.5 rounded-xl px-1 text-sm", current ? "bg-surface font-semibold text-primary-800 shadow-1" : "text-text-muted hover:text-text")}
-                  >
-                    <Icon className={cn("size-4 shrink-0", current ? "text-primary-600" : "text-text-faint")} strokeWidth={1.75} aria-hidden />
-                    {label}
-                    {count > 0 ? <span className={cn("tabular rounded-full px-1.5 text-xs leading-5", current ? "bg-info-soft text-primary-800" : "bg-surface/70 text-text-muted")}>{formatNumberFa(count)}</span> : null}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
+        <SegmentedLinks
+          label="وضعیت تکالیف"
+          current={tab}
+          items={TABS.map(({ tab: t, label, icon: Icon }) => ({
+            key: t,
+            href: t === "todo" ? `/subjects/${offering.id}` : `/subjects/${offering.id}?tab=${t}`,
+            label,
+            icon: <Icon className="size-4" strokeWidth={1.75} aria-hidden />,
+            count: { value: tabCounts[t], text: formatNumberFa(tabCounts[t]), label: `${formatNumberFa(tabCounts[t])} تکلیف` },
+          }))}
+        />
+        <CrossFade swapKey={tab}>
         {rows.length === 0 ? (
           <EmptyState
             title={tab === "todo" ? "تکلیفی برای این درس در انتظار نیست" : "هنوز تکلیفی از این درس انجام‌شده علامت نخورده"}
@@ -140,12 +134,13 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
             className="surface-work"
           />
         ) : (
-          <ul className="reveal-rows divide-y divide-line/70 surface-work">
+          <LeavingList className="reveal-rows divide-y divide-line/70 surface-work" completedFrom={tab === "todo"}>
             {rows.map((row) => (
               <InboxRow key={row.id} row={row} inSubject />
             ))}
-          </ul>
+          </LeavingList>
         )}
+        </CrossFade>
       </section>
     </ContentWidth>
   );

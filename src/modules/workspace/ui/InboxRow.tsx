@@ -45,7 +45,7 @@ export function InboxRow({
     );
   }
   return (
-    <li>
+    <li data-row-id={row.id}>
       <Link
         href={`/inbox/${row.id}`}
         className="pressable flex min-h-16 items-center gap-3 px-3 py-2.5 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken active:bg-surface-sunken"
@@ -54,7 +54,7 @@ export function InboxRow({
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <p className={cn("line-clamp-2 text-row", closed ? "font-medium text-text-muted line-through decoration-text-faint" : cn("text-text", row.unread ? "font-semibold" : "font-medium"))}>
             {!closed ? <PriorityDot priority={row.priority} className="me-1.5 align-middle" /> : null}
-            <bdi>{row.title}</bdi>
+            <bdi data-slot="row-title">{row.title}</bdi>
           </p>
           {meta.length > 0 ? <MetaLine parts={meta} /> : null}
         </div>

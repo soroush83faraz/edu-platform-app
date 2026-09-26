@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRef } from "react";
 import { cn } from "cn";
 import { Chip } from "@/components/Chip";
+import { CrossFade } from "@/components/motion/CrossFade";
 import { emptyDayCopy, type TimetablePerspective } from "@/lib/empty-copy";
 import { formatNumberFa } from "@/lib/format";
 import { dayAgenda, formatTimeFa, SCHOOL_WEEKDAYS, sessionStates, WEEKDAY_LABELS, WEEKDAY_SHORT, type PeriodLike, type Weekday } from "@/lib/timetable";
@@ -32,7 +33,8 @@ const SWIPE_MIN_PX = 56;
  * subject, the teacher (students) or the class (teachers) with the زنگ label. Past rows dim, the first one still
  * to come reads «بعدی», the ringing one is `primary-50` with «الان» and the live progress bar along its bottom
  * edge. Empty زنگ‌ها inside the day and the long breaks are thin quiet dividers, not cards. A horizontal swipe on
- * the list moves to the neighbouring day (RTL: a swipe towards the end side — rightwards — goes forward).
+ * the list moves to the neighbouring day (RTL: a swipe towards the end side — rightwards — goes forward). The chosen
+ * day's pill slides between the buttons and the day's list cross-fades (180 ms); both are still under reduced motion.
  */
 export function DayAgenda({ days, periods, today, nowMinutes, selected, onSelect, secondary, perspective }: DayAgendaProps) {
   const byDay = new Map(days.map((d) => [d.weekday, d.sessions]));
@@ -54,7 +56,13 @@ export function DayAgenda({ days, periods, today, nowMinutes, selected, onSelect
 
   return (
     <div className="flex flex-col gap-2.5">
-      <div role="group" aria-label="روزهای هفته" className="surface-panel grid grid-cols-6 gap-1 p-1">
+      <div role="group" aria-label="روزهای هفته" className="surface-panel relative grid grid-cols-6 gap-1 p-1">
+        {/* ONE blue pill slides under the chosen day (translate, 240 ms) instead of each button repainting. */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-1 start-1 rounded-xl bg-primary-600 transition-[translate] duration-(--duration-slow) ease-(--ease-out)"
+          style={{ width: "calc((100% - 0.5rem - 1.25rem) / 6)", translate: `calc(${-Math.max(0, SCHOOL_WEEKDAYS.indexOf(selected))} * (100% + 0.25rem)) 0` }}
+        />
         {SCHOOL_WEEKDAYS.map((d) => {
           const n = byDay.get(d)?.length ?? 0;
           const active = d === selected;
@@ -68,8 +76,8 @@ export function DayAgenda({ days, periods, today, nowMinutes, selected, onSelect
               aria-label={`${WEEKDAY_LABELS[d]}${isTodayChip ? "، امروز" : ""}، ${n > 0 ? `${formatNumberFa(n)} زنگ` : "بدون کلاس"}`}
               onClick={() => onSelect(d)}
               className={cn(
-                "pressable flex min-h-14 flex-col items-center justify-center rounded-xl transition-base outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                active ? "bg-primary-600 text-white" : "text-text hover:bg-surface",
+                "pressable relative flex min-h-14 flex-col items-center justify-center rounded-xl transition-base outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                active ? "text-white" : "text-text hover:bg-surface",
                 isTodayChip && !active && "ring-1 ring-inset ring-primary-600 text-primary-700",
               )}
             >
@@ -121,6 +129,7 @@ export function DayAgenda({ days, periods, today, nowMinutes, selected, onSelect
           </p>
         </header>
 
+        <CrossFade swapKey={selected}>
         {rows.length === 0 ? (
           <p className="px-4 pt-2 pb-5 text-sm text-text-muted">
             {emptyDayCopy(WEEKDAY_LABELS[selected], perspective)}
@@ -187,6 +196,7 @@ export function DayAgenda({ days, periods, today, nowMinutes, selected, onSelect
             })}
           </ol>
         )}
+        </CrossFade>
       </section>
     </div>
   );

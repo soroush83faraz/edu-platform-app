@@ -2,19 +2,23 @@
 
 import { CalendarPlus, Check, CheckCheck, RotateCcw, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
 import { ResponsiveModal } from "@/components/admin/ResponsiveModal";
+import { prefersReducedMotion } from "@/components/motion/CrossFade";
+import { DrawnCheck } from "@/components/motion/DrawnCheck";
 import { JalaliDatePicker } from "@/components/pickers/JalaliDatePicker";
 import { TimePicker, formatTimeFa } from "@/components/pickers/TimePicker";
 import { Button } from "@/components/ui/button";
+import { forgetCompleted, noteCompleted } from "@/lib/completion-moment";
 import { flatten } from "@/lib/form-errors";
 import { formatJalaliDateTime, parseJalaliToInstant, tehranNow } from "@/lib/format";
 import { formatHm, formatJalaliDay, formatJalaliDayLong, parseJalaliDay, tehranToday } from "@/lib/jalali-grid";
 import type { WorkItemWords } from "@/lib/work-item-words";
 import { changeStatusAction, extendDueAtAction, markInboxReadAction } from "../actions";
 import type { StatusCategory } from "../repo";
+import { useCompletion } from "./Completion";
 
 export interface WorkItemActionsProps {
   workItemId: string;
@@ -39,6 +43,12 @@ export interface WorkItemActionsProps {
  * round 4). There is no overflow menu: سنجاق / بایگانی left the UI (owner, round 5 — «if the teacher wants, they
  * can delete it»); `setPinned` / `archiveInbox` stay in the service, unwired. Full-width and stacked on phones,
  * one inline row from `sm:`, every target 44 px. Marks my inbox row read once on mount.
+ *
+ * Finishing is answered at once (optimistic, docs/decisions «حرکت در پاسخ به کار کاربر»): the title is struck
+ * (`CompletionProvider`), «انجام شد» turns into its quiet outline twin whose check draws itself, and once the
+ * server agrees that button folds away (`FoldAway`) — the header's «انجام‌شده» line says it from then on. A
+ * refusal un-strikes the title and brings the button back. The finish is noted for the کارتابل and Home
+ * (`src/lib/completion-moment.ts`).
  */
 export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assigneeCount, myAssigneeState, isManager, canUpdate, inboxState, words }: WorkItemActionsProps) {
   const router = useRouter();
@@ -46,6 +56,9 @@ export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assi
   // `"cancel"` is the `cancelled` transition — the button that used to read «کنسل» and now reads «حذف».
   const [confirm, setConfirm] = useState<"done" | "cancel" | null>(null);
   const [extending, setExtending] = useState(false);
+  const markDone = useCompletion();
+  // «انجام شد» was tapped on this page view: the button stays (as its finished twin) until it folds away.
+  const [justDone, setJustDone] = useState(false);
 
   useEffect(() => {
     if (inboxState !== "unread") return;
@@ -63,6 +76,25 @@ export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assi
       } else toast.error(r.message ?? "خطایی رخ داد.");
     });
 
+  /** «انجام شد» / «اتمام»: strike now, ask the server, undo the strike if it refuses. */
+  const finish = (label: string) => {
+    setJustDone(true);
+    markDone?.(true);
+    noteCompleted(workItemId, dueAt);
+    start(async () => {
+      const r = await changeStatusAction({ workItemId, toStatusCode: "done" });
+      if (r.ok) {
+        toast.success(label);
+        router.refresh();
+      } else {
+        setJustDone(false);
+        markDone?.(false);
+        forgetCompleted(workItemId);
+        toast.error(r.message ?? "خطایی رخ داد.");
+      }
+    });
+  };
+
   const closed = statusCategory === "done" || statusCategory === "cancelled";
   const isAssignee = myAssigneeState !== null;
   const manager = canUpdate && isManager;
@@ -70,17 +102,45 @@ export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assi
   const buttons: React.ReactNode[] = [];
 
   // «شروع کردم» (in_progress) is hidden with the «در جریان» tab (owner decision); an assignee only marks «انجام شد».
-  if (canUpdate && isAssignee && !closed && myAssigneeState !== "done") {
-    buttons.push(
-      <Button key="done" className={buttonClass} disabled={pending} onClick={() => run("انجام شد", () => changeStatusAction({ workItemId, toStatusCode: "done" }))}>
-        <Check aria-hidden />
+  const canFinishMine = canUpdate && isAssignee && !closed && myAssigneeState !== "done";
+  if (canFinishMine || (justDone && isAssignee)) {
+    const button = (
+      // The finished twin is inert but not faded (`disabled` would halve it): the drawn check must read clearly.
+      <Button
+        key="done"
+        variant={justDone ? "outline" : "default"}
+        className={cn(buttonClass, justDone && "pointer-events-none")}
+        disabled={pending && !justDone}
+        aria-disabled={justDone || undefined}
+        onClick={() => {
+          if (!justDone) finish("انجام شد");
+        }}
+      >
+        {justDone ? <DrawnCheck className="text-success" /> : <Check aria-hidden />}
         انجام شد
-      </Button>,
+      </Button>
+    );
+    // Once the server says «done», the finished twin holds for a beat and folds away. Always wrapped, so the
+    // button is not remounted (its check would draw twice) when the server's answer arrives.
+    buttons.push(
+      <FoldAway key="done" folding={!canFinishMine} onGone={() => setJustDone(false)}>
+        {button}
+      </FoldAway>,
     );
   }
   if (manager && closed) {
     buttons.push(
-      <Button key="reopen" variant="outline" className={buttonClass} disabled={pending} onClick={() => run("بازگشایی شد", () => changeStatusAction({ workItemId, toStatusCode: "open" }))}>
+      <Button
+        key="reopen"
+        variant="outline"
+        className={buttonClass}
+        disabled={pending}
+        onClick={() => {
+          setJustDone(false);
+          markDone?.(false);
+          run("بازگشایی شد", () => changeStatusAction({ workItemId, toStatusCode: "open" }));
+        }}
+      >
         <RotateCcw aria-hidden />
         بازگشایی
       </Button>,
@@ -129,7 +189,7 @@ description={assigneeCount > 1 ? `همهٴ ${words.recipients} انجام‌شد
               disabled={pending}
               onClick={() => {
                 setConfirm(null);
-                run(`${words.singular} تمام شد`, () => changeStatusAction({ workItemId, toStatusCode: "done" }));
+                finish(`${words.singular} تمام شد`);
               }}
             >
               <CheckCheck aria-hidden />
@@ -170,6 +230,41 @@ description={`این ${words.singular} حذف شود؟ ${words.recipients} دی�
       <ResponsiveModal open={extending} onOpenChange={setExtending} title="تمدید مهلت" description={`مهلت فعلی: ${dueAt ? formatJalaliDateTime(dueAt) : "بدون مهلت"}`}>
         {extending ? <ExtendForm workItemId={workItemId} title={title} dueAt={dueAt} onClose={() => setExtending(false)} onDone={() => router.refresh()} /> : null}
       </ResponsiveModal>
+    </div>
+  );
+}
+
+/**
+ * While `folding`, holds a finished control for a beat (900 ms), then folds it away — height to zero and fades, 250 ms — instead of
+ * letting it vanish in one frame. Under reduced motion it simply goes after the beat.
+ */
+function FoldAway({ folding, children, onGone }: { folding: boolean; children: React.ReactNode; onGone: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const gone = useRef(onGone);
+  useEffect(() => {
+    gone.current = onGone;
+  });
+  useEffect(() => {
+    if (!folding) return;
+    let animation: Animation | undefined;
+    const timer = window.setTimeout(() => {
+      const el = ref.current;
+      if (!el || typeof el.animate !== "function" || prefersReducedMotion()) return gone.current();
+      el.style.overflow = "hidden";
+      animation = el.animate([{ height: `${el.offsetHeight}px`, minHeight: "0px", opacity: 1 }, { height: "0px", minHeight: "0px", opacity: 0 }], { duration: 250, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)", fill: "forwards" });
+      animation.finished.then(
+        () => gone.current(),
+        () => undefined,
+      );
+    }, 900);
+    return () => {
+      window.clearTimeout(timer);
+      animation?.cancel();
+    };
+  }, [folding]);
+  return (
+    <div ref={ref} className="flex flex-col sm:block">
+      {children}
     </div>
   );
 }

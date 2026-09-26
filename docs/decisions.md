@@ -1138,3 +1138,63 @@ Owner-approved items from the UX review whose aim is an app that reads like a re
   line-height 1) in `@theme`; the list stamp keeps `text-meta`. It joins its classes with `twJoin`: `cn`'s default
   merge tables read a custom size role (`text-meta`) as a text COLOUR and dropped it in favour of the hue's ink, so
   the stamp had been rendering at the body 14 px.
+
+## 2026-09-27 — حرکت در پاسخ به کار کاربر (motion that answers the student's own action)
+
+Owner: «motion and animation so our users, mostly students, get a good feeling». The rule from the UX review:
+motion **rewards an action or shows a state change**; a page view never moves (entrances stay once per session,
+`data-seen`). Every piece is transform / opacity except two one-line paint strokes (the drawn check, the strike
+sweep) and the two folds (height, one element, ≤ 280 ms); the house ease `cubic-bezier(.2,.8,.2,1)`; no library,
+no sound, no glow. Under `prefers-reduced-motion: reduce` every CSS rule is scoped out (`no-preference`) or
+clamped by the base layer, and every Web Animations call checks `prefersReducedMotion()` first — the UI simply
+lands in its final state (verified in headless Chrome with the media emulated: no animation names, 0 WAAPI
+animations, the pill's transition clamped).
+
+- **Finishing a کار** (`WorkItemActions` + `CompletionProvider` / `CompletableTitle`, the item page): «انجام شد» (and
+  the creator's «اتمام») answers at once, before the server — optimistic, the same `changeStatusAction`, no server or
+  permission change. The title is struck by a line that sweeps from the START side (RTL: right → left, across
+  wrapped lines in reading order, 350 ms) and turns muted; the button turns into its quiet outline twin whose check
+  draws itself (`DrawnCheck`, stroke-dash on a `pathLength=1` path, 300 ms, in `success` — it IS completed). When
+  the server agrees, the twin holds 900 ms and folds away (height + opacity, 250 ms) instead of vanishing in a frame;
+  the header's «انجام‌شده» line says it from then on. A refusal un-strikes the title and restores the button. A
+  finished item opened later shows the strike standing (`strike`), matching the struck rows of the lists.
+- **Rows leave, they do not pop** (`LeavingList` on the کارتابل's and the subject page's lists): a row that is no
+  longer in the server's list stays in place and folds (height, min-height, padding, border → 0 and fades, 280 ms),
+  then the rows below settle. The detail page notes each finish (`src/lib/completion-moment.ts`, module state for the
+  client app session); a list that the router brings back from its cache still showing that row strikes it at once
+  and refreshes, and the row folds out. **Honest limit:** `router.refresh()` after «انجام شد» already refetches
+  the list, so on the usual path (item → «پنل من») the finished row is simply absent; the fold plays on in-place
+  removals (a refresh or a re-tapped tab after someone else closed an item) and on a cached back. A one-tap «done»
+  check in the list rows would make it the everyday moment, but a student cannot undo «انجام شد» (the service has no
+  assignee → pending transition), so it is left for an owner decision, not added here.
+- **Counts that change** roll: the nav «پنل من» badge, the bell and «امروز»'s numbers (`CountBadge`,
+  `RollingNumber`): the new number rolls in from below when it grew and from above when it shrank (250 ms); a badge
+  that comes back from zero pops (`badge-pop`). Never on first render: a counter compares with what it showed, and
+  Home's line remembers across pages (`memoryKey`, in-memory, client only), so «۴ → ۳ تکلیف عقب‌افتاده» rolls when a
+  student comes back from finishing one.
+- **«همهٴ کارهای امروز انجام شد»** (`TodayStrip` + `CheckBurst`): when a student has just finished an item that was
+  overdue or due today and nothing overdue / due today is left, Home's «امروز» line becomes that sentence with a
+  32 px check burst — a persian-blue disc pops, a white check draws, six short strokes (five blue, one sky) spring
+  out and fade, 600 ms in all; unread notifications keep their fragment after it. At most once a day per device
+  (`localStorage` `donino.celebrated.day`, Tehran day, try/catch), and only on the student's own finish (never
+  when counts reach zero some other way). Not full-screen, no confetti.
+- **Segmented controls slide** (`SegmentedLinks` — the کارتابل's «انجام‌نشده / انجام‌شده» and the subject page's
+  tabs; `DayAgenda`'s day strip): ONE pill (white + `shadow-1` / `primary-600`) moves under the chosen segment
+  (translate, 240 ms), from the moment of the tap; the content below cross-fades in (`CrossFade`, opacity 180 ms,
+  only when the key changes — never on a page view). The page tree persists across the `?tab=` navigation (no
+  loading boundary remount), so both play on the real navigation.
+- **Press feedback everywhere a surface is tapped**: `pressable` (scale .98) added to the rows and controls that
+  lacked it — the notification rows, the admin people / attendance / class rows and filter chip, the new-item form's
+  chips and picker rows, the page header's back link, `PublicBackLink`, the schools chip. Inline text links keep none.
+- **Skipped: page transitions** (React `<ViewTransition>` with Next 16.3.5's `transitionTypes`). Next documents it
+  and its vendored React exports it, but: it is a canary-only React API (our pinned React 19.2.8 does not export it,
+  so types need `react/canary` and the unit renders need a fallback); the Android system back / swipe — how our
+  students go back — carries no transition type, so only the in-app back link would slide and forward/back would
+  feel inconsistent; and a view transition snapshots the page into GPU textures and blocks taps while it runs, the
+  wrong trade on cheap phones. Revisit when `ViewTransition` is in stable React.
+- **Verified** at 375 px as the pilot student (headless Chrome over CDP and the Browser pane): the tab pill and day
+  pill slide (sampled per frame), the cross-fade runs 0 → 1, «انجام شد» strikes and draws before the server answers
+  (a stalled request), then folds; the «۴ → ۳» roll; the burst and the once-a-day key; the fold of a removed row
+  (the next row glides 65 px over ~280 ms). The pilot item «سسسسس» (student ۰۹۳۵۱۰۰۱۰۰۰, 4 days overdue) is now
+  marked done by that student — a student cannot reopen it.
+

@@ -4,9 +4,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { cn } from "cn";
 import { EmptyState } from "@/components/EmptyState";
+import { CrossFade } from "@/components/motion/CrossFade";
+import { LeavingList } from "@/components/motion/LeavingList";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionHeader } from "@/components/SectionHeader";
+import { SegmentedLinks } from "@/components/SegmentedLinks";
 import { Button } from "@/components/ui/button";
 import { type Audience, audienceOf, emptyDoneCopy, emptyOpenCopy } from "@/lib/empty-copy";
 import { requireContext } from "@/lib/ctx";
@@ -91,80 +94,68 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         }
       />
 
-      <nav aria-label={`وضعیت ${words.plural}`}>
-        <ul className="grid grid-cols-2 gap-1 rounded-2xl bg-neutral-200/60 p-1">
-          {VISIBLE_TABS.map((tab) => {
-            const current = f.tab === tab;
-            const Icon = TAB_ICONS[tab];
-            const count = tabCounts[tab];
-            return (
-              <li key={tab}>
-                <Link
-                  href={href({ ...f, tab, cursor: undefined })}
-                  aria-current={current ? "page" : undefined}
-                  className={cn(
-                    "pressable flex h-14 flex-col items-center justify-center gap-0 rounded-xl px-1 text-sm sm:h-11 sm:flex-row sm:gap-1.5",
-                    current ? "bg-surface font-semibold text-primary-800 shadow-1" : "text-text-muted hover:text-text",
-                  )}
-                >
-                  <Icon className={cn("size-4 shrink-0", current ? "text-primary-600" : "text-text-faint")} strokeWidth={1.75} aria-hidden />
-                  <span className="flex items-center gap-1.5">
-                    <span className="truncate">{TAB_LABELS[tab]}</span>
-                    {count > 0 ? (
-                      <span className={cn("tabular rounded-full px-1.5 text-xs leading-5", current ? "bg-info-soft text-primary-800" : "bg-surface/70 text-text-muted")} aria-label={`${formatNumberFa(count)} ${words.singular}`}>
-                        {count > 99 ? `${formatNumberFa(99)}+` : formatNumberFa(count)}
-                      </span>
-                    ) : null}
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+      <SegmentedLinks
+        label={`وضعیت ${words.plural}`}
+        current={f.tab}
+        items={VISIBLE_TABS.map((tab) => {
+          const Icon = TAB_ICONS[tab];
+          const count = tabCounts[tab];
+          return {
+            key: tab,
+            href: href({ ...f, tab, cursor: undefined }),
+            label: TAB_LABELS[tab],
+            icon: <Icon className="size-4" strokeWidth={1.75} aria-hidden />,
+            count: { value: count, text: count > 99 ? `${formatNumberFa(99)}+` : formatNumberFa(count), label: `${formatNumberFa(count)} ${words.singular}` },
+          };
+        })}
+      />
 
-      {isStaff || filtered ? (
-        <div className="flex flex-wrap items-center gap-2" aria-label="فیلترها">
-          {isStaff ? <FilterChip href={href({ ...f, mine: !f.mine, cursor: undefined })} active={f.mine} label={`فقط ${words.given}`} /> : null}
-          {f.bucket ? <FilterChip href={href({ ...f, bucket: undefined, cursor: undefined })} active removable label={BUCKET_LABELS[f.bucket]} /> : null}
-          {f.unread ? <FilterChip href={href({ ...f, unread: false, cursor: undefined })} active removable label="خوانده‌نشده" /> : null}
-        </div>
-      ) : null}
+      {/* The list of the chosen tab fades in over the one it replaces (180 ms) — never on a page view. */}
+      <CrossFade swapKey={f.tab} className="flex flex-col gap-3">
+        {isStaff || filtered ? (
+          <div className="flex flex-wrap items-center gap-2" aria-label="فیلترها">
+            {isStaff ? <FilterChip href={href({ ...f, mine: !f.mine, cursor: undefined })} active={f.mine} label={`فقط ${words.given}`} /> : null}
+            {f.bucket ? <FilterChip href={href({ ...f, bucket: undefined, cursor: undefined })} active removable label={BUCKET_LABELS[f.bucket]} /> : null}
+            {f.unread ? <FilterChip href={href({ ...f, unread: false, cursor: undefined })} active removable label="خوانده‌نشده" /> : null}
+          </div>
+        ) : null}
 
-      {rows.length === 0 ? (
-        <Empty tab={f.tab} filtered={filtered} canCreate={canCreate} clearHref={href({ tab: f.tab })} words={words} createWords={createWords} audience={audienceOf((await requireContext()).assignments)} firstTime={tabCounts.done === 0} />
-      ) : (
-        <div className="mt-2 flex flex-col">
-          {grouped.map(([bucket, items]) => (
-            <section key={bucket} aria-labelledby={`bucket-${bucket}`}>
-              {bucket !== "all" ? (
-                <SectionHeader title={BUCKET_LABELS[bucket]} icon={BUCKET_ICONS[bucket]} count={items.length} tone={bucket === "overdue" ? "danger" : "neutral"} />
-              ) : (
-                <div className="pt-3" />
-              )}
-              <ul className="reveal-rows surface-work divide-y divide-line/70">
-                {items.map((row) => (
-                  <InboxRow key={row.id} row={row} words={words} createVoice={createVoice} />
-                ))}
-              </ul>
-            </section>
-          ))}
-          {nextCursor || f.cursor ? (
-            <div className="flex items-center justify-center gap-3 py-5">
-              {f.cursor ? (
-                <Button asChild variant="ghost">
-                  <Link href={href({ ...f, cursor: undefined })}>بازگشت به ابتدا</Link>
-                </Button>
-              ) : null}
-              {nextCursor ? (
-                <Button asChild variant="outline">
-                  <Link href={href({ ...f, cursor: nextCursor })}>نمایش بیشتر</Link>
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      )}
+        {rows.length === 0 ? (
+          <Empty tab={f.tab} filtered={filtered} canCreate={canCreate} clearHref={href({ tab: f.tab })} words={words} createWords={createWords} audience={audienceOf((await requireContext()).assignments)} firstTime={tabCounts.done === 0} />
+        ) : (
+          <div className="mt-2 flex flex-col">
+            {grouped.map(([bucket, items]) => (
+              <section key={bucket} aria-labelledby={`bucket-${bucket}`}>
+                {bucket !== "all" ? (
+                  <SectionHeader title={BUCKET_LABELS[bucket]} icon={BUCKET_ICONS[bucket]} count={items.length} tone={bucket === "overdue" ? "danger" : "neutral"} />
+                ) : (
+                  <div className="pt-3" />
+                )}
+                {/* Rows leave by collapsing, not popping; a row the detail page just finished is handed over. */}
+                <LeavingList className="reveal-rows surface-work divide-y divide-line/70" completedFrom={f.tab === "todo"}>
+                  {items.map((row) => (
+                    <InboxRow key={row.id} row={row} words={words} createVoice={createVoice} />
+                  ))}
+                </LeavingList>
+              </section>
+            ))}
+            {nextCursor || f.cursor ? (
+              <div className="flex items-center justify-center gap-3 py-5">
+                {f.cursor ? (
+                  <Button asChild variant="ghost">
+                    <Link href={href({ ...f, cursor: undefined })}>بازگشت به ابتدا</Link>
+                  </Button>
+                ) : null}
+                {nextCursor ? (
+                  <Button asChild variant="outline">
+                    <Link href={href({ ...f, cursor: nextCursor })}>نمایش بیشتر</Link>
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        )}
+      </CrossFade>
     </ContentWidth>
   );
 }

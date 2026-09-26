@@ -13,6 +13,7 @@ import { personalItemLabel, workItemStatusLabel, workItemWords } from "@/lib/wor
 import { workItemDetailQuery } from "@/modules/workspace/queries";
 import type { StatusCategory } from "@/modules/workspace/repo";
 import { CommentForm } from "@/modules/workspace/ui/CommentForm";
+import { CompletableTitle, CompletionProvider } from "@/modules/workspace/ui/Completion";
 import { WorkItemActions } from "@/modules/workspace/ui/WorkItemActions";
 
 // Role-neutral in the tab title (the page itself says «تکلیف» / «تسک» once it knows the reader).
@@ -53,13 +54,16 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
         ? null
         : { category: item.statusCategory, label: workItemStatusLabel(item.statusName) };
   const StatusIcon = status ? STATUS_ICON[status.category] : null;
+  // Finished for THIS reader — my own part done, or the item closed as done: the title stands struck through.
+  const finished = (myAssigneeState === "done" && !viewer.isManager) || item.statusCategory === "done";
   const showPriority = !(item.statusCategory === "done" || item.statusCategory === "cancelled") && (item.priority === "high" || item.priority === "urgent");
 
   return (
     <ContentWidth size="reading" className="gap-4">
+      <CompletionProvider initialDone={finished}>
       <PageHeader
         back={{ href: "/inbox", label: "پنل من" }}
-        title={<bdi>{item.title}</bdi>}
+        title={<CompletableTitle>{item.title}</CompletableTitle>}
         description={
           <>
             {/* The type in the READER's word: a personal کار is the student's «تسک» or the catalog name,
@@ -216,6 +220,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
         </details>
       ) : null}
       </article>
+      </CompletionProvider>
     </ContentWidth>
   );
 }

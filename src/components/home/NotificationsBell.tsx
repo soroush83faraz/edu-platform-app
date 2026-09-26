@@ -22,7 +22,7 @@ export function NotificationsBell() {
       className="pressable relative grid size-11 shrink-0 place-items-center rounded-full text-text-muted transition-base hover:bg-surface hover:text-text"
     >
       <Bell className="size-6" strokeWidth={2} aria-hidden />
-      <CountBadge count={unread} label={`${formatNumberFa(unread)} اعلان خوانده‌نشده`} floating className="-top-0.5 -end-1.5" />
+      <CountBadge count={unread} label={`${formatNumberFa(unread)} اعلان خوانده‌نشده`} floating memoryKey="bell" className="-top-0.5 -end-1.5" />
     </Link>
   );
 }

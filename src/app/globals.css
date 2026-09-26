@@ -140,7 +140,8 @@
 
     /* Motion: one ease-out for everything that enters or reacts, ease-in-out for things that move between two
        resting places (the nav indicator). 120 ms for colour/press feedback, 180 ms for surfaces that appear,
-       240 ms for the page-load choreography. Nothing bounces; nothing runs longer than 300 ms. */
+       240 ms for the page-load choreography. Nothing bounces. Feedback to the user's own action (the «Feedback»
+       block below) runs 180–350 ms per piece; the once-a-day «همهٴ کارهای امروز انجام شد» burst, 600 ms in all. */
     --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
     --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
     --duration-fast: 120ms;
@@ -461,6 +462,143 @@
 @utility overlay-in {
   @media (prefers-reduced-motion: no-preference) {
     animation: fade-in var(--duration-base) var(--ease-out) both;
+  }
+}
+
+/* ---- Feedback: motion that answers the user's own action or shows a state change (docs/decisions «حرکت در
+   پاسخ به کار کاربر»). Never on a page view; transform / opacity, except the two paint-only strokes (the drawn
+   check and the strike sweep, one short line each). Under reduced motion every one of them sits in its final
+   state: the rules are scoped to `no-preference`, and the base layer clamps anything else. ---- */
+
+/* A number that changed: the new value rolls in from below when it grew, from above when it shrank (250 ms). */
+@keyframes count-in-up {
+  from {
+    opacity: 0;
+    translate: 0 0.5em;
+  }
+}
+@keyframes count-in-down {
+  from {
+    opacity: 0;
+    translate: 0 -0.5em;
+  }
+}
+@utility count-up {
+  display: inline-block;
+  @media (prefers-reduced-motion: no-preference) {
+    animation: count-in-up 250ms var(--ease-out) both;
+  }
+}
+@utility count-down {
+  display: inline-block;
+  @media (prefers-reduced-motion: no-preference) {
+    animation: count-in-down 250ms var(--ease-out) both;
+  }
+}
+
+/* A badge that comes back from zero: the pill pops in (250 ms). */
+@utility badge-pop {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: pop-in 250ms var(--ease-out) both;
+  }
+}
+
+/* The check that draws itself (`DrawnCheck`, an SVG path with pathLength=1): 300 ms. */
+@keyframes check-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+@utility check-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  @media (prefers-reduced-motion: no-preference) {
+    animation: check-draw 300ms var(--ease-out) both;
+  }
+}
+
+/* A finished title: a strike that sweeps from the START side (right, RTL) across every line, 350 ms. A background
+   line, not `text-decoration`, so it can grow; on an inline box it runs line after line in reading order. Static
+   `strike` is the same line already drawn (a finished item opened later). */
+@keyframes strike-in {
+  from {
+    background-size: 0% 0.075em;
+  }
+}
+@utility strike {
+  background-image: linear-gradient(var(--color-text-faint), var(--color-text-faint));
+  background-repeat: no-repeat;
+  background-position: 100% 58%;
+  background-size: 100% 0.075em;
+  -webkit-box-decoration-break: slice;
+  box-decoration-break: slice;
+}
+@utility strike-sweep {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: strike-in 350ms var(--ease-out) both;
+  }
+}
+
+/* A list row the detail page just finished, still shown from the router's cache (`LeavingList`): struck and
+   muted at once, while the refresh that removes it is on its way. */
+[data-completing] [data-slot="row-title"] {
+  color: var(--color-text-muted);
+  background-image: linear-gradient(var(--color-text-faint), var(--color-text-faint));
+  background-repeat: no-repeat;
+  background-position: 100% 58%;
+  background-size: 100% 0.075em;
+  @media (prefers-reduced-motion: no-preference) {
+    animation: strike-in 350ms var(--ease-out) both;
+  }
+}
+
+/* Content that changed in place (a tab, a day): a 180 ms fade-in of the new content — `CrossFade` restarts it. */
+@keyframes cross-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* «همهٴ کارهای امروز انجام شد» (`CheckBurst`, ≤ 600 ms, once a day): the disc pops, the check draws, six short
+   strokes spring out from it and fade. Transforms on SVG children scale about the icon's centre. */
+@keyframes burst-disc {
+  from {
+    scale: 0.6;
+    opacity: 0;
+  }
+}
+@keyframes burst-ray {
+  0% {
+    scale: 0.55;
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    scale: 1.15;
+    opacity: 0;
+  }
+}
+@utility burst {
+  & .burst-disc,
+  & .burst-ray {
+    transform-box: view-box;
+    transform-origin: 16px 16px;
+  }
+  & .burst-ray {
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    & .burst-disc {
+      animation: burst-disc 220ms var(--ease-out) both;
+    }
+    & .burst-ray {
+      animation: burst-ray 420ms var(--ease-out) 160ms both;
+    }
+    & .check-draw {
+      animation-delay: 120ms;
+    }
   }
 }
 
