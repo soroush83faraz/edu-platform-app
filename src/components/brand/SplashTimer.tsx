@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { SPLASH_TOTAL_MS } from "@/lib/pwa/splash-gate";
+import { SPLASH_REDUCED_MS, SPLASH_TOTAL_MS } from "@/lib/pwa/splash-gate";
 
 /**
  * The only JavaScript the opening splash runs after its boot script (`SplashScreen`): it takes the finished
@@ -12,20 +12,20 @@ import { SPLASH_TOTAL_MS } from "@/lib/pwa/splash-gate";
  * `SPLASH_TOTAL_MS`, so a bundle that never arrives, a listener that never fires or a tab the browser throttles
  * all end with the same empty screen. This just stops an invisible layer from sitting in the page afterwards.
  *
- * With `prefers-reduced-motion: reduce` it clears the attribute at once: the reduced-motion clamp in `globals.css`
- * collapses the animation anyway, and the app should simply open.
+ * With `prefers-reduced-motion: reduce` the layer runs the short `splash-leave-still` instead (the solid mark
+ * stands and fades, nothing moves), so the attribute is cleared after `SPLASH_REDUCED_MS`.
  */
 export function SplashTimer() {
   useEffect(() => {
     const root = document.documentElement;
     if (root.dataset.splash !== "on") return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true) {
-      delete root.dataset.splash;
-      return;
-    }
-    const done = window.setTimeout(() => {
-      delete root.dataset.splash;
-    }, SPLASH_TOTAL_MS);
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+    const done = window.setTimeout(
+      () => {
+        delete root.dataset.splash;
+      },
+      reduced ? SPLASH_REDUCED_MS : SPLASH_TOTAL_MS,
+    );
     return () => window.clearTimeout(done);
   }, []);
 

@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { DoninoMark, DoninoWordmark } from "@/components/brand/DoninoMark";
 import { RoleMark } from "@/components/brand/RoleMark";
 import { ROLE_LABELS, ROLE_ORDER, type RoleHatSource, type RoleKey, roleHatsFor, roleHatsLabel } from "@/components/brand/roles";
-import { MARK_BOTTOM, MARK_TOP, MONOGRAM_PATH, markSvg } from "@/lib/brand/mark";
+import { SplashScreen } from "@/components/brand/SplashScreen";
+import { MARK_BOTTOM, MARK_GHOST_OPACITY, MARK_TOP, MONOGRAM_PATH, MONOGRAM_STROKES, ghostMarkSvg, markSvg } from "@/lib/brand/mark";
 import { DEFAULT_PRODUCT_NAME, productName } from "@/lib/product";
 
 const ADMIN = "iam.admin.access";
@@ -51,19 +52,41 @@ describe("the brand mark — the owner's «D» monogram", () => {
     expect(svg.toUpperCase()).toContain(MARK_BOTTOM);
   });
 
-  it("is two interlocking strokes: three even-odd sub-paths, and no edge shared between two of them", () => {
-    // 1 the outer D's silhouette · 2 the C-shaped channel · 3 the inner counter — both holes sit at depth 2.
+  it("is the owner's logo redrawn: two even-odd contours of one constant-width ribbon", () => {
+    // 1 the silhouette (with the notch that runs up into the inner eye) · 2 the channel round the inner D.
     const subpaths = MONOGRAM_PATH.split(/(?=M)/).map((d) => d.trim());
-    expect(subpaths).toHaveLength(3);
+    expect(subpaths).toHaveLength(2);
+    expect(MONOGRAM_STROKES).toEqual(subpaths);
     expect(renderToStaticMarkup(createElement(DoninoMark, {}))).toContain('fill-rule="evenodd"');
     expect(markSvg()).toContain('fill-rule="evenodd"');
-    // The channel runs from the stem (x = 15) round the bowl and back to the stem on BOTH arms — top (15…21) and
-    // bottom (43…49) — so the inner D grows out of the stem without a second contour on x = 15 (no AA seam).
-    expect(subpaths[1]).toMatch(/^M15 15H32.*H15V43H32.*H15V15Z$/);
-    // The inner counter starts to the end of the stem, never on it.
-    expect(subpaths[2].startsWith("M21 27")).toBe(true);
-    // Every sub-path closes.
+    // The stem, the bars and the bowls sit on exact numbers: stem 5.75, top 5, bottom 59, bowl r = 27 about
+    // (32, 32) — straight edges truly straight, the bowl a true circle (its quarter ends at 59 32).
+    expect(subpaths[0]).toMatch(/^M5\.75 5H32C.* 59 32C.* 32 59H5\.75C/);
+    // One stroke (5.75) inside: the channel opens at the stem's inner edge under the top bar and runs round r = 21.25.
+    expect(subpaths[1]).toMatch(/^M11\.5 10\.75H32C.* 53\.25 32C.* 32 53\.25H/);
+    // The inner D: its eye (r = 10.6) and its outer edge (r = 16.35), level top and bottom about the same centre.
+    expect(subpaths[0]).toContain("H32C37.85 42.6 42.6 37.85 42.6 32");
+    expect(subpaths[1]).toContain("H32C41.03 48.35 48.35 41.03 48.35 32");
     for (const d of subpaths) expect(d.endsWith("Z")).toBe(true);
+    // Few nodes: 11 on-curve points per contour (the auto-trace had 30 in all).
+    for (const d of subpaths) expect(d.match(/[MHLC]/g)).toHaveLength(11);
+  });
+
+  it("the iOS launch still is the same monogram, pale on the page ground — the splash's first frame", () => {
+    const ghost = ghostMarkSvg();
+    expect(ghost).toContain(MONOGRAM_PATH);
+    expect(ghost).toContain('viewBox="0 0 64 64"');
+    expect(ghost).toContain(`fill-opacity="${MARK_GHOST_OPACITY}"`);
+    expect(ghost).not.toContain("url(#g)");
+    const splash = renderToStaticMarkup(createElement(SplashScreen));
+    expect(splash).toContain(MONOGRAM_PATH);
+    expect(splash).toContain(`fill-opacity="${MARK_GHOST_OPACITY}"`);
+    // Two pen strokes, one per contour, each normalised to a path length of 1.
+    expect(splash.match(/pathLength="1"/g)).toHaveLength(2);
+    // The bell: three rings behind the mark, the only thing on the ground.
+    expect(splash.match(/class="splash-ring/g)).toHaveLength(3);
+    // Pure SVG + CSS: no image, no video, no gradient, no filter.
+    for (const banned of ["<img", "<video", "Gradient", "filter"]) expect(splash).not.toContain(banned);
   });
 
   it("the maskable icon keeps the mark inside the 80% safe zone and squares its corners", () => {
