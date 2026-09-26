@@ -39,7 +39,7 @@ const REQUEST_TIMEOUT_MS = Number(process.env.LOAD_TIMEOUT_MS ?? 30_000);
 const LOGIN_CONCURRENCY = Number(process.env.LOAD_LOGIN_CONCURRENCY ?? 8);
 const SAMPLE_EVERY_MS = 10_000;
 const WRITES = process.env.LOAD_WRITES !== "0";
-const DB_URL = process.env.LOAD_DB_URL ?? "postgres://postgres:postgres@localhost:5433/app";
+const DB_URL = process.env.LOAD_DB_URL ?? "postgres://postgres:postgres@localhost:15433/app";
 const DB_NAME = process.env.LOAD_DB_NAME ?? "app";
 const DB_CONTAINER = process.env.LOAD_DB_CONTAINER ?? "edu-platform-dev-db-1";
 const PILOT_ORG_SLUGS = (process.env.LOAD_ORG_SLUGS ?? "allameh,farzanegan,helli").split(",");
