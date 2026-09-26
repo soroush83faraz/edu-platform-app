@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { SplashScreen } from "@/components/brand/SplashScreen";
 import { AppProviders } from "@/components/providers";
+import { RevealSession } from "@/components/RevealSession";
 import { ServiceWorkerRegistration } from "@/components/shell/ServiceWorkerRegistration";
 import { productName } from "@/lib/product";
 import { splashStartupImages } from "@/lib/pwa/splash";
@@ -46,7 +47,7 @@ export const viewport: Viewport = {
 
 // dir="rtl" lives ONLY here. Never set dir on inner elements except <bdi dir="ltr"> for phones/codes.
 // `suppressHydrationWarning` covers <html>'s OWN attributes only (not its children): the splash's boot script sets
-// `data-splash` on it before React hydrates, and the DOM must win there.
+// `data-splash` (and `RevealSession`'s `data-seen`) on it before React hydrates, and the DOM must win there.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fa" dir="rtl" className={`${vazir.variable} h-full antialiased`} suppressHydrationWarning>
@@ -55,6 +56,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             overlay must be in the first painted frame — so both sit at the very top of the body. It draws
             only in the installed app, once per session, over a page that is already live underneath. */}
         <SplashScreen />
+        {/* Entrance animations play on the session's first page view only: this sets `data-seen` on <html>
+            before the first paint of any later document load, and on the first client-side navigation. */}
+        <RevealSession />
         {/* The status-bar strip: on an iOS Home Screen app the page runs under a translucent status bar, so its
             area is painted here in the theme colour — the same persian-blue Android gives the bar from
             `theme-color`. Zero tall everywhere else (a browser tab, a desktop, Android): `safe-area-inset-top`

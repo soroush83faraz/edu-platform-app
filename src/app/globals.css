@@ -358,27 +358,31 @@
     }
   }
 }
-/* Entrances. `reveal` = fade + 8 px rise (240 ms); `reveal-stagger` gives direct children 0/60/120/180/240 ms delays. */
+/* Entrances. `reveal` = fade + 8 px rise (240 ms); `reveal-stagger` gives direct children 0/60/120/180/240 ms delays.
+   They play on the FIRST page view of a browser session only: every later view carries `data-seen` on <html>
+   (`src/lib/reveal-once.ts`), and the elements simply sit in their final state. */
 @utility reveal {
   @media (prefers-reduced-motion: no-preference) {
-    animation: rise-in var(--duration-slow) var(--ease-out) both;
+    :root:not([data-seen]) & {
+      animation: rise-in var(--duration-slow) var(--ease-out) both;
+    }
   }
 }
 @utility reveal-stagger {
   @media (prefers-reduced-motion: no-preference) {
-    & > * {
+    :root:not([data-seen]) & > * {
       animation: rise-in var(--duration-slow) var(--ease-out) both;
     }
-    & > :nth-child(2) {
+    :root:not([data-seen]) & > :nth-child(2) {
       animation-delay: 60ms;
     }
-    & > :nth-child(3) {
+    :root:not([data-seen]) & > :nth-child(3) {
       animation-delay: 120ms;
     }
-    & > :nth-child(4) {
+    :root:not([data-seen]) & > :nth-child(4) {
       animation-delay: 180ms;
     }
-    & > :nth-child(n + 5) {
+    :root:not([data-seen]) & > :nth-child(n + 5) {
       animation-delay: 240ms;
     }
   }
@@ -386,28 +390,28 @@
 /* List rows: 40 ms steps, capped at the eighth row so long lists never wait. */
 @utility reveal-rows {
   @media (prefers-reduced-motion: no-preference) {
-    & > * {
+    :root:not([data-seen]) & > * {
       animation: rise-in var(--duration-slow) var(--ease-out) both;
     }
-    & > :nth-child(2) {
+    :root:not([data-seen]) & > :nth-child(2) {
       animation-delay: 40ms;
     }
-    & > :nth-child(3) {
+    :root:not([data-seen]) & > :nth-child(3) {
       animation-delay: 80ms;
     }
-    & > :nth-child(4) {
+    :root:not([data-seen]) & > :nth-child(4) {
       animation-delay: 120ms;
     }
-    & > :nth-child(5) {
+    :root:not([data-seen]) & > :nth-child(5) {
       animation-delay: 160ms;
     }
-    & > :nth-child(6) {
+    :root:not([data-seen]) & > :nth-child(6) {
       animation-delay: 200ms;
     }
-    & > :nth-child(7) {
+    :root:not([data-seen]) & > :nth-child(7) {
       animation-delay: 240ms;
     }
-    & > :nth-child(n + 8) {
+    :root:not([data-seen]) & > :nth-child(n + 8) {
       animation-delay: 280ms;
     }
   }
@@ -415,19 +419,19 @@
 /* The Home tile grid: 30 ms steps, capped at 300 ms from the eleventh tile so a long grid never waits. */
 @utility reveal-grid {
   @media (prefers-reduced-motion: no-preference) {
-    & > * {
+    :root:not([data-seen]) & > * {
       animation: rise-in var(--duration-slow) var(--ease-out) both;
     }
-    & > :nth-child(2) { animation-delay: 30ms; }
-    & > :nth-child(3) { animation-delay: 60ms; }
-    & > :nth-child(4) { animation-delay: 90ms; }
-    & > :nth-child(5) { animation-delay: 120ms; }
-    & > :nth-child(6) { animation-delay: 150ms; }
-    & > :nth-child(7) { animation-delay: 180ms; }
-    & > :nth-child(8) { animation-delay: 210ms; }
-    & > :nth-child(9) { animation-delay: 240ms; }
-    & > :nth-child(10) { animation-delay: 270ms; }
-    & > :nth-child(n + 11) { animation-delay: 300ms; }
+    :root:not([data-seen]) & > :nth-child(2) { animation-delay: 30ms; }
+    :root:not([data-seen]) & > :nth-child(3) { animation-delay: 60ms; }
+    :root:not([data-seen]) & > :nth-child(4) { animation-delay: 90ms; }
+    :root:not([data-seen]) & > :nth-child(5) { animation-delay: 120ms; }
+    :root:not([data-seen]) & > :nth-child(6) { animation-delay: 150ms; }
+    :root:not([data-seen]) & > :nth-child(7) { animation-delay: 180ms; }
+    :root:not([data-seen]) & > :nth-child(8) { animation-delay: 210ms; }
+    :root:not([data-seen]) & > :nth-child(9) { animation-delay: 240ms; }
+    :root:not([data-seen]) & > :nth-child(10) { animation-delay: 270ms; }
+    :root:not([data-seen]) & > :nth-child(n + 11) { animation-delay: 300ms; }
   }
 }
 /* Hero numbers: a small scale + opacity entrance after the hero itself has landed. No counting. */
