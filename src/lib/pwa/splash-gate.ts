@@ -1,4 +1,4 @@
-// When the opening splash («دانینو» drawing itself — `src/components/brand/SplashScreen.tsx`) may play, and the
+// When the opening splash («دانینو» written by one pen — `src/components/brand/SplashScreen.tsx`) may play, and the
 // four lines of boot script that decide it BEFORE the first paint.
 //
 // Two rules, both the owner's. It belongs to the INSTALLED app: a browser tab has its own chrome and its own
@@ -16,11 +16,13 @@
 /** `sessionStorage` key. Session-scoped on purpose: closing the app window is what earns the next splash. */
 export const SPLASH_SEEN_KEY = "donino.splash.seen";
 
-/** How long the finished mark stands before the overlay fades — `SPLASH_FADE_MS` — and is taken off the page. */
-export const SPLASH_HOLD_MS = 1000;
-export const SPLASH_FADE_MS = 200;
+/** How long the pen writes, the ink settles and the mark stands before the layer lifts away (`SPLASH_FADE_MS`). */
+export const SPLASH_HOLD_MS = 1120;
+export const SPLASH_FADE_MS = 330;
 /** The hard cap: the CSS `splash-leave` runs exactly this long, so even a dead bundle cannot leave it standing. */
 export const SPLASH_TOTAL_MS = SPLASH_HOLD_MS + SPLASH_FADE_MS;
+/** With `prefers-reduced-motion: reduce`: the still, solid mark stands and fades (`splash-leave-still`). */
+export const SPLASH_REDUCED_MS = 500;
 
 export interface SplashEnv {
   /** The app is installed: `display-mode: standalone` / `minimal-ui`, or iOS's `navigator.standalone`. */

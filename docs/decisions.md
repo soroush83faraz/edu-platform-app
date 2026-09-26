@@ -856,7 +856,7 @@ play once per session and never again on a return to «خانه».
   a still PNG); and a video would be a second drawing of the logo to keep in step with `src/lib/brand/mark.ts`.
   The same idea is rebuilt from our own geometry as CSS over inline SVG — no dependency, no raster, no font.
 - **What plays** (`src/components/brand/SplashScreen.tsx`, keyframes in `globals.css` «Opening splash»):
-  0–520 ms the monogram's three sub-paths draw on as thin sky strokes (`pathLength="1"` + `stroke-dashoffset`,
+  (Superseded 2026-09-27 — see «the owner's real logo, redrawn».) 0–520 ms the monogram's three sub-paths draw on as thin sky strokes (`pathLength="1"` + `stroke-dashoffset`,
   `--ease-out`; `MONOGRAM_STROKES` keeps them apart because a dash pattern restarts on every sub-path of one `d`);
   0–1000 ms three orbits at −26°/34°/78° draw on and sweep at 820/880/940 ms, fading; 480–760 ms the installed
   icon (clay squircle, rim, white glyph — `markSvg`'s own stops) lands, settling from scale 1.06, while the strokes
@@ -939,3 +939,40 @@ play once per session and never again on a return to «خانه».
 - **Not done, deliberately:** «مدرسه‌ها» still has no archive. `tenancy.school` has no `status`/`archived_at`
   column, so an archive would need a migration and a `archiveSchool` service — out of the round's scope and still
   «بایگانی مدرسه در فاز ۱ وجود ندارد» (docs/admin.md). Add and edit are unchanged.
+
+## 2026-09-27 — the owner's real logo, redrawn; the opening splash rewritten as one pen and a bell
+
+Owner: «use our real logo and improve it a bit» and «make a beautiful motion graphic for when the app opens — the
+previous one was really bad»; then, on the motion: «not a flat field — make the background feel alive» (the ring,
+for the school bell, was the pick).
+
+- **The mark is the owner's logo now** (`brand/donino-logo-source.jpg`, kept out of the repo). The previous
+  `mark.ts` geometry was a hand-drawn stand-in. The new one was measured on the source (sub-pixel edges) and
+  redrawn: one ribbon of constant width 5.75 on the 64 grid (the source wobbled 5.7…6.1 — its slanted inner stem
+  was heavy), every white counter 4.9 (the notch between stem and leaf pinched to 4.6 in the source), the four
+  bowls true concentric circles about (32, 32) — r 27 / 21.25 / 16.35 / 10.6 — with straight, level bars, the inner
+  stem two parallel lines at exactly 1 : 5 (11.3°), and the four free curves one cubic each (fitted within ~0.1
+  unit, then held one stroke / one counter from their partner, each leaving its bowl on the bowl's tangent). Two
+  even-odd contours, 22 on-curve nodes (the auto-trace had 30). Ink 5.75…59 × 5…59: ⅜ unit right of centre, for
+  the round side's lighter optical weight.
+- **The installed icon** takes the glyph at 0.72 (≈61 % of the squircle, was 0.78 of the old mark) with a 0.6-unit
+  optical nudge to the end side — the stem and the leaf carry the mass (`MONOGRAM_ICON_NUDGE`).
+- **The opening splash** (`SplashScreen`, «Opening splash» in `globals.css`), 1450 ms hard cap
+  (`SPLASH_TOTAL_MS`, was 1200): 0–80 ms the launch still; 80–760 ms a round-nibbed persian-blue pen writes the
+  silhouette in one clockwise stroke, 170–800 ms the channel a beat behind (`pathLength="1"`, dash `1 2`, offset
+  1.02 → 0 so the cap prints no dot, `cubic-bezier(.45,0,.15,1)`); 600–940 ms the ink floods in, settling from
+  96 % with no overshoot, while the pen thins into its edge; 600–1440 ms three hairline rings ripple out from the
+  mark (600/720/840 ms, 600 ms each, 32/22/14 % persian-blue, scaled 0.25 → 1 from their largest layout size so the
+  compositor only shrinks) — «زنگ», struck once; 1120–1450 ms the layer lifts 14 px as it fades. Only opacity,
+  transform and a dash offset move; no filter, no gradient, no glow, no wordmark. The orbits, bloom, shine and
+  clay squircle of the previous version are gone.
+- **Launch still = first frame.** The iOS launch images (`renderSplash`) are now the monogram alone at 16 %
+  persian-blue on `canvas`, 40 % of the short side capped at 280 px — exactly what the splash opens on and the pen
+  writes over (`ghostMarkSvg`, `MARK_GHOST_OPACITY`), so the OS → page hand-over does not jump, and a slow first
+  response waits on a calm, recognisable mark.
+- **Reduced motion** now gets a still, not nothing: the base clamp spares `.splash-layer` only (`*:not(...)`), its
+  pieces rest on the finished picture (solid mark, no pen, no rings), and the layer runs `splash-leave-still`
+  (500 ms, `SPLASH_REDUCED_MS`; `SplashTimer` clears the attribute after it).
+- **Not changed here:** `theme-color` is still persian-blue (`layout.tsx`, `manifest.ts`); the splash ground is
+  `canvas`, which is the manifest's `background_color`. If `theme-color` moves to `#E8EEF9`, the splash already
+  matches it.

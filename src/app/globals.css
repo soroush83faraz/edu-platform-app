@@ -281,8 +281,10 @@
     scrollbar-color: var(--color-neutral-300) transparent;
     caret-color: var(--color-primary-600);
   }
+  /* The opening splash's layer is the one exemption: under reduced motion it still fades its still mark away
+     (`splash-leave-still`, 500 ms) instead of vanishing — everything inside it is clamped as usual. */
   @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
+    *:not(.splash-layer), *::before, *::after {
       animation-duration: 0.01ms !important;
       animation-delay: 0ms !important;
       animation-iteration-count: 1 !important;
@@ -542,33 +544,52 @@
     }
   }
 }
-/* ---- Opening splash. The owner's launch animation (`src/components/brand/SplashScreen.tsx`), rebuilt from our
-   own monogram: the «D» draws itself in thin sky construction lines while three tilted orbits sweep past, the
-   finished clay icon lands with a soft bloom, a shine crosses it, and the whole layer leaves. The overlay is in
-   the server-rendered HTML, so it is painted with the FIRST frame; the boot script in the root layout sets
-   `data-splash="on"` before that frame and only then — installed app, first document load of the session — so a
-   browser tab lays nothing out and never flashes it (`src/lib/pwa/splash-gate.ts`).
+/* ---- Opening splash (`src/components/brand/SplashScreen.tsx`): «دانینو» written once, with one pen. The layer
+   opens on the launch still (the pale mark iOS has just shown), the pen traces the silhouette and then the channel,
+   the ink floods in and settles, and the whole layer lifts away. The overlay is in the server-rendered HTML, so it
+   is painted with the FIRST frame; the boot script in the root layout sets `data-splash="on"` before that frame
+   and only then — installed app, first document load of the session — so a browser tab lays nothing out and never
+   flashes it (`src/lib/pwa/splash-gate.ts`).
 
-   `splash-leave` on the layer itself IS the hard cap: 1200 ms of CSS, no listener, no timer, nothing a throttled
-   tab or a bundle that never arrives can lose. Everything below must finish inside it. The layer is
-   `pointer-events: none` for its whole life and the app underneath is live and interactive throughout. With
-   reduced motion the base-layer clamp collapses every one of these, the leave included: the app just opens. ---- */
+   `splash-leave` on the layer itself IS the hard cap: 1450 ms of CSS (`SPLASH_TOTAL_MS`), no listener, no timer,
+   nothing a throttled tab or a bundle that never arrives can lose. Everything below finishes inside it. The layer
+   is `pointer-events: none` for its whole life and the app underneath is live and interactive throughout. Only
+   `opacity`, `translate`/`scale` and the pen's dash offset move — nothing that lays anything out.
+
+   The resting state of every piece IS the finished picture (solid mark, no pen); every movement lives under
+   `no-preference`. With reduced motion the base-layer clamp (which spares `.splash-layer` only) pins the pieces
+   there, and the layer runs `splash-leave-still` instead: the solid mark stands a moment and fades. ---- */
 .splash-layer {
   display: none;
   position: fixed;
   inset: 0;
   z-index: 60;
+  /* One cell the size of the screen: the mark and the rings share it, centred, and the rings may overflow it. */
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
+  overflow: hidden;
   background-color: var(--color-canvas);
   pointer-events: none;
 }
 html[data-splash="on"] .splash-layer {
   display: grid;
-  animation: splash-leave 1200ms linear both;
+  animation: splash-leave 1450ms linear both;
 }
+/* Holds until 1120 ms (77.24 %), then 330 ms out on the standard curve. */
 @keyframes splash-leave {
   0%,
-  83.34% {
+  77.24% {
+    opacity: 1;
+    animation-timing-function: var(--ease-in-out);
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+@keyframes splash-leave-still {
+  0%,
+  40% {
     opacity: 1;
     animation-timing-function: var(--ease-out);
   }
@@ -577,115 +598,129 @@ html[data-splash="on"] .splash-layer {
     visibility: hidden;
   }
 }
-/* The mark dominates the screen (the owner) but never touches an edge, and the orbits reach past the square. */
+/* The bell rings: three hairline circles in the mark's grid cell, laid out at their LARGEST size and scaled up
+   from the mark's own size (0.25 → 1), so the compositor only ever shrinks a raster, never blurs one. Each is a
+   transparent circle with a persian-blue hairline, fainter ring by ring — a bell struck once. At rest (and under
+   reduced motion) they are invisible. */
+.splash-ring {
+  grid-area: 1 / 1;
+  inline-size: min(160vmin, 1120px);
+  block-size: min(160vmin, 1120px);
+  border: 3px solid color-mix(in srgb, var(--color-primary-600) 32%, transparent);
+  border-radius: 50%;
+  opacity: 0;
+}
+.splash-ring-2 {
+  border-color: color-mix(in srgb, var(--color-primary-600) 22%, transparent);
+}
+.splash-ring-3 {
+  border-color: color-mix(in srgb, var(--color-primary-600) 14%, transparent);
+}
+/* The same size as the iOS launch still (`renderSplash`: 40 % of the short side, capped at 280 px). */
 .splash-art {
-  inline-size: min(46vmin, 320px);
-  block-size: min(46vmin, 320px);
-  overflow: visible;
+  grid-area: 1 / 1;
+  inline-size: min(40vmin, 280px);
+  block-size: min(40vmin, 280px);
+  color: var(--color-primary-600);
 }
-.splash-bloom-core {
-  stop-color: var(--color-sky);
-  stop-opacity: 0.4;
+.splash-ghost,
+.splash-fill {
+  fill: currentColor;
 }
-.splash-bloom-edge {
-  stop-color: var(--color-sky);
-  stop-opacity: 0;
+/* Scales about the grid's centre (32, 32) — the mark's own middle. */
+.splash-fill {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
 }
-.splash-bloom {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: splash-pulse 400ms var(--ease-out) 500ms both;
-}
-@keyframes splash-pulse {
-  from {
-    opacity: 0;
-    scale: 0.82;
-  }
-  45% {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-    scale: 1.16;
-  }
-}
-/* Each orbit turns about the mark at its own speed and fades; the lean is the ellipse's own attribute. */
-.splash-orbit {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: splash-sweep 820ms var(--ease-out) both;
-}
-@keyframes splash-sweep {
-  from {
-    opacity: 0;
-    rotate: -30deg;
-  }
-  25% {
-    opacity: 1;
-  }
-  60% {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-    rotate: 16deg;
-  }
-}
-/* Orbits and outlines arrive the same way: `pathLength="1"` normalises every element, so one dash of 1 with the
-   offset running 1 → 0 draws each of them end to end — and `non-scaling-stroke` keeps the line a hairline at any
-   screen size instead of thickening with the mark. */
-.splash-trace {
+/* The pen: a round-nibbed line about a fifth of the ribbon's width. `pathLength="1"` normalises each contour, so
+   one dash of 1 (then a gap longer than the path) with the offset running 1.02 → 0 writes it end to end — starting
+   just past 1 so the round cap does not print a dot before the pen moves. At rest it is gone. */
+.splash-pen {
   fill: none;
-  stroke: var(--color-sky);
-  stroke-width: 1.25;
-  stroke-opacity: 0.5;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 0;
-  animation: splash-draw 560ms var(--ease-out) both;
-}
-.splash-ink {
-  fill: none;
-  stroke: var(--color-sky);
-  stroke-width: 2;
+  stroke: currentColor;
+  stroke-width: 1.1;
+  stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-dasharray: 1;
+  stroke-dasharray: 1 2;
   stroke-dashoffset: 0;
-  animation:
-    splash-draw 520ms var(--ease-out) both,
-    splash-ink-out 220ms var(--ease-out) 480ms both;
+  opacity: 0;
 }
-@keyframes splash-draw {
+@media (prefers-reduced-motion: no-preference) {
+  /* Starts unhurried, lands long: a confident hand, never a linear plotter. */
+  .splash-pen {
+    animation:
+      splash-write 680ms cubic-bezier(0.45, 0, 0.15, 1) 80ms both,
+      splash-pen-out 300ms var(--ease-out) 640ms both;
+  }
+  .splash-pen-inner {
+    animation:
+      splash-write 630ms cubic-bezier(0.45, 0, 0.15, 1) 170ms both,
+      splash-pen-out 300ms var(--ease-out) 660ms both;
+  }
+  .splash-fill {
+    animation: splash-ink 340ms var(--ease-out) 600ms both;
+  }
+  .splash-art {
+    animation: splash-lift 330ms var(--ease-in-out) 1120ms both;
+  }
+  /* Struck as the ink lands (600 ms), 120 ms apart; the last one is gone at 1440 ms, inside the leave. */
+  .splash-ring {
+    animation: splash-ring 600ms cubic-bezier(0.2, 0.6, 0.35, 1) 600ms both;
+  }
+  .splash-ring-2 {
+    animation-delay: 720ms;
+  }
+  .splash-ring-3 {
+    animation-delay: 840ms;
+  }
+}
+@keyframes splash-ring {
+  0% {
+    opacity: 0;
+    scale: 0.25;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    scale: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-splash="on"] .splash-layer {
+    animation: splash-leave-still 500ms linear both;
+  }
+}
+@keyframes splash-write {
   from {
-    stroke-dashoffset: 1;
+    stroke-dashoffset: 1.02;
   }
-}
-@keyframes splash-ink-out {
   to {
-    stroke-opacity: 0;
+    stroke-dashoffset: 0;
   }
 }
-/* The icon lands as the lines leave: it fades in and settles the last 6 % of its size. */
-.splash-solid {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: splash-land 280ms var(--ease-out) 480ms both;
+/* The line thins into the edge of the ink rather than blinking off. */
+@keyframes splash-pen-out {
+  from {
+    opacity: 1;
+    stroke-width: 1.1;
+  }
+  to {
+    opacity: 0;
+    stroke-width: 0.3;
+  }
 }
-@keyframes splash-land {
+/* No overshoot: 96 % to 100 % on the ease-out, as the ink fills the drawn outline. */
+@keyframes splash-ink {
   from {
     opacity: 0;
-    scale: 1.06;
+    scale: 0.96;
   }
 }
-/* One shine across the glyph, clipped to the squircle — it starts and ends outside it. */
-.splash-shine {
-  animation: splash-shine 320ms var(--ease-in-out) 760ms both;
-}
-@keyframes splash-shine {
-  from {
-    translate: 0;
-  }
+@keyframes splash-lift {
   to {
-    translate: 120px;
+    translate: 0 -14px;
   }
 }
 
