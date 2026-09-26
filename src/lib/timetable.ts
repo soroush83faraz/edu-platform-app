@@ -3,13 +3,13 @@
 // Date-dependent globals — every function takes `now` so the unit tests pin a fixed Tehran time.
 import { formatNumberFa, toFaDigits } from "@/lib/format";
 
-/** 0 = شنبه … 6 = جمعه (the DB CHECK allows 6; the UI offers شنبه…پنجشنبه). */
+/** 0 = شنبه … 6 = جمعه (the DB CHECK allows 6; the UI offers شنبه…پنج‌شنبه). */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-export const WEEKDAY_LABELS: readonly string[] = ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"];
+export const WEEKDAY_LABELS: readonly string[] = ["شنبه", "یک‌شنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه", "جمعه"];
 /** Two-letter chips for the compact week overview. */
 export const WEEKDAY_SHORT: readonly string[] = ["ش", "ی", "د", "س", "چ", "پ", "ج"];
-/** The school week the product shows: شنبه…پنجشنبه. */
+/** The school week the product shows: شنبه…پنج‌شنبه. */
 export const SCHOOL_WEEKDAYS: readonly Weekday[] = [0, 1, 2, 3, 4, 5];
 
 const ORDINALS = ["اول", "دوم", "سوم", "چهارم", "پنجم", "ششم", "هفتم", "هشتم", "نهم", "دهم", "یازدهم", "دوازدهم"];

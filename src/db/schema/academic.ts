@@ -158,7 +158,7 @@ export const teacherAssignment = academic.table(
 
 /**
  * The weekly timetable («برنامهٴ هفتگی») of a class group: one row per occupied cell `(weekday, period_no)` pointing
- * at the offering taught then. `weekday` 0 = شنبه … 5 = پنجشنبه (6 = جمعه allowed by the CHECK, never offered by
+ * at the offering taught then. `weekday` 0 = شنبه … 5 = پنج‌شنبه (6 = جمعه allowed by the CHECK, never offered by
  * the UI); `period_no` refers to the school's bell schedule (`tenancy.school_period`) by number — not by id, so a
  * re-defined زنگ‌بندی keeps the grid. Pure configuration: clearing a cell DELETES the row (the one table in the
  * product without soft delete — docs/decisions.md «برنامهٴ کلاسی»); every change is audited on the class group.

@@ -152,7 +152,7 @@ export function isValidIsoDate(iso: string): boolean {
   return !Number.isNaN(isoToEpochDay(iso));
 }
 
-/** The Saturday-start school days (شنبه…پنجشنبه) of the closed range `[from, to]`, oldest first. */
+/** The Saturday-start school days (شنبه…پنج‌شنبه) of the closed range `[from, to]`, oldest first. */
 export function schoolDaysBetween(from: string, to: string): string[] {
   const a = isoToEpochDay(from);
   const b = isoToEpochDay(to);

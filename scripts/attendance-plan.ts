@@ -28,7 +28,7 @@ export function minutesLateFor(key: string): number {
 }
 
 /**
- * The PAST school days (شنبه…پنجشنبه) of the last `days` days, today included, oldest first. Today counts —
+ * The PAST school days (شنبه…پنج‌شنبه) of the last `days` days, today included, oldest first. Today counts —
  * a roll call for today is normal — but the future never does.
  */
 export function pastSchoolDays(days: number, now = new Date()): string[] {

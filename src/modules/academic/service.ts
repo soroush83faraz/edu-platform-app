@@ -333,7 +333,7 @@ export const TIMETABLE_MESSAGES = {
 
 export interface SetTimetableSlotInput {
   classGroupId: string;
-  /** 0 = شنبه … 5 = پنجشنبه. */
+  /** 0 = شنبه … 5 = پنج‌شنبه. */
   weekday: number;
   periodNo: number;
   /** null = clear the cell (the row is deleted). */

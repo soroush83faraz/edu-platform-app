@@ -19,6 +19,7 @@ import {
   timeToMinutes,
   validatePeriods,
 } from "@/lib/timetable";
+import { WEEKDAY_NAMES_FA } from "@/lib/jalali-grid";
 
 // 2026-09-22 is a Tuesday (سه‌شنبه = 3). 08:35 UTC = 12:05 Tehran.
 const TUE_1205 = new Date("2026-09-22T08:35:00Z");
@@ -51,7 +52,7 @@ describe("currentPeriodOf", () => {
 
 describe("nextSessionOf", () => {
   const slots = [
-    { weekday: 1, periodNo: 5 }, // یکشنبه ۱۲:۰۰
+    { weekday: 1, periodNo: 5 }, // یک‌شنبه ۱۲:۰۰
     { weekday: 3, periodNo: 5 }, // سه‌شنبه ۱۲:۰۰ — ringing at TUE_1205
     { weekday: 3, periodNo: 2 }, // سه‌شنبه ۰۸:۵۵ — over
     { weekday: 4, periodNo: 1 }, // چهارشنبه ۰۸:۰۰
@@ -61,7 +62,7 @@ describe("nextSessionOf", () => {
     const tue1300 = new Date("2026-09-22T09:30:00Z");
     expect(nextSessionOf(slots, DEFAULT_PERIODS, tue1300)).toMatchObject({ weekday: 4, periodNo: 1, daysAhead: 1 });
   });
-  it("wraps around the week: on Thursday evening the next session is یکشنبه (3 days ahead)", () => {
+  it("wraps around the week: on Thursday evening the next session is یک‌شنبه (3 days ahead)", () => {
     const thu1500 = new Date("2026-09-24T11:30:00Z");
     expect(nextSessionOf(slots, DEFAULT_PERIODS, thu1500)).toMatchObject({ weekday: 1, periodNo: 5, daysAhead: 3 });
   });
@@ -72,8 +73,10 @@ describe("nextSessionOf", () => {
 });
 
 describe("labels", () => {
-  it("day chips read شنبه…پنجشنبه in Saturday-start order", () => {
-    expect(SCHOOL_WEEKDAYS.map((d) => WEEKDAY_LABELS[d])).toEqual(["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه"]);
+  it("day chips read شنبه…پنج‌شنبه in Saturday-start order", () => {
+    expect(SCHOOL_WEEKDAYS.map((d) => WEEKDAY_LABELS[d])).toEqual(["شنبه", "یک‌شنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه"]);
+    // نیم‌فاصله in یک‌شنبه / سه‌شنبه / پنج‌شنبه — the same spelling as the date picker and the faIR locale.
+    expect([...WEEKDAY_LABELS]).toEqual([...WEEKDAY_NAMES_FA]);
   });
   it("period labels, time ranges and the next-session line use Persian digits and ordinals", () => {
     expect(periodLabel(3)).toBe("زنگ سوم");

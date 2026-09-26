@@ -266,7 +266,7 @@ const PLACEHOLDERS: Record<string, Placeholder> = {
   school: { sources: ["/admin", "/home", "/admin/schools"], re: new RegExp(`href="/admin/schools/(${UUID})"`) },
 };
 
-/** The most recent school day (شنبه…پنجشنبه) in Asia/Tehran, today included — the pilot seed took the roll call then. */
+/** The most recent school day (شنبه…پنج‌شنبه) in Asia/Tehran, today included — the pilot seed took the roll call then. */
 function lastSchoolDayTehran(now = new Date()): string {
   for (let back = 0; back < 7; back++) {
     const d = new Date(now.getTime() - back * 86_400_000);
