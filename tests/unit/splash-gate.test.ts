@@ -13,7 +13,7 @@ import {
   SPLASH_TOTAL_MS,
   shouldShowSplash,
 } from "@/lib/pwa/splash-gate";
-import { SPLASH_WATER_CALM_MS, SPLASH_WATER_IMPACT_MS, SPLASH_WATER_SCRIPT, SPLASH_WATER_THEME, splashWaterScript } from "@/lib/pwa/splash-water";
+import { SPLASH_WATER_CALM_MS, SPLASH_WATER_DROP_MS, SPLASH_WATER_IMPACT_MS, SPLASH_WATER_SCRIPT, SPLASH_WATER_THEME, splashWaterScript } from "@/lib/pwa/splash-water";
 
 const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
 
@@ -50,10 +50,14 @@ describe("the boot script", () => {
 });
 
 describe("the timeline", () => {
-  it("is hard-capped at 1.8 s — the CSS leave and the timer that clears up after it are the same number", () => {
+  it("is hard-capped at 2.2 s — the CSS leave and the timer that clears up after it are the same number", () => {
     expect(SPLASH_TOTAL_MS).toBe(SPLASH_HOLD_MS + SPLASH_FADE_MS);
-    expect(SPLASH_TOTAL_MS).toBeLessThanOrEqual(1800);
-    // The drop lands, the water calms, and only then does the layer lift away.
+    expect(SPLASH_TOTAL_MS).toBeLessThanOrEqual(2200);
+    // The drop falls as the pen finishes, lands as the ink does (the CSS ink and rings start on that same beat),
+    // the water calms, and only then does the layer lift away.
+    expect(SPLASH_WATER_DROP_MS).toBeLessThan(SPLASH_WATER_IMPACT_MS);
+    expect(css).toContain(`splash-ink 340ms var(--ease-out) ${SPLASH_WATER_IMPACT_MS}ms both;`);
+    expect(css).toContain(`splash-hand-over 120ms linear ${SPLASH_WATER_IMPACT_MS}ms both,`);
     expect(SPLASH_WATER_IMPACT_MS).toBeLessThan(SPLASH_WATER_CALM_MS);
     expect(SPLASH_WATER_CALM_MS).toBeLessThanOrEqual(SPLASH_HOLD_MS);
     // The stylesheet's leave runs exactly as long, and its hold ends where the fade begins.
@@ -110,8 +114,8 @@ describe("the water (WebGL) — an enhancement that falls back to the CSS splash
     expect(run({ splash: "on", gl: brokenGl })).toEqual({ askedForGl: true, water: undefined });
   });
 
-  it("the stylesheet shows the canvas and parks the CSS pen and rings only under the script's attribute", () => {
+  it("the stylesheet shows the canvas and parks the CSS ink and rings only under the script's attribute", () => {
     expect(css).toContain('html[data-splash-water="on"] .splash-water {');
-    expect(css).toContain('html[data-splash-water="on"] :is(.splash-pen, .splash-ripple, .splash-wash) {');
+    expect(css).toContain('html[data-splash-water="on"] :is(.splash-fill, .splash-ripple, .splash-wash) {');
   });
 });

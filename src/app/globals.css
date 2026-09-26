@@ -605,7 +605,7 @@ html[data-splash="on"] .splash-layer {
   }
 }
 /* The ripple: the ink lands like a stone in still water. Four wavefronts share the mark's grid cell, each laid
-   out at its LARGEST size (2.2 × the mark) and scaled up from 0.15, so the compositor only ever shrinks a raster,
+   out at its LARGEST size (2.5 × the mark) and scaled up from 0.15, so the compositor only ever shrinks a raster,
    never blurs one. A wavefront is not a hairline but a soft band painted once by a static radial gradient on
    `canvas`: a faint persian-blue trough on its inside, an ice-blue (`info`) highlight, then the persian-blue crest,
    every edge feathered to transparent. `--a` is the ring's amplitude (each one fainter than the last); nothing

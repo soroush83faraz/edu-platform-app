@@ -940,7 +940,7 @@ play once per session and never again on a return to «خانه».
   column, so an archive would need a migration and a `archiveSchool` service — out of the round's scope and still
   «بایگانی مدرسه در فاز ۱ وجود ندارد» (docs/admin.md). Add and edit are unchanged.
 
-## 2026-09-27 — the owner's real logo, redrawn; the opening splash rewritten as one pen and a bell
+## 2026-09-27 — the owner's real logo, redrawn; the opening splash: one pen, a drop, and water
 
 Owner: «use our real logo and improve it a bit» and «make a beautiful motion graphic for when the app opens — the
 previous one was really bad»; then, on the motion: «not a flat field — make the background feel alive» (the ring,
@@ -957,28 +957,44 @@ for the school bell, was the pick).
   the round side's lighter optical weight.
 - **The installed icon** takes the glyph at 0.72 (≈61 % of the squircle, was 0.78 of the old mark) with a 0.6-unit
   optical nudge to the end side — the stem and the leaf carry the mass (`MONOGRAM_ICON_NUDGE`).
-- **The opening splash** (`SplashScreen`, «Opening splash» in `globals.css`), 1540 ms hard cap
-  (`SPLASH_TOTAL_MS`, was 1200, then 1450 with the bell rings): 0–80 ms the launch still; 80–760 ms a round-nibbed persian-blue pen writes the
-  silhouette in one clockwise stroke, 170–800 ms the channel a beat behind (`pathLength="1"`, dash `1 2`, offset
-  1.02 → 0 so the cap prints no dot, `cubic-bezier(.45,0,.15,1)`); 600–940 ms the ink floods in, settling from
-  96 % with no overshoot, while the pen thins into its edge; from 600 ms the water ripple (below); 1180–1540 ms
-  the layer lifts 14 px as it fades. Only opacity, transform and a dash offset move; no filter, no glow, no
+- **The opening splash** (`SplashScreen`, «Opening splash» in `globals.css`), 2200 ms hard cap
+  (`SPLASH_TOTAL_MS`; was 1200, then 1450 with the bell rings): 0–80 ms the launch still; 80–760 ms a round-nibbed
+  persian-blue pen writes the silhouette in one clockwise stroke, 170–800 ms the channel a beat behind
+  (`pathLength="1"`, dash `1 2`, offset 1.02 → 0 so the cap prints no dot, `cubic-bezier(.45,0,.15,1)`); at 820 ms
+  the ink lands and the water answers (below); 1850–2200 ms the layer lifts 14 px as it fades. No glow, no
   wordmark. The orbits, bloom, shine and clay squircle of the previous version are gone.
-- **The bell became a water ripple** (owner: «like a stone thrown into water — that smooth and clean»; the pen and
-  the mark stay as they were). The three hairline rings were hard circles; now, at the instant the ink lands
-  (600 ms), the whole mark dips 1 → 0.97 → 1 over 260 ms (no bounce), a faint ice-blue pool (`info` 14 %, 1.7 ×
-  the mark) blooms under it and fades in 720 ms, and four wavefronts leave its centre at 600 / 700 / 805 / 915 ms
-  (gaps widening) over 900 / 940 / 980 / 1020 ms on a strong ease-out (`cubic-bezier(.15,.6,.25,1)`, each later
-  ring a touch softer). Each wavefront is a SOFT band, not a line: a static CSS `radial-gradient` on a round span
-  laid out at 2.5 × the mark — a faint persian-blue trough inside, an ice-blue highlight, the persian-blue crest,
-  every edge feathered — scaled up from 0.15 to its reach (1 / .84 / .70 / .58, so the fronts stay spaced like
-  real dispersing water instead of piling up at one radius). Amplitude decays (`--a` 1 / .78 / .58 / .40 scales
-  the band's alphas); each ring's opacity peaks a quarter of the way out and eases to 0 on its own curve (a second
-  animation, so the spread keeps its easing). Five composited layers, `will-change: transform, opacity` on them
-  only; the gradients are painted once and never animated; the layer clips them (no scroll at 375 px). The last
-  two fronts are still spreading as the layer lifts away — cut off by the leave, which is how water looks. These
-  splash-only gradients are the one exception to «gradients: `bg-hero` and `.clay-icon` only». Reduced motion:
-  unchanged — no dip, no ripple.
+- **The water** (owner: «like a stone thrown into water — smooth and clean», then «it must really FEEL like water,
+  not a bunch of circles», then «keep the pen AND have the water»). Two renderings of one choreography:
+  - **WebGL** (`src/lib/pwa/splash-water.ts`, `SPLASH_WATER_SCRIPT`, 7.4 KB unminified incl. the shader): a
+    canvas under the SVG mark, one fragment shader over an analytic height field — two damped radial wave trains
+    `e^(−1.2τ) e^(−.55r) e^(−2.2x) sin(k x)` behind a front travelling 2.4 marks/s, `k` falling with distance
+    (dispersion), normals from the derivative; refraction of the ground and the mark (a coverage texture drawn
+    from `MONOGRAM_PATH` with `Path2D` — synchronous, no image decode), a fresnel-weighted reflected sky, a
+    top-left Blinn-Phong light, crests lit ice/white and troughs faintly darker. 380–820 ms a 13 px drop (a lens:
+    refraction, rim, specular dot, a shadow that gathers under it) falls to the mark's centre, accelerating; at
+    820 ms (`SPLASH_WATER_IMPACT_MS`) the SVG ghost and pen hand over to the shader's solid mark in 120 ms — both
+    dip 1 → 0.97 → 1 and push in 1 → 1.03 on the same curves, so the mark is drawn once and never doubles; the
+    water rings out, bends the logo, and is multiplied down to EXACTLY flat by 1750 ms (`SPLASH_WATER_CALM_MS`),
+    when that frame is redrawn at min(dpr, 2) — sharp — and the loop stops; the context is released
+    (`WEBGL_lose_context`) after the leave. In motion it renders at 0.75 × min(dpr, 1.5). The script runs inline
+    right after the markup (`InlineScript`; CSP already allows inline scripts) and draws its first frame before
+    the first paint, then sets `data-splash-water` — only then is the canvas laid out, so nothing flashes.
+    Measured in the Browser pane: 60 fps, worst frame 17–18 ms, 105 frames per play (light and dark).
+    Written as source TEXT, not a stringified function: esbuild's keep-names wraps inner functions in a
+    `__name` helper that does not exist in the page (caught in the preview; a unit test guards it).
+  - **CSS fallback** — no WebGL, a context or shader failure, `deviceMemory` < 2, `hardwareConcurrency` ≤ 2: at
+    820 ms the ink floods in, the mark dips 1 → 0.97 → 1 over 260 ms, a faint ice-blue pool (`info` 14 %) blooms,
+    and four SOFT wavefronts leave the centre at 820 / 920 / 1025 / 1135 ms over 900 / 940 / 980 / 1020 ms on a
+    strong ease-out (`cubic-bezier(.15,.6,.25,1)`, each later ring a touch softer) — static CSS `radial-gradient`
+    bands (faint persian-blue trough, ice highlight, persian-blue crest, feathered) laid out at 2.5 × the mark and
+    scaled up from 0.15 to reach 1 / .84 / .70 / .58 (spaced like dispersing water), amplitude 1 / .78 / .58 /
+    .40, opacity peaking a quarter of the way out. Five composited layers, `will-change` on them only. These
+    splash-only gradients are the one exception to «gradients: `bg-hero` and `.clay-icon` only».
+  - **Reduced motion**: neither — the still mark stands and fades, as before.
+  - **Theme**: LIGHT ships (`SPLASH_WATER_THEME`) — pale water on `canvas`, meeting the `#E8EEF9` title bar and the
+    light app. A DARK variant (navy water `#061A5E`→`#0A2A8F`, the mark in white/ice) is built for the owner to
+    compare in the scratch demo (`?theme=dark`); shipping it would also need the layer ground, the SVG mark and the
+    launch images to turn navy.
 - **Launch still = first frame.** The iOS launch images (`renderSplash`) are now the monogram alone at 16 %
   persian-blue on `canvas`, 40 % of the short side capped at 280 px — exactly what the splash opens on and the pen
   writes over (`ghostMarkSvg`, `MARK_GHOST_OPACITY`), so the OS → page hand-over does not jump, and a slow first
