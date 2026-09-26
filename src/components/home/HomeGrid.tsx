@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import type { Ctx } from "@/lib/ctx";
+import { audienceOf, emptyOpenCopy } from "@/lib/empty-copy";
 import { workItemVoice, workItemWords } from "@/lib/work-item-words";
 import { canAtAnyScope } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
@@ -34,7 +35,7 @@ export async function HomeGrid({ ctx }: { ctx: Ctx }) {
 
       {has("workspace.work_item.read") ? (
         <Suspense fallback={<CardSkeleton rows={5} />}>
-          <NearbyCard words={words} />
+          <NearbyCard words={words} empty={emptyOpenCopy(audienceOf(ctx.assignments), has("workspace.work_item.create"))} />
         </Suspense>
       ) : null}
     </>

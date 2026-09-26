@@ -4,11 +4,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { cn } from "cn";
 import { EmptyState } from "@/components/EmptyState";
-import { EmptyClay } from "@/components/illustrations";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SectionHeader } from "@/components/SectionHeader";
 import { Button } from "@/components/ui/button";
+import { type Audience, audienceOf, emptyDoneCopy, emptyOpenCopy } from "@/lib/empty-copy";
+import { requireContext } from "@/lib/ctx";
 import { BUCKET_LABELS, type Bucket, formatNumberFa } from "@/lib/format";
 import { type WorkItemWords, workItemWords } from "@/lib/work-item-words";
 import { BUCKETS, INBOX_TABS, type InboxTab } from "@/modules/workspace/dto";
@@ -131,7 +132,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       ) : null}
 
       {rows.length === 0 ? (
-        <Empty tab={f.tab} filtered={filtered} canCreate={canCreate} clearHref={href({ tab: f.tab })} words={words} createWords={createWords} personal={createVoice === "personal"} />
+        <Empty tab={f.tab} filtered={filtered} canCreate={canCreate} clearHref={href({ tab: f.tab })} words={words} createWords={createWords} audience={audienceOf((await requireContext()).assignments)} firstTime={tabCounts.done === 0} />
       ) : (
         <div className="mt-2 flex flex-col">
           {grouped.map(([bucket, items]) => (
@@ -198,7 +199,8 @@ function Empty({
   clearHref,
   words,
   createWords,
-  personal,
+  audience,
+  firstTime,
 }: {
   tab: InboxTab;
   filtered: boolean;
@@ -206,14 +208,16 @@ function Empty({
   clearHref: string;
   words: WorkItemWords;
   createWords: WorkItemWords;
-  /** The viewer opens تسک‌های شخصی, not تکالیف for others — a student (round 6). */
-  personal: boolean;
+  /** Who reads it: a student is spoken to as «تو», staff as «شما» (`src/lib/empty-copy.ts`). */
+  audience: Audience;
+  /** Nothing finished either — a دبیر reads «هنوز تکلیفی نداده‌اید». */
+  firstTime: boolean;
 }) {
+  // Text only: the clay illustrations stay on login and the «امروز کلاس نداری» spot (UX review 2026-09-27).
   if (filtered) {
     return (
       <EmptyState
-        illustration={<EmptyClay size={96} />}
-        title={`با این فیلتر ${words.indefinite} پیدا نشد`}
+        title={`با این فیلتر ${words.indefinite} پیدا نشد.`}
         action={
           <Button asChild variant="outline">
             <Link href={clearHref}>حذف فیلتر</Link>
@@ -223,20 +227,14 @@ function Empty({
     );
   }
   if (tab === "todo") {
+    const copy = emptyOpenCopy(audience, canCreate, firstTime);
     return (
       <EmptyState
-        illustration={<EmptyClay size={128} />}
-        title={`${words.indefinite} در انتظار شما نیست`}
-        description={
-          !canCreate
-            ? `وقتی دبیر یا مدرسه ${words.indefinite} بدهد، همین‌جا می‌آید.`
-            : personal
-              ? `وقتی ${words.indefinite} به شما داده شود یا خودتان ${createWords.indefinite} بنویسید، همین‌جا می‌آید.`
-              : `وقتی ${words.indefinite} به شما داده شود یا خودتان ${words.indefinite} بدهید، همین‌جا می‌آید.`
-        }
+        title={copy.title}
+        description={copy.description}
         action={
           canCreate ? (
-            <Button asChild>
+            <Button asChild variant={audience === "student" ? "outline" : "default"}>
               <Link href="/inbox/new">{createWords.new}</Link>
             </Button>
           ) : undefined
@@ -244,5 +242,6 @@ function Empty({
       />
     );
   }
-  return <EmptyState illustration={<EmptyClay size={96} />} title={`هنوز ${words.indefinite} انجام‌شده علامت نخورده`} description={`${words.plural} تمام‌شده این‌جا نگه داشته می‌شوند.`} />;
+  const copy = emptyDoneCopy(audience);
+  return <EmptyState title={copy.title} description={copy.description} />;
 }

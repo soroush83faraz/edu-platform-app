@@ -45,7 +45,7 @@ export default async function MyClassPage() {
       />
 
       {cls === null ? (
-        <EmptyState illustration={<SchoolClay size={112} />} title="هنوز در کلاسی ثبت نشده‌اید" description="وقتی مدرسه شما را در کلاس ثبت کند، همین‌جا می‌بینید." />
+        <EmptyState title="هنوز در کلاسی ثبت نشده‌ای." description="وقتی مدرسه تو را در کلاسی ثبت کند، برنامه و درس‌هایت همین‌جا می‌آید." />
       ) : (
         <>
           <section aria-label="کلاس" className="flex items-center gap-3 rounded-card bg-info-soft px-4 py-3">

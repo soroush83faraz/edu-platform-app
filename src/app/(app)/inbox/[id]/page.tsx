@@ -133,8 +133,9 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
       {showProgress ? (
         <section aria-labelledby="progress-heading" className="surface-work">
           <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
+            {/* A class item went to that class's students; anything else to the people picked. */}
             <h3 id="progress-heading" className="text-section font-semibold text-text">
-              گیرندگان
+              {item.classOfferingId ? "دانش‌آموزان" : "گیرندگان"}
             </h3>
             <span className="tabular text-sm font-medium text-text">
               {formatNumberFa(done)}/{formatNumberFa(assignees.length)} انجام شد
@@ -185,7 +186,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
 
       {watchers.length > 0 ? (
         <p className="text-sm text-text-muted">
-          ناظران: {watchers.map((w, i) => (
+          در جریان: {watchers.map((w, i) => (
             <span key={w.personId}>
               {i > 0 ? "، " : ""}
               <bdi>{w.name}</bdi>

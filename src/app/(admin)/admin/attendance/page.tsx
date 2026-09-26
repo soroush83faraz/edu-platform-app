@@ -1,4 +1,4 @@
-import { CalendarClock, ChevronLeft, TriangleAlert, UserCheck } from "lucide-react";
+import { CalendarClock, ChevronLeft, TriangleAlert } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -148,7 +148,7 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
       ) : null}
 
       {report === null ? (
-        <EmptyState illustration={<UserCheck className="size-12 text-text-faint" aria-hidden />} title="کلاسی را انتخاب کنید" description="گزارش هر کلاس شامل درصد غیبت هر دانش‌آموز در بازهٴ انتخاب‌شده است." className="surface-work py-10" />
+        <EmptyState title="کلاسی را انتخاب کنید" description="گزارش هر کلاس شامل درصد غیبت هر دانش‌آموز در بازهٴ انتخاب‌شده است." className="surface-work py-10" />
       ) : !report.ok ? (
         <EmptyState title="گزارش در دسترس نیست" description={report.message} className="surface-work py-10" />
       ) : report.data.students.length === 0 ? (

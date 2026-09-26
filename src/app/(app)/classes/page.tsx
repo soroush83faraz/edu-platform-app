@@ -4,7 +4,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { cn } from "cn";
 import { EmptyState } from "@/components/EmptyState";
-import { BookClay } from "@/components/illustrations";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { WeekTimetable } from "@/components/timetable/WeekTimetable";
@@ -83,7 +82,7 @@ export default async function ClassesPage() {
       ) : null}
 
       {offerings.length === 0 ? (
-        <EmptyState illustration={<BookClay size={112} />} title="هنوز درسی به شما سپرده نشده" description="وقتی مدیر درسی را به شما بدهد، کلاس‌ها همین‌جا می‌آیند." />
+        <EmptyState title="هنوز درسی به شما سپرده نشده" description="وقتی مدیر درسی را به شما بدهد، کلاس‌ها همین‌جا می‌آیند." />
       ) : (
         <section aria-labelledby="offerings-heading" className="flex flex-col gap-2.5">
         <h3 id="offerings-heading" className="flex items-center gap-1.5 px-1 text-section font-semibold text-text">

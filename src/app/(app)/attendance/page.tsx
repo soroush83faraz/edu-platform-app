@@ -6,7 +6,6 @@ import { cn } from "cn";
 import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
 import { RowMark } from "@/components/RowMark";
-import { SchoolClay } from "@/components/illustrations";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ATTENDANCE_LABELS, ATTENDANCE_TONES, absencePercent, formatPercentFa, presencePercent, totalOf, type AttendanceStatus } from "@/lib/attendance";
@@ -94,8 +93,7 @@ export default async function AttendancePage() {
           </ul>
         </section>
       ) : canTake && !summary ? (
-        <EmptyState
-          illustration={<SchoolClay size={112} />}
+        <EmptyState
           title="امروز زنگی در برنامهٴ شما نیست"
           description="روزهای دیگر هفته را از «کلاس‌های من» باز کنید؛ حضور و غیاب هر زنگ از همان‌جا ثبت می‌شود."
         />
@@ -163,7 +161,7 @@ export default async function AttendancePage() {
       ) : null}
 
       {summary === null && cells.length === 0 && !canReport ? (
-        <EmptyState illustration={<SchoolClay size={112} />} title="حضور و غیابی برای شما ثبت نمی‌شود" description="این بخش برای دانش‌آموزان و دبیران کلاس است." />
+        <EmptyState title="حضور و غیابی برای شما ثبت نمی‌شود" description="این بخش برای دانش‌آموزان و دبیران کلاس است." />
       ) : null}
 
       {canReport ? (

@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/EmptyState";
-import { BellClay } from "@/components/illustrations";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
+import { requireContext } from "@/lib/ctx";
+import { audienceOf, emptyNotificationsCopy } from "@/lib/empty-copy";
 import { listNotificationsQuery } from "@/modules/notif/queries";
 import { MarkAllReadButton, NotificationList } from "@/modules/notif/ui/NotificationList";
 
@@ -20,13 +21,15 @@ export default async function NotificationsPage({ searchParams }: { searchParams
     return <EmptyState title="اعلان‌ها در دسترس نیست" description={result.message} />;
   }
   const { rows, nextCursor } = result.data;
+  // In the reader's voice (تو / شما), text only — no illustration (UX review 2026-09-27).
+  const empty = rows.length === 0 ? emptyNotificationsCopy(audienceOf((await requireContext()).assignments)) : null;
   const hasUnread = rows.some((r) => r.readAt === null);
 
   return (
     <ContentWidth className="gap-3">
       <PageHeader title="اعلان‌ها" actions={hasUnread ? <MarkAllReadButton disabled={false} /> : undefined} />
-      {rows.length === 0 ? (
-        <EmptyState illustration={<BellClay size={128} />} title="اعلانی ندارید" description="تکلیف جدید، نظر تازه و تغییر وضعیت تکالیف این‌جا خبر داده می‌شود." />
+      {empty ? (
+        <EmptyState title={empty.title} description={empty.description} />
       ) : (
         <>
           <NotificationList rows={rows} />

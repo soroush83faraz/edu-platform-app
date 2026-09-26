@@ -469,6 +469,8 @@ export interface WorkItemCore {
   completedAt: Date | null;
   archivedAt: Date | null;
   createdByPersonId: string;
+  /** Set when the item was given to a class (its درس) — its recipients are that class's students. */
+  classOfferingId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -491,6 +493,7 @@ export async function findWorkItemCore(tx: Tx, id: string): Promise<WorkItemCore
       completedAt: workItem.completedAt,
       archivedAt: workItem.archivedAt,
       createdByPersonId: workItem.createdByPersonId,
+      classOfferingId: workItem.classOfferingId,
       createdAt: workItem.createdAt,
       updatedAt: workItem.updatedAt,
     })

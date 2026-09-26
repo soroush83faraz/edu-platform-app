@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { TwoColumn } from "@/components/layout/TwoColumn";
 import type { Ctx } from "@/lib/ctx";
+import { audienceOf, emptyOpenCopy } from "@/lib/empty-copy";
 import { workItemVoice, workItemWords } from "@/lib/work-item-words";
 import { canAtAnyScope } from "@/modules/iam/can";
 import { getMyTimetable, resolveHomeTiles } from "../home-data";
@@ -85,7 +86,7 @@ export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
       main={
         canReadWork ? (
           <Suspense fallback={<CardSkeleton rows={5} />}>
-            <NearbyCard words={words} />
+            <NearbyCard words={words} empty={emptyOpenCopy(audienceOf(ctx.assignments), canAtAnyScope(ctx.assignments, "workspace.work_item.create"))} />
           </Suspense>
         ) : null
       }

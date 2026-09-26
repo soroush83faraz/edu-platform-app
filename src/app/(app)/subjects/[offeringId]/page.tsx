@@ -4,7 +4,6 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { cn } from "cn";
 import { EmptyState } from "@/components/EmptyState";
-import { EmptyClay } from "@/components/illustrations";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SubjectStamp } from "@/components/SubjectStamp";
@@ -136,7 +135,6 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
         </nav>
         {rows.length === 0 ? (
           <EmptyState
-            illustration={<EmptyClay size={96} />}
             title={tab === "todo" ? "تکلیفی برای این درس در انتظار نیست" : "هنوز تکلیفی از این درس انجام‌شده علامت نخورده"}
             description={viewer.canCreate && tab === "todo" ? "با «تکلیف جدید برای این درس» به کلاس تکلیف بدهید." : undefined}
             className="surface-work"

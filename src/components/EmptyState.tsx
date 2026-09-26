@@ -1,6 +1,10 @@
 import { cn } from "cn";
 
-/** One line of direction, one optional illustration and at most one action. No mood copy. */
+/**
+ * One line of direction, one line of next step and at most one action. No mood copy. In-page empty states are TEXT
+ * only (UX review 2026-09-27): the clay illustrations live on login and the «امروز کلاس نداری» spot, so
+ * `illustration` is kept for a surface that earns one, not for lists.
+ */
 export function EmptyState({
   title,
   description,

@@ -1,13 +1,17 @@
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { Card } from "@/components/Card";
-import { EmptyClay } from "@/components/illustrations";
+import type { EmptyCopy } from "@/lib/empty-copy";
 import type { WorkItemWords } from "@/lib/work-item-words";
 import { homeOpenItemsQuery } from "@/modules/workspace/queries";
 import { CompactItemRow } from "./CompactItemRow";
 
-/** «کارهای نزدیک»: the next five open items of my کارتابل (assigned to me or given by me), by due date. */
-export async function NearbyCard({ words }: { words: WorkItemWords }) {
+/**
+ * «تکالیف نزدیک»: the next five open items of my کارتابل (assigned to me or given by me), by due date. Empty, it is
+ * one line of text in the reader's voice (`empty`, from `src/lib/empty-copy.ts`) — no illustration, and no button:
+ * the creation tile is right above it on Home.
+ */
+export async function NearbyCard({ words, empty }: { words: WorkItemWords; empty: EmptyCopy }) {
   const items = await homeOpenItemsQuery({ limit: 5 });
   const rows = items.ok ? items.data : [];
   return (
@@ -23,12 +27,9 @@ export async function NearbyCard({ words }: { words: WorkItemWords }) {
       </div>
       <Card>
         {rows.length === 0 ? (
-          <div className="flex items-center gap-4 px-4 py-5">
-            <EmptyClay size={72} />
-            <div className="flex flex-col gap-1">
-              <p className="text-sm font-medium text-text">{words.indefinite} باز ندارید.</p>
-              <p className="text-meta text-text-muted">{words.singular} تازه همین‌جا می‌آید.</p>
-            </div>
+          <div className="flex flex-col gap-1 px-4 py-5">
+            <p className="text-row font-medium text-text">{empty.title}</p>
+            <p className="text-sm text-text-muted">{empty.description}</p>
           </div>
         ) : (
           <ul className="divide-y divide-line/70">
