@@ -2,7 +2,6 @@ import { ChevronLeft, Presentation } from "lucide-react";
 import Link from "next/link";
 import { PageSection } from "@/components/layout/PageSection";
 import { formatNumberFa } from "@/lib/format";
-import { HOME_UPCOMING } from "@/lib/modules-registry";
 import type { TeachingOffering } from "@/modules/iam/hats";
 import type { HomeTiles } from "../home-data";
 import { InboxTileBadge } from "../InboxTileBadge";
@@ -10,8 +9,8 @@ import { Tile } from "../Tile";
 
 /**
  * The aside of every desktop dashboard: the person's live tiles as a 4-column grid of 56 px marks (the same
- * tiles as the phone grid, smaller), then «به‌زودی» as one compact panel of grey pills (each opening its roadmap
- * row). Role extras (`children`) sit between the two.
+ * tiles as the phone grid, smaller), then the role extras (`children`). No «به‌زودی» panel: the roadmap is
+ * reached from «بیشتر».
  */
 export function DashboardAside({ home, children }: { home: HomeTiles; children?: React.ReactNode }) {
   const { tiles } = home;
@@ -29,21 +28,6 @@ export function DashboardAside({ home, children }: { home: HomeTiles; children?:
         </nav>
       ) : null}
       {children}
-      <PageSection id="upcoming-aside" title="به‌زودی" surface="panel" headingAs="h3">
-        <ul className="flex flex-wrap gap-1.5">
-          {HOME_UPCOMING.map((m) => {
-            const Icon = m.icon;
-            return (
-              <li key={m.code}>
-                <Link href={`/roadmap#${m.code}`} className="pressable inline-flex min-h-9 items-center gap-1.5 rounded-full bg-surface px-2.5 text-meta text-text-muted ring-1 ring-line hover:text-text">
-                  <Icon className="size-4 text-text-faint" strokeWidth={1.75} aria-hidden />
-                  {m.labelFa}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </PageSection>
     </>
   );
 }

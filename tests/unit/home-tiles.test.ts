@@ -5,8 +5,9 @@
 // «کلاس‌های من», «مدیریت» (/admin is the admin's own nav cell), «بیشتر», «خانه» — and no admin SECTION
 // («دانش‌آموزان», «کارکنان», «کلاس‌ها», «نقش‌ها») gets one either: those live on /admin.
 // Plus the pure organization-admin predicate and the nav role.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { HOME_TILES, HOME_UPCOMING, MODULES, homeTilesFor, type TileHats } from "@/lib/modules-registry";
+import { HOME_TILES, MODULES, UPCOMING_MODULES, homeTilesFor, type TileHats } from "@/lib/modules-registry";
 import { isOrganizationAdmin, navRoleFor, type Assignment } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
 
@@ -172,18 +173,28 @@ describe("navRoleFor", () => {
 });
 
 describe("product map", () => {
-  it("«تکالیف» is delivered (phase 1) and no longer a «به‌زودی» tile; «برنامهٴ کلاسی» likewise", () => {
+  it("«تکالیف» is delivered (phase 1) and no longer «به‌زودی»; «برنامهٴ کلاسی» likewise", () => {
     expect(MODULES.find((m) => m.code === "homework")?.phase).toBe(1);
     expect(MODULES.find((m) => m.code === "class-schedule")?.phase).toBe(1);
-    expect(HOME_UPCOMING.map((m) => m.code)).not.toContain("homework");
-    expect(HOME_UPCOMING.map((m) => m.code)).not.toContain("class-schedule");
-    expect(HOME_UPCOMING.every((m) => m.phase > 1)).toBe(true);
+    expect(UPCOMING_MODULES.map((m) => m.code)).not.toContain("homework");
+    expect(UPCOMING_MODULES.map((m) => m.code)).not.toContain("class-schedule");
+    expect(UPCOMING_MODULES.every((m) => m.phase > 1)).toBe(true);
+  });
+
+  it("Home carries live destinations only: no tile points at the roadmap (UX review 2026-09-27)", () => {
+    // What is coming is reached from «بیشتر ← نقشهٴ راه», never from a muted tile on Home.
+    expect(HOME_TILES.filter((t) => t.href.startsWith("/roadmap"))).toEqual([]);
+    for (const file of ["HomeGrid.tsx", "dashboard/DashboardAside.tsx"]) {
+      const src = readFileSync(new URL(`../../src/components/home/${file}`, import.meta.url), "utf8");
+      expect(src).not.toContain("/roadmap");
+      expect(src).not.toContain("UPCOMING");
+    }
   });
 
   it("«حضور و غیاب» is delivered too, and its ONE tile serves both the student and the teacher", () => {
     expect(MODULES.find((m) => m.code === "attendance")?.phase).toBe(1);
     expect(MODULES.find((m) => m.code === "attendance")?.href).toBe("/attendance");
-    expect(HOME_UPCOMING.map((m) => m.code)).not.toContain("attendance");
+    expect(UPCOMING_MODULES.map((m) => m.code)).not.toContain("attendance");
     // One destination, one tile (the IA rule) — even though two hats reach it.
     expect(HOME_TILES.filter((t) => t.href === "/attendance")).toHaveLength(1);
     const withAttendance: Permission[] = [...ADMIN_PERMS, "academic.attendance.read"];

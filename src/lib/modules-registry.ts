@@ -32,8 +32,9 @@ import type { Permission } from "@/modules/iam/permissions";
 
 /**
  * The product map: what is live now and what each later phase brings, with the client's own vocabulary
- * (`competitorTerm`) in parentheses so principals recognise it. Drives /roadmap, the «به‌زودی» hint on /more and
- * the muted «به‌زودی» tiles of the Home grid (`HOME_UPCOMING`). Phase 1 entries are links.
+ * (`competitorTerm`) in parentheses so principals recognise it. Drives /roadmap and the «به‌زودی» hint on «بیشتر ←
+ * نقشهٴ راه» — the only doors to what is coming (Home carries live destinations only, UX review 2026-09-27).
+ * Phase 1 entries are links.
  */
 export interface ModuleEntry {
   code: string;
@@ -482,25 +483,3 @@ export function homeTilesFor(
       : t;
   });
 }
-
-/** The muted «به‌زودی» tiles: the owner's list of the competitor's modules we do not have yet, in phase/month order. */
-const HOME_UPCOMING_CODES = [
-  "classbook",
-  "discipline",
-  "guardians",
-  "requests",
-  "exam-schedule",
-  "content",
-  "messages",
-  "counseling",
-  "points",
-  "grade-appeal",
-  "finance",
-];
-export const HOME_UPCOMING: readonly ModuleEntry[] = HOME_UPCOMING_CODES.map(
-  (code) => {
-    const m = MODULES.find((x) => x.code === code);
-    if (!m) throw new Error(`HOME_UPCOMING: unknown module ${code}`);
-    return m;
-  },
-);
