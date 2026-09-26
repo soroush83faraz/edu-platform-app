@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { cn } from "cn";
+import type { TimetablePerspective } from "@/lib/empty-copy";
 import { currentPeriodOf, formatTimeFa, SCHOOL_WEEKDAYS, WEEKDAY_LABELS, type PeriodLike, type Weekday } from "@/lib/timetable";
 import { DayAgenda } from "./DayAgenda";
 import { PeriodProgress } from "./PeriodProgress";
@@ -16,8 +17,8 @@ export interface WeekTimetableProps {
   today: Weekday;
   nowMinutes: number;
   secondary: SessionSecondary;
-  /** `self` (default) — the viewer's own week; `class` — an admin reading a class's week (empty-day wording). */
-  perspective?: "self" | "class";
+  /** Whose week (the empty-day wording, `emptyDayCopy`): a student's own («تو»), a دبیر's own («شما»), or a class's. */
+  perspective: TimetablePerspective;
   className?: string;
 }
 
@@ -35,7 +36,7 @@ function schoolDayOr(day: Weekday): Weekday {
  * occupied cell/row opens its subject page. The chosen day is client state mirrored to `?day=` (shareable, no
  * navigation); «now» comes from `useLiveClock`, so a page left open follows the bell.
  */
-export function WeekTimetable({ days, periods, today: serverToday, nowMinutes: serverMinutes, secondary, perspective = "self", className }: WeekTimetableProps) {
+export function WeekTimetable({ days, periods, today: serverToday, nowMinutes: serverMinutes, secondary, perspective, className }: WeekTimetableProps) {
   const clock = useLiveClock({ weekday: serverToday, minutes: serverMinutes });
   const today = clock.weekday;
   const { currentPeriodNo } = currentPeriodOf(periods, clock.minutes);

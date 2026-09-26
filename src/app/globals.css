@@ -105,6 +105,8 @@
     --text-row--line-height: 1.5rem;
     --text-base: 1rem;
     --text-base--line-height: 1.75rem;
+    --text-stamp: 1rem;
+    --text-stamp--line-height: 1;
     --text-section: 1.125rem;
     --text-section--line-height: 1.75rem;
     --text-lg: 1.125rem;
@@ -127,6 +129,10 @@
     /* Radius family: 12px controls (--radius), 16px cards, 20px the hero; pills for chips. */
     --radius-card: 1rem;
     --radius-hero: 1.25rem;
+    /* The subject stamp («مُهر درس», `SubjectStamp`): r10 on the 36 px list stamp, r13 on the 48 px header stamp,
+       and the header stamp's 16 px letters (set solid, line-height 1 — two or three letters centred in a square). */
+    --radius-stamp: 0.625rem;
+    --radius-stamp-lg: 0.8125rem;
     /* One layered shadow (blue-tinted) for raised cards; a hairline for the rest. */
     --shadow-1: 0 1px 2px rgb(7 42 200 / 0.06), 0 8px 24px rgb(7 42 200 / 0.08);
     /* The hero gradient — one of the product's two gradients (the other is the clay mark's top light, below). Ends at sky-strong, not sky: white 12px text must stay ≥ 4.5:1 on every pixel. */

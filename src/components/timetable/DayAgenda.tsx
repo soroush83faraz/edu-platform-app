@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRef } from "react";
 import { cn } from "cn";
 import { Chip } from "@/components/Chip";
+import { emptyDayCopy, type TimetablePerspective } from "@/lib/empty-copy";
 import { formatNumberFa } from "@/lib/format";
 import { dayAgenda, formatTimeFa, SCHOOL_WEEKDAYS, sessionStates, WEEKDAY_LABELS, WEEKDAY_SHORT, type PeriodLike, type Weekday } from "@/lib/timetable";
 import { PeriodProgress } from "./PeriodProgress";
@@ -18,8 +19,8 @@ export interface DayAgendaProps {
   selected: Weekday;
   onSelect: (day: Weekday) => void;
   secondary: SessionSecondary;
-  /** `self` — «کلاس نداری» (the viewer's own week); `class` — an admin looking at a class («زنگی ثبت نشده»). */
-  perspective: "self" | "class";
+  /** Whose week, for the empty-day line: `student` «کلاس نداری», `staff` «کلاس ندارید», `class` «زنگی ثبت نشده». */
+  perspective: TimetablePerspective;
 }
 
 /** A horizontal swipe must travel this far and be clearly more horizontal than vertical to switch the day. */
@@ -122,7 +123,7 @@ export function DayAgenda({ days, periods, today, nowMinutes, selected, onSelect
 
         {rows.length === 0 ? (
           <p className="px-4 pt-2 pb-5 text-sm text-text-muted">
-            {perspective === "class" ? `${WEEKDAY_LABELS[selected]} زنگی ثبت نشده.` : `${WEEKDAY_LABELS[selected]} کلاس نداری.`}
+            {emptyDayCopy(WEEKDAY_LABELS[selected], perspective)}
           </p>
         ) : (
           <ol className="pb-1">

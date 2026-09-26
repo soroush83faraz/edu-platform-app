@@ -66,7 +66,7 @@ export default async function MyClassPage() {
               برنامهٴ هفتگی
             </h3>
             {student && tt && hasSlots ? (
-              <WeekTimetable days={student.days} periods={student.periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="teacher" />
+              <WeekTimetable days={student.days} periods={student.periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="teacher" perspective="student" />
             ) : (
               <EmptyState
                 title="برنامهٴ هفتگی هنوز تنظیم نشده"

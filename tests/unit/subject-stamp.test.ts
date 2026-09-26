@@ -1,6 +1,9 @@
 // «مُهر درس» (src/lib/subject-stamp): the abbreviation of the 26 subject names on the owner-approved swatch page,
 // the normalisation it applies, and the colour index — stable per id, 0–7, and spread over all eight hues.
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { SubjectStamp } from "@/components/SubjectStamp";
 import { SUBJECT_HUES, fnv1a, stampText, subjectHue } from "@/lib/subject-stamp";
 
 describe("stampText", () => {
@@ -68,5 +71,20 @@ describe("subjectHue", () => {
       expect(n).toBeGreaterThan(50);
       expect(n).toBeLessThan(150);
     }
+  });
+});
+
+describe("SubjectStamp", () => {
+  // The approved visual (36 px / r10 / 13 px, 48 px / r13 / 16 px) from theme tokens — no arbitrary values, no
+  // off-scale `text-base`.
+  const cls = (size: "md" | "lg") => /class="([^"]*)"/.exec(renderToStaticMarkup(createElement(SubjectStamp, { subjectId: "x", name: "ریاضی", size })))![1]!;
+  it.each([
+    ["md", ["size-9", "rounded-stamp", "text-meta"]],
+    ["lg", ["size-12", "rounded-stamp-lg", "text-stamp"]],
+  ] as const)("%s uses the stamp tokens", (size, expected) => {
+    const c = cls(size).split(" ");
+    for (const e of expected) expect(c).toContain(e);
+    expect(c.some((x) => x.includes("["))).toBe(false);
+    expect(c).not.toContain("text-base");
   });
 });

@@ -1,4 +1,4 @@
-import { cn } from "cn";
+import { twJoin } from "cn";
 import { stampText, subjectHue } from "@/lib/subject-stamp";
 
 // Full class strings per hue so Tailwind sees every one (no interpolated class names). The ring is the ink at 9 %
@@ -18,15 +18,18 @@ const HUE_CLASSES = [
  * «مُهر درس» — the subject stamp: the first letters of the درس name (src/lib/subject-stamp `stampText`) in bold ink
  * on one of eight muted subject hues, picked from the subject id so a درس has the same colour everywhere. It
  * replaces the row glyph on rows that belong to a subject (homework rows, the subject page header); rows without a
- * subject keep `RowMark`. 36 px / radius 10 in lists, `lg` 48 px / radius 13 for the subject page header.
+ * subject keep `RowMark`. 36 px / radius 10 (`rounded-stamp`) and 13 px letters (`text-meta`) in lists, `lg` 48 px / radius 13
+ * (`rounded-stamp-lg`) and 16 px letters (`text-stamp`) for the subject page header — tokens in globals.css `@theme`.
  * Decorative (`aria-hidden`): the subject name is always in the text beside it.
+ * `twJoin`, not `cn`: the merger's default tables read `text-meta` / `text-stamp` as text COLOURS and would drop
+ * them in favour of the hue's `text-subject-*-ink`; nothing here is meant to override anything.
  */
 export function SubjectStamp({ subjectId, name, size = "md", className }: { subjectId: string; name: string; size?: "md" | "lg"; className?: string }) {
   return (
     <span
-      className={cn(
+      className={twJoin(
         "inline-grid shrink-0 place-items-center pt-px font-bold leading-none whitespace-nowrap ring-1 ring-inset",
-        size === "lg" ? "size-12 rounded-[13px] text-base leading-none" : "size-9 rounded-[10px] text-meta leading-none",
+        size === "lg" ? "size-12 rounded-stamp-lg text-stamp" : "size-9 rounded-stamp text-meta leading-none",
         HUE_CLASSES[subjectHue(subjectId)],
         className,
       )}

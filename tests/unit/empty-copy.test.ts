@@ -1,7 +1,7 @@
 // Empty states in the reader's voice (src/lib/empty-copy.ts, UX review 2026-09-27): a student is «تو», staff «شما»,
 // the noun follows work-item-words (تکلیف / تسک), and every line names the next step — never «داده‌ای وجود ندارد».
 import { describe, expect, it } from "vitest";
-import { type Audience, audienceOf, emptyDoneCopy, emptyNotificationsCopy, emptyOpenCopy } from "@/lib/empty-copy";
+import { type Audience, audienceOf, emptyDayCopy, emptyDoneCopy, emptyNotificationsCopy, emptyOpenCopy } from "@/lib/empty-copy";
 
 const a = (roleCode: string, scopeType: string, permissions: string[] = []) => ({ roleCode, scopeType, permissions });
 const student = a("student", "student", ["workspace.work_item.read"]);
@@ -42,6 +42,19 @@ describe("empty copy", () => {
     expect(emptyOpenCopy("teacher", true, true).title).toBe("هنوز تکلیفی نداده‌اید.");
     // Once a دبیر has given work, «هنوز … نداده‌اید» would be untrue.
     expect(emptyOpenCopy("teacher", true, false).title).not.toContain("نداده");
+  });
+
+  it("an admin reads «اولین تسک» only before they have given any (like the دبیر)", () => {
+    expect(emptyOpenCopy("admin", true, true).description).toContain("اولین تسک");
+    expect(emptyOpenCopy("admin", true, false).description).not.toContain("اولین");
+    expect(emptyOpenCopy("admin", true).description).not.toContain("اولین");
+    expect(emptyOpenCopy("admin", true, false).title).not.toContain("نداده");
+  });
+
+  it("an empty timetable day: «تو» for a student, «شما» for a دبیر, impersonal for a class", () => {
+    expect(emptyDayCopy("شنبه", "student")).toBe("شنبه کلاس نداری.");
+    expect(emptyDayCopy("شنبه", "staff")).toBe("شنبه کلاس ندارید.");
+    expect(emptyDayCopy("شنبه", "class")).toBe("شنبه زنگی ثبت نشده.");
   });
 
   it("every line has a next step and none is the generic «داده‌ای وجود ندارد»; no Latin letters", () => {

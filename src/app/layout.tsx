@@ -37,7 +37,9 @@ export const metadata: Metadata = {
 };
 
 // `theme-color` is canvas (#E8EEF9): the Android status bar and the installed app's title strip, blending
-// with the canvas header. `viewport-fit=cover` lets the page reach under the notch; the shells pad themselves with the safe-area insets.
+// with the canvas header. `viewport-fit=cover` lets the page reach under the notch; the shells pad themselves with
+// the safe-area insets, and their sticky canvas headers paint that area — so no separate status-bar strip is drawn
+// (the old persian-blue one belonged to the translucent iOS bar, now `default`).
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
@@ -59,11 +61,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Entrance animations play on the session's first page view only: this sets `data-seen` on <html>
             before the first paint of any later document load, and on the first client-side navigation. */}
         <RevealSession />
-        {/* The status-bar strip: on an iOS Home Screen app the page runs under a translucent status bar, so its
-            area is painted here in the theme colour — the same persian-blue Android gives the bar from
-            `theme-color`. Zero tall everywhere else (a browser tab, a desktop, Android): `safe-area-inset-top`
-            is 0 there. Every shell pads its own top by the same inset, so nothing is drawn under it. */}
-        <div aria-hidden className="pointer-events-none fixed inset-x-0 top-0 z-50 h-[env(safe-area-inset-top)] bg-primary-600 print:hidden" />
         <AppProviders>{children}</AppProviders>
         <ServiceWorkerRegistration />
       </body>

@@ -1122,3 +1122,19 @@ Owner-approved items from the UX review whose aim is an app that reads like a re
 - **Verified** at 375 and 1280 px as student, teacher and organization admin (Home, کارتابل — the admin's empty —,
   nav, notifications): `pnpm exec tsc --noEmit`, `vitest run tests/unit`, eslint on the changed files and
   `check-forbidden` green.
+
+## 2026-09-27 — verifier fixes: the status bar, the empty timetable day, the stamp tokens
+
+- **`theme_color` is `canvas` #E8EEF9** (manifest and `<meta name="theme-color">`): the Android status bar and the
+  installed app's title strip blend with the canvas header instead of a persian-blue band over a light page. The
+  fixed `bg-primary-600` status-bar strip in the root layout (it painted under the old `black-translucent` iOS bar)
+  is removed: iOS is `default` now and the shells' sticky canvas headers already pad and paint the safe-area inset.
+  docs/pwa.md follows.
+- **The phone timetable's empty day speaks in the reader's voice** (`emptyDayCopy`, src/lib/empty-copy.ts): the
+  student's «کلاس من» «… کلاس نداری.», a دبیر's «کلاس‌ها» «… کلاس ندارید.», an admin reading a class «… زنگی ثبت
+  نشده.»; `WeekTimetable`'s `perspective` is now required (`student` | `staff` | `class`).
+- **An admin's empty کارتابل** says «اولین تسک را …» only while `firstTime` (like the دبیر); otherwise «تسک تازه‌ای …».
+- **`SubjectStamp` from tokens**: `--radius-stamp` (10 px) / `--radius-stamp-lg` (13 px) and `--text-stamp` (16 px,
+  line-height 1) in `@theme`; the list stamp keeps `text-meta`. It joins its classes with `twJoin`: `cn`'s default
+  merge tables read a custom size role (`text-meta`) as a text COLOUR and dropped it in favour of the hue's ink, so
+  the stamp had been rendering at the body 14 px.

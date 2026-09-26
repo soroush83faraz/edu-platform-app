@@ -24,7 +24,7 @@ export interface EmptyCopy {
 /**
  * Nothing open in the کارتابل (and nothing on Home's «تکالیف نزدیک»). `canCreate` decides whether the next step is
  * to write one; `firstTime` (nothing finished either — the کارتابل knows it from its tab counts) lets a دبیر read
- * «هنوز تکلیفی نداده‌اید», which would be untrue once they have given some.
+ * «هنوز تکلیفی نداده‌اید» (an admin «اولین تسک را …»), which would be untrue once they have given some.
  */
 export function emptyOpenCopy(audience: Audience, canCreate: boolean, firstTime = false): EmptyCopy {
   switch (audience) {
@@ -36,8 +36,9 @@ export function emptyOpenCopy(audience: Audience, canCreate: boolean, firstTime 
         ? { title: "تکلیف بازی ندارید.", description: "تکلیف تازه‌ای برای کلاس‌تان بنویسید؛ پیشرفت دانش‌آموزان همین‌جا دیده می‌شود." }
         : { title: "تکلیفی در جریان نیست.", description: "هر وقت تکلیفی به شما داده شود، همین‌جا و در اعلان‌ها خبرتان می‌کنیم." };
     case "admin":
+      if (canCreate && firstTime) return { title: "هنوز تسکی نداده‌اید.", description: "اولین تسک را برای همکاران‌تان بنویسید؛ پیشرفتش همین‌جا دیده می‌شود." };
       return canCreate
-        ? { title: "تسکی در جریان نیست.", description: "اولین تسک را برای همکاران‌تان بنویسید؛ پیشرفتش همین‌جا دیده می‌شود." }
+        ? { title: "تسکی در جریان نیست.", description: "تسک تازه‌ای برای همکاران‌تان بنویسید؛ پیشرفتش همین‌جا دیده می‌شود." }
         : { title: "تسکی در انتظار شما نیست.", description: "هر وقت تسکی به شما داده شود، همین‌جا و در اعلان‌ها خبرتان می‌کنیم." };
     case "member":
       return { title: "تکلیفی در انتظار شما نیست.", description: "هر وقت مدرسه تکلیفی بدهد، همین‌جا و در اعلان‌ها خبرتان می‌کنیم." };
@@ -67,5 +68,22 @@ export function emptyNotificationsCopy(audience: Audience): EmptyCopy {
       return { title: "هنوز اعلانی ندارید.", description: "هر وقت تسکی به شما داده شود یا کسی روی تسک‌هایتان نظری بنویسد، همین‌جا خبرتان می‌کنیم." };
     case "member":
       return { title: "هنوز اعلانی ندارید.", description: "هر وقت تکلیفی به شما داده شود یا نظر تازه‌ای برسد، همین‌جا خبرتان می‌کنیم." };
+  }
+}
+
+/**
+ * A school day with no زنگ on the phone timetable (`DayAgenda`). `student` — the student's own week, «تو»;
+ * `staff` — a دبیر's own week, «شما»; `class` — an admin reading a class's week, impersonal.
+ */
+export type TimetablePerspective = "student" | "staff" | "class";
+
+export function emptyDayCopy(dayLabel: string, perspective: TimetablePerspective): string {
+  switch (perspective) {
+    case "student":
+      return `${dayLabel} کلاس نداری.`;
+    case "staff":
+      return `${dayLabel} کلاس ندارید.`;
+    case "class":
+      return `${dayLabel} زنگی ثبت نشده.`;
   }
 }
