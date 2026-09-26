@@ -10,18 +10,17 @@ import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { InstallPrompt } from "@/components/shell/InstallPrompt";
 import { requireContext } from "@/lib/ctx";
-import { roleHatsFor } from "@/components/brand/roles";
+import { isStudentOnly, workItemVoice, workItemWords } from "@/lib/work-item-words";
 import { canAtAnyScope } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "خانه" };
 
 /**
- * Home is an icon grid (product-owner decision, docs/decisions.md): the school banner (phones; from `lg:` the
- * compact `PageHeader` with the greeting — no gradient block on desktop), the one-line «امروز» strip (live, from
- * the shell's summary poller), then the tiles — live ones by role, muted «به‌زودی» ones from the product map — and
- * one card under them. From `lg:` the grid gives way to the per-role dashboard (`HomeDashboard`: two columns, the
- * tiles in the aside). Each streams in its own <Suspense> behind a same-shape skeleton; `reveal-stagger` lets
- * banner, strip and grid rise in as they land.
+ * Home is an icon grid (product-owner decision, docs/decisions.md): the flat greeting (phones; from `lg:` the
+ * compact `PageHeader` — no gradient block anywhere), the one-sentence «امروز» line (live, from the shell's summary
+ * poller), then the person's live tiles and one card under them. From `lg:` the grid gives way to the per-role
+ * dashboard (`HomeDashboard`: two columns, the tiles in the aside). Each streams in its own <Suspense> behind a
+ * same-shape skeleton; `reveal-stagger` lets them rise in — on the first page view of a session only.
  */
 export default async function HomePage() {
   const ctx = await requireContext(); // the (app) layout already redirected anonymous visitors
@@ -39,8 +38,8 @@ export default async function HomePage() {
         // «پنل من» is a TILE in the grid / dashboard aside since round 5, not a control.
         actions={<NotificationsBell />}
       />
-      <SchoolBanner schoolName={ctx.schoolName ?? ctx.orgName} firstName={ctx.firstName} hats={roleHatsFor(ctx.assignments)} />
-      {canAtAnyScope(ctx.assignments, "workspace.work_item.read") ? <TodayStrip /> : null}
+      <SchoolBanner firstName={ctx.firstName} />
+      {canAtAnyScope(ctx.assignments, "workspace.work_item.read") ? <TodayStrip noun={workItemWords(workItemVoice(ctx.assignments)).singular} student={isStudentOnly(ctx.assignments)} /> : null}
       {/* Phones and tablets: the tile grid, exactly as decided. From lg: the per-role dashboard (the reads are shared). */}
       <div className="flex flex-col gap-5 lg:hidden">
         <Suspense fallback={<GridSkeleton />}>

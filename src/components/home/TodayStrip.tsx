@@ -1,42 +1,45 @@
 "use client";
 
-import { AlarmClock, MailOpen, Sun } from "lucide-react";
 import Link from "next/link";
 import { cn } from "cn";
-import { ClayIcon } from "@/components/ClayIcon";
 import { useInboxSummaryContext } from "@/components/shell/InboxSummaryProvider";
 import { formatNumberFa } from "@/lib/format";
 
 /**
- * «امروز» in one line: three white cells (سررسیده · امروز · خوانده‌نشده), each a 40 px blue clay mark with the bold
- * primary-700 number and its label stacked beside it, each opening the کارتابل pre-filtered. On phones the three
- * share the width; from `md:` they are fixed 176 px pills aligned to the start (owner: the marks never scale with
- * the cell). Reads the shell's live summary, so it moves with the nav badges. A zero fades to text-faint; overdue
- * > 0 turns its number red — a red mark, never a red surface.
+ * «امروز» in ONE sentence (UX review 2026-09-27, owner): «۲ تکلیف عقب‌افتاده · ۱ تکلیف برای امروز · ۳ اعلان
+ * خوانده‌نشده» — zeros omitted, each fragment a link to its filtered place (the کارتابل's overdue / today bucket,
+ * «اعلان‌ها»), and only the overdue number in danger text. With nothing to say it is one calm line in the reader's
+ * own voice: «تو» for a student, «شما» for staff. `noun` is the reader's word for a کار (`workItemVoice` —
+ * «تکلیف» / «تسک»). Reads the shell's live summary, so it moves with the badges.
  */
-export function TodayStrip() {
+export function TodayStrip({ noun, student }: { noun: string; student: boolean }) {
   const s = useInboxSummaryContext();
+  const parts = [
+    { key: "overdue", href: "/inbox?bucket=overdue", value: s.overdue, rest: `${noun} عقب‌افتاده`, alert: true },
+    { key: "today", href: "/inbox?bucket=today", value: s.dueToday, rest: `${noun} برای امروز`, alert: false },
+    { key: "notif", href: "/notifications", value: s.unreadNotifications, rest: "اعلان خوانده‌نشده", alert: false },
+  ].filter((p) => p.value > 0);
+
+  if (parts.length === 0) {
+    return <p className="text-row text-text-muted">{student ? "امروز کار عقب‌افتاده‌ای نداری." : "کار عقب‌افتاده‌ای ندارید."}</p>;
+  }
   return (
     <nav aria-label="امروز">
-      <ul className="grid grid-cols-3 gap-2 md:flex md:flex-wrap">
-        <Cell href="/inbox?bucket=overdue" icon={AlarmClock} label="سررسیده" value={s.overdue} alert={s.overdue > 0} />
-        <Cell href="/inbox?bucket=today" icon={Sun} label="امروز" value={s.dueToday} />
-        <Cell href="/inbox?unread=1" icon={MailOpen} label="خوانده‌نشده" value={s.unread} />
+      <ul className="flex flex-wrap items-center gap-x-1 text-row text-text">
+        {parts.map((p, i) => (
+          <li key={p.key} className="flex items-center gap-x-1">
+            {i > 0 ? (
+              <span aria-hidden className="text-text-faint">
+                ·
+              </span>
+            ) : null}
+            {/* 24 px line + 10 px above and below: a 44 px target that still reads as words in a sentence. */}
+            <Link href={p.href} className="pressable inline-block rounded-lg py-2.5 underline decoration-line-strong underline-offset-4 hover:decoration-current">
+              <span className={cn("tabular font-bold", p.alert ? "text-danger" : "text-text")}>{formatNumberFa(p.value)}</span> {p.rest}
+            </Link>
+          </li>
+        ))}
       </ul>
     </nav>
-  );
-}
-
-function Cell({ href, icon, label, value, alert = false }: { href: string; icon: typeof Sun; label: string; value: number; alert?: boolean }) {
-  return (
-    <li className="md:w-44">
-      <Link href={href} className="surface-work surface-link flex min-h-14 items-center gap-1.5 px-1.5 md:gap-2 md:px-2">
-        <ClayIcon icon={icon} size="md" />
-        <span className="flex min-w-0 flex-col">
-          <span className={cn("tabular text-section leading-6 font-bold", value === 0 && !alert ? "text-text-faint" : alert ? "text-danger" : "text-primary-700")}>{formatNumberFa(value)}</span>
-          <span className="line-clamp-2 text-[0.6875rem] leading-4 text-text-muted md:text-meta">{label}</span>
-        </span>
-      </Link>
-    </li>
   );
 }

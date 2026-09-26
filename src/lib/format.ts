@@ -61,6 +61,11 @@ export function formatJalaliLong(date = tehranNow()): string {
   return toFaDigits(format(date, "EEEE d MMMM yyyy", { locale: faIR }));
 }
 
+/** e.g. «سه‌شنبه ۷ مهر» — the weekday and the day of the month, no year (Home's greeting line). */
+export function formatJalaliWeekdayDate(date = tehranNow()): string {
+  return toFaDigits(format(date, "EEEE d MMMM", { locale: faIR }));
+}
+
 /** «۵ مهر» (same year) or «۵ مهر ۱۴۰۶». `instant` is a UTC instant; rendered in Tehran. */
 export function formatJalaliShort(instant: Date, now = new Date()): string {
   const d = tehranNow(instant);

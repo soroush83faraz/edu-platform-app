@@ -129,7 +129,6 @@
     --radius-hero: 1.25rem;
     /* One layered shadow (blue-tinted) for raised cards; a hairline for the rest. */
     --shadow-1: 0 1px 2px rgb(7 42 200 / 0.06), 0 8px 24px rgb(7 42 200 / 0.08);
-    --shadow-hero: 0 12px 32px rgb(7 42 200 / 0.28);
     /* The hero gradient — one of the product's two gradients (the other is the clay mark's top light, below). Ends at sky-strong, not sky: white 12px text must stay ≥ 4.5:1 on every pixel. */
     --background-image-hero: linear-gradient(135deg, #072AC8 0%, #0B6FD1 100%);
 
@@ -288,10 +287,6 @@
     outline-offset: 2px;
     border-radius: var(--radius-sm);
     animation: focus-in var(--duration-fast) var(--ease-out);
-  }
-  /* On the blue hero the ring flips to lemon so it stays visible. */
-  .on-hero :where(a, button):focus-visible {
-    outline-color: var(--color-lemon);
   }
   ::selection {
     background: var(--color-info);
