@@ -16,9 +16,10 @@
 /** `sessionStorage` key. Session-scoped on purpose: closing the app window is what earns the next splash. */
 export const SPLASH_SEEN_KEY = "donino.splash.seen";
 
-/** How long the pen writes, the ink settles and the mark stands before the layer lifts away (`SPLASH_FADE_MS`). */
-export const SPLASH_HOLD_MS = 1120;
-export const SPLASH_FADE_MS = 330;
+/** How long the pen writes, the drop falls, the ink lands and the water rings out and calms, before the layer
+ *  lifts away (`SPLASH_FADE_MS`). */
+export const SPLASH_HOLD_MS = 1850;
+export const SPLASH_FADE_MS = 350;
 /** The hard cap: the CSS `splash-leave` runs exactly this long, so even a dead bundle cannot leave it standing. */
 export const SPLASH_TOTAL_MS = SPLASH_HOLD_MS + SPLASH_FADE_MS;
 /** With `prefers-reduced-motion: reduce`: the still, solid mark stands and fades (`splash-leave-still`). */

@@ -546,13 +546,16 @@
 }
 /* ---- Opening splash (`src/components/brand/SplashScreen.tsx`): «دانینو» written once, with one pen. The layer
    opens on the launch still (the pale mark iOS has just shown), the pen traces the silhouette and then the channel,
-   the ink floods in and settles, and the whole layer lifts away. The overlay is in the server-rendered HTML, so it
+   and the ink lands like a stone in still water — the mark dips, the water rings out from it — and the whole layer
+   lifts away. Where WebGL is up to it, a real water surface (`src/lib/pwa/splash-water.ts`) plays under the pen and
+   takes over the ripple; everything here is also its fallback. The overlay is in the server-rendered HTML, so it
    is painted with the FIRST frame; the boot script in the root layout sets `data-splash="on"` before that frame
    and only then — installed app, first document load of the session — so a browser tab lays nothing out and never
    flashes it (`src/lib/pwa/splash-gate.ts`).
 
-   `splash-leave` on the layer itself IS the hard cap: 1450 ms of CSS (`SPLASH_TOTAL_MS`), no listener, no timer,
-   nothing a throttled tab or a bundle that never arrives can lose. Everything below finishes inside it. The layer
+   `splash-leave` on the layer itself IS the hard cap: 2200 ms of CSS (`SPLASH_TOTAL_MS`), no listener, no timer,
+   nothing a throttled tab or a bundle that never arrives can lose. Everything below finishes inside it, or is cut
+   off by it: the last wavefronts are still spreading as the layer fades, which is how water behaves. The layer
    is `pointer-events: none` for its whole life and the app underneath is live and interactive throughout. Only
    `opacity`, `translate`/`scale` and the pen's dash offset move — nothing that lays anything out.
 
@@ -570,15 +573,18 @@
   overflow: hidden;
   background-color: var(--color-canvas);
   pointer-events: none;
+  /* The mark's size — the iOS launch still (`renderSplash`: 40 % of the short side, capped at 280 px). The ripple
+     is measured in it. */
+  --splash-mark: min(40vmin, 280px);
 }
 html[data-splash="on"] .splash-layer {
   display: grid;
-  animation: splash-leave 1450ms linear both;
+  animation: splash-leave 2200ms linear both;
 }
-/* Holds until 1120 ms (77.24 %), then 330 ms out on the standard curve. */
+/* Holds until 1850 ms (84.09 %), then 350 ms out on the standard curve. */
 @keyframes splash-leave {
   0%,
-  77.24% {
+  84.09% {
     opacity: 1;
     animation-timing-function: var(--ease-in-out);
   }
@@ -598,29 +604,102 @@ html[data-splash="on"] .splash-layer {
     visibility: hidden;
   }
 }
-/* The bell rings: three hairline circles in the mark's grid cell, laid out at their LARGEST size and scaled up
-   from the mark's own size (0.25 → 1), so the compositor only ever shrinks a raster, never blurs one. Each is a
-   transparent circle with a persian-blue hairline, fainter ring by ring — a bell struck once. At rest (and under
-   reduced motion) they are invisible. */
-.splash-ring {
+/* The ripple: the ink lands like a stone in still water. Four wavefronts share the mark's grid cell, each laid
+   out at its LARGEST size (2.2 × the mark) and scaled up from 0.15, so the compositor only ever shrinks a raster,
+   never blurs one. A wavefront is not a hairline but a soft band painted once by a static radial gradient on
+   `canvas`: a faint persian-blue trough on its inside, an ice-blue (`info`) highlight, then the persian-blue crest,
+   every edge feathered to transparent. `--a` is the ring's amplitude (each one fainter than the last); nothing
+   but `scale` and `opacity` ever changes, so the bands are rasterised once. At rest (and under reduced motion)
+   they are invisible. */
+.splash-ripple,
+.splash-wash {
   grid-area: 1 / 1;
-  inline-size: min(160vmin, 1120px);
-  block-size: min(160vmin, 1120px);
-  border: 3px solid color-mix(in srgb, var(--color-primary-600) 32%, transparent);
   border-radius: 50%;
   opacity: 0;
 }
-.splash-ring-2 {
-  border-color: color-mix(in srgb, var(--color-primary-600) 22%, transparent);
+.splash-ripple {
+  --a: 1;
+  --reach: 1;
+  inline-size: calc(var(--splash-mark) * 2.5);
+  block-size: calc(var(--splash-mark) * 2.5);
+  background: radial-gradient(
+    closest-side,
+    transparent 72%,
+    color-mix(in srgb, var(--color-primary-600) calc(4% * var(--a)), transparent) 79%,
+    transparent 84%,
+    color-mix(in srgb, var(--color-info) calc(55% * var(--a)), transparent) 89%,
+    color-mix(in srgb, var(--color-primary-600) calc(20% * var(--a)), transparent) 93.5%,
+    transparent 98%
+  );
 }
-.splash-ring-3 {
-  border-color: color-mix(in srgb, var(--color-primary-600) 14%, transparent);
+.splash-ripple-2 {
+  --a: 0.78;
+  --reach: 0.84;
+}
+.splash-ripple-3 {
+  --a: 0.58;
+  --reach: 0.7;
+}
+.splash-ripple-4 {
+  --a: 0.4;
+  --reach: 0.58;
+}
+/* The disturbance under the stone: one faint ice-blue pool that blooms beneath the mark as it lands. */
+.splash-wash {
+  inline-size: calc(var(--splash-mark) * 1.7);
+  block-size: calc(var(--splash-mark) * 1.7);
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--color-info) 14%, transparent), transparent);
+}
+/* The water (`src/lib/pwa/splash-water.ts`): a WebGL canvas across the whole layer, UNDER the mark, shown only once its
+   inline script has compiled the shader and drawn a first frame — it then sets `data-splash-water` on <html>. The
+   CSS rings and the SVG ink step aside (the water rings, and the shader draws the solid mark); the SVG ghost and pen
+   still write the mark above the water until the impact (820 ms), then hand over to the shader's mark in 120 ms —
+   dipping and pushing in on exactly the shader's curves, so the two never show as a double image. Without the
+   attribute — no WebGL, a weak device, reduced motion, any failure — none of this applies and the CSS splash plays. */
+.splash-water {
+  display: none;
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+}
+html[data-splash-water="on"] .splash-water {
+  display: block;
+}
+html[data-splash-water="on"] :is(.splash-fill, .splash-ripple, .splash-wash) {
+  display: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-splash-water="on"] .splash-art {
+    animation:
+      splash-push 2200ms linear both,
+      splash-drop 260ms linear 820ms both,
+      splash-hand-over 120ms linear 820ms both,
+      splash-lift 350ms var(--ease-in-out) 1850ms both;
+  }
+  html[data-splash-water="on"] .splash-water {
+    animation: splash-lift 350ms var(--ease-in-out) 1850ms both;
+  }
+}
+/* The shader's camera: 1 → 1.03 across the splash (`transform`, so it composes with the dip's `scale`). */
+@keyframes splash-push {
+  to {
+    transform: scale(1.03);
+  }
+}
+@keyframes splash-hand-over {
+  to {
+    opacity: 0;
+  }
 }
 /* The same size as the iOS launch still (`renderSplash`: 40 % of the short side, capped at 280 px). */
 .splash-art {
   grid-area: 1 / 1;
-  inline-size: min(40vmin, 280px);
-  block-size: min(40vmin, 280px);
+  /* Above the water canvas. */
+  position: relative;
+  z-index: 1;
+  inline-size: var(--splash-mark);
+  block-size: var(--splash-mark);
   color: var(--color-primary-600);
 }
 .splash-ghost,
@@ -650,36 +729,92 @@ html[data-splash="on"] .splash-layer {
   .splash-pen {
     animation:
       splash-write 680ms cubic-bezier(0.45, 0, 0.15, 1) 80ms both,
-      splash-pen-out 300ms var(--ease-out) 640ms both;
+      splash-pen-out 300ms var(--ease-out) 820ms both;
   }
   .splash-pen-inner {
     animation:
       splash-write 630ms cubic-bezier(0.45, 0, 0.15, 1) 170ms both,
-      splash-pen-out 300ms var(--ease-out) 660ms both;
+      splash-pen-out 300ms var(--ease-out) 840ms both;
   }
   .splash-fill {
-    animation: splash-ink 340ms var(--ease-out) 600ms both;
+    animation: splash-ink 340ms var(--ease-out) 820ms both;
   }
+  /* The drop: as the ink lands (820 ms) the mark touches the water — 1 → 0.97 → 1, no bounce — then lifts away. */
   .splash-art {
-    animation: splash-lift 330ms var(--ease-in-out) 1120ms both;
+    animation:
+      splash-drop 260ms linear 820ms both,
+      splash-lift 350ms var(--ease-in-out) 1850ms both;
   }
-  /* Struck as the ink lands (600 ms), 120 ms apart; the last one is gone at 1440 ms, inside the leave. */
-  .splash-ring {
-    animation: splash-ring 600ms cubic-bezier(0.2, 0.6, 0.35, 1) 600ms both;
+  /* The wavefronts leave the mark's centre at the instant it touches (820 ms), in quick succession, each gap a
+     little longer than the last. Fast then slow (a strong ease-out), and each later ring a touch slower, so the
+     spacing between them grows as they travel — dispersion. The opacity runs on its own curve: it peaks a quarter
+     of the way out and eases away to nothing. The last two are still spreading as the layer lifts away. */
+  .splash-ripple {
+    will-change: transform, opacity;
+    animation:
+      splash-ripple-spread 900ms cubic-bezier(0.15, 0.6, 0.25, 1) 820ms both,
+      splash-ripple-fade 900ms linear 820ms both;
   }
-  .splash-ring-2 {
-    animation-delay: 720ms;
+  .splash-ripple-2 {
+    animation-delay: 920ms;
+    animation-duration: 940ms;
+    animation-timing-function: cubic-bezier(0.17, 0.6, 0.27, 1), linear;
   }
-  .splash-ring-3 {
-    animation-delay: 840ms;
+  .splash-ripple-3 {
+    animation-delay: 1025ms;
+    animation-duration: 980ms;
+    animation-timing-function: cubic-bezier(0.19, 0.6, 0.29, 1), linear;
+  }
+  .splash-ripple-4 {
+    animation-delay: 1135ms;
+    animation-duration: 1020ms;
+    animation-timing-function: cubic-bezier(0.21, 0.6, 0.31, 1), linear;
+  }
+  .splash-wash {
+    will-change: transform, opacity;
+    animation: splash-wash 720ms var(--ease-out) 820ms both;
   }
 }
-@keyframes splash-ring {
+@keyframes splash-drop {
+  0% {
+    scale: 1;
+    animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1);
+  }
+  38% {
+    scale: 0.97;
+    animation-timing-function: cubic-bezier(0.45, 0, 0.25, 1);
+  }
+  100% {
+    scale: 1;
+  }
+}
+@keyframes splash-ripple-spread {
+  from {
+    scale: 0.15;
+  }
+  to {
+    scale: var(--reach);
+  }
+}
+@keyframes splash-ripple-fade {
   0% {
     opacity: 0;
-    scale: 0.25;
+    animation-timing-function: cubic-bezier(0.3, 0, 0.5, 1);
   }
-  20% {
+  25% {
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes splash-wash {
+  0% {
+    opacity: 0;
+    scale: 0.5;
+  }
+  30% {
     opacity: 1;
   }
   100% {

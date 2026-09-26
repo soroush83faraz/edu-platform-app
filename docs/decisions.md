@@ -957,15 +957,28 @@ for the school bell, was the pick).
   the round side's lighter optical weight.
 - **The installed icon** takes the glyph at 0.72 (≈61 % of the squircle, was 0.78 of the old mark) with a 0.6-unit
   optical nudge to the end side — the stem and the leaf carry the mass (`MONOGRAM_ICON_NUDGE`).
-- **The opening splash** (`SplashScreen`, «Opening splash» in `globals.css`), 1450 ms hard cap
-  (`SPLASH_TOTAL_MS`, was 1200): 0–80 ms the launch still; 80–760 ms a round-nibbed persian-blue pen writes the
+- **The opening splash** (`SplashScreen`, «Opening splash» in `globals.css`), 1540 ms hard cap
+  (`SPLASH_TOTAL_MS`, was 1200, then 1450 with the bell rings): 0–80 ms the launch still; 80–760 ms a round-nibbed persian-blue pen writes the
   silhouette in one clockwise stroke, 170–800 ms the channel a beat behind (`pathLength="1"`, dash `1 2`, offset
   1.02 → 0 so the cap prints no dot, `cubic-bezier(.45,0,.15,1)`); 600–940 ms the ink floods in, settling from
-  96 % with no overshoot, while the pen thins into its edge; 600–1440 ms three hairline rings ripple out from the
-  mark (600/720/840 ms, 600 ms each, 32/22/14 % persian-blue, scaled 0.25 → 1 from their largest layout size so the
-  compositor only shrinks) — «زنگ», struck once; 1120–1450 ms the layer lifts 14 px as it fades. Only opacity,
-  transform and a dash offset move; no filter, no gradient, no glow, no wordmark. The orbits, bloom, shine and
-  clay squircle of the previous version are gone.
+  96 % with no overshoot, while the pen thins into its edge; from 600 ms the water ripple (below); 1180–1540 ms
+  the layer lifts 14 px as it fades. Only opacity, transform and a dash offset move; no filter, no glow, no
+  wordmark. The orbits, bloom, shine and clay squircle of the previous version are gone.
+- **The bell became a water ripple** (owner: «like a stone thrown into water — that smooth and clean»; the pen and
+  the mark stay as they were). The three hairline rings were hard circles; now, at the instant the ink lands
+  (600 ms), the whole mark dips 1 → 0.97 → 1 over 260 ms (no bounce), a faint ice-blue pool (`info` 14 %, 1.7 ×
+  the mark) blooms under it and fades in 720 ms, and four wavefronts leave its centre at 600 / 700 / 805 / 915 ms
+  (gaps widening) over 900 / 940 / 980 / 1020 ms on a strong ease-out (`cubic-bezier(.15,.6,.25,1)`, each later
+  ring a touch softer). Each wavefront is a SOFT band, not a line: a static CSS `radial-gradient` on a round span
+  laid out at 2.5 × the mark — a faint persian-blue trough inside, an ice-blue highlight, the persian-blue crest,
+  every edge feathered — scaled up from 0.15 to its reach (1 / .84 / .70 / .58, so the fronts stay spaced like
+  real dispersing water instead of piling up at one radius). Amplitude decays (`--a` 1 / .78 / .58 / .40 scales
+  the band's alphas); each ring's opacity peaks a quarter of the way out and eases to 0 on its own curve (a second
+  animation, so the spread keeps its easing). Five composited layers, `will-change: transform, opacity` on them
+  only; the gradients are painted once and never animated; the layer clips them (no scroll at 375 px). The last
+  two fronts are still spreading as the layer lifts away — cut off by the leave, which is how water looks. These
+  splash-only gradients are the one exception to «gradients: `bg-hero` and `.clay-icon` only». Reduced motion:
+  unchanged — no dip, no ripple.
 - **Launch still = first frame.** The iOS launch images (`renderSplash`) are now the monogram alone at 16 %
   persian-blue on `canvas`, 40 % of the short side capped at 280 px — exactly what the splash opens on and the pen
   writes over (`ghostMarkSvg`, `MARK_GHOST_OPACITY`), so the OS → page hand-over does not jump, and a slow first
