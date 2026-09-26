@@ -65,7 +65,7 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
         <ul className="surface-work divide-y divide-line/70">
           {rows.map((r) => (
             <li key={r.personId}>
-              <Link href={`/admin/people/${r.personId}`} className="flex min-h-14 items-center justify-between gap-3 px-4 py-2 hover:bg-surface-sunken">
+              <Link href={`/admin/people/${r.personId}`} className="pressable flex min-h-14 items-center justify-between gap-3 px-4 py-2 hover:bg-surface-sunken">
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate text-row font-medium text-text">
                     <bdi>

@@ -55,7 +55,7 @@ export function NotificationList({ rows }: { rows: NotificationRow[] }) {
             type="button"
             onClick={() => open(n)}
             aria-label={`${n.readAt ? "" : "خوانده‌نشده: "}${n.title}${n.body ? ` — ${n.body}` : ""}`}
-            className="flex min-h-[4.5rem] w-full items-start gap-3 px-4 py-3 text-start transition-base first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken"
+            className="pressable flex min-h-[4.5rem] w-full items-start gap-3 px-4 py-3 text-start first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken"
           >
             <span className={cn("mt-2.5 size-2.5 shrink-0 rounded-full", n.readAt ? "bg-transparent" : "bg-sky")} aria-hidden />
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">

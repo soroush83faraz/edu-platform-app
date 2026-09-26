@@ -117,7 +117,7 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
               <li key={`${c.classGroupId}:${c.periodNo}`}>
                 <Link
                   href={`/attendance/${c.classGroupId}?date=${gaps.data.date}&period=${c.periodNo}`}
-                  className="flex min-h-14 items-center gap-3 px-3 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken"
+                  className="pressable flex min-h-14 items-center gap-3 px-3 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken"
                 >
                   <RowMark icon={CalendarClock} />
                   <span className="flex min-w-0 flex-1 flex-col">

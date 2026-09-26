@@ -11,7 +11,7 @@ export async function PublicBackLink() {
   const ctx = await getRequestContext();
   const target = !ctx ? { href: "/login", label: "ورود" } : ctx.mustChangePassword ? { href: "/change-password", label: "تغییر رمز" } : { href: "/more", label: "بیشتر" };
   return (
-    <Link href={target.href} className="inline-flex min-h-11 items-center gap-1 self-start text-sm text-text-muted hover:text-text">
+    <Link href={target.href} className="pressable inline-flex min-h-11 items-center gap-1 self-start text-sm text-text-muted hover:text-text">
       <ArrowRight className="size-4" aria-hidden />
       {target.label}
     </Link>

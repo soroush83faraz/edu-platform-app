@@ -99,7 +99,7 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
           <ol className="surface-work divide-y divide-line/70">
             {roster.map((r, i) => (
               <li key={r.personId}>
-                <Link href={`/admin/people/${r.personId}`} className="flex min-h-12 items-center gap-3 px-4 py-1.5 hover:bg-surface-sunken">
+                <Link href={`/admin/people/${r.personId}`} className="pressable flex min-h-12 items-center gap-3 px-4 py-1.5 hover:bg-surface-sunken">
                   <span className="tabular w-6 shrink-0 text-meta text-text-faint">{formatNumberFa(i + 1)}</span>
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-row text-text">

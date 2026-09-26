@@ -294,7 +294,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, words, initialOffer
                     <button
                       type="button"
                       onClick={() => setChosen((prev) => prev.filter((x) => x.id !== c.id))}
-                      className="inline-flex h-9 items-center gap-1 rounded-full bg-primary-50 ps-3 pe-2 text-sm text-primary-700"
+                      className="pressable inline-flex h-9 items-center gap-1 rounded-full bg-primary-50 ps-3 pe-2 text-sm text-primary-700"
                       aria-label={`حذف ${c.firstName} ${c.lastName}`}
                     >
                       <bdi>
@@ -320,7 +320,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, words, initialOffer
                         setChosen((prev) => [...prev, h]);
                         setPersonQuery("");
                       }}
-                      className="flex min-h-11 w-full items-center justify-between gap-3 px-3 text-start text-sm hover:bg-surface-sunken"
+                      className="pressable flex min-h-11 w-full items-center justify-between gap-3 px-3 text-start text-sm hover:bg-surface-sunken"
                     >
                       <bdi>
                         {h.firstName} {h.lastName}
@@ -355,7 +355,7 @@ function ModeChip({ label, active, onClick }: { label: string; active: boolean; 
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "h-10 rounded-full border px-4 text-sm transition-base",
+        "pressable h-10 rounded-full border px-4 text-sm",
         active ? "border-primary-600 bg-primary-50 font-semibold text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong",
       )}
     >

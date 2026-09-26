@@ -58,7 +58,7 @@ export async function PageHeader({
         </span>
       </p>
       {back ? (
-        <Link href={back.href} className="inline-flex min-h-11 items-center gap-1 self-start text-sm text-text-muted [grid-area:back] hover:text-text lg:mt-4 lg:min-h-9">
+        <Link href={back.href} className="pressable inline-flex min-h-11 items-center gap-1 self-start text-sm text-text-muted [grid-area:back] hover:text-text lg:mt-4 lg:min-h-9">
           <ArrowRight className="size-4" aria-hidden />
           {back.label}
         </Link>

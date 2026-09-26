@@ -80,7 +80,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
         <ul className="surface-work divide-y divide-line/70">
           {rows.map((r) => (
             <li key={r.personId}>
-              <Link href={`/admin/people/${r.personId}`} className="flex min-h-14 items-center justify-between gap-3 px-4 py-2 hover:bg-surface-sunken">
+              <Link href={`/admin/people/${r.personId}`} className="pressable flex min-h-14 items-center justify-between gap-3 px-4 py-2 hover:bg-surface-sunken">
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate text-row font-medium text-text">
                     <bdi>
@@ -110,7 +110,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
 
 function FilterChip({ href, active, label }: { href: string; active: boolean; label: string }) {
   return (
-    <Link href={href} aria-pressed={active} className={cn("inline-flex min-h-11 items-center rounded-full border px-3 transition-base md:min-h-9", active ? "border-primary-600 bg-primary-50 font-semibold text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong")}>
+    <Link href={href} aria-pressed={active} className={cn("pressable inline-flex min-h-11 items-center rounded-full border px-3 md:min-h-9", active ? "border-primary-600 bg-primary-50 font-semibold text-primary-700" : "border-line bg-surface text-text-muted hover:border-line-strong")}>
       {label}
     </Link>
   );
