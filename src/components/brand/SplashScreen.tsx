@@ -2,12 +2,14 @@ import { InlineScript } from "@/components/InlineScript";
 import { SplashTimer } from "@/components/brand/SplashTimer";
 import { MARK_GHOST_OPACITY, MONOGRAM_PATH, MONOGRAM_STROKES, MONOGRAM_VIEWBOX } from "@/lib/brand/mark";
 import { SPLASH_BOOT_SCRIPT } from "@/lib/pwa/splash-gate";
+import { SPLASH_WATER_SCRIPT } from "@/lib/pwa/splash-water";
 
 /**
- * The opening splash of the INSTALLED app: «دانینو» written once, with one pen, and then out of the way. No video,
- * no image, no dependency, no JS animation — the monogram we already ship (`src/lib/brand/mark.ts`), four SVG
- * elements and the keyframes in `globals.css` under «Opening splash». Everything that moves is `opacity`,
- * `transform` or a stroke's dash offset on a 64-unit drawing, so a cheap phone composites it without a layout.
+ * The opening splash of the INSTALLED app: «دانینو» written once with one pen, a drop of water landing as the ink
+ * does, the water ringing out and calming, and then out of the way. No video, no image, no dependency: the monogram
+ * we already ship (`src/lib/brand/mark.ts`), a few SVG elements and painted circles with the keyframes in
+ * `globals.css` under «Opening splash», and — where the device is up to it — one WebGL shader for the water
+ * (`src/lib/pwa/splash-water.ts`), drawn on the canvas below by its own inline script.
  *
  * **It is painted with the first frame, and it is never a gate.** The markup is server-rendered in the root
  * layout, so it is in the HTML the browser parses — nothing waits for React to mount it. The inline script above
@@ -18,21 +20,21 @@ import { SPLASH_BOOT_SCRIPT } from "@/lib/pwa/splash-gate";
  *
  * **It cannot get stuck.** The leave is a CSS animation on the layer itself — no JS, no `animationend` listener,
  * nothing a throttled tab or a failed bundle could lose. `SplashTimer` only takes the finished layer out of the
- * render tree afterwards.
+ * render tree afterwards; the water script only paints inside the leave and releases its GL context after it.
  *
- * The timeline (1450 ms, `SPLASH_TOTAL_MS`):
- *     0–80 ms    the launch still: the pale mark on `canvas`, exactly the iOS launch image (`renderSplash`)
- *    80–760 ms   the pen traces the silhouette in one stroke, clockwise from the top of the stem
- *   170–800 ms   … and the channel, a beat behind it on the inside
- *   600–940 ms   the ink floods in — the solid mark fades up and settles from 96 % into the drawn outline,
- *                while the pen line thins away into its edge
- *   600–1440 ms  the bell («زنگ»): as the ink lands, three hairline rings ripple out from the mark across the
- *                ground (600 / 720 / 840 ms, 600 ms each, 32 → 22 → 14 % persian-blue) — struck once, decaying
- *  1120–1450 ms  the whole layer lifts away: 14 px up as it fades, and the app is there
+ * The timeline (2200 ms, `SPLASH_TOTAL_MS`):
+ *     0–80 ms     the launch still: the pale mark on `canvas`, exactly the iOS launch image (`renderSplash`)
+ *    80–760 ms    the pen traces the silhouette in one stroke, clockwise from the top of the stem
+ *   170–800 ms    … and the channel, a beat behind it on the inside
+ *   380–820 ms    (water) a drop falls from above the screen to the mark's centre, accelerating
+ *   820 ms        impact = the ink: the mark turns solid and dips 1 → 0.97 → 1 as the pen thins into its edge
+ *   820–1750 ms   (water) the surface rings out from the mark — refracting it, catching the light — and calms
+ *                 to perfectly still, the mark sharp; (CSS fallback) four soft wavefronts spread and fade instead
+ *  1850–2200 ms   the whole layer lifts away: 14 px up as it fades, and the app is there
  *
- * The ground is plain `canvas` from the first frame to the last (the rings are transparent hairlines on it), so
- * it meets the launch still and the status bar with no colour jump. With `prefers-reduced-motion: reduce`
- * nothing moves and no ring rings: the solid mark simply stands for a moment and fades (`SPLASH_REDUCED_MS`).
+ * The ground is plain `canvas` from the first frame to the last, so it meets the launch still and the status bar
+ * with no colour jump. With `prefers-reduced-motion: reduce` nothing moves and there is no water: the solid mark
+ * simply stands for a moment and fades (`SPLASH_REDUCED_MS`).
  */
 export function SplashScreen() {
   const [silhouette, channel] = MONOGRAM_STROKES;
@@ -40,10 +42,12 @@ export function SplashScreen() {
     <>
       <InlineScript code={SPLASH_BOOT_SCRIPT} />
       <div aria-hidden className="splash-layer">
-        {/* The bell: three rings leave the mark once, as the ink lands, each fainter than the last. */}
-        <span className="splash-ring" />
-        <span className="splash-ring splash-ring-2" />
-        <span className="splash-ring splash-ring-3" />
+        {/* The ripple: as the ink lands the water stirs under it and four wavefronts spread, each fainter. */}
+        <span className="splash-wash" />
+        <span className="splash-ripple" />
+        <span className="splash-ripple splash-ripple-2" />
+        <span className="splash-ripple splash-ripple-3" />
+        <span className="splash-ripple splash-ripple-4" />
         <svg viewBox={MONOGRAM_VIEWBOX} className="splash-art" focusable="false">
           {/* The launch still the pen writes over — the same pale mark iOS has just shown. */}
           <path className="splash-ghost" d={MONOGRAM_PATH} fillRule="evenodd" fillOpacity={MARK_GHOST_OPACITY} />
@@ -51,7 +55,10 @@ export function SplashScreen() {
           <path className="splash-pen" d={silhouette} pathLength={1} />
           <path className="splash-pen splash-pen-inner" d={channel} pathLength={1} />
         </svg>
+        {/* The water, under the mark: laid out only once its script below has drawn a first frame. */}
+        <canvas className="splash-water" />
       </div>
+      <InlineScript code={SPLASH_WATER_SCRIPT} />
       <SplashTimer />
     </>
   );

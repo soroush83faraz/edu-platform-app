@@ -83,8 +83,12 @@ describe("the brand mark — the owner's «D» monogram", () => {
     expect(splash).toContain(`fill-opacity="${MARK_GHOST_OPACITY}"`);
     // Two pen strokes, one per contour, each normalised to a path length of 1.
     expect(splash.match(/pathLength="1"/g)).toHaveLength(2);
-    // The bell: three rings behind the mark, the only thing on the ground.
-    expect(splash.match(/class="splash-ring/g)).toHaveLength(3);
+    // The ripple: one pool and four wavefronts behind the mark, the only things on the ground — five layers at most.
+    expect(splash.match(/class="splash-ripple/g)).toHaveLength(4);
+    expect(splash.match(/class="splash-wash"/g)).toHaveLength(1);
+    // The water: one canvas, drawn by the second inline script (after the boot script).
+    expect(splash.match(/<canvas class="splash-water"/g)).toHaveLength(1);
+    expect(splash.match(/<script/g)).toHaveLength(2);
     // Pure SVG + CSS: no image, no video, no gradient, no filter.
     for (const banned of ["<img", "<video", "Gradient", "filter"]) expect(splash).not.toContain(banned);
   });
