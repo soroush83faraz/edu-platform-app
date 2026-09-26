@@ -159,6 +159,12 @@ describe("createWorkItem for a class offering", () => {
       expect(entries.find((e) => e.personId === f.PERSON_A2)).toMatchObject({ state: "read", relation: "creator" });
       expect(entries.filter((e) => e.personId !== f.PERSON_A2).every((e) => e.state === "unread" && e.relation === "assignee")).toBe(true);
 
+      // The list rows carry the درس and its class (the مُهر درس and «ریاضی · کلاس …» meta).
+      const studentRow = (await listInbox(tx, students[0].personId, { tab: "todo" })).rows.find((r) => r.id === res.id);
+      const teacherRow = (await listInbox(tx, f.PERSON_A2, { tab: "todo", createdByMe: true })).rows.find((r) => r.id === res.id);
+      expect(studentRow).toMatchObject({ subjectId: expect.any(String), subjectName: "ریاضی", classGroupName: expect.any(String) });
+      expect(teacherRow).toMatchObject({ subjectId: studentRow?.subjectId, subjectName: "ریاضی", classGroupName: studentRow?.classGroupName });
+
       const notifs = await tx
         .select({ recipient: notification.recipientPersonId, title: notification.title, body: notification.body, deepLink: notification.deepLink, dedupeKey: notification.dedupeKey })
         .from(notification)

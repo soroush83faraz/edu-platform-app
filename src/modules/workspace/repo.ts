@@ -1,6 +1,6 @@
 // workspace/repo — read model of the کارتابل plus the small lookups the service needs. Every read is scoped to
 // the caller (`personId`) or goes through `canViewWorkItem` in the service; RLS hides other tenants underneath.
-// The inbox list is ONE SQL statement (inbox_entry ⨝ work_item ⨝ status ⨝ type ⨝ creator + lateral counts) with
+// The inbox list is ONE SQL statement (inbox_entry ⨝ work_item ⨝ status ⨝ type ⨝ creator ⟕ درس/class + lateral counts) with
 // the Tehran day boundaries passed in as parameters, so bucket and tab filters run in the database.
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
@@ -206,6 +206,11 @@ export interface InboxRow {
   assigneesDone: number;
   commentsCount: number;
   bucket: Bucket;
+  /** The درس of a class task (via `work_item.class_offering_id`); null for personal notes and admin tasks. */
+  subjectId: string | null;
+  subjectName: string | null;
+  /** The class of that درس — a teacher's rows name it («ریاضی · کلاس ۱۰۲»). */
+  classGroupName: string | null;
 }
 
 export interface InboxPage {
@@ -295,6 +300,9 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
     assignees_done: number;
     comments_count: number;
     bucket: Bucket;
+    subject_id: string | null;
+    subject_name: string | null;
+    class_group_name: string | null;
   }>(sql`
     select * from (
       select
@@ -310,6 +318,7 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
         wa.state as my_assignee_state,
         cnt.total as assignees_total, cnt.done as assignees_done,
         cm.n as comments_count,
+        subj.id as subject_id, subj.name as subject_name, cg.name as class_group_name,
         case
           when wi.due_at is null then 'none'
           when wi.due_at < ${bounds.todayStart} then (case when eff.category in ('todo', 'doing') then 'overdue' else 'today' end)
@@ -323,6 +332,9 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
       join ${workItemType} t on t.id = wi.type_id
       join ${person} p on p.id = wi.created_by_person_id
       left join ${workItemAssignee} wa on wa.work_item_id = wi.id and wa.person_id = ie.person_id and wa.role = 'assignee'
+      left join ${classOffering} co on co.organization_id = wi.organization_id and co.id = wi.class_offering_id
+      left join ${subject} subj on subj.organization_id = co.organization_id and subj.id = co.subject_id
+      left join ${classGroup} cg on cg.organization_id = co.organization_id and cg.id = co.class_group_id
       cross join lateral (
         select count(*)::int as total, (count(*) filter (where a.state = 'done'))::int as done
         from ${workItemAssignee} a where a.work_item_id = wi.id and a.role = 'assignee'
@@ -366,6 +378,9 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
     assigneesDone: r.assignees_done,
     commentsCount: r.comments_count,
     bucket: r.bucket,
+    subjectId: r.subject_id,
+    subjectName: r.subject_name,
+    classGroupName: r.class_group_name,
   }));
   const rows = all.slice(0, limit);
   const last = rows.at(-1);

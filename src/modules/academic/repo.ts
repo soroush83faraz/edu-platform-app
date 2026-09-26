@@ -222,6 +222,7 @@ export async function findStudentClass(tx: Tx, personId: string): Promise<Studen
 
 export interface OfferingFacts {
   id: string;
+  subjectId: string;
   subjectName: string;
   classGroupId: string;
   classGroupName: string;
@@ -236,6 +237,7 @@ export interface OfferingFacts {
 export async function findOfferingFacts(tx: Tx, offeringId: string): Promise<OfferingFacts | null> {
   const res = await tx.execute<{
     id: string;
+    subject_id: string;
     subject_name: string;
     class_group_id: string;
     class_group_name: string;
@@ -245,7 +247,7 @@ export async function findOfferingFacts(tx: Tx, offeringId: string): Promise<Off
     teacher_name: string | null;
     teacher_person_id: string | null;
   }>(sql`
-    select o.id, subj.name as subject_name, cg.id as class_group_id, cg.name as class_group_name, s.id as school_id, s.name as school_name, o.status,
+    select o.id, subj.id as subject_id, subj.name as subject_name, cg.id as class_group_id, cg.name as class_group_name, s.id as school_id, s.name as school_name, o.status,
       t.teacher_name, t.teacher_person_id
     from tenancy.class_offering o
     join tenancy.subject subj on subj.id = o.subject_id
@@ -267,6 +269,7 @@ export async function findOfferingFacts(tx: Tx, offeringId: string): Promise<Off
   if (!r) return null;
   return {
     id: r.id,
+    subjectId: r.subject_id,
     subjectName: r.subject_name,
     classGroupId: r.class_group_id,
     classGroupName: r.class_group_name,

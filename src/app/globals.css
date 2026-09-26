@@ -70,6 +70,26 @@
     --color-priority-high: #FFC600;
     --color-priority-urgent: #C0392B;
 
+    /* «مُهر درس» — eight muted subject hues (data colour, not UI colour; docs/decisions.md). Equal OKLCH lightness
+       and chroma, 45° apart from 7°; every ink/bg pair ≥ 4.5:1. A subject's index = fnv1a32(subject id) % 8
+       (src/lib/subject-stamp.ts); used ONLY by SubjectStamp. */
+    --color-subject-0-bg: #F9E3E7;
+    --color-subject-0-ink: #6F3B46;
+    --color-subject-1-bg: #F7E6DB;
+    --color-subject-1-ink: #6D4024;
+    --color-subject-2-bg: #EEEAD8;
+    --color-subject-2-ink: #594D15;
+    --color-subject-3-bg: #E1EEDF;
+    --color-subject-3-ink: #345730;
+    --color-subject-4-bg: #D9EFEC;
+    --color-subject-4-ink: #015A54;
+    --color-subject-5-bg: #DAEDF7;
+    --color-subject-5-ink: #17546F;
+    --color-subject-6-bg: #E5E8FA;
+    --color-subject-6-ink: #434976;
+    --color-subject-7-bg: #F1E5F3;
+    --color-subject-7-ink: #603F65;
+
     /* Type scale (Design v2). Six named roles carry the product — `text-display` 28/34 (desktop page titles, the
        school name), `text-title` 24/32 (page titles on phones, dashboard numbers), `text-section` 18/28 (section
        headings), `text-row` 15/24 (list-row titles, table cells), body = `text-sm` 14/24 (the default of `body`),

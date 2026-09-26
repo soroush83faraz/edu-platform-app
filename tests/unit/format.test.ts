@@ -1,6 +1,6 @@
 // Tehran day math (fixed +03:30, Saturday-start weeks) and Jalali input parsing — pure, no I/O.
 import { describe, expect, it } from "vitest";
-import { bucketFor, formatRelativeDayFa, parseJalaliToInstant, tehranDayBounds, tehranDayDiff, tehranDayStart } from "@/lib/format";
+import { bucketFor, formatDayDistanceFa, formatDueFa, formatDueLongFa, formatRelativeDayFa, parseJalaliToInstant, tehranDayBounds, tehranDayDiff, tehranDayStart } from "@/lib/format";
 
 // 2026-09-20 is a Sunday (۲۹ شهریور ۱۴۰۵). 12:00 Tehran = 08:30 UTC.
 const NOW = new Date("2026-09-20T08:30:00Z");
@@ -53,6 +53,32 @@ describe("formatRelativeDayFa / tehranDayDiff", () => {
     expect(formatRelativeDayFa(new Date("2026-09-17T10:00:00Z"), NOW)).toBe("۳ روز گذشته");
     expect(formatRelativeDayFa(new Date("2026-10-15T10:00:00Z"), NOW)).toBe("۲۳ مهر");
     expect(tehranDayDiff(NOW, new Date("2026-09-20T20:30:00Z"))).toBe(1);
+  });
+});
+
+describe("formatDueFa / formatDueLongFa", () => {
+  // NOW = Sunday 12:00 Tehran. 20:29 UTC = 23:59 Tehran.
+  it("row meta: today (end of day or a clock time), tomorrow, the weekday within six days, a date beyond", () => {
+    expect(formatDueFa(new Date("2026-09-20T20:29:00Z"), NOW)).toBe("تا پایان امروز");
+    expect(formatDueFa(new Date("2026-09-20T14:30:00Z"), NOW)).toBe("تا ساعت ۱۸ امروز");
+    expect(formatDueFa(new Date("2026-09-20T15:00:00Z"), NOW)).toBe("تا ساعت ۱۸:۳۰ امروز");
+    expect(formatDueFa(new Date("2026-09-21T20:29:00Z"), NOW)).toBe("تا فردا");
+    expect(formatDueFa(new Date("2026-09-24T20:29:00Z"), NOW)).toBe("تا پنج‌شنبه");
+    expect(formatDueFa(new Date("2026-09-26T10:00:00Z"), NOW)).toBe("تا شنبه");
+    expect(formatDueFa(new Date("2026-09-27T10:00:00Z"), NOW)).toBe("تا ۵ مهر");
+  });
+  it("past due: open items «… گذشت»; closed items only name the deadline", () => {
+    expect(formatDueFa(new Date("2026-09-19T20:29:00Z"), NOW)).toBe("دیروز گذشت");
+    expect(formatDueFa(new Date("2026-09-17T10:00:00Z"), NOW)).toBe("۳ روز پیش گذشت");
+    expect(formatDueFa(new Date("2026-09-01T10:00:00Z"), NOW)).toBe("۱۰ شهریور گذشت");
+    expect(formatDueFa(new Date("2026-09-19T20:29:00Z"), NOW, false)).toBe("مهلت دیروز");
+    expect(formatDueFa(new Date("2026-09-17T10:00:00Z"), NOW, false)).toBe("مهلت ۲۶ شهریور");
+  });
+  it("detail line: weekday + Jalali date, clock or «پایان روز», the distance in days", () => {
+    expect(formatDueLongFa(new Date("2026-10-01T18:30:00Z"), NOW)).toBe("پنج‌شنبه ۹ مهر، ساعت ۲۲ (۱۱ روز دیگر)");
+    expect(formatDueLongFa(new Date("2026-09-22T20:29:00Z"), NOW)).toBe("سه‌شنبه ۳۱ شهریور، پایان روز (۲ روز دیگر)");
+    expect(formatDueLongFa(new Date("2026-09-19T20:29:00Z"), NOW)).toBe("شنبه ۲۸ شهریور، پایان روز (دیروز)");
+    expect(formatDayDistanceFa(new Date("2026-09-15T10:00:00Z"), NOW)).toBe("۵ روز پیش");
   });
 });
 

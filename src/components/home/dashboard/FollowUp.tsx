@@ -2,13 +2,14 @@ import { ChevronLeft, ListChecks } from "lucide-react";
 import Link from "next/link";
 import { cn } from "cn";
 import { PageSection } from "@/components/layout/PageSection";
-import { RelativeTime } from "@/components/RelativeTime";
 import { formatNumberFa } from "@/lib/format";
 import { homeOpenItemsQuery } from "@/modules/workspace/queries";
+import { MetaLine, WorkItemMark, rowMeta } from "@/modules/workspace/ui/InboxRow";
 
 /**
  * «نیاز به پیگیری» (teachers): the open تکالیف I gave, ranked by how far they are from done — overdue first, then
- * the lowest completion — the top five with «n/m انجام شد» and a slim bar. Reads the same Home query as the
+ * the lowest completion — the top five, each under its مُهر درس with «ریاضی · کلاس ۱۰۲ · deadline · n/m انجام شد»
+ * and a slim bar. Reads the same Home query as the
  * phone's «کارهای نزدیک» with `createdByMe`.
  */
 export async function FollowUp() {
@@ -37,21 +38,23 @@ export async function FollowUp() {
       ) : (
         <ul className="divide-y divide-line/70">
           {rows.map((row) => {
-            const overdue = row.bucket === "overdue";
             const pct = Math.round(row.ratio * 100);
             return (
               <li key={row.id}>
-                <Link href={`/inbox/${row.id}`} className="pressable flex min-h-14 items-center gap-4 px-4 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
+                <Link href={`/inbox/${row.id}`} className="pressable flex min-h-14 items-center gap-3 px-4 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
+                  <WorkItemMark row={row} />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-row font-semibold text-text">
                       <bdi>{row.title}</bdi>
                     </span>
-                    <span className="flex items-center gap-2 text-meta text-text-muted">
-                      {row.dueAt ? <RelativeTime at={row.dueAt} className={cn(overdue && "font-medium text-danger")} /> : <span>بدون مهلت</span>}
-                      <span className="tabular">
-                        {formatNumberFa(row.assigneesDone)}/{formatNumberFa(row.assigneesTotal)} انجام شد
-                      </span>
-                    </span>
+                    <MetaLine
+                      parts={[
+                        ...rowMeta(row, { noDue: "بدون مهلت" }),
+                        <span key="done" className="tabular">
+                          {formatNumberFa(row.assigneesDone)}/{formatNumberFa(row.assigneesTotal)} انجام شد
+                        </span>,
+                      ]}
+                    />
                   </span>
                   <span className="flex w-28 shrink-0 flex-col items-end gap-1">
                     <span className="tabular text-meta font-medium text-text">{formatNumberFa(pct)}٪</span>

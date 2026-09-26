@@ -56,7 +56,7 @@ export function tehranNow(now = new Date()): Date {
   return new Date(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second"));
 }
 
-/** e.g. «یکشنبه ۲۹ شهریور ۱۴۰۵». */
+/** e.g. «یک‌شنبه ۲۹ شهریور ۱۴۰۵». */
 export function formatJalaliLong(date = tehranNow()): string {
   return toFaDigits(format(date, "EEEE d MMMM yyyy", { locale: faIR }));
 }
@@ -68,7 +68,7 @@ export function formatJalaliShort(instant: Date, now = new Date()): string {
   return toFaDigits(format(d, sameYear ? "d MMMM" : "d MMMM yyyy", { locale: faIR }));
 }
 
-/** «پنجشنبه ۲ مهر ۱۴۰۵، ۲۳:۵۹». */
+/** «پنج‌شنبه ۲ مهر ۱۴۰۵، ۲۳:۵۹». */
 export function formatJalaliDateTime(instant: Date): string {
   return toFaDigits(format(tehranNow(instant), "EEEE d MMMM yyyy، HH:mm", { locale: faIR }));
 }
@@ -145,6 +145,53 @@ export function formatRelativeDayFa(dueAt: Date, now = new Date()): string {
   if (diff > 1 && diff <= 7) return `${formatNumberFa(diff)} روز دیگر`;
   if (diff < -1 && diff >= -7) return `${formatNumberFa(-diff)} روز گذشته`;
   return formatJalaliShort(dueAt, now);
+}
+
+/** «ساعت ۲۲» on the hour, «ساعت ۱۰:۳۰» otherwise (Tehran wall clock). */
+function formatClockFa(instant: Date): string {
+  const d = tehranNow(instant);
+  const h = formatNumberFa(d.getHours());
+  return d.getMinutes() === 0 ? `ساعت ${h}` : `ساعت ${toFaDigits(format(d, "H:mm"))}`;
+}
+
+/** 23:59 Tehran — the default due time of a date-only deadline («پایان روز»). */
+function isEndOfDay(instant: Date): boolean {
+  const d = tehranNow(instant);
+  return d.getHours() === 23 && d.getMinutes() === 59;
+}
+
+/**
+ * The deadline as a row's meta reads it: «تا پایان امروز» / «تا ساعت ۱۰ امروز» / «تا فردا» / «تا پنج‌شنبه» (the
+ * next six days by weekday name) / «تا ۱۵ مهر»; once past (`open`): «دیروز گذشت» / «۳ روز پیش گذشت» / «۵ مهر
+ * گذشت». A closed item past its due reads «مهلت دیروز» / «مهلت ۵ مهر» (nothing is late any more).
+ */
+export function formatDueFa(dueAt: Date, now = new Date(), open = true): string {
+  const diff = tehranDayDiff(now, dueAt);
+  if (diff === 0) return isEndOfDay(dueAt) ? "تا پایان امروز" : `تا ${formatClockFa(dueAt)} امروز`;
+  if (diff === 1) return "تا فردا";
+  if (diff > 1 && diff < 7) return `تا ${format(tehranNow(dueAt), "EEEE", { locale: faIR })}`;
+  if (diff >= 7) return `تا ${formatJalaliShort(dueAt, now)}`;
+  if (!open) return diff === -1 ? "مهلت دیروز" : `مهلت ${formatJalaliShort(dueAt, now)}`;
+  if (diff === -1) return "دیروز گذشت";
+  if (diff >= -7) return `${formatNumberFa(-diff)} روز پیش گذشت`;
+  return `${formatJalaliShort(dueAt, now)} گذشت`;
+}
+
+/** The distance in days, without a cutoff: «امروز» / «فردا» / «دیروز» / «۱۲ روز دیگر» / «۳ روز پیش». */
+export function formatDayDistanceFa(at: Date, now = new Date()): string {
+  const diff = tehranDayDiff(now, at);
+  if (diff === 0) return "امروز";
+  if (diff === 1) return "فردا";
+  if (diff === -1) return "دیروز";
+  return diff > 0 ? `${formatNumberFa(diff)} روز دیگر` : `${formatNumberFa(-diff)} روز پیش`;
+}
+
+/** The detail page's deadline: «پنج‌شنبه ۱۰ مهر، ساعت ۲۲ (۲ روز دیگر)»; a 23:59 due reads «پایان روز». */
+export function formatDueLongFa(dueAt: Date, now = new Date()): string {
+  const d = tehranNow(dueAt);
+  const sameYear = format(d, "yyyy") === format(tehranNow(now), "yyyy");
+  const day = toFaDigits(format(d, sameYear ? "EEEE d MMMM" : "EEEE d MMMM yyyy", { locale: faIR }));
+  return `${day}، ${isEndOfDay(dueAt) ? "پایان روز" : formatClockFa(dueAt)} (${formatDayDistanceFa(dueAt, now)})`;
 }
 
 /** For comments/notifications: «همین حالا» / «۵ دقیقه پیش» / «۳ ساعت پیش» / «دیروز» / «۵ مهر». */

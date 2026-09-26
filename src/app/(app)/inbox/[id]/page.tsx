@@ -1,14 +1,14 @@
-import { Ban, CalendarOff, CircleCheck, Clock, Flag, ListTodo, type LucideIcon, Play } from "lucide-react";
+import { Ban, CalendarClock, CircleCheck, Play } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { cn } from "cn";
 import { Chip, type ChipTone } from "@/components/Chip";
-import { RowMark } from "@/components/RowMark";
+import { PriorityDot } from "@/components/RowMark";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { PRIORITY_LABELS, priorityTone } from "@/components/priority";
+import { PRIORITY_LABELS } from "@/components/priority";
 import { RelativeTime } from "@/components/RelativeTime";
-import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
+import { formatDueLongFa, formatNumberFa } from "@/lib/format";
 import { personalItemLabel, workItemStatusLabel, workItemWords } from "@/lib/work-item-words";
 import { workItemDetailQuery } from "@/modules/workspace/queries";
 import type { StatusCategory } from "@/modules/workspace/repo";
@@ -20,21 +20,11 @@ export const metadata: Metadata = { title: "کار" };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const CATEGORY_FACT: Record<StatusCategory, { icon: LucideIcon }> = {
-  todo: { icon: ListTodo },
-  doing: { icon: Play },
-  done: { icon: CircleCheck },
-  cancelled: { icon: Ban },
-};
+const STATUS_ICON: Record<StatusCategory, typeof Play | null> = { todo: null, doing: Play, done: CircleCheck, cancelled: Ban };
 const ASSIGNEE_STATE: Record<"pending" | "accepted" | "done", { label: string; tone: ChipTone }> = {
   pending: { label: "در انتظار", tone: "neutral" },
   accepted: { label: "در حال انجام", tone: "primary" },
   done: { label: "انجام‌شده", tone: "success" },
-};
-const ASSIGNEE_FACT: Record<"pending" | "accepted" | "done", { icon: LucideIcon }> = {
-  pending: { icon: ListTodo },
-  accepted: { icon: Play },
-  done: { icon: CircleCheck },
 };
 
 export default async function WorkItemPage({ params }: { params: Promise<{ id: string }> }) {
@@ -52,10 +42,18 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
   const showProgress = viewer.isManager && assignees.length > 0 && !(assignees.length === 1 && assignees[0].personId === item.createdByPersonId);
   const now = new Date();
   const overdue = item.dueAt !== null && item.dueAt.getTime() < now.getTime() && (item.statusCategory === "todo" || item.statusCategory === "doing");
-  const myState = myAssigneeState ? ASSIGNEE_STATE[myAssigneeState] : null;
-  // Assignees see their own state; managers see the item's status.
-  const statusFact =
-    myAssigneeState && myState && !viewer.isManager ? { ...ASSIGNEE_FACT[myAssigneeState], value: myState.label } : { ...CATEGORY_FACT[item.statusCategory], value: workItemStatusLabel(item.statusName) };
+  // Status is said by the action row (an open item offers «انجام شد» / «اتمام»); only a state the buttons do not
+  // show gets a small muted line — my own «انجام‌شده» / «در حال انجام», or the item's closed / started status.
+  const status: { category: StatusCategory; label: string } | null =
+    myAssigneeState && !viewer.isManager
+      ? myAssigneeState === "pending"
+        ? null
+        : { category: myAssigneeState === "done" ? "done" : "doing", label: ASSIGNEE_STATE[myAssigneeState].label }
+      : item.statusCategory === "todo"
+        ? null
+        : { category: item.statusCategory, label: workItemStatusLabel(item.statusName) };
+  const StatusIcon = status ? STATUS_ICON[status.category] : null;
+  const showPriority = !(item.statusCategory === "done" || item.statusCategory === "cancelled") && (item.priority === "high" || item.priority === "urgent");
 
   return (
     <ContentWidth size="reading" className="gap-4">
@@ -78,16 +76,38 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
       <article className="flex flex-col gap-4">
       <header className="flex flex-col gap-3">
 
-        {/* The three facts a reader checks before acting — status, priority, due — as chip-led cells in one card. */}
-        <dl className="surface-panel grid grid-cols-3 divide-x divide-line">
-          <Fact icon={statusFact.icon} label="وضعیت" value={statusFact.value} />
-          <Fact icon={Flag} label="اولویت" value={<Chip tone={priorityTone(item.priority)}>{PRIORITY_LABELS[item.priority]}</Chip>} />
-          {item.dueAt ? (
-            <Fact icon={Clock} label="مهلت" value={<RelativeTime at={item.dueAt} />} hint={formatJalaliDateTime(item.dueAt)} alert={overdue} />
-          ) : (
-            <Fact icon={CalendarOff} label="مهلت" value="بدون مهلت" />
-          )}
-        </dl>
+        {/* What a reader checks before acting, as plain start-aligned lines: the deadline (red once overdue), then
+            the priority only when it is high / urgent and a status only when the buttons below do not say it. */}
+        <div className="flex flex-col gap-1">
+          <p className={cn("flex items-start gap-2 text-sm", overdue ? "font-medium text-danger" : "text-text")}>
+            <CalendarClock className={cn("mt-1 size-4 shrink-0", overdue ? "text-danger" : "text-text-muted")} strokeWidth={1.75} aria-hidden />
+            {item.dueAt ? (
+              <span>
+                <span className={overdue ? undefined : "text-text-muted"}>مهلت: </span>
+                <time dateTime={item.dueAt.toISOString()}>{formatDueLongFa(item.dueAt, now)}</time>
+                {overdue ? " · گذشته" : null}
+              </span>
+            ) : (
+              <span className="text-text-muted">بدون مهلت</span>
+            )}
+          </p>
+          {showPriority || status ? (
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1 ps-6 text-meta text-text-muted">
+              {showPriority ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <PriorityDot priority={item.priority} />
+                  اولویت {PRIORITY_LABELS[item.priority]}
+                </span>
+              ) : null}
+              {status && StatusIcon ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <StatusIcon className={cn("size-3.5", status.category === "done" && "text-success")} strokeWidth={2} aria-hidden />
+                  {status.label}
+                </span>
+              ) : null}
+            </p>
+          ) : null}
+        </div>
         <WorkItemActions
           workItemId={item.id}
           title={item.title}
@@ -196,19 +216,5 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
       ) : null}
       </article>
     </ContentWidth>
-  );
-}
-
-/** One cell of the facts row: the quiet glyph on top, a label, the value (priority as its chip); `hint` is the exact timestamp under a relative due. */
-function Fact({ icon, label, value, hint, alert = false }: { icon: LucideIcon; label: string; value: React.ReactNode; hint?: string; alert?: boolean }) {
-  return (
-    <div className="flex min-w-0 flex-col items-center gap-1.5 px-2 py-4 text-center">
-      <RowMark icon={icon} tone={alert ? "danger" : "muted"} />
-      <dt className="text-meta text-text-muted">{label}</dt>
-      <dd className={cn("text-sm font-semibold leading-5 text-balance", alert ? "text-danger" : "text-text")}>
-        {value}
-        {hint ? <span className="mt-0.5 block text-meta font-normal text-text-faint">{hint}</span> : null}
-      </dd>
-    </div>
   );
 }

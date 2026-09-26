@@ -8,7 +8,7 @@ export type RowMarkSize = "md" | "lg";
 /**
  * The quiet glyph of a list row (Design v2 icon restraint): a plain lucide glyph at 20 px in `text-muted`, inside a
  * 32 px `surface-panel` circle — the sunken tint with a hairline, no shadow, no blue. The clay mark (`ClayIcon`)
- * is reserved for the Home tiles, illustration spots, the subject page mark and login; every other row uses this,
+ * is reserved for the Home tiles, illustration spots and login; a row of a درس leads with `SubjectStamp`; every other row uses this,
  * so a page has ONE strong mark at most. `bare` drops the circle (inline facts, chips). `danger` is the one red
  * action («خروج»). `lg` (48 px, 24 px glyph) for the profile card and detail facts.
  */

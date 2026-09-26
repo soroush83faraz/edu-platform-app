@@ -1,13 +1,13 @@
-import { BookOpen, CalendarClock, CircleCheck, ListTodo, type LucideIcon, Plus } from "lucide-react";
+import { CalendarClock, CircleCheck, ListTodo, type LucideIcon, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { cn } from "cn";
-import { ClayIcon } from "@/components/ClayIcon";
 import { EmptyState } from "@/components/EmptyState";
 import { EmptyClay } from "@/components/illustrations";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { SubjectStamp } from "@/components/SubjectStamp";
 import { Button } from "@/components/ui/button";
 import { formatNumberFa } from "@/lib/format";
 import { formatSessionFa, formatTimeRangeFa, WEEKDAY_LABELS } from "@/lib/timetable";
@@ -25,7 +25,7 @@ const TABS: Array<{ tab: Exclude<InboxTab, "all">; label: string; icon: LucideIc
 ];
 
 /**
- * The subject page: the درس with its class and teacher, the next session, every session of the week, then the
+ * The subject page: the درس under its مُهر درس with its class and teacher, the next session, every session of the week, then the
  * work items of this درس — the caller's own inbox rows (a student sees what was given to them, a teacher what
  * they gave). A teacher gets «کار جدید برای این درس» with the offering pre-selected.
  */
@@ -52,7 +52,7 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
         back={{ href: backHref, label: backLabel }}
         title={
           <span className="flex items-center gap-3">
-            <ClayIcon icon={BookOpen} size="lg" className="lg:[--ic-size:3.5rem]" />
+            <SubjectStamp subjectId={offering.subjectId} name={offering.subjectName} size="lg" />
             <bdi>{offering.subjectName}</bdi>
           </span>
         }
@@ -144,7 +144,7 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
         ) : (
           <ul className="reveal-rows divide-y divide-line/70 surface-work">
             {rows.map((row) => (
-              <InboxRow key={row.id} row={row} />
+              <InboxRow key={row.id} row={row} inSubject />
             ))}
           </ul>
         )}

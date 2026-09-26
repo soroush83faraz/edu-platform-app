@@ -1,20 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatJalaliDateTime, formatRelativeDayFa, formatRelativeTimeFa } from "@/lib/format";
+import { formatDueFa, formatJalaliDateTime, formatRelativeDayFa, formatRelativeTimeFa } from "@/lib/format";
 
 /**
- * Relative Jalali time. `mode="day"` → «فردا» / «۲ روز گذشته» (due dates); `mode="time"` → «۵ دقیقه پیش» (events).
+ * Relative Jalali time. `mode="day"` → «فردا» / «۲ روز گذشته»; `mode="due"` → a row's deadline «تا پنج‌شنبه» /
+ * «دیروز گذشت» (`open={false}` for a closed item: «مهلت دیروز»); `mode="time"` → «۵ دقیقه پیش» (events).
  * Re-renders every minute so a long-open tab stays right; the first paint matches the server (same minute).
  */
-export function RelativeTime({ at, mode = "day", className }: { at: Date | string; mode?: "day" | "time"; className?: string }) {
+export function RelativeTime({ at, mode = "day", open = true, className }: { at: Date | string; mode?: "day" | "due" | "time"; open?: boolean; className?: string }) {
   const date = typeof at === "string" ? new Date(at) : at;
   const [, setTick] = useState(0);
   useEffect(() => {
     const id = window.setInterval(() => setTick((t) => t + 1), 60_000);
     return () => window.clearInterval(id);
   }, []);
-  const text = mode === "day" ? formatRelativeDayFa(date) : formatRelativeTimeFa(date);
+  const text = mode === "day" ? formatRelativeDayFa(date) : mode === "due" ? formatDueFa(date, new Date(), open) : formatRelativeTimeFa(date);
   return (
     <time dateTime={date.toISOString()} title={formatJalaliDateTime(date)} className={className} suppressHydrationWarning>
       {text}
