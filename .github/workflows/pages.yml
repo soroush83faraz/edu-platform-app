@@ -1,0 +1,211 @@
+name: Preview on GitHub Pages
+
+# A browsable, STATIC preview of every role's screens at https://<owner>.github.io/<repo>/.
+# The app itself (Next SSR + PostgreSQL RLS + cookie sessions) cannot run on Pages, so this job boots the real
+# production build inside the runner against a throwaway PostgreSQL 16 with the pilot dataset, signs in as each
+# role through the real login form, renders every page to standalone HTML (scripts/preview/export.ts) and
+# publishes that folder. Every secret below is generated per run for a database that is destroyed with the
+# runner — none of them belongs to a real deployment, and the real servers are never contacted.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_INITDB_ARGS: "--locale=C.UTF-8 --encoding=UTF8"
+          TZ: UTC
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 30
+          --shm-size 256mb
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      PUBLIC_ORIGIN: http://127.0.0.1:3002
+      DB_POOL_MAX: "10"
+      LOG_LEVEL: warn
+      PREVIEW_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Throwaway credentials for the disposable CI database (masked in the log all the same).
+      - name: Generate throwaway secrets
+        run: |
+          set -euo pipefail
+          owner_pw="$(openssl rand -hex 16)"; rw_pw="$(openssl rand -hex 16)"; backup_pw="$(openssl rand -hex 16)"
+          session_secret="$(openssl rand -hex 24)"; initial_key="$(openssl rand -hex 32)"
+          pilot_pw="Preview-$(openssl rand -hex 8)"
+          for v in "$owner_pw" "$rw_pw" "$backup_pw" "$session_secret" "$initial_key" "$pilot_pw"; do echo "::add-mask::$v"; done
+          {
+            echo "APP_OWNER_PASSWORD=$owner_pw"
+            echo "APP_RW_PASSWORD=$rw_pw"
+            echo "APP_BACKUP_PASSWORD=$backup_pw"
+            echo "DATABASE_URL=postgres://app_rw:$rw_pw@127.0.0.1:5432/app"
+            echo "MIGRATION_DATABASE_URL=postgres://app_owner:$owner_pw@127.0.0.1:5432/app"
+            echo "SESSION_SECRET=$session_secret"
+            echo "INITIAL_PASSWORD_KEY=$initial_key"
+            echo "PILOT_PASSWORD=$pilot_pw"
+            echo "PREVIEW_PASSWORD=$pilot_pw"
+            echo "FILES_DIR=$RUNNER_TEMP/files"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/files"
+
+      # The same script docker-entrypoint-initdb.d runs for docker-compose.dev.yml / deploy/compose.yml:
+      # roles app_owner / app_rw / app_backup, databases app + app_test, btree_gist + pg_trgm, app_rw guard rails.
+      - name: Create roles, databases and extensions
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: "5432"
+          PGPASSWORD: postgres
+          POSTGRES_USER: postgres
+        run: bash deploy/db/initdb/01-roles.sh
+
+      - name: Migrate
+        env:
+          NODE_ENV: production
+        run: pnpm db:migrate
+
+      - name: Seed catalog
+        env:
+          NODE_ENV: production
+          SEED_ALLOW: "1"
+        run: pnpm seed
+
+      - name: Seed pilot dataset
+        env:
+          NODE_ENV: production
+          SEED_ALLOW: "1"
+        run: pnpm seed:pilot
+
+      - name: Build
+        env:
+          NODE_ENV: production
+          NEXT_BUILD_CPUS: 2
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm build
+
+      # The standalone server, laid out exactly as the Docker runner stage does (static, public, drizzle journal
+      # for /api/health next to server.js).
+      - name: Start the production server
+        run: |
+          set -euo pipefail
+          S=.next/standalone
+          mkdir -p "$S/.next/static" "$S/public" "$S/drizzle"
+          cp -r .next/static/. "$S/.next/static/"
+          cp -r public/. "$S/public/"
+          cp -r drizzle/. "$S/drizzle/"
+          cd "$S"
+          NODE_ENV=production PORT=3002 HOSTNAME=127.0.0.1 nohup node server.js > "$RUNNER_TEMP/server.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/server.pid"
+
+      - name: Wait for /api/health
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            body="$(curl -fsS --max-time 5 http://127.0.0.1:3002/api/health || true)"
+            if echo "$body" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'; then echo "$body"; exit 0; fi
+            sleep 2
+          done
+          echo "::error::the server did not become healthy"; cat "$RUNNER_TEMP/server.log"; exit 1
+
+      - name: Export every page
+        env:
+          BASE_URL: http://127.0.0.1:3002
+          OUT_DIR: preview
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/preview/export.ts
+          pnpm exec tsx scripts/preview/make-index.ts
+          touch preview/.nojekyll
+          test -f preview/index.html
+
+      - name: Server log
+        if: ${{ always() }}
+        run: tail -n 200 "$RUNNER_TEMP/server.log" 2>/dev/null || true
+
+      - name: Summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### Static preview"
+            echo ""
+            echo "Site: $PREVIEW_URL"
+            echo ""
+            if [ -f preview/manifest.json ]; then
+              echo "| Role | Pages |"
+              echo "|---|---|"
+              jq -r '.roles[] as $r | "| \($r.key) — \($r.labelFa) | \([.pages[] | select(.role == $r.key)] | length) |"' preview/manifest.json
+              echo ""
+              echo "Total: $(jq '.pages | length' preview/manifest.json) pages, $(jq '.assets | length' preview/manifest.json) shared assets."
+              n_failed="$(jq '.failed | length' preview/manifest.json)"
+              if [ "$n_failed" != "0" ]; then
+                echo ""
+                echo "Not exported:"
+                jq -r '.failed[] | "- `\(.role) \(.path)` — \(.reason)"' preview/manifest.json
+              fi
+            else
+              echo "No manifest — the export did not run."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: preview
+
+  deploy:
+    needs: build
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Summary
+        run: echo "Published → ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"

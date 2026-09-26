@@ -50,3 +50,6 @@ next-env.d.ts
 # cPanel release packaging output (scripts/package-release.mjs) — never committed
 /release
 /release-test
+
+# GitHub Pages static preview output (scripts/preview/export.ts, .github/workflows/pages.yml)
+/preview
