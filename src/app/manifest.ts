@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 import { productName } from "@/lib/product";
 
 // The installed app (docs/pwa.md «نصب روی گوشی»). Colours mirror src/app/globals.css: `canvas` — the page ground,
-// so the launch splash hands over to the first paint without a colour jump — and primary-600 (persian-blue) for the
-// status bar / title strip.
+// so the launch splash hands over to the first paint without a colour jump — and canvas for the
+// status bar / title strip, blending with the canvas header.
 export default function manifest(): MetadataRoute.Manifest {
   const name = productName();
   return {
@@ -25,7 +25,7 @@ export default function manifest(): MetadataRoute.Manifest {
     display_override: ["standalone", "minimal-ui"],
     orientation: "portrait",
     background_color: "#E8EEF9",
-    theme_color: "#072AC8",
+    theme_color: "#E8EEF9",
     // `any` icons carry the squircle's own corners; the `maskable` one is full-bleed with the mark in the 80 %
     // safe zone, for Android launchers that cut their own shape (src/lib/pwa/app-icon.tsx).
     icons: [

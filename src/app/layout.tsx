@@ -25,23 +25,23 @@ export const metadata: Metadata = {
   description: "سامانهٴ مدیریت آموزشی مدرسه",
   applicationName: productName(),
   manifest: "/manifest.webmanifest",
-  // The Home Screen app on iOS (docs/pwa.md «نصب روی گوشی»): no Safari chrome, the page drawn under a translucent
-  // status bar (white text) whose strip the body paints persian-blue, the product's name under the icon, and a
+  // The Home Screen app on iOS (docs/pwa.md «نصب روی گوشی»): no Safari chrome, the page drawn under the default
+  // light status bar (dark text) matching the canvas header, the product's name under the icon, and a
   // launch screen per device size instead of a white flash.
-  appleWebApp: { capable: true, title: productName(), statusBarStyle: "black-translucent", startupImage: splashStartupImages() },
+  appleWebApp: { capable: true, title: productName(), statusBarStyle: "default", startupImage: splashStartupImages() },
   // Next 16 renders `capable` as the standard `mobile-web-app-capable` only; iOS before 16.4 (which ignores the
   // manifest's `display`) still reads the apple-prefixed name, so it is spelled out once here.
   other: { "apple-mobile-web-app-capable": "yes" },
   formatDetection: { telephone: false },
 };
 
-// `theme-color` is persian-blue (primary-600): the Android status bar and the installed app's title strip.
-// `viewport-fit=cover` lets the page reach under the notch; the shells pad themselves with the safe-area insets.
+// `theme-color` is canvas (#E8EEF9): the Android status bar and the installed app's title strip, blending
+// with the canvas header. `viewport-fit=cover` lets the page reach under the notch; the shells pad themselves with the safe-area insets.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#072AC8",
+  themeColor: "#E8EEF9",
 };
 
 // dir="rtl" lives ONLY here. Never set dir on inner elements except <bdi dir="ltr"> for phones/codes.
