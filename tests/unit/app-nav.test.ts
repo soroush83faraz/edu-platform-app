@@ -17,7 +17,7 @@ type AdminNavItem = import("@/lib/admin/nav").AdminNavItem;
 function render(role: "admin" | "teacher" | "student" | null, at = "/home", adminItems?: readonly AdminNavItem[], unread = 0) {
   pathname = at;
   const nav = createElement(AppNav, { schoolName: "دبستان", productName: "دانینو", role, adminItems });
-  const html = renderToStaticMarkup(createElement(InboxSummaryProvider, { initial: { overdue: 0, dueToday: 0, unread, unreadNotifications: 0 }, children: nav }));
+  const html = renderToStaticMarkup(createElement(InboxSummaryProvider, { initial: { overdue: 0, dueToday: 0, unread, unreadNotifications: 0 } } as Parameters<typeof InboxSummaryProvider>[0], nav));
   const links = [...html.matchAll(/<a([^>]*)href="([^"]+)"([^>]*)>(.*?)<\/a>/g)].map((m) => ({
     href: m[2],
     current: /aria-current="page"/.test(m[1] + m[3]),
