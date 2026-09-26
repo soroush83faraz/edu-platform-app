@@ -234,7 +234,7 @@ function Empty({
         description={copy.description}
         action={
           canCreate ? (
-            <Button asChild variant={audience === "student" ? "outline" : "default"}>
+            <Button asChild variant="outline">
               <Link href="/inbox/new">{createWords.new}</Link>
             </Button>
           ) : undefined

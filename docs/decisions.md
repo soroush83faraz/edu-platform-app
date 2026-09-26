@@ -1079,7 +1079,7 @@ Owner-approved items from the UX review whose aim is an app that reads like a re
   bar and rail, the same order, RTL (first = start/right): **خانه** `/home` · **پنل من** `/inbox` · the **role item**
   (`navRoleFor`, unchanged: «کلاس من» / «کلاس‌ها» / «مدیریت», «راهنما» with no hat; a multi-hat person keeps the
   highest) · **بیشتر** `/more`. The کارتابل is where a person goes many times a day, so it is a place in the nav, and
-  its cell carries the yellow `CountBadge` again — the kartabl's `unread` count from the shell's one summary poller,
+  its cell carries the yellow `CountBadge` again — the کارتابل's `unread` count from the shell's one summary poller,
   as before round 4 (nothing at zero, «۹۹+» cap), floating on the glyph in the bar and at the row's end in the rail.
   By the one-door rule the «پنل من» **tile is removed from Home for everyone** (`InboxTileBadge` deleted); the
   «امروز» line's links stay — they are filters of the destination, not a door. «اعلان‌ها» stays the bell on Home.
@@ -1090,3 +1090,35 @@ Owner-approved items from the UX review whose aim is an app that reads like a re
   role item third, `aria-current` on nested routes (`/inbox/new` → «پنل من»), the house glyph, the badge twice
   (bar + rail) only when unread > 0, `grid-cols-4` / `w-1/4`, no `--nav-drift`. `tests/unit/home-tiles.test.ts`: no
   tile for `/inbox` for any hat; the nav-duplication rule now lists `/home` and `/inbox` among the nav hrefs.
+- **Home loses its template parts.** The muted «به‌زودی» tiles and the desktop aside's «به‌زودی» panel are gone
+  (`HOME_UPCOMING` deleted; the roadmap is reached from «بیشتر ← نقشهٴ راه» only). The gradient banner is replaced by
+  a flat, start-aligned header on the canvas: «سلام، <first name>» (`text-title`), today as «یک‌شنبه ۵ مهر»
+  (`formatJalaliWeekdayDate`) under it, the bell at the end — no gradient, no glow, no centred emblem;
+  `--shadow-hero` and the `.on-hero` focus rule went with it (`bg-hero` stays for /roadmap and `RoleMark`).
+  **Judgement call:** the school name is NOT on the meta line although the review listed it — the shell's sticky
+  header names the school one line above on every phone page, and the two lines read as a duplicate at 375 px.
+- **«امروز» is one sentence** (`TodayStrip`): «۲ تکلیف عقب‌افتاده · ۱ تکلیف برای امروز · ۳ اعلان خوانده‌نشده»,
+  zeros omitted, only the overdue number in `text-danger`, each fragment a 44 px underlined link (overdue / today
+  bucket, `/notifications` for the notifications count — it was the کارتابل's `?unread=1` before). All zero: «امروز
+  کار عقب‌افتاده‌ای نداری.» for a student (`isStudentOnly`), «کار عقب‌افتاده‌ای ندارید.» for staff. The noun is the
+  reader's (`workItemVoice`).
+- **Entrances once per session.** `reveal` / `reveal-stagger` / `reveal-rows` / `reveal-grid` are scoped to
+  `:root:not([data-seen])`; `RevealSession` in the root layout sets the flag — an inline boot script (the splash's
+  `InlineScript` pattern, key `donino.reveal.seen`) on every document load after the session's first, before the
+  first paint, and the first client-side pathname change. No hydration mismatch (`<html suppressHydrationWarning>`,
+  React never renders `data-seen`). `pressable`, `sheet-in`, `banner-in` unchanged; the nav drift is gone.
+- **Weight contrast.** Section headings («تکالیف نزدیک», the work item's recipients and «گفت‌وگو») are
+  `text-section` / semibold / `text-text`; dashboard and admin counts are `font-extrabold` + `tabular`. The two
+  ad-hoc sizes went: TodayStrip's (the strip is gone) and WeekTimetable's «الان» marker (`text-xs`, size class only).
+- **Empty states in the reader's voice, text only** (`src/lib/empty-copy.ts`, unit-tested): `audienceOf` picks
+  student («تو») / teacher / admin («تسک») / member («شما»); the کارتابل, Home's «تکالیف نزدیک» and «اعلان‌ها» say the
+  context and the next step («فعلاً تکلیفی نداری. هر وقت دبیر تکلیف بدهد، همین‌جا و در اعلان‌ها خبرت می‌کنیم.» /
+  «هنوز تکلیفی نداده‌اید. اولین تکلیف را برای کلاس‌تان بنویسید…» — or «تکلیف بازی ندارید.» once the دبیر has
+  finished items, so the line is never false). The empty-state action is `outline`: the page header already carries
+  the one primary «… جدید». Clay illustrations left every in-page empty state (کارتابل, Home card, اعلان‌ها, حضور و
+  غیاب, کلاس‌ها, کلاس من, the subject page, the admin report's bare icon); they stay on login and the timetable's
+  «کلاس نداری» spot. The work item page reads «در جریان» for watchers and «دانش‌آموزان» for a class item's recipients
+  (`WorkItemCore.classOfferingId`), «گیرندگان» otherwise.
+- **Verified** at 375 and 1280 px as student, teacher and organization admin (Home, کارتابل — the admin's empty —,
+  nav, notifications): `pnpm exec tsc --noEmit`, `vitest run tests/unit`, eslint on the changed files and
+  `check-forbidden` green.
