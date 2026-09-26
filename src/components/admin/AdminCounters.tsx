@@ -20,7 +20,7 @@ export function AdminCounters({ counts: c }: { counts: AdminCounts }) {
         {counters.map((t, i) => (
           <li key={t.href} className={cn("border-line", i % 2 === 1 && "border-s", i >= 2 && "border-t sm:border-t-0", "sm:border-s sm:first:border-s-0")}>
             <Link href={t.href} className="pressable flex min-h-20 flex-col justify-center gap-0.5 px-4 py-3 hover:bg-surface">
-              <span className={cn("tabular text-title font-semibold leading-8", t.value === 0 ? "text-text-faint" : "text-text")}>{formatNumberFa(t.value)}</span>
+              <span className={cn("tabular text-title font-extrabold leading-8", t.value === 0 ? "text-text-faint" : "text-text")}>{formatNumberFa(t.value)}</span>
               <span className="flex items-center gap-1.5 text-meta text-text-muted">
                 {t.warn ? <span aria-hidden className="size-2 rounded-full bg-danger" /> : null}
                 {t.label}

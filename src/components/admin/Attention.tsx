@@ -41,7 +41,7 @@ export function Attention({ counts }: { counts: AdminCounts }) {
           {rows.map((r) => (
             <li key={r.label}>
               <Link href={r.href} className="pressable flex min-h-14 items-center gap-4 px-4 py-2.5 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
-                <span className="tabular w-10 shrink-0 text-title font-bold text-danger">{formatNumberFa(r.count)}</span>
+                <span className="tabular w-10 shrink-0 text-title font-extrabold text-danger">{formatNumberFa(r.count)}</span>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-row font-semibold text-text">{r.label}</span>
                   <span className="text-meta text-text-muted">{r.fix}</span>

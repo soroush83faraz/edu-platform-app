@@ -114,7 +114,7 @@ export function WeekTimetable({ days, periods, today: serverToday, nowMinutes: s
                                   <bdi className={cn("line-clamp-1 text-sm font-medium", now ? "text-primary-900" : "text-text")}>{s.subjectName}</bdi>
                                   <bdi className={cn("line-clamp-1 text-meta", now ? "text-primary-800/80" : "text-text-muted")}>{secondary === "class" ? `کلاس ${s.classGroupName}` : (s.teacherName ?? "بدون دبیر")}</bdi>
                                   {now ? (
-                                    <span className="absolute top-1 end-1 inline-flex items-center gap-0.5 text-[0.625rem] leading-none font-semibold text-primary-700">
+                                    <span className="absolute top-1 end-1 inline-flex items-center gap-0.5 text-xs leading-none font-semibold text-primary-700">
                                       <span aria-hidden className="size-1.5 rounded-full bg-primary-600" />
                                       الان
                                     </span>

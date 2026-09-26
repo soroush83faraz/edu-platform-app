@@ -13,7 +13,7 @@ export async function NearbyCard({ words }: { words: WorkItemWords }) {
   return (
     <section aria-labelledby="nearby-heading" className="flex flex-col gap-2.5">
       <div className="flex items-baseline justify-between gap-3 px-1">
-        <h3 id="nearby-heading" className="text-sm font-semibold text-text-muted">
+        <h3 id="nearby-heading" className="text-section font-semibold text-text">
           {words.plural} نزدیک
         </h3>
         <Link href="/inbox" className="pressable inline-flex min-h-11 items-center gap-0.5 rounded-lg px-1 text-sm font-medium text-sky-strong hover:text-primary-700">

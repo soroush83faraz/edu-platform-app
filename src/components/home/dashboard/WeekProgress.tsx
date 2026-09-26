@@ -25,7 +25,7 @@ export async function WeekProgress() {
         <p className="text-sm text-text-muted">تکلیفی با مهلت این هفته ندارید.</p>
       ) : (
         <div className="flex items-center gap-4">
-          <span className="tabular text-title font-bold text-text">
+          <span className="tabular text-title font-extrabold text-text">
             {formatNumberFa(done)}
             <span className="text-section font-normal text-text-muted">/{formatNumberFa(total)}</span>
           </span>

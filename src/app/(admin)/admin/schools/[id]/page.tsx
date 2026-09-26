@@ -84,7 +84,7 @@ function Stats({ d }: { d: SchoolHubData }) {
       {tiles.map((t, i) => (
         <li key={t.label} className={i > 0 ? "border-s border-line" : ""}>
           <Link href={t.href} className="pressable flex min-h-20 flex-col justify-center gap-0.5 px-4 py-3 hover:bg-surface">
-            <span className="tabular text-title font-semibold text-text">{n(t.value)}</span>
+            <span className="tabular text-title font-extrabold text-text">{n(t.value)}</span>
             <span className="text-meta text-text-muted">{t.label}</span>
           </Link>
         </li>

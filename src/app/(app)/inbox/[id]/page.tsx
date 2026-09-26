@@ -133,7 +133,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
       {showProgress ? (
         <section aria-labelledby="progress-heading" className="surface-work">
           <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
-            <h3 id="progress-heading" className="text-sm font-semibold text-text-muted">
+            <h3 id="progress-heading" className="text-section font-semibold text-text">
               گیرندگان
             </h3>
             <span className="tabular text-sm font-medium text-text">
@@ -158,8 +158,8 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
       ) : null}
 
       <section aria-labelledby="comments-heading" className="flex flex-col gap-3">
-        <h3 id="comments-heading" className="text-sm font-semibold text-text-muted">
-          گفت‌وگو {comments.length > 0 ? <span className="tabular">({formatNumberFa(comments.length)})</span> : null}
+        <h3 id="comments-heading" className="text-section font-semibold text-text">
+          گفت‌وگو {comments.length > 0 ? <span className="tabular text-meta font-normal text-text-muted">{formatNumberFa(comments.length)}</span> : null}
         </h3>
         {comments.length === 0 ? <p className="text-sm text-text-faint">هنوز نظری ثبت نشده.</p> : null}
         <ul className="flex flex-col gap-2">
