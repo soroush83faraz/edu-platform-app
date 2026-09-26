@@ -39,6 +39,8 @@ interface RouteDef {
   path: string;
   fa: string;
   viewport: Viewport;
+  /** Export EVERY value the placeholder's sources link to (each درس of the student / teacher), not just the first. */
+  all?: boolean;
 }
 interface Role {
   key: string;
@@ -76,8 +78,8 @@ const ROLES: Role[] = [
       { path: "/inbox?tab=done", fa: "پنل من — انجام‌شده‌ها", viewport: B },
       { path: "/inbox/<inbox>", fa: "جزئیات یک تکلیف: واقعیت‌ها، اقدام‌ها، نظرها", viewport: B },
       { path: "/my-class", fa: "کلاس من: هم‌کلاسی‌ها و درس‌ها با دبیر", viewport: B },
-      { path: "/subjects/<offering>", fa: "صفحهٴ یک درس: تکالیف این درس", viewport: B },
-      { path: "/timetable", fa: "برنامهٴ هفتگی کلاس", viewport: B },
+      { path: "/subjects/<offering>", fa: "درس", viewport: B, all: true }, // every درس of the class
+      { path: "/timetable", fa: "برنامهٴ هفتگی کلاس", viewport: B }, // today an alias of /my-class (redirect)
       { path: "/attendance", fa: "حضور و غیاب من: درصدها و آخرین موردها", viewport: B },
       { path: "/notifications", fa: "اعلان‌ها", viewport: B },
       { path: "/more", fa: "بیشتر: پروفایل، راهنما، تغییر رمز، خروج", viewport: P },
@@ -96,8 +98,8 @@ const ROLES: Role[] = [
       { path: "/inbox/new", fa: "فرم تکلیف جدید: درس، عنوان، اولویت، مهلت، گیرندگان", viewport: B },
       { path: "/inbox/<inbox>", fa: "جزئیات تکلیف از دید دبیر (پیشرفت گیرندگان)", viewport: B },
       { path: "/classes", fa: "کلاس‌های من: یک کارت برای هر درس", viewport: B },
-      { path: "/subjects/<offering>", fa: "صفحهٴ یک درس از دید دبیر", viewport: B },
-      { path: "/timetable", fa: "برنامهٴ هفتگی دبیر", viewport: B },
+      { path: "/subjects/<offering>", fa: "درس", viewport: B, all: true }, // every درس this teacher gives
+      { path: "/timetable", fa: "برنامهٴ هفتگی دبیر", viewport: B }, // today an alias of /classes (redirect)
       { path: "/attendance", fa: "حضور و غیاب: زنگ‌های امروز", viewport: B },
       { path: "/attendance/<lesson>", fa: "ثبت حضور و غیاب یک زنگ امروز", viewport: B },
       { path: "/notifications", fa: "اعلان‌ها", viewport: B },
@@ -291,6 +293,25 @@ async function resolveRollcall(jar: Jar, ids: Record<string, string>): Promise<s
   return taken ? decodeEntities(taken[1]) : base;
 }
 
+/** Every distinct value the placeholder's sources link to, in page order (capped — the preview is not a crawl). */
+async function discoverAll(jar: Jar, name: string, cap = 16): Promise<string[]> {
+  const ph = PLACEHOLDERS[name];
+  if (!ph) return [];
+  const found = new Set<string>();
+  const re = new RegExp(ph.re.source, "g");
+  for (const source of ph.sources) {
+    try {
+      const p = await getPage(jar, source);
+      if (p.status !== 200) continue;
+      for (const m of p.html.matchAll(re)) found.add(decodeEntities(m[1]));
+    } catch {
+      /* try the next source */
+    }
+    if (found.size > 0) break; // the first source that lists them is the authoritative list
+  }
+  return [...found].slice(0, cap);
+}
+
 async function discoverFrom(jar: Jar, name: string, ids: Record<string, string>): Promise<string | null> {
   const ph = PLACEHOLDERS[name];
   if (!ph) return null;
@@ -353,12 +374,15 @@ function extractHiddenSegments(html: string): { html: string; segments: Map<stri
   return { html: out, segments };
 }
 
-/** `$RC("B:0","S:0")` / `$RS("S:1","P:1")` pairs from every inline script. */
+/**
+ * Boundary → segment (`$RC("B:0","S:0")`, or React 19's batched `$RB.push("B:0","S:0")`) and placeholder → segment
+ * (`$RS("S:1","P:1")`) pairs from every inline script — matched by the id shapes, not the helper's name.
+ */
 function collectBindings(html: string): { boundaries: Map<string, string>; placeholders: Map<string, string> } {
   const boundaries = new Map<string, string>();
   const placeholders = new Map<string, string>();
-  for (const m of html.matchAll(/\$RC\(\s*"(B:[^"]+)"\s*,\s*"(S:[^"]+)"/g)) boundaries.set(m[1], m[2]);
-  for (const m of html.matchAll(/\$RS\(\s*"(S:[^"]+)"\s*,\s*"(P:[^"]+)"/g)) placeholders.set(m[2], m[1]);
+  for (const m of html.matchAll(/"(B:[^"]+)"\s*,\s*"(S:[^"]+)"/g)) boundaries.set(m[1], m[2]);
+  for (const m of html.matchAll(/"(S:[^"]+)"\s*,\s*"(P:[^"]+)"/g)) placeholders.set(m[2], m[1]);
   return { boundaries, placeholders };
 }
 
@@ -492,7 +516,7 @@ function slugOf(path: string): string {
   return p || "root";
 }
 
-const bannerHtml = `<div data-preview-banner style="position:sticky;top:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;min-height:32px;padding:4px 16px;background:#072AC8;color:#fff;font:500 13px/20px Vazirmatn,var(--font-vazir),system-ui,sans-serif;text-align:center"><span>${BANNER_TEXT}</span><a href="index.html" style="color:#fff;text-decoration:underline;text-underline-offset:3px;white-space:nowrap">فهرست صفحه‌ها</a></div>`;
+const bannerHtml = `<div data-preview-banner style="position:sticky;top:0;z-index:2147483647;padding:4px 12px;background:#072AC8;color:#fff;font:500 12px/18px Vazirmatn,var(--font-vazir),system-ui,sans-serif;text-align:center">${BANNER_TEXT} · <a href="index.html" style="color:#fff;text-decoration:underline;text-underline-offset:3px;white-space:nowrap">فهرست صفحه‌ها</a></div>`;
 
 interface Links {
   /** `${role}|${path with query}` → file */
@@ -519,7 +543,7 @@ async function makeStandalone(input: string, role: string, links: Links): Promis
   // 2. drop scripts, preloads, refresh metas, the manifest and absolute-origin metas
   html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, "");
   html = html.replace(/<script\b[^>]*\/>/g, "");
-  html = html.replace(/<link\b[^>]*rel="(?:preload|modulepreload|prefetch|preconnect|dns-prefetch|manifest|expect)"[^>]*>/g, "");
+  html = html.replace(/<link\b[^>]*rel="(?:preload|modulepreload|prefetch|preconnect|dns-prefetch|manifest|expect|apple-touch-startup-image)"[^>]*>/g, "");
   html = html.replace(/<meta\b[^>]*http-equiv="refresh"[^>]*>/g, "");
   html = html.replace(/<meta\b[^>]*content="https?:\/\/(?:127\.0\.0\.1|localhost)[^"]*"[^>]*>/g, "");
   html = html.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/g, "");
@@ -597,12 +621,66 @@ async function main(): Promise<void> {
       }
     }
     const ids: Record<string, string> = {};
+
+    const exportOne = async (r: RouteDef, path: string): Promise<void> => {
+      try {
+        const page = await getPage(jar, path);
+        if (page.finalPath !== path && page.finalPath.startsWith("/login")) {
+          failed.push({ role: role.key, path, reason: "redirected to /login (not authorised for this role)" });
+          console.log(`  ✗ ${path}: redirected to /login`);
+          return;
+        }
+        if (page.status !== 200) {
+          failed.push({ role: role.key, path, reason: `HTTP ${page.status}` });
+          console.log(`  ✗ ${path}: HTTP ${page.status}`);
+          return;
+        }
+        // A route that only redirects to a page already exported for this role (/timetable → /my-class) is an
+        // alias: links to it resolve to that file, the index does not list it twice.
+        const already = page.finalPath !== path ? links.exact.get(`${role.key}|${page.finalPath}`) : undefined;
+        if (already) {
+          links.exact.set(`${role.key}|${path}`, already);
+          console.log(`  = ${path} redirects to ${page.finalPath} (already ${already})`);
+          return;
+        }
+        if (page.finalPath !== path) console.log(`  (${path} redirected to ${page.finalPath})`);
+        discoverPassively(page.html, ids);
+
+        const { html: resolved, unresolved } = resolveStreaming(page.html);
+        const file = fileName(role.key, path);
+        for (const key of [path, page.finalPath]) {
+          links.exact.set(`${role.key}|${key}`, file);
+          const noQuery = key.split("?")[0];
+          if (!links.loose.has(`${role.key}|${noQuery}`)) links.loose.set(`${role.key}|${noQuery}`, file);
+          if (!links.loose.has(`*|${key}`)) links.loose.set(`*|${key}`, file);
+          if (!links.loose.has(`*|${noQuery}`)) links.loose.set(`*|${noQuery}`, file);
+        }
+        const title = decodeEntities(/<title>([^<]*)<\/title>/.exec(resolved)?.[1] ?? "");
+        // The page's own title (PageHeader renders an h2; the shell's h1 is the school name, visually hidden).
+        const titleTag = [...resolved.slice(resolved.indexOf("<body")).matchAll(/<(h[12])\b([^>]*)>([\s\S]*?)<\/\1>/g)].find((m) => !/sr-only/.test(m[2]));
+        const description = /<p\b[^>]*grid-area:desc[^>]*>([\s\S]*?)<\/p>/.exec(resolved)?.[1] ?? "";
+        const text = (s: string) => decodeEntities(s.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+        const heading = [text(titleTag?.[3] ?? ""), text(description)].filter(Boolean).join(" — ");
+        exported.push({ role, path, file, fa: r.all && heading ? `${r.fa}: ${heading}` : r.fa, viewport: r.viewport, bytes: 0, title, unresolved, skeletons: 0, raw: resolved, leftovers: [] });
+        console.log(`  ✓ ${path} → ${file} («${title}», unresolved boundaries ${unresolved})`);
+      } catch (err) {
+        failed.push({ role: role.key, path, reason: (err as Error).message });
+        console.log(`  ✗ ${path}: ${(err as Error).message}`);
+      }
+    };
+
     for (const r of role.routes) {
       if (ROUTE_FILTER && !ROUTE_FILTER.test(`${role.key}:${r.path}`)) continue;
-      let path = r.path;
-      const missing = /<([a-z]+)>/.exec(path);
-      if (missing) {
-        const need = missing[1];
+      const missing = /<([a-z]+)>/.exec(r.path);
+      if (!missing) {
+        await exportOne(r, r.path);
+        continue;
+      }
+      const need = missing[1];
+      let values: string[] = [];
+      if (jar && r.all) {
+        values = await discoverAll(jar, need);
+      } else {
         if (!ids[need] && jar) {
           if (need === "rollcall") {
             const v = await resolveRollcall(jar, ids).catch(() => null);
@@ -611,43 +689,15 @@ async function main(): Promise<void> {
             await discoverFrom(jar, need, ids);
           }
         }
-        if (!ids[need]) {
-          const why = need === "lesson" ? "no زنگ in this teacher's timetable today (Tehran time) — the roll-call page is exported for the principal instead" : `no ${need} id could be discovered from the app's own pages`;
-          failed.push({ role: role.key, path, reason: why });
-          console.log(`  - ${path}: ${why}`);
-          continue;
-        }
-        path = path.replace(`<${need}>`, ids[need]);
+        if (ids[need]) values = [ids[need]];
       }
-      try {
-        const page = await getPage(jar, path);
-        if (page.finalPath !== path && page.finalPath.startsWith("/login")) {
-          failed.push({ role: role.key, path, reason: "redirected to /login (not authorised for this role)" });
-          console.log(`  ✗ ${path}: redirected to /login`);
-          continue;
-        }
-        if (page.status !== 200) {
-          failed.push({ role: role.key, path, reason: `HTTP ${page.status}` });
-          console.log(`  ✗ ${path}: HTTP ${page.status}`);
-          continue;
-        }
-        if (page.finalPath !== path) console.log(`  (${path} redirected to ${page.finalPath})`);
-        discoverPassively(page.html, ids);
-
-        const { html: resolved, unresolved } = resolveStreaming(page.html);
-        const file = fileName(role.key, path);
-        links.exact.set(`${role.key}|${path}`, file);
-        const noQuery = path.split("?")[0];
-        if (!links.loose.has(`${role.key}|${noQuery}`)) links.loose.set(`${role.key}|${noQuery}`, file);
-        if (!links.loose.has(`*|${path}`)) links.loose.set(`*|${path}`, file);
-        if (!links.loose.has(`*|${noQuery}`)) links.loose.set(`*|${noQuery}`, file);
-        const title = decodeEntities(/<title>([^<]*)<\/title>/.exec(resolved)?.[1] ?? "");
-        exported.push({ role, path, file, fa: r.fa, viewport: r.viewport, bytes: 0, title, unresolved, skeletons: 0, raw: resolved, leftovers: [] });
-        console.log(`  ✓ ${path} → ${file} («${title}», unresolved boundaries ${unresolved})`);
-      } catch (err) {
-        failed.push({ role: role.key, path, reason: (err as Error).message });
-        console.log(`  ✗ ${path}: ${(err as Error).message}`);
+      if (values.length === 0) {
+        const why = need === "lesson" ? "no زنگ in this teacher's timetable today (Tehran time) — the roll-call page is exported for the principal instead" : `no ${need} id could be discovered from the app's own pages`;
+        failed.push({ role: role.key, path: r.path, reason: why });
+        console.log(`  - ${r.path}: ${why}`);
+        continue;
       }
+      for (const v of values) await exportOne(r, r.path.replace(`<${need}>`, v));
     }
   }
 

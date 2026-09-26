@@ -89,7 +89,7 @@ ${fontFace}
 :root { --primary-600:#072AC8; --primary-700:#0622A3; --primary-50:#EEF2FF; --canvas:#E8EEF9; --surface:#fff; --sunken:#F4F7FD; --text:#0B1440; --muted:#5B6480; --line:#E3E8F4; --shadow-1: 0 1px 2px rgb(7 42 200 / .06), 0 8px 24px rgb(7 42 200 / .08); }
 * { box-sizing: border-box; }
 body { margin:0; background:var(--canvas); color:var(--text); font-family: Vazirmatn, system-ui, sans-serif; font-size:14px; line-height:24px; padding: 24px 16px 48px; }
-main { max-width: 960px; margin-inline:auto; display:grid; gap:16px; }
+main { max-width: 960px; margin-inline:auto; display:grid; grid-template-columns: minmax(0, 1fr); gap:16px; }
 .hero { background: linear-gradient(135deg,#072AC8 0%,#0B6FD1 100%); color:#fff; border-radius:20px; padding:24px; }
 .hero h1 { margin:0 0 8px; font-size:28px; line-height:34px; }
 .hero p { margin:0 0 8px; color:#E6EEFF; }
@@ -110,7 +110,7 @@ nav.jump a { background:var(--surface); color:var(--primary-700); text-decoratio
 .mark::after { content:""; position:absolute; inset:10px; border-radius:3px; background:var(--primary-600); opacity:.55; }
 .text { display:flex; flex-direction:column; min-width:0; flex:1; }
 .title { font-size:15px; font-weight:600; }
-.path { color:var(--muted); font-size:13px; line-height:20px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.path { color:var(--muted); font-size:13px; line-height:20px; text-align:end; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .chip { background:var(--sunken); color:var(--muted); border-radius:999px; padding:0 10px; font-size:12px; white-space:nowrap; }
 .chev { color:var(--muted); font-size:20px; }
 .plain { margin:8px 0 0; padding-inline-start:20px; color:var(--muted); font-size:13px; }
