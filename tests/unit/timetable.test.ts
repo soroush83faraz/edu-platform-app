@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PERIODS,
   SCHOOL_WEEKDAYS,
+  dayAgenda,
+  periodProgress,
+  tehranMinutesPrecise,
   WEEKDAY_LABELS,
   currentPeriodOf,
   formatSessionFa,
@@ -120,5 +123,65 @@ describe("validatePeriods", () => {
       ]),
     ).toBe("زنگ ۲ با زنگ قبلی هم‌پوشانی دارد.");
     expect(validatePeriods(Array.from({ length: 13 }, (_, i) => ({ periodNo: i + 1, label: "x", startsAt: "08:00", endsAt: "08:10" })))).toBe("حداکثر ۱۲ زنگ ممکن است.");
+  });
+});
+
+describe("tehranMinutesPrecise", () => {
+  it("keeps the seconds as a fraction of the Tehran minute", () => {
+    // 08:35:30 UTC = 12:05:30 Tehran.
+    expect(tehranMinutesPrecise(new Date("2026-09-22T08:35:30Z"))).toBeCloseTo(12 * 60 + 5.5, 6);
+    // Across Tehran midnight: 20:30:15 UTC = 00:00:15 Tehran.
+    expect(tehranMinutesPrecise(new Date("2026-09-22T20:30:15Z"))).toBeCloseTo(0.25, 6);
+    // Agrees with the whole-minute clock.
+    expect(Math.floor(tehranMinutesPrecise(TUE_1205))).toBe(tehranClock(TUE_1205).minutes);
+  });
+});
+
+describe("periodProgress", () => {
+  const p = { startsAt: "10:00", endsAt: "10:45" };
+  it("runs 0 → 1 across the زنگ, fractional minutes included", () => {
+    expect(periodProgress(p, 10 * 60)).toBe(0);
+    expect(periodProgress(p, 10 * 60 + 15)).toBeCloseTo(1 / 3, 6);
+    expect(periodProgress(p, 10 * 60 + 22.5)).toBeCloseTo(0.5, 6);
+    expect(periodProgress(p, 10 * 60 + 44.9)).toBeCloseTo(44.9 / 45, 6);
+  });
+  it("is null outside [start, end) — the bar vanishes when the bell rings", () => {
+    expect(periodProgress(p, 9 * 60 + 59.9)).toBeNull();
+    expect(periodProgress(p, 10 * 60 + 45)).toBeNull();
+    expect(periodProgress(p, 13 * 60)).toBeNull();
+  });
+  it("accepts PG `HH:mm:ss` bounds and rejects malformed or empty ones", () => {
+    expect(periodProgress({ startsAt: "10:00:00", endsAt: "10:40:00" }, 10 * 60 + 10)).toBeCloseTo(0.25, 6);
+    expect(periodProgress({ startsAt: "xx", endsAt: "10:45" }, 10 * 60 + 10)).toBeNull();
+    expect(periodProgress({ startsAt: "10:45", endsAt: "10:45" }, 10 * 60 + 45)).toBeNull();
+  });
+});
+
+describe("dayAgenda", () => {
+  const s = (periodNo: number, subjectName: string) => {
+    const p = DEFAULT_PERIODS[periodNo - 1]!;
+    return { periodNo, subjectName, label: p.label, startsAt: p.startsAt, endsAt: p.endsAt };
+  };
+  it("lists the day from its first to its last زنگ with free زنگ‌ها and the long breaks between", () => {
+    const rows = dayAgenda(DEFAULT_PERIODS, [s(4, "علوم"), s(2, "ریاضی")]);
+    expect(rows.map((r) => (r.kind === "break" ? `break ${r.startsAt}-${r.endsAt}` : `${r.kind} ${r.periodNo}`))).toEqual([
+      "session 2",
+      "break 09:40-10:00",
+      "free 3",
+      "session 4",
+    ]);
+    // The 10-minute changeover between زنگ سوم and چهارم is not a break.
+    expect(rows.filter((r) => r.kind === "break")).toHaveLength(1);
+  });
+  it("groups two sessions of one زنگ into one row and is empty for a day without classes", () => {
+    const rows = dayAgenda(DEFAULT_PERIODS, [s(1, "الف"), s(1, "ب")]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "session", periodNo: 1 });
+    expect(rows[0]!.kind === "session" && rows[0]!.sessions.map((x) => x.subjectName)).toEqual(["الف", "ب"]);
+    expect(dayAgenda(DEFAULT_PERIODS, [])).toEqual([]);
+  });
+  it("keeps a session whose زنگ is not in the bell list (another school's bell) with its own times", () => {
+    const rows = dayAgenda([], [{ periodNo: 7, subjectName: "x", label: "زنگ هفتم", startsAt: "14:00", endsAt: "14:45" }]);
+    expect(rows).toEqual([{ kind: "session", periodNo: 7, label: "زنگ هفتم", startsAt: "14:00", endsAt: "14:45", sessions: [expect.objectContaining({ subjectName: "x" })] }]);
   });
 });

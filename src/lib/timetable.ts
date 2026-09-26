@@ -85,6 +85,24 @@ export function tehranClock(now: Date): TehranClock {
   return { weekday: ((js + 1) % 7) as Weekday, minutes };
 }
 
+/** Minutes since Tehran midnight WITH the seconds as a fraction (12:05:30 → 725.5) — the live progress clock. */
+export function tehranMinutesPrecise(now: Date): number {
+  const shifted = now.getTime() / 60_000 + TEHRAN_OFFSET_MIN;
+  return ((shifted % DAY_MIN) + DAY_MIN) % DAY_MIN;
+}
+
+/**
+ * How far a زنگ has run at `nowMinutes` (fractional minutes are fine): 0 at the bell, → 1 at its end; null outside
+ * [startsAt, endsAt) or when the bounds are malformed — the progress bar exists only while the زنگ rings.
+ */
+export function periodProgress(p: { startsAt: string; endsAt: string }, nowMinutes: number): number | null {
+  const s = timeToMinutes(p.startsAt);
+  const e = timeToMinutes(p.endsAt);
+  if (Number.isNaN(s) || Number.isNaN(e) || e <= s) return null;
+  if (nowMinutes < s || nowMinutes >= e) return null;
+  return (nowMinutes - s) / (e - s);
+}
+
 export interface CurrentPeriod {
   /** The زنگ whose [starts, ends) contains `minutes`, else null. */
   currentPeriodNo: number | null;
@@ -165,6 +183,49 @@ export function sessionStates(sessions: readonly PeriodLike[], isToday: boolean,
     }
     return "later";
   });
+}
+
+/** A gap between two rows of a day at least this long reads as «زنگ تفریح» (the 5–10 minute changeovers do not). */
+export const BREAK_MIN_MINUTES = 15;
+
+export type AgendaRow<T> =
+  | { kind: "session"; periodNo: number; label: string; startsAt: string; endsAt: string; sessions: T[] }
+  | { kind: "free"; periodNo: number; label: string; startsAt: string; endsAt: string }
+  | { kind: "break"; startsAt: string; endsAt: string };
+
+/**
+ * One school day as the phone list reads it: the bell schedule from the first occupied زنگ to the last — occupied
+ * زنگ‌ها carry their sessions, empty ones in between are `free`, and a gap of ≥ `BREAK_MIN_MINUTES` between two rows
+ * is a `break`. Leading/trailing empty زنگ‌ها are dropped (a day that ends at زنگ سوم is not three «آزاد» rows
+ * longer). A session whose period is not in `periods` (another school's bell, for a teacher) keeps its own times.
+ */
+export function dayAgenda<T extends PeriodLike & { label: string }>(
+  periods: readonly (PeriodLike & { label: string })[],
+  sessions: readonly T[],
+): AgendaRow<T>[] {
+  const byPeriod = new Map<number, T[]>();
+  for (const s of sessions) byPeriod.set(s.periodNo, [...(byPeriod.get(s.periodNo) ?? []), s]);
+  const known = new Map(periods.map((p) => [p.periodNo, p]));
+  const numbers = [...new Set([...periods.map((p) => p.periodNo), ...byPeriod.keys()])].sort((a, b) => a - b);
+  const occupied = numbers.filter((n) => byPeriod.has(n));
+  if (occupied.length === 0) return [];
+  const first = occupied[0]!;
+  const last = occupied[occupied.length - 1]!;
+
+  const rows: AgendaRow<T>[] = [];
+  let prevEnd: string | null = null;
+  for (const n of numbers) {
+    if (n < first || n > last) continue;
+    const own = byPeriod.get(n);
+    const bell = known.get(n) ?? own![0]!;
+    const { label, startsAt, endsAt } = own ? own[0]! : bell;
+    if (prevEnd !== null && timeToMinutes(startsAt) - timeToMinutes(prevEnd) >= BREAK_MIN_MINUTES) {
+      rows.push({ kind: "break", startsAt: prevEnd, endsAt: startsAt });
+    }
+    rows.push(own ? { kind: "session", periodNo: n, label, startsAt, endsAt, sessions: own } : { kind: "free", periodNo: n, label, startsAt, endsAt });
+    prevEnd = endsAt;
+  }
+  return rows;
 }
 
 export interface PeriodInput {

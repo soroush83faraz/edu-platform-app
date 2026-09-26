@@ -976,3 +976,36 @@ for the school bell, was the pick).
 - **Not changed here:** `theme-color` is still persian-blue (`layout.tsx`, `manifest.ts`); the splash ground is
   `canvas`, which is the manifest's `background_color`. If `theme-color` moves to `#E8EEF9`, the splash already
   matches it.
+
+## 2026-09-27 — the phone timetable is a day list; live period progress
+
+Owner: «on a phone the weekly timetable doesn't fit and students have to scroll sideways — use a better design».
+This reverses the phone half of «the timetable is the week only» (round of `fix(ui): grid cap, strip width,
+week-only timetable`); from `md:` the week grid stays exactly as it was.
+
+- **Phones (< md): `DayAgenda`.** A six-button day strip that fits 375 px without scrolling (`WEEKDAY_SHORT` letter +
+  «n زنگ» under it, ≥ 56 px tall; selected = filled `primary-600`, today = inset `primary-600` ring, the date-picker
+  convention), then the chosen day as one vertical list inside the view's one `surface-work`: start/end time column
+  (LTR `bdi`, tabular), subject (`text-row` semibold), teacher (students) / «کلاس X» (teachers) · the زنگ label.
+  Past rows dim, the first one still to come carries «بعدی», the ringing one is `primary-50` with «الان». Empty
+  زنگ‌ها inside the day (`free`) and gaps ≥ 15 min (`BREAK_MIN_MINUTES`, «زنگ تفریح») are thin text-on-hairline
+  dividers, not cards; leading/trailing empty زنگ‌ها are dropped (`dayAgenda` in `src/lib/timetable.ts`, pure and
+  unit-tested). An empty day is one line — «پنجشنبه کلاس نداری.» (own week) / «پنجشنبه زنگی ثبت نشده.» (an admin
+  reading a class, `perspective="class"`). The day opens on today (شنبه on a جمعه), is client state and is
+  mirrored to `?day=0…5` with `history.replaceState` (shareable, no navigation). A horizontal swipe on the list
+  (pointer events, `touch-action: pan-y`, ≥ 56 px and 1.5× more horizontal than vertical; a swipe never opens the
+  row under it) moves one day — rightwards = the following day, because in RTL it sits on the left.
+- **Live clock.** `useLiveClock` starts from the server's Tehran clock (hydration matches), then re-reads the time
+  every 30 s and on `visibilitychange`, so «الان»/«بعدی»/past and the grid's ringing cell follow the bell on a page
+  left open (the old server-computed `currentPeriodNo` prop is gone; pages pass `nowMinutes`). Development only:
+  `?now=HH:mm` (keeps running from there) and `?today=0…6` fake the clock — behind a `NODE_ENV !== "production"`
+  constant, so the production bundle ignores them.
+- **Live period progress (owner's explicit ask).** The ringing row (phone) and the ringing cell (grid) get a 3 px
+  rounded bar on their bottom edge: a `success/15` track and a `success` fill that grows from the start side
+  (right, in RTL). Fraction = `periodProgress({startsAt, endsAt}, minutes)` = (now − start) / (end − start) with
+  fractional Tehran minutes (`tehranMinutesPrecise`, seconds included); null outside `[start, end)`, so the bar is
+  gone when the bell rings. The fill is `transform: scaleX()` only, with a linear transition exactly one tick
+  (30 s) long, so it glides continuously instead of stepping; the first paint sets the width without a
+  transition, and reduced motion (the global clamp) leaves just the width. **Colour exception:** `success` is
+  otherwise reserved for 100 % / completed; the owner asked for green on this bar specifically — the only
+  non-completion use of `success`, noted in `PeriodProgress.tsx`.

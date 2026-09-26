@@ -23,7 +23,7 @@ const keyOf = (weekday: number, periodNo: number) => `${weekday}:${periodNo}`;
  * on phones the table scrolls sideways inside its box with the زنگ column sticky. A caller who may only look gets
  * the product's shared `WeekTimetable` instead of disabled selects.
  */
-export function TimetableEditor({ data, today, currentPeriodNo }: { data: ClassTimetable; today: Weekday; currentPeriodNo: number | null }) {
+export function TimetableEditor({ data, today, nowMinutes }: { data: ClassTimetable; today: Weekday; nowMinutes: number }) {
   const { classGroup, periods, offerings, canEdit } = data;
   const [grid, setGrid] = useState<Grid>(() => Object.fromEntries(data.slots.map((s) => [keyOf(s.weekday, s.periodNo), { offeringId: s.offeringId, room: s.room, teacherName: s.teacherName }])));
   const [saved, setSaved] = useState<string | null>(null);
@@ -85,7 +85,7 @@ export function TimetableEditor({ data, today, currentPeriodNo }: { data: ClassT
     }));
     return (
       <div className="flex flex-col gap-3">
-        <WeekTimetable days={days} periods={periods} today={today} currentPeriodNo={currentPeriodNo} secondary="teacher" />
+        <WeekTimetable days={days} periods={periods} today={today} nowMinutes={nowMinutes} secondary="teacher" perspective="class" />
         <p className="px-1 text-meta text-text-muted">شما این برنامه را فقط می‌بینید؛ تنظیم آن با مدیر یا معاون همین مدرسه است.</p>
       </div>
     );

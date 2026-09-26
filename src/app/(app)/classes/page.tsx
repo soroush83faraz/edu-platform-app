@@ -75,7 +75,7 @@ export default async function ClassesPage() {
             برنامهٴ هفتگی من
           </h3>
           {teaching && tt ? (
-            <WeekTimetable days={teaching.days} periods={periods} today={tt.today} currentPeriodNo={tt.currentPeriodNo} secondary="class" />
+            <WeekTimetable days={teaching.days} periods={periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="class" />
           ) : (
             <EmptyState title="برنامهٴ هفتگی هنوز تنظیم نشده" description="وقتی مدرسه برنامهٴ کلاس‌ها را ثبت کند، زنگ‌های شما همین‌جا می‌آیند." className="surface-work py-10" />
           )}
