@@ -4,7 +4,6 @@ import { PageSection } from "@/components/layout/PageSection";
 import { formatNumberFa } from "@/lib/format";
 import type { TeachingOffering } from "@/modules/iam/hats";
 import type { HomeTiles } from "../home-data";
-import { InboxTileBadge } from "../InboxTileBadge";
 import { Tile } from "../Tile";
 
 /**
@@ -20,9 +19,7 @@ export function DashboardAside({ home, children }: { home: HomeTiles; children?:
         <nav aria-label="بخش‌ها">
           <ul className="reveal-grid grid grid-cols-4 gap-x-1 gap-y-2">
             {tiles.map((t) => (
-              <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror} compact>
-                {t.code === "inbox" ? <InboxTileBadge /> : null}
-              </Tile>
+              <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror} compact />
             ))}
           </ul>
         </nav>

@@ -1,8 +1,7 @@
-// The THREE nav items per role, in order, from a static server render of `AppNav` (no DOM environment: the markup
-// is inspected as a string). Both renderings read role item · خانه · بیشتر (RTL, first = start/right); «اعلان‌ها»
-// left the navigation in QA round 3 and «پنل من» in round 4 — Home's bell and کارتابل glyph are their one door
-// each («پنل من» as the first Home TILE since round 5, «اعلان‌ها» as the bell). The role item follows
-// `navRoleFor`; `aria-current` marks the current route on both renderings.
+// The FOUR nav items per role, in order, from a static server render of `AppNav` (no DOM environment: the markup
+// is inspected as a string). Both renderings read خانه · پنل من · role item · بیشتر (RTL, first = start/right —
+// UX review 2026-09-27, owner: the کارتابل is a nav destination again, with its unread badge). «اعلان‌ها» stays
+// the bell on Home. The role item follows `navRoleFor`; `aria-current` marks the current route on both renderings.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -11,75 +10,72 @@ let pathname = "/home";
 vi.mock("next/navigation", () => ({ usePathname: () => pathname }));
 
 const { AppNav } = await import("@/components/shell/AppNav");
+const { InboxSummaryProvider } = await import("@/components/shell/InboxSummaryProvider");
 const { adminSectionsFor } = await import("@/lib/admin/nav");
 type AdminNavItem = import("@/lib/admin/nav").AdminNavItem;
 
-function render(role: "admin" | "teacher" | "student" | null, at = "/home", adminItems?: readonly AdminNavItem[]) {
+function render(role: "admin" | "teacher" | "student" | null, at = "/home", adminItems?: readonly AdminNavItem[], unread = 0) {
   pathname = at;
-  const html = renderToStaticMarkup(createElement(AppNav, { schoolName: "دبستان", productName: "دانینو", role, adminItems }));
+  const nav = createElement(AppNav, { schoolName: "دبستان", productName: "دانینو", role, adminItems });
+  const html = renderToStaticMarkup(createElement(InboxSummaryProvider, { initial: { overdue: 0, dueToday: 0, unread, unreadNotifications: 0 }, children: nav }));
   const links = [...html.matchAll(/<a([^>]*)href="([^"]+)"([^>]*)>(.*?)<\/a>/g)].map((m) => ({
     href: m[2],
     current: /aria-current="page"/.test(m[1] + m[3]),
     label: m[4].replace(/<[^>]+>/g, "").replace(/[۰-۹]+\+?/g, ""),
   }));
-  const bottom = links.slice(0, 3);
-  const side = links.slice(3, 6);
+  const bottom = links.slice(0, 4);
+  const side = links.slice(4, 8);
   return { html, bottom, side };
 }
 
 describe("AppNav items per role", () => {
-  it("student: «کلاس من» as the role item, «خانه» in the middle, «بیشتر» last", () => {
+  it("student: «خانه», «پنل من», «کلاس من», «بیشتر» — the same four on both renderings", () => {
     const { bottom, side } = render("student");
-    expect(bottom.map((l) => l.href)).toEqual(["/my-class", "/home", "/more"]);
-    expect(bottom.map((l) => l.label)).toEqual(["کلاس من", "خانه", "بیشتر"]);
-    expect(side.map((l) => l.href)).toEqual(["/my-class", "/home", "/more"]);
+    expect(bottom.map((l) => l.href)).toEqual(["/home", "/inbox", "/my-class", "/more"]);
+    expect(bottom.map((l) => l.label)).toEqual(["خانه", "پنل من", "کلاس من", "بیشتر"]);
+    expect(side.map((l) => l.href)).toEqual(["/home", "/inbox", "/my-class", "/more"]);
   });
 
-  it("teacher: «کلاس‌ها»; admin: «مدیریت»; no hat: «راهنما» — always the FIRST cell", () => {
-    expect(render("teacher").bottom[0]).toMatchObject({ href: "/classes", label: "کلاس‌ها" });
-    expect(render("admin").bottom[0]).toMatchObject({ href: "/admin", label: "مدیریت" });
-    expect(render(null).bottom[0]).toMatchObject({ href: "/help", label: "راهنما" });
+  it("teacher: «کلاس‌ها»; admin: «مدیریت»; no hat: «راهنما» — always the THIRD cell", () => {
+    expect(render("teacher").bottom[2]).toMatchObject({ href: "/classes", label: "کلاس‌ها" });
+    expect(render("admin").bottom[2]).toMatchObject({ href: "/admin", label: "مدیریت" });
+    expect(render(null).bottom[2]).toMatchObject({ href: "/help", label: "راهنما" });
   });
 
   it("aria-current follows the route on both renderings, nested routes included", () => {
     const admin = render("admin", "/admin/classes");
-    expect(admin.bottom.map((l) => l.current)).toEqual([true, false, false]);
-    expect(admin.side.map((l) => l.current)).toEqual([true, false, false]);
-    const home = render("student", "/home");
-    expect(home.bottom.map((l) => l.current)).toEqual([false, true, false]);
+    expect(admin.bottom.map((l) => l.current)).toEqual([false, false, true, false]);
+    expect(admin.side.map((l) => l.current)).toEqual([false, false, true, false]);
+    expect(render("student", "/home").bottom.map((l) => l.current)).toEqual([true, false, false, false]);
+    expect(render("teacher", "/inbox/new").bottom.map((l) => l.current)).toEqual([false, true, false, false]);
     const off = render("student", "/change-password");
     expect(off.bottom.every((l) => !l.current)).toBe(true);
   });
 
-  it("«خانه» is a bare, bigger glyph — 24 px, no clay squircle — in both renderings", () => {
+  it("«خانه» is a bare, bigger house glyph — 24 px, no clay squircle — in both renderings", () => {
     const { html } = render("teacher");
     expect(html).not.toContain("clay-icon");
     // One `size-6` (24 px) glyph per rendering (bottom bar + rail); every other item stays at `size-5` (20 px).
     expect(html.match(/size-6/g)?.length).toBe(2);
     expect(html).not.toContain("size-7");
+    expect(html).toContain("lucide-house");
+    expect(html).not.toContain("lucide-layout-grid");
   });
 
-  it("the nav carries no work surface and no badge: «پنل من» and «اعلان‌ها» live on Home", () => {
-    for (const at of ["/home", "/inbox", "/notifications"]) {
-      const { html, bottom, side } = render("student", at);
-      expect(html).not.toContain('href="/inbox"');
-      expect(html).not.toContain('href="/notifications"');
-      expect(html).not.toContain("پنل من");
-      expect(html).not.toContain("اعلان‌ها");
-      expect(html).not.toContain("خوانده‌نشده");
-      expect(bottom).toHaveLength(3);
-      expect(side).toHaveLength(3);
-    }
-    // Three columns, and the sliding cell is a third of the bar.
-    expect(render("student").html).toContain("grid-cols-3");
-    expect(render("student").html).toContain("w-1/3");
+  it("«پنل من» carries the unread badge on both renderings; nothing is drawn at zero; «اعلان‌ها» stays off the nav", () => {
+    const quiet = render("student");
+    expect(quiet.html).not.toContain("خوانده‌نشده");
+    const busy = render("student", "/home", undefined, 3);
+    expect(busy.html.match(/aria-label="۳ مورد خوانده‌نشده"/g)?.length).toBe(2);
+    expect(busy.html).not.toContain('href="/notifications"');
+    expect(busy.html).not.toContain("اعلان‌ها");
+    // Four columns, and the sliding cell is a quarter of the bar.
+    expect(quiet.html).toContain("grid-cols-4");
+    expect(quiet.html).toContain("w-1/4");
   });
 
-  it("the two neighbours ease away from «خانه» only while Home is the current tab", () => {
-    const onHome = render("student", "/home").html;
-    expect([...onHome.matchAll(/--nav-drift:\s*(-?\d+px)/g)].map((m) => m[1])).toEqual(["-4px", "0px", "4px"]);
-    const elsewhere = render("student", "/my-class").html;
-    expect([...elsewhere.matchAll(/--nav-drift:\s*(-?\d+px)/g)].map((m) => m[1])).toEqual(["0px", "0px", "0px"]);
+  it("no cell drifts: the neighbour animation is gone (UX review 2026-09-27)", () => {
+    expect(render("student", "/home").html).not.toContain("--nav-drift");
   });
 });
 

@@ -5,7 +5,6 @@ import { canAtAnyScope } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
 import { resolveHomeTiles } from "./home-data";
 import { CardSkeleton } from "./HomeSkeletons";
-import { InboxTileBadge } from "./InboxTileBadge";
 import { NearbyCard } from "./NearbyCard";
 import { Tile } from "./Tile";
 
@@ -26,9 +25,7 @@ export async function HomeGrid({ ctx }: { ctx: Ctx }) {
         <nav aria-label="بخش‌ها">
           <ul className="reveal-grid grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7">
             {tiles.map((t) => (
-              <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror}>
-                {t.code === "inbox" ? <InboxTileBadge /> : null}
-              </Tile>
+              <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror} />
             ))}
           </ul>
         </nav>

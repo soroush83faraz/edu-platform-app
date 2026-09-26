@@ -1,9 +1,8 @@
 // The Home tile registry (`homeTilesFor`) under the IA rule (docs/decisions.md «one home per destination»): a
-// destination has exactly ONE door, and since QA round 5 Home carries most of them — «پنل من» first (the کارتابل
-// is a tile, not a header control), then the person's role tiles, then one tile per STRUCTURE page, each gated by
-// the permission and scope that guard the page itself. No tile is a second door to a NAV destination — «کلاس من»,
-// «کلاس‌های من», «مدیریت» (/admin is the admin's own nav cell), «بیشتر», «خانه» — and no admin SECTION
-// («دانش‌آموزان», «کارکنان», «کلاس‌ها», «نقش‌ها») gets one either: those live on /admin.
+// destination has exactly ONE door. Home carries the person's role tiles, then one tile per STRUCTURE page, each
+// gated by the permission and scope that guard the page itself. No tile is a second door to a NAV destination —
+// «پنل من» (a nav cell again since the 2026-09-27 UX review), «کلاس من», «کلاس‌های من», «مدیریت», «بیشتر»,
+// «خانه» — and no admin SECTION («دانش‌آموزان», «کارکنان», «کلاس‌ها», «نقش‌ها») gets one either.
 // Plus the pure organization-admin predicate and the nav role.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -34,19 +33,17 @@ const teacher: TileHats = { isStudent: false, isTeacher: true, isAdmin: false, a
 const student: TileHats = { isStudent: true, isTeacher: false, isAdmin: false, adminScope: null };
 
 describe("homeTilesFor", () => {
-  it("«پنل من» is the first tile, for every hat and for a person with none", () => {
-    expect(HOME_TILES[0].code).toBe("inbox");
+  it("no «پنل من» tile, for any hat: the کارتابل is a nav destination (UX review 2026-09-27)", () => {
+    expect(HOME_TILES.filter((t) => t.href === "/inbox" || t.code === "inbox")).toEqual([]);
     for (const hats of [orgAdmin, principal, teacher, student]) {
-      expect(codes(homeTilesFor(hats, has(ADMIN_PERMS)))[0]).toBe("inbox");
+      expect(codes(homeTilesFor(hats, has(ADMIN_PERMS)))).not.toContain("inbox");
     }
     const noHat: TileHats = { isStudent: false, isTeacher: false, isAdmin: false, adminScope: null };
-    expect(codes(homeTilesFor(noHat, has(["workspace.work_item.read"])))).toEqual(["inbox"]);
-    // Without the کارتابل permission it disappears like any other tile.
-    expect(codes(homeTilesFor(student, has(["academic.timetable.read"])))).not.toContain("inbox");
+    expect(codes(homeTilesFor(noHat, has(["workspace.work_item.read"])))).toEqual([]);
   });
 
   it("the organization admin: the structure tiles the nav gave up, in that order — and no «مدیریت», «مدرسه‌ها» or «راه‌اندازی» tile", () => {
-    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["inbox", "new-item", "admin-attendance"]);
+    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["new-item", "admin-attendance"]);
     // Round 7: «مدرسه‌ها» (the organization's list) and «تنظیمات زیرساختی» are admin SECTIONS for this person, so
     // Home carries neither — one door each. «زنگ‌بندی» has no organization-wide page, so it has no tile either.
     expect(tile(homeTilesFor(orgAdmin, has(ADMIN_PERMS)), "schools")).toBeUndefined();
@@ -55,19 +52,19 @@ describe("homeTilesFor", () => {
 
   it("a principal of ONE school gets «مدرسه» and that school's زنگ‌بندی, and no organization catalog", () => {
     const tiles = homeTilesFor(principal, has(ADMIN_PERMS));
-    expect(codes(tiles)).toEqual(["inbox", "new-item", "admin-attendance", "schools", "periods"]);
+    expect(codes(tiles)).toEqual(["new-item", "admin-attendance", "schools", "periods"]);
     expect(tile(tiles, "schools")).toMatchObject({ labelFa: "مدرسه", href: "/admin/schools/s1" });
     expect(tile(tiles, "periods")).toMatchObject({ href: "/admin/schools/s1/periods" });
   });
 
   it("two schools: «مدرسه‌ها» plural and no زنگ‌بندی tile — a bell schedule belongs to one school", () => {
     const tiles = homeTilesFor(twoSchools, has(ADMIN_PERMS));
-    expect(codes(tiles)).toEqual(["inbox", "new-item", "admin-attendance", "schools"]);
+    expect(codes(tiles)).toEqual(["new-item", "admin-attendance", "schools"]);
     expect(tile(tiles, "schools")).toMatchObject({ labelFa: "مدرسه‌ها", href: "/admin/schools" });
   });
 
   it("a vice principal reads the structure but edits none of it: the roll-call report and «مدرسه»", () => {
-    expect(codes(homeTilesFor(principal, has(VICE_PERMS)))).toEqual(["inbox", "admin-attendance", "schools"]);
+    expect(codes(homeTilesFor(principal, has(VICE_PERMS)))).toEqual(["admin-attendance", "schools"]);
   });
 
   it("«مدرسه‌ها»/«مدرسه» is a tile for SCHOOL-scoped admins only — the organization admin has the section instead", () => {
@@ -76,17 +73,14 @@ describe("homeTilesFor", () => {
     for (const hats of [principal, twoSchools]) expect(codes(homeTilesFor(hats, has(ADMIN_PERMS)))).toContain("schools");
   });
 
-  it("no tile is a second door to a nav destination («مدیریت», «کلاس من», «کلاس‌ها», «راهنما», «بیشتر», «خانه»)", () => {
-    // The nav is THREE items — the role item, «خانه», «بیشتر» (docs/decisions.md «navigation round 4»). Round 5
-    // closed the last exception: /admin is the admin's own nav cell, so no tile points at it either.
-    const navHrefs = ["/admin", "/my-class", "/classes", "/help", "/more", "/home"];
+  it("no tile is a second door to a nav destination («خانه», «پنل من», «مدیریت», «کلاس من», «کلاس‌ها», «راهنما», «بیشتر»)", () => {
+    // The nav is FOUR items — «خانه», «پنل من», the role item, «بیشتر» (docs/decisions.md, UX review 2026-09-27).
+    const navHrefs = ["/home", "/inbox", "/admin", "/my-class", "/classes", "/help", "/more"];
     expect(HOME_TILES.filter((t) => navHrefs.includes(t.href))).toEqual([]);
   });
 
-  it("«پنل من» is a TILE (round 5) while «اعلان‌ها» stays a header control", () => {
-    // The کارتابل's ONE door is this tile, which carries the unread badge; the bell keeps its own control.
-    // Every other work tile is a FILTER of the کارتابل («تکالیف من» `?tab=todo`) or a page under it.
-    expect(HOME_TILES.filter((t) => t.href === "/inbox").map((t) => t.labelFa)).toEqual(["پنل من"]);
+  it("neither the کارتابل nor «اعلان‌ها» is a tile: one is a nav cell, the other the bell on Home's greeting row", () => {
+    expect(HOME_TILES.filter((t) => t.href === "/inbox")).toEqual([]);
     expect(HOME_TILES.filter((t) => t.href.startsWith("/notifications"))).toEqual([]);
   });
 
@@ -98,10 +92,10 @@ describe("homeTilesFor", () => {
     }
   });
 
-  it("a student's own work is ONE door — «پنل من»; a teacher keeps the one they create", () => {
+  it("a student's own work is ONE door — the «پنل من» nav cell; a teacher keeps the tile they create from", () => {
     // «تکالیف من» and «انجام‌شده» left the grid (owner, branding round): both were FILTERS of the کارتابل, and
     // «پنل من» opens it with those very two tabs at the top.
-    expect(codes(homeTilesFor(student, has(["workspace.work_item.read", "academic.timetable.read"])))).toEqual(["inbox"]);
+    expect(codes(homeTilesFor(student, has(["workspace.work_item.read", "academic.timetable.read"])))).toEqual([]);
     expect(HOME_TILES.filter((t) => t.href.startsWith("/inbox?tab="))).toEqual([]);
     expect(codes(homeTilesFor(teacher, has(["workspace.work_item.create", "iam.admin.access", "academic.timetable.read"])))).toEqual(["new-item"]);
   });
@@ -122,12 +116,11 @@ describe("homeTilesFor", () => {
     // Still ONE door to the form.
     expect(HOME_TILES.filter((t) => t.href === "/inbox/new")).toHaveLength(1);
     // A student's create tile has no mirror.
-    expect(codes(homeTilesFor(student, has(ADMIN_PERMS)))).toEqual(["inbox", "new-item"]);
+    expect(codes(homeTilesFor(student, has(ADMIN_PERMS)))).toEqual(["new-item"]);
   });
 
   it("a teaching principal reads personal tiles first, then the school's structure", () => {
     expect(codes(homeTilesFor({ isStudent: false, isTeacher: true, isAdmin: true, adminScope: "school", singleSchoolId: "s1" }, has(ADMIN_PERMS)))).toEqual([
-      "inbox",
       "new-item",
       "admin-attendance",
       "schools",

@@ -311,7 +311,7 @@ export type TileRole = "student" | "teacher" | "admin";
 /** The admin hat's reach (`getAdminScope().kind`): the whole organization, or the caller's schools. */
 export type TileAdminScope = "organization" | "school";
 
-/** Every signed-in member, hat or no hat («پنل من» is nobody's role — it is everyone's own work). */
+/** Every signed-in member, hat or no hat. */
 export type TileAudience = TileRole | readonly TileRole[] | "everyone";
 
 /** What `homeTilesFor` needs to know about the person — computed once by `HomeGrid` from `getHats`. */
@@ -363,28 +363,19 @@ export interface HomeTile {
  * («بیشتر» and the role item — a student's «کلاس من», a teacher's «کلاس‌ها», an admin's «مدیریت» page), and
  * nothing the «بیشتر» page carries (راهنما, نقشهٴ راه, پروفایل).
  *
- * Round 5 (owner) settled three things. «پنل من» is a TILE, not a header control: the کارتابل is a place you tap
- * an icon to reach, and the tile carries the unread badge the control used to. «مدیریت» is now دانش‌آموزان ·
+ * Round 5 (owner) settled two things (a third — «پنل من» as a tile — was reversed in the 2026-09-27 UX review:
+ * the کارتابل is a nav cell again). «مدیریت» is now دانش‌آموزان ·
  * کارکنان · کلاس‌ها · نقش‌ها alone — every STRUCTURE page (مدرسه‌ها، سال تحصیلی، زنگ‌بندی، پایه‌ها، درس‌ها، مقطع‌ها،
  * راه‌اندازی مدرسه) and the admin's «حضور و غیاب» report left the admin nav and became its own tile here, gated by
  * the very permission and scope that guard its page, so an admin reaches each of them in one tap and never meets
  * it twice. And «مدیریت» itself lost its tile: the nav's first cell already opens /admin for an admin, so the
  * tile was a second door. «اعلان‌ها» stays a header control (the bell).
  *
- * Order: «پنل من» first (everyone's own work), then the person's role tiles, then the structure tiles by how
- * often an admin opens them, setup last. `homeTilesFor` picks per person.
+ * Order: the person's role tiles, then the structure tiles by how often an admin opens them. `homeTilesFor` picks per person.
  */
 export const HOME_TILES: readonly HomeTile[] = [
-  {
-    // Home's ONE door to the کارتابل (round 5). The «امروز» strip's three links are FILTERS of it, not a door.
-    code: "inbox",
-    labelFa: "پنل من",
-    href: "/inbox",
-    icon: Inbox,
-    role: "everyone",
-    permission: "workspace.work_item.read",
-  },
-
+  // No «پنل من» tile (UX review 2026-09-27, owner): the کارتابل is a NAV destination again, with its unread badge
+  // on the nav cell, so a tile here would be its second door. The «امروز» line's links are FILTERS of it.
   {
     // The ONE creation door on Home, for every hat that may open a کار (`NEW_ITEM_TILE_ROLES`): a دبیر, an
     // admin — and, since round 6, a student, whose own item is a personal «تسک». The label is role-aware

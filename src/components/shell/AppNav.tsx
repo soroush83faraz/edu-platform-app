@@ -1,12 +1,14 @@
 "use client";
 
-import { CircleHelp, Ellipsis, LayoutGrid, type LucideIcon, Presentation, School, Settings2 } from "lucide-react";
+import { CircleHelp, Ellipsis, House, Inbox, type LucideIcon, Presentation, School, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "cn";
 import { DoninoWordmark } from "@/components/brand/DoninoMark";
 import { RoleMark } from "@/components/brand/RoleMark";
 import type { RoleKey } from "@/components/brand/roles";
+import { CountBadge } from "@/components/CountBadge";
+import { useInboxSummaryContext } from "@/components/shell/InboxSummaryProvider";
 import { formatNumberFa } from "@/lib/format";
 import { ADMIN_SECTION_ICONS, type AdminNavItem } from "@/lib/admin/nav";
 import type { NavRole } from "@/modules/iam/can";
@@ -17,11 +19,13 @@ interface Item {
   icon: LucideIcon;
   /** The primary item: a bigger bare glyph (24 px) — no container of its own. */
   primary?: boolean;
+  /** Carries the کارتابل's unread count (the yellow `CountBadge`). */
+  badge?: boolean;
 }
 
-// The glyph is `LayoutGrid`, not a house (owner, round 5: the house read as dated): Home IS the tile launcher,
-// so its mark is the grid of tiles it opens — and it sits well beside the role item's glyph and «بیشتر»'s dots.
-const HOME: Item = { href: "/home", label: "خانه", icon: LayoutGrid, primary: true };
+// The glyph is a house again (UX review 2026-09-27, owner): `LayoutGrid` read as an app launcher, not a school.
+const HOME: Item = { href: "/home", label: "خانه", icon: House, primary: true };
+const INBOX: Item = { href: "/inbox", label: "پنل من", icon: Inbox, badge: true };
 const MORE: Item = { href: "/more", label: "بیشتر", icon: Ellipsis };
 
 /** The first item speaks for the person's highest hat (`navRoleFor`); with no hat it points at the guide. */
@@ -32,30 +36,22 @@ const ROLE_ITEMS: Record<NavRole | "none", Item> = {
   none: { href: "/help", label: "راهنما", icon: CircleHelp },
 };
 
-const COLUMNS = 3;
-/** Index of «خانه» — the middle column its two neighbours ease away from. */
-const HOME_INDEX = 1;
-/** Per-column drift while Home is the current tab: each neighbour 4 px outwards, Home itself still. */
-const DRIFT = ["-4px", "0px", "4px"];
+const COLUMNS = 4;
 
 /**
- * The one navigation component: bottom bar on phones, start-side rail from `lg:`. THREE items — a role item ·
- * خانه · بیشتر (RTL: the role item is at the start/right), the same order in both renderings. «اعلان‌ها» left in
- * QA round 3 and «پنل من» in round 4 (owner: the nav carries places, not work surfaces); Home carries the one
- * door to each — the bell as a header control (banner on phones, page header from `lg:`), the کارتابل as the
- * FIRST tile of the grid since round 5 — each with the unread badge that used to sit here. The «امروز» strip's
- * three links are FILTERS of the کارتابل, not a second door.
- * With three cells «خانه» is the middle again, at the same level as the rest — no container, no raised tab, no
- * notch, no lift (owner's rule): it reads as the primary item by ONE thing, a bigger bare glyph — 24 px against
- * the others' 20 px (28 px loomed, owner) — in `primary-600` while it is the current tab. The current item is a WHOLE tinted cell — a
- * `primary-50` rounded-lg block inset 4 px, glyph and label in `primary-700` — and the bottom bar slides ONE such
- * cell between its three columns. The neighbour drift comes back with the middle: while Home IS the current tab
- * its two neighbours ease 4 px outwards and settle back when another tab takes over (`--nav-drift` on the
- * relatively-positioned link, read by the logical `start-*` utility — no reflow, no RTL sign flip;
- * `motion-reduce` pins every cell at rest). The rail (264 px from `lg:`) opens with the «دانینو» wordmark — the
- * PRODUCT's own mark, never the role's — and the school under it, carrying the ROLE mark so the desktop says the
- * same thing the phone header does; it lists the same three, and inside /admin nests the admin sections under
- * «مدیریت».
+ * The one navigation component: bottom bar on phones, start-side rail from `lg:`. FOUR items, the same order in
+ * both renderings, RTL (first = start/right): «خانه» · «پنل من» · the role item · «بیشتر» (UX review 2026-09-27,
+ * owner — reverses round 4/5, which had moved «پنل من» onto Home: the کارتابل is where a person goes many times a
+ * day, so it is a nav destination with its unread badge, and Home no longer carries a tile for it). The role item
+ * speaks for the highest hat (`navRoleFor`): «کلاس من» / «کلاس‌ها» / «مدیریت», «راهنما» with none. «اعلان‌ها»
+ * stays the bell on Home's greeting row.
+ * Every cell sits at the same level — no container, no raised tab, no notch, no lift (owner's rule): «خانه» reads
+ * as the primary item by ONE thing, a bigger bare glyph (24 px against the others' 20 px) in `primary-600` while it
+ * is the current tab. The current item is a WHOLE tinted cell — a `primary-50` rounded-lg block inset 4 px, glyph
+ * and label in `primary-700` — and the bottom bar slides ONE such cell between its four columns. Nothing else moves
+ * (the neighbour drift is gone: motion is for feedback, not decoration). The rail (264 px from `lg:`) opens with
+ * the «دانینو» wordmark — the PRODUCT's own mark, never the role's — and the school under it, carrying the ROLE
+ * mark; it lists the same four, and inside /admin nests the admin sections under «مدیریت».
  */
 export function AppNav({ schoolName, productName, role, hats = [], adminItems }: { schoolName: string; productName?: string; role: NavRole | null; hats?: readonly RoleKey[]; adminItems?: readonly AdminNavItem[] }) {
   const pathname = usePathname();
@@ -64,28 +60,29 @@ export function AppNav({ schoolName, productName, role, hats = [], adminItems }:
   // Inside /admin the rail opens the admin sections under «مدیریت» (phones keep the pill row in the content); the
   // sections never contain /admin itself, so the parent is not repeated (`adminNavItems`).
   const nested = role === "admin" && adminItems && isCurrent("/admin") ? adminItems : null;
-  const items: Item[] = [roleItem, HOME, MORE];
-  // The bottom bar has ONE tinted cell that slides between the three columns; off-tab routes (/change-password)
+  const items: Item[] = [HOME, INBOX, roleItem, MORE];
+  // The کارتابل's unread count, from the shell's one summary poller (zeros outside the shell).
+  const unread = useInboxSummaryContext().unread;
+  // The bottom bar has ONE tinted cell that slides between the four columns; off-tab routes (/change-password)
   // hide it. While hidden it only fades, so it never slides across the bar when it comes back.
   const activeIndex = items.findIndex((item) => isCurrent(item.href));
-  const homeIsCurrent = activeIndex === HOME_INDEX;
 
   return (
     <>
       <nav aria-label="پیمایش اصلی" className="fixed inset-x-0 bottom-0 z-20 border-t border-line/70 bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm lg:hidden">
-        <ul className="relative grid grid-cols-3">
+        <ul className="relative grid grid-cols-4">
           <li
             aria-hidden
             className={cn(
-              "pointer-events-none absolute inset-y-1 w-1/3 px-1 duration-(--duration-base) ease-(--ease-in-out)",
+              "pointer-events-none absolute inset-y-1 w-1/4 px-1 duration-(--duration-base) ease-(--ease-in-out)",
               activeIndex < 0 ? "transition-[opacity]" : "transition-[inset-inline-start,opacity]",
             )}
             style={{ insetInlineStart: `${Math.max(activeIndex, 0) * (100 / COLUMNS)}%`, opacity: activeIndex < 0 ? 0 : 1 }}
           >
             <span className="block h-full w-full rounded-lg bg-primary-50" />
           </li>
-          {items.map((item, index) => (
-            <NavLink key={item.href} item={item} current={isCurrent(item.href)} layout="bottom" drift={homeIsCurrent ? DRIFT[index] : "0px"} />
+          {items.map((item) => (
+            <NavLink key={item.href} item={item} current={isCurrent(item.href)} count={item.badge ? unread : 0} layout="bottom" />
           ))}
         </ul>
       </nav>
@@ -109,6 +106,7 @@ export function AppNav({ schoolName, productName, role, hats = [], adminItems }:
                 item={item}
                 // With the sections open, «مدیریت» itself is current only on the landing page.
                 current={nested && item.href === "/admin" ? pathname === "/admin" : isCurrent(item.href)}
+                count={item.badge ? unread : 0}
                 layout="side"
               >
                 {nested && item.href === "/admin" ? (
@@ -144,8 +142,9 @@ export function AppNav({ schoolName, productName, role, hats = [], adminItems }:
   );
 }
 
-function NavLink({ item, current, layout, drift, children }: { item: Item; current: boolean; layout: "bottom" | "side"; drift?: string; children?: React.ReactNode }) {
+function NavLink({ item, current, count, layout, children }: { item: Item; current: boolean; count: number; layout: "bottom" | "side"; children?: React.ReactNode }) {
   const Icon = item.icon;
+  const badge = <CountBadge count={count} label={`${formatNumberFa(count)} مورد خوانده‌نشده`} floating={layout === "bottom"} />;
   // The primary glyph is the only one that changes size; every glyph keeps the same 28 px box so every
   // label sits on one line.
   const glyph = (
@@ -165,13 +164,7 @@ function NavLink({ item, current, layout, drift, children }: { item: Item; curre
         <Link
           href={item.href}
           aria-current={current ? "page" : undefined}
-          style={{ "--nav-drift": drift ?? "0px" } as React.CSSProperties}
-          className={cn(
-            "group pressable relative flex min-h-14 flex-col px-1 py-1 text-meta",
-            // Neighbours ease away from «خانه» while Home is the current tab (logical offset: no reflow, no RTL flip).
-            "start-(--nav-drift) transition-[inset-inline-start] duration-(--duration-slow) ease-(--ease-out) motion-reduce:start-0 motion-reduce:transition-none",
-            current ? "font-semibold text-primary-700" : "text-text-muted hover:text-text",
-          )}
+          className={cn("group pressable relative flex min-h-14 flex-col px-1 py-1 text-meta", current ? "font-semibold text-primary-700" : "text-text-muted hover:text-text")}
         >
           {/* The sliding tinted cell lives on the <ul>; this block is the same shape so a press tints the whole cell too. */}
           <span
@@ -180,7 +173,10 @@ function NavLink({ item, current, layout, drift, children }: { item: Item; curre
               !current && "group-active:bg-primary-50 group-active:text-primary-700",
             )}
           >
-            <span className="relative flex h-7 w-12 items-center justify-center">{glyph}</span>
+            <span className="relative flex h-7 w-12 items-center justify-center">
+              {glyph}
+              {badge}
+            </span>
             {item.label}
           </span>
         </Link>
@@ -200,6 +196,7 @@ function NavLink({ item, current, layout, drift, children }: { item: Item; curre
         {/* Every glyph sits in a 36 px box so the labels line up down the rail. */}
         <span className="grid size-9 shrink-0 place-items-center">{glyph}</span>
         <span className="flex-1">{item.label}</span>
+        {badge}
       </Link>
       {children}
     </li>

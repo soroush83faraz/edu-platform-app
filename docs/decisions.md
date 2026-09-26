@@ -1070,3 +1070,23 @@ week-only timetable`); from `md:` the week grid stays exactly as it was.
 - **Weekday spelling.** `WEEKDAY_LABELS` now spells «یک‌شنبه» / «پنج‌شنبه» with نیم‌فاصله like the faIR locale and
   the date picker (`WEEKDAY_NAMES_FA`); a unit test pins the two lists equal. «دوشنبه» / «چهارشنبه» join without
   one (و / ر do not connect), «سه‌شنبه» already had it.
+
+## 2026-09-27 — UX review B ("less template, more school"): Home without the template, «پنل من» back in the nav
+
+Owner-approved items from the UX review whose aim is an app that reads like a real school, not a generated template.
+
+- **The nav is FOUR items, «پنل من» back in it (owner; reverses round 4 and the «پنل من» tile of round 5).** Bottom
+  bar and rail, the same order, RTL (first = start/right): **خانه** `/home` · **پنل من** `/inbox` · the **role item**
+  (`navRoleFor`, unchanged: «کلاس من» / «کلاس‌ها» / «مدیریت», «راهنما» with no hat; a multi-hat person keeps the
+  highest) · **بیشتر** `/more`. The کارتابل is where a person goes many times a day, so it is a place in the nav, and
+  its cell carries the yellow `CountBadge` again — the kartabl's `unread` count from the shell's one summary poller,
+  as before round 4 (nothing at zero, «۹۹+» cap), floating on the glyph in the bar and at the row's end in the rail.
+  By the one-door rule the «پنل من» **tile is removed from Home for everyone** (`InboxTileBadge` deleted); the
+  «امروز» line's links stay — they are filters of the destination, not a door. «اعلان‌ها» stays the bell on Home.
+- **Home's glyph is `House` again** (`LayoutGrid` read as an app launcher). «خانه» keeps its one primary cue, the
+  24 px bare glyph; the sliding `primary-50` cell tracks four columns (`w-1/4`). The ±4 px neighbour drift is gone
+  (with four cells there is no middle, and motion is for feedback): `pressable` and `sheet-in` stay.
+- **Tests.** `tests/unit/app-nav.test.ts`: four cells in خانه · پنل من · role · بیشتر order on both renderings, the
+  role item third, `aria-current` on nested routes (`/inbox/new` → «پنل من»), the house glyph, the badge twice
+  (bar + rail) only when unread > 0, `grid-cols-4` / `w-1/4`, no `--nav-drift`. `tests/unit/home-tiles.test.ts`: no
+  tile for `/inbox` for any hat; the nav-duplication rule now lists `/home` and `/inbox` among the nav hrefs.
