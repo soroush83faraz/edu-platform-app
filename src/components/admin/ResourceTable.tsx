@@ -1,6 +1,6 @@
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { EmptyState } from "@/components/EmptyState";
 import { formFieldsOf, indefiniteFa, newLabelFa, type AnyResourceDef, type Column, type SelectOption } from "@/lib/admin/defineResource";
 import type { FormValue } from "./ResourceForm";

@@ -2,7 +2,7 @@ import { CalendarClock, CircleCheck, ListTodo, type LucideIcon, Plus } from "luc
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { EmptyState } from "@/components/EmptyState";
 import { CrossFade } from "@/components/motion/CrossFade";
 import { LeavingList } from "@/components/motion/LeavingList";

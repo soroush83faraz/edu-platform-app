@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { periodProgress } from "@/lib/timetable";
 import { CLOCK_TICK_MS } from "./useLiveClock";
 

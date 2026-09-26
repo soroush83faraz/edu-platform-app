@@ -1,5 +1,5 @@
 import { ClipboardCheck, GraduationCap, Landmark, type LucideIcon, Presentation, School, Users } from "lucide-react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { type RoleKey, roleHatsLabel } from "./roles";
 
 /** Where the mark is drawn: the phone header square, the Home banner's white plate, the desktop rail's school line. */

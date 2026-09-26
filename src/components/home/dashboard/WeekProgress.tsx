@@ -1,5 +1,5 @@
 import { CalendarRange } from "lucide-react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { PageSection } from "@/components/layout/PageSection";
 import { formatNumberFa, tehranDayBounds } from "@/lib/format";
 import { listInboxQuery } from "@/modules/workspace/queries";

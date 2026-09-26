@@ -4,7 +4,7 @@ import { Check, CircleCheck, Clock, TriangleAlert, UserRoundCheck } from "lucide
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ATTENDANCE_LABELS, summaryLineFa, tally, type AttendanceStatus } from "@/lib/attendance";

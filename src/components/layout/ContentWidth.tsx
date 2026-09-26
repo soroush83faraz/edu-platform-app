@@ -1,4 +1,4 @@
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 
 /**
  * The content column of every signed-in page: 16 px gutters on phones, 32 px from `lg:`, capped at 1200 px

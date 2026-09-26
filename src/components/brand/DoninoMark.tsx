@@ -1,4 +1,4 @@
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { MONOGRAM_PATH, MONOGRAM_VIEWBOX } from "@/lib/brand/mark";
 import { DEFAULT_PRODUCT_NAME, PRODUCT_NAME_LATIN } from "@/lib/product";
 

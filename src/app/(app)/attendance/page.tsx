@@ -2,7 +2,7 @@ import { CalendarCheck, CircleCheck, ClipboardList, UserCheck } from "lucide-rea
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
 import { RowMark } from "@/components/RowMark";
@@ -93,7 +93,7 @@ export default async function AttendancePage() {
           </ul>
         </section>
       ) : canTake && !summary ? (
-        <EmptyState
+        <EmptyState
           title="امروز زنگی در برنامهٴ شما نیست"
           description="روزهای دیگر هفته را از «کلاس‌های من» باز کنید؛ حضور و غیاب هر زنگ از همان‌جا ثبت می‌شود."
         />

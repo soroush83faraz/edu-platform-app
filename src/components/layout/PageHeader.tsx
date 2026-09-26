@@ -1,6 +1,6 @@
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { formatJalaliLong } from "@/lib/format";
 import { SchoolsMenu } from "@/components/layout/SchoolsMenu";
 import { getShellContext } from "@/lib/shell-context";

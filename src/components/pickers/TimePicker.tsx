@@ -2,7 +2,7 @@
 
 import { ChevronDown, Clock } from "lucide-react";
 import { useId, useRef, useState } from "react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { useIsDesktop } from "@/components/admin/ResponsiveModal";
 import { WheelColumn } from "@/components/pickers/WheelColumn";
 import { Button } from "@/components/ui/button";

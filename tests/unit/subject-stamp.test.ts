@@ -84,6 +84,8 @@ describe("SubjectStamp", () => {
   ] as const)("%s uses the stamp tokens", (size, expected) => {
     const c = cls(size).split(" ");
     for (const e of expected) expect(c).toContain(e);
+    // The size role and the hue's ink colour both survive the merge (src/lib/cn knows `text-meta` is a size).
+    expect(c.filter((x) => /^(bg|text)-subject-\d-(bg|ink)$/.test(x))).toHaveLength(2);
     expect(c.some((x) => x.includes("["))).toBe(false);
     expect(c).not.toContain("text-base");
   });

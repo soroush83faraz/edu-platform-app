@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import type { AdminCounts } from "@/lib/admin/overview";
 import { formatNumberFa } from "@/lib/format";
 

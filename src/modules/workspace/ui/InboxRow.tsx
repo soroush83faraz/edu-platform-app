@@ -1,6 +1,6 @@
 import { ClipboardList, ListTodo, MessageSquare } from "lucide-react";
 import Link from "next/link";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { RelativeTime } from "@/components/RelativeTime";
 import { PriorityDot, RowMark } from "@/components/RowMark";
 import { SubjectStamp } from "@/components/SubjectStamp";

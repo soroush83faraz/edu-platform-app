@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef } from "react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 
 /** One drum row. Five of them are visible, so the column is 200 px tall — two rows of context above and below. */
 export const WHEEL_ROW = 40;

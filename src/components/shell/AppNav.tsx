@@ -3,7 +3,7 @@
 import { CircleHelp, Ellipsis, House, Inbox, type LucideIcon, Presentation, School, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { DoninoWordmark } from "@/components/brand/DoninoMark";
 import { RoleMark } from "@/components/brand/RoleMark";
 import type { RoleKey } from "@/components/brand/roles";

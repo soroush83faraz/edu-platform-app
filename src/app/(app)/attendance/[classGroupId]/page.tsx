@@ -2,7 +2,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, UserCheck } from "lucide-react
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { ClayIcon } from "@/components/ClayIcon";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";

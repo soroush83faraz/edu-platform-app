@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { PriorityDot } from "@/components/RowMark";
 import type { InboxRow } from "@/modules/workspace/repo";
 import { MetaLine, Progress, WorkItemMark, rowMeta } from "@/modules/workspace/ui/InboxRow";

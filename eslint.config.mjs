@@ -17,20 +17,33 @@ const dbClientPatterns = [
   },
 ];
 
+/**
+ * The `cn` package's default tables do not know our @theme tokens (they read `text-row` as a colour and drop it);
+ * the configured merger lives in src/lib/cn.ts and is the only one the code may use.
+ */
+const CN_MESSAGE = 'Import cn from "@/lib/cn" — the package default does not know our @theme tokens (text-row, shadow-1, …).';
+const cnPaths = [{ name: "cn", message: CN_MESSAGE }];
+const cnPatterns = [{ group: ["cn/*"], message: CN_MESSAGE }];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
     rules: {
       "react/no-danger": "error",
-      "no-restricted-imports": ["error", { patterns: dbClientPatterns }],
+      "no-restricted-imports": ["error", { paths: cnPaths, patterns: [...dbClientPatterns, ...cnPatterns] }],
     },
   },
   {
     files: DB_CLIENT_ALLOWED,
     rules: {
-      "no-restricted-imports": ["error", { patterns: dbClientPatterns.filter((p) => !p.group.includes("@/db/client")) }],
+      "no-restricted-imports": ["error", { paths: cnPaths, patterns: [...dbClientPatterns.filter((p) => !p.group.includes("@/db/client")), ...cnPatterns] }],
     },
+  },
+  {
+    // The one place that builds the configured merger from the package.
+    files: ["src/lib/cn.ts"],
+    rules: { "no-restricted-imports": ["error", { patterns: dbClientPatterns }] },
   },
   {
     // Plain-Node CommonJS entry points that run inside the standalone image without a build step.

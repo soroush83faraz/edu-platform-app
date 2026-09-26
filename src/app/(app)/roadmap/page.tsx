@@ -1,7 +1,7 @@
 import { Printer } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { RowMark } from "@/components/RowMark";
 import { RocketClay } from "@/components/illustrations";
 import { ContentWidth } from "@/components/layout/ContentWidth";

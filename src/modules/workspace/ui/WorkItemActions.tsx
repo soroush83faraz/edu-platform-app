@@ -4,7 +4,7 @@ import { CalendarPlus, Check, CheckCheck, RotateCcw, Trash2 } from "lucide-react
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { ResponsiveModal } from "@/components/admin/ResponsiveModal";
 import { prefersReducedMotion } from "@/components/motion/CrossFade";
 import { DrawnCheck } from "@/components/motion/DrawnCheck";

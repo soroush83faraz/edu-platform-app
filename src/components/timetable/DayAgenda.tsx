@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRef } from "react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { Chip } from "@/components/Chip";
 import { CrossFade } from "@/components/motion/CrossFade";
 import { emptyDayCopy, type TimetablePerspective } from "@/lib/empty-copy";

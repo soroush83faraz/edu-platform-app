@@ -2,7 +2,7 @@ import { Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { Pagination, SearchForm, lastPage } from "@/components/admin/AdminPage";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { one, type SearchParams } from "@/components/admin/ResourceListPage";

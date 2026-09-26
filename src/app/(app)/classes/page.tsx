@@ -2,7 +2,7 @@ import { CalendarDays, ChevronLeft, Plus, Presentation, UserCheck } from "lucide
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { EmptyState } from "@/components/EmptyState";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";

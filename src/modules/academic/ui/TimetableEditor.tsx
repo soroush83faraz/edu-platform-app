@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 import { WeekTimetable } from "@/components/timetable/WeekTimetable";
 import type { DayView } from "@/components/timetable/types";
 import { toast } from "sonner";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { SelectNative } from "@/components/ui/select-native";
 import { formatTimeRangeFa, SCHOOL_WEEKDAYS, WEEKDAY_LABELS, type Weekday } from "@/lib/timetable";
 import { setTimetableSlotAction } from "../actions";

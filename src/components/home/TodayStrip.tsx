@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { CheckBurst } from "@/components/motion/DrawnCheck";
 import { RollingNumber, rememberCount } from "@/components/motion/RollingNumber";
 import { useInboxSummaryContext } from "@/components/shell/InboxSummaryProvider";

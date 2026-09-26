@@ -1,4 +1,4 @@
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 
 /**
  * One line of direction, one line of next step and at most one action. No mood copy. In-page empty states are TEXT

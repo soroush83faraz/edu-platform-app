@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { cn } from "cn"
+import { cn } from "@/lib/cn"
 import { Popover as PopoverPrimitive } from "radix-ui"
 
 /* Hand-written (not generated) shadcn-shaped Popover on the `radix-ui` umbrella already in the tree — the desktop

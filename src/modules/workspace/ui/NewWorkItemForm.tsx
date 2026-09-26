@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { v7 as uuidv7 } from "uuid";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { JalaliDatePicker } from "@/components/pickers/JalaliDatePicker";
 import { TimePicker, formatTimeFa } from "@/components/pickers/TimePicker";
 import { PrioritySelect } from "@/components/PrioritySelect";

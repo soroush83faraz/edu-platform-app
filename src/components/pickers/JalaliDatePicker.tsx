@@ -2,7 +2,7 @@
 
 import { CalendarDays, ChevronDown, ChevronLeft, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { useIsDesktop } from "@/components/admin/ResponsiveModal";
 import { controlClass } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";

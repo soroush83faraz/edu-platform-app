@@ -4,7 +4,7 @@
 //   2. `size="icon"` (44 px) with `md:size-9` — the phone target is ≥ 44 px, desktop keeps shadcn's 36 px (QA round 2).
 
 import * as React from "react"
-import { cn } from "cn"
+import { cn } from "@/lib/cn"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { Button } from "@/components/ui/button"

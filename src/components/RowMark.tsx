@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import type { Priority } from "@/components/priority";
 
 export type RowMarkTone = "muted" | "danger";

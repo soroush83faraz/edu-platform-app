@@ -1,7 +1,7 @@
 import { Ban, CalendarClock, CircleCheck, Play } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { Chip, type ChipTone } from "@/components/Chip";
 import { PriorityDot } from "@/components/RowMark";
 import { ContentWidth } from "@/components/layout/ContentWidth";

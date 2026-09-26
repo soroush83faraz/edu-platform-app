@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { RollingNumber } from "@/components/motion/RollingNumber";
 
 export interface SegmentedLinkItem {

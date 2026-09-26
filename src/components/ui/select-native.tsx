@@ -1,6 +1,6 @@
 import * as React from "react"
 import { ChevronDown } from "lucide-react"
-import { cn } from "cn"
+import { cn } from "@/lib/cn"
 import { controlClass } from "./input"
 
 /* Styled native `<select>` — the one dropdown of phase 1 (no Radix Select: the OS picker is the right control on

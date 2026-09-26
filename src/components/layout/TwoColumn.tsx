@@ -1,4 +1,4 @@
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 
 /**
  * The desktop dashboard / detail layout: one column on phones and tablets, a 12-column grid from `lg:` — the main

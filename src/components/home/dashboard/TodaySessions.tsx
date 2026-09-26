@@ -1,6 +1,6 @@
 import { CalendarDays, ChevronLeft } from "lucide-react";
 import Link from "next/link";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { Chip } from "@/components/Chip";
 import { PageSection } from "@/components/layout/PageSection";
 import type { SessionSecondary, SessionView } from "@/components/timetable/types";

@@ -4,7 +4,7 @@ import { CheckCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { RelativeTime } from "@/components/RelativeTime";
 import { Button } from "@/components/ui/button";
 import { markAllNotificationsReadAction, markNotificationReadAction } from "../actions";

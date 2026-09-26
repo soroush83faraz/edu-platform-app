@@ -1,5 +1,5 @@
 import * as React from "react"
-import { cn } from "cn"
+import { cn } from "@/lib/cn"
 import { controlClass } from "./input"
 
 /* Multi-line text control: the `Input` material (`controlClass`) with a 112 px floor and a slightly taller line

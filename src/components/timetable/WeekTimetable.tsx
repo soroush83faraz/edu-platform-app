@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import type { TimetablePerspective } from "@/lib/empty-copy";
 import { currentPeriodOf, formatTimeFa, SCHOOL_WEEKDAYS, WEEKDAY_LABELS, type PeriodLike, type Weekday } from "@/lib/timetable";
 import { DayAgenda } from "./DayAgenda";

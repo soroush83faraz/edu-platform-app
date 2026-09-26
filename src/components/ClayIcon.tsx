@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 
 /**
  * Shades of the clay mark (`.clay-icon[data-shade]` in globals.css): `blue` — the one persian blue of every live

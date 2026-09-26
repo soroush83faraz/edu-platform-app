@@ -2,7 +2,7 @@
 
 import { Check, ChevronDown } from "lucide-react";
 import { useId, useRef, useState } from "react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { PRIORITY_LABELS, type Priority } from "@/components/priority";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { controlClass } from "@/components/ui/input";

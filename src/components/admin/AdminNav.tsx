@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { ADMIN_SECTION_ICONS, type AdminNavItem } from "@/lib/admin/nav";
 import { formatNumberFa } from "@/lib/format";
 

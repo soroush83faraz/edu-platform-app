@@ -1198,3 +1198,30 @@ animations, the pill's transition clamped).
   (the next row glides 65 px over ~280 ms). The pilot item «سسسسس» (student ۰۹۳۵۱۰۰۱۰۰۰, 4 days overdue) is now
   marked done by that student — a student cannot reopen it.
 
+
+## 2026-09-27 — one `cn` that knows our tokens (`src/lib/cn.ts`)
+
+- **The bug:** the `cn` package (0.3.0) merges with tailwind-merge's default tables, which only know Tailwind's own
+  scales. Our `@theme` roles fell into the wrong groups: `text-meta` / `text-row` / `text-section` / `text-title` /
+  `text-display` / `text-stamp` were read as text COLOURS, so any later colour (`cn("text-row", "text-text")`)
+  silently dropped the size and the element rendered at the body 14 px; `shadow-1` was a shadow colour, `bg-hero` a
+  background colour (a later `bg-*` colour dropped the gradient); `rounded-card` / `max-w-content` / `w-rail` were
+  unknown and never resolved against `rounded-xl` / `max-w-3xl` / `w-4`.
+- **The fix:** `src/lib/cn.ts` builds the merger with the package's own config API —
+  `createCn({ extend: { theme: { text, radius, shadow, container, spacing }, classGroups: { "bg-image": [{ bg: ["hero"] }] } } })`
+  from `cn/config` — and exports it as `cn`. Colours need nothing (the default colour groups accept any name).
+  `tests/unit/cn.test.ts` parses every `@theme` block in globals.css and fails when a `--text-*` / `--radius-*` /
+  `--shadow-*` / `--container-*` / `--spacing-*` / `--background-image-*` token is not registered (or a new
+  namespace appears), and pins size-vs-colour, last-size-wins, radius/shadow and the SubjectStamp classes.
+- **Enforced:** ESLint `no-restricted-imports` blocks `"cn"` and `"cn/*"` everywhere except `src/lib/cn.ts`;
+  `src/lib/utils.ts` (the shadcn `utils` alias) re-exports the configured one. A shadcn re-generation that writes
+  `import { cn } from "cn"` into `src/components/ui` fails lint — repoint it to `@/lib/cn`. `SubjectStamp` is back
+  on `cn` (the `twJoin` workaround above is gone).
+- **What now renders as designed** (it had been falling back to 14 px or losing its colour): inbox row titles
+  (`text-row`) and meta lines (`text-meta`); the day agenda's subject and meta lines; the week timetable cells; the
+  Home tiles' labels and `TodaySessions` times/subjects; the bottom nav labels (`text-meta`) and the desktop rail
+  labels (`text-row`); `SectionHeader` titles; the admin counters (`text-title`, the dashboard number); `AdminNav`
+  pills; the first cell of `ResourceTable` (keeps `text-text` beside `text-row`); the date picker's weekday header
+  and the time wheel (`text-section`); the attendance day chips, the roadmap months and the subject page's session
+  chips. Rows are a little tighter (13/20 meta lines instead of 14/24). No component relied on the bug — nothing
+  was re-styled.

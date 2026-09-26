@@ -1,6 +1,6 @@
 import { ChevronLeft, ListChecks } from "lucide-react";
 import Link from "next/link";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { PageSection } from "@/components/layout/PageSection";
 import { formatNumberFa } from "@/lib/format";
 import { homeOpenItemsQuery } from "@/modules/workspace/queries";

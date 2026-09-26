@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { cn } from "cn";
+import { cn } from "@/lib/cn";
 import { formatNumberFa } from "@/lib/format";
 
 export type SectionSurface = "work" | "panel" | "quiet";
