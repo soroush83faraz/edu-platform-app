@@ -19,8 +19,8 @@ describe("the web manifest", () => {
     expect(m.scope).toBe("/");
   });
 
-  it("paints the status bar persian-blue and the splash on the page ground", () => {
-    expect(m.theme_color).toBe("#072AC8");
+  it("paints the status bar and the splash on the page ground, so the title bar blends with the header", () => {
+    expect(m.theme_color).toBe("#E8EEF9");
     expect(m.background_color).toBe("#E8EEF9");
     expect(m.name).toBe("دانینو");
     expect(m.short_name).toBe("دانینو");
