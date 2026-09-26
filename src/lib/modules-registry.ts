@@ -1,6 +1,5 @@
 import {
   Bell,
-  BookOpen,
   BookOpenCheck,
   CalendarCheck,
   CalendarDays,
@@ -11,7 +10,6 @@ import {
   Handshake,
   HeartHandshake,
   Inbox,
-  Layers,
   Library,
   type LucideIcon,
   Megaphone,
@@ -19,7 +17,6 @@ import {
   NotebookPen,
   Scale,
   School,
-  Send,
   Settings2,
   ShieldAlert,
   Ticket,
@@ -30,7 +27,7 @@ import {
 } from "lucide-react";
 import type { ClayShade } from "@/components/ClayIcon";
 import { schoolsLabelFa } from "@/lib/admin/nav";
-import { GIVEN_TILE_ROLES, NEW_ITEM_TILE_ROLES, newItemLabel, workItemWordsForHats } from "@/lib/work-item-words";
+import { NEW_ITEM_TILE_ROLES, newItemLabel } from "@/lib/work-item-words";
 import type { Permission } from "@/modules/iam/permissions";
 
 /**
@@ -388,18 +385,6 @@ export const HOME_TILES: readonly HomeTile[] = [
   },
 
   {
-    // The mirror of the creation tile: what I have given. The hats that give work to OTHER people
-    // (`GIVEN_TILE_ROLES`) — never the student, whose تسک is their own — and the same role-aware word:
-    // «تکالیف داده‌شده» for a teaching hat, «تسک‌های داده‌شده» otherwise.
-    code: "given",
-    labelFa: "تکالیف داده‌شده",
-    href: "/inbox?mine=1",
-    icon: Send,
-    role: GIVEN_TILE_ROLES,
-    permission: "workspace.work_item.create",
-    mirror: true,
-  },
-  {
     // The ONE creation door on Home, for every hat that may open a کار (`NEW_ITEM_TILE_ROLES`): a دبیر, an
     // admin — and, since round 6, a student, whose own item is a personal «تسک». The label is role-aware
     // and `homeTilesFor` rewrites it per person (`newItemLabel`); the permission check is unchanged, so the
@@ -451,14 +436,6 @@ export const HOME_TILES: readonly HomeTile[] = [
     oneSchool: { href: (id) => `/admin/schools/${id}`, label: true },
   },
   {
-    code: "years",
-    labelFa: "سال تحصیلی",
-    href: "/admin/years",
-    icon: CalendarDays,
-    role: "admin",
-    permission: "tenancy.structure.write",
-  },
-  {
     // A زنگ‌بندی belongs to ONE school and has no organization-wide page; an admin of several reaches it through
     // each school's hub («مدرسه‌ها» → the school → زنگ‌بندی).
     code: "periods",
@@ -470,33 +447,6 @@ export const HOME_TILES: readonly HomeTile[] = [
     role: "admin",
     permission: "tenancy.structure.write",
     oneSchool: { href: (id) => `/admin/schools/${id}/periods`, only: true },
-  },
-  {
-    code: "grades",
-    labelFa: "پایه‌ها",
-    href: "/admin/grades",
-    icon: Layers,
-    role: "admin",
-    permission: "tenancy.structure.write",
-    adminScope: "organization",
-  },
-  {
-    code: "subjects",
-    labelFa: "درس‌ها",
-    href: "/admin/subjects",
-    icon: BookOpen,
-    role: "admin",
-    permission: "tenancy.structure.write",
-    adminScope: "organization",
-  },
-  {
-    code: "levels",
-    labelFa: "مقطع‌ها",
-    href: "/admin/levels",
-    icon: Layers,
-    role: "admin",
-    permission: "tenancy.structure.write",
-    adminScope: "organization",
   },
   // No «راه‌اندازی مدرسه» tile (round 7): the setup checklist is an admin SECTION now, beside «مدرسه‌ها» —
   // one door, and it is inside /admin where the rest of the organization admin's setup work already is.
@@ -527,7 +477,6 @@ export function homeTilesFor(
     // The creation tile speaks the person's own word: «تکلیف جدید» for a teaching hat, «تسک جدید» for an
     // admin who does not teach and for a student (`newItemLabel` — the same rule as the form and the کارتابل).
     if (t.code === "new-item") return { ...t, labelFa: newItemLabel(hats) };
-    if (t.code === "given") return { ...t, labelFa: workItemWordsForHats(hats).given };
     return t.oneSchool && schoolId
       ? { ...t, href: t.oneSchool.href(schoolId), ...(t.oneSchool.label ? { labelFa: schoolsLabelFa({ kind: "school", schoolIds: [schoolId] }) } : {}) }
       : t;

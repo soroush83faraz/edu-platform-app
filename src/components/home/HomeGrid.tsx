@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Ctx } from "@/lib/ctx";
 import { HOME_UPCOMING } from "@/lib/modules-registry";
+import { workItemVoice, workItemWords } from "@/lib/work-item-words";
 import { canAtAnyScope } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
 import { resolveHomeTiles } from "./home-data";
@@ -19,6 +20,7 @@ export async function HomeGrid({ ctx }: { ctx: Ctx }) {
   const has = (p: Permission) => canAtAnyScope(ctx.assignments, p);
   // Shared with the desktop dashboard (`home-data.ts`, React cache): hats and tiles read once.
   const { tiles } = await resolveHomeTiles(ctx);
+  const words = workItemWords(workItemVoice(ctx.assignments));
 
   return (
     <>
@@ -59,7 +61,7 @@ export async function HomeGrid({ ctx }: { ctx: Ctx }) {
 
       {has("workspace.work_item.read") ? (
         <Suspense fallback={<CardSkeleton rows={5} />}>
-          <NearbyCard />
+          <NearbyCard words={words} />
         </Suspense>
       ) : null}
     </>

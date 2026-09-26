@@ -13,7 +13,9 @@ const SECTIONS = ["overview", "students", "staff", "classes", "roles", "schools"
 /** Sections a school-scoped admin never gets — the organization's own structure and its setup. */
 const ORG_ONLY = ["schools", "infrastructure"];
 /** What left the admin nav in round 5 and stayed out — each of these is a Home tile and nothing else. */
-const MOVED = ["/admin/attendance", "/admin/years", "/admin/grades", "/admin/subjects", "/admin/levels"];
+const MOVED = ["/admin/attendance"];
+// The organisation catalogs live behind «تنظیمات زیرساختی» (/admin/infrastructure): neither a Home tile nor a nav row.
+const CATALOGS = ["/admin/years", "/admin/grades", "/admin/subjects", "/admin/levels"];
 
 const orgAdmin: TileHats = { isStudent: false, isTeacher: false, isAdmin: true, adminScope: "organization", singleSchoolId: null };
 const principal: TileHats = { isStudent: false, isTeacher: false, isAdmin: true, adminScope: "school", singleSchoolId: "s1" };
@@ -95,6 +97,15 @@ describe("one home per destination (nav · Home tiles · بیشتر)", () => {
     for (const href of MOVED) {
       expect(navHrefs).not.toContain(href);
       expect(tileHrefs.filter((h) => h === href)).toEqual([href]);
+    }
+  });
+
+  it("the catalogs have one door: the infrastructure page, not a tile and not a nav row", () => {
+    const infra = readFileSync(new URL("../../src/app/(admin)/admin/infrastructure/page.tsx", import.meta.url), "utf8");
+    for (const href of CATALOGS) {
+      expect(navHrefs).not.toContain(href);
+      expect(tileHrefs).not.toContain(href);
+      expect(infra).toContain(href);
     }
   });
 

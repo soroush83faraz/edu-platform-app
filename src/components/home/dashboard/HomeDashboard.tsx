@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { TwoColumn } from "@/components/layout/TwoColumn";
 import type { Ctx } from "@/lib/ctx";
+import { workItemVoice, workItemWords } from "@/lib/work-item-words";
 import { canAtAnyScope } from "@/modules/iam/can";
 import { getMyTimetable, resolveHomeTiles } from "../home-data";
 import { CardSkeleton } from "../HomeSkeletons";
@@ -28,10 +29,12 @@ import { WeekProgress } from "./WeekProgress";
 export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
   const home = await resolveHomeTiles(ctx);
   const canReadWork = canAtAnyScope(ctx.assignments, "workspace.work_item.read");
+  const words = workItemWords(workItemVoice(ctx.assignments));
 
   if (home.isTeacher) {
     return (
       <TwoColumn
+        asideFirst
         main={
           <>
             <Suspense fallback={<CardSkeleton rows={4} />}>
@@ -57,6 +60,7 @@ export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
   if (home.isStudent) {
     return (
       <TwoColumn
+        asideFirst
         main={
           <>
             <Suspense fallback={<CardSkeleton rows={4} />}>
@@ -77,10 +81,11 @@ export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
 
   return (
     <TwoColumn
+      asideFirst
       main={
         canReadWork ? (
           <Suspense fallback={<CardSkeleton rows={5} />}>
-            <NearbyCard />
+            <NearbyCard words={words} />
           </Suspense>
         ) : null
       }

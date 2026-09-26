@@ -45,7 +45,7 @@ describe("homeTilesFor", () => {
   });
 
   it("the organization admin: the structure tiles the nav gave up, in that order — and no «مدیریت», «مدرسه‌ها» or «راه‌اندازی» tile", () => {
-    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["inbox", "given", "new-item", "admin-attendance", "years", "grades", "subjects", "levels"]);
+    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["inbox", "new-item", "admin-attendance"]);
     // Round 7: «مدرسه‌ها» (the organization's list) and «تنظیمات زیرساختی» are admin SECTIONS for this person, so
     // Home carries neither — one door each. «زنگ‌بندی» has no organization-wide page, so it has no tile either.
     expect(tile(homeTilesFor(orgAdmin, has(ADMIN_PERMS)), "schools")).toBeUndefined();
@@ -54,14 +54,14 @@ describe("homeTilesFor", () => {
 
   it("a principal of ONE school gets «مدرسه» and that school's زنگ‌بندی, and no organization catalog", () => {
     const tiles = homeTilesFor(principal, has(ADMIN_PERMS));
-    expect(codes(tiles)).toEqual(["inbox", "given", "new-item", "admin-attendance", "schools", "years", "periods"]);
+    expect(codes(tiles)).toEqual(["inbox", "new-item", "admin-attendance", "schools", "periods"]);
     expect(tile(tiles, "schools")).toMatchObject({ labelFa: "مدرسه", href: "/admin/schools/s1" });
     expect(tile(tiles, "periods")).toMatchObject({ href: "/admin/schools/s1/periods" });
   });
 
   it("two schools: «مدرسه‌ها» plural and no زنگ‌بندی tile — a bell schedule belongs to one school", () => {
     const tiles = homeTilesFor(twoSchools, has(ADMIN_PERMS));
-    expect(codes(tiles)).toEqual(["inbox", "given", "new-item", "admin-attendance", "schools", "years"]);
+    expect(codes(tiles)).toEqual(["inbox", "new-item", "admin-attendance", "schools"]);
     expect(tile(tiles, "schools")).toMatchObject({ labelFa: "مدرسه‌ها", href: "/admin/schools" });
   });
 
@@ -97,12 +97,12 @@ describe("homeTilesFor", () => {
     }
   });
 
-  it("a student's own work is ONE door — «پنل من»; a teacher keeps the two they give", () => {
+  it("a student's own work is ONE door — «پنل من»; a teacher keeps the one they create", () => {
     // «تکالیف من» and «انجام‌شده» left the grid (owner, branding round): both were FILTERS of the کارتابل, and
     // «پنل من» opens it with those very two tabs at the top.
     expect(codes(homeTilesFor(student, has(["workspace.work_item.read", "academic.timetable.read"])))).toEqual(["inbox"]);
     expect(HOME_TILES.filter((t) => t.href.startsWith("/inbox?tab="))).toEqual([]);
-    expect(codes(homeTilesFor(teacher, has(["workspace.work_item.create", "iam.admin.access", "academic.timetable.read"])))).toEqual(["given", "new-item"]);
+    expect(codes(homeTilesFor(teacher, has(["workspace.work_item.create", "iam.admin.access", "academic.timetable.read"])))).toEqual(["new-item"]);
   });
 
   it("the ONE creation tile is for admins and students too, and says the person's own word", () => {
@@ -120,23 +120,16 @@ describe("homeTilesFor", () => {
     expect(codes(homeTilesFor(student, has(["workspace.work_item.read"])))).not.toContain("new-item");
     // Still ONE door to the form.
     expect(HOME_TILES.filter((t) => t.href === "/inbox/new")).toHaveLength(1);
-    // Its mirror — «what I have given» — is for the hats that give work to OTHER people only.
-    const given = (hats: TileHats) => tile(homeTilesFor(hats, has(ADMIN_PERMS)), "given")?.labelFa;
-    expect(given(teacher)).toBe("تکالیف داده‌شده");
-    expect(given(orgAdmin)).toBe("تسک‌های داده‌شده");
-    expect(codes(homeTilesFor(principal, has(VICE_PERMS)))).not.toContain("given");
-    // A student gives work to nobody: the create tile without its mirror.
+    // A student's create tile has no mirror.
     expect(codes(homeTilesFor(student, has(ADMIN_PERMS)))).toEqual(["inbox", "new-item"]);
   });
 
   it("a teaching principal reads personal tiles first, then the school's structure", () => {
     expect(codes(homeTilesFor({ isStudent: false, isTeacher: true, isAdmin: true, adminScope: "school", singleSchoolId: "s1" }, has(ADMIN_PERMS)))).toEqual([
       "inbox",
-      "given",
       "new-item",
       "admin-attendance",
       "schools",
-      "years",
       "periods",
     ]);
   });
