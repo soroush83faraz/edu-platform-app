@@ -7,49 +7,60 @@ import { canAtAnyScope } from "@/modules/iam/can";
 import { getMyTimetable, resolveHomeTiles } from "../home-data";
 import { CardSkeleton } from "../HomeSkeletons";
 import { NearbyCard } from "../NearbyCard";
-import { DashboardAside, MyClassesCompact } from "./DashboardAside";
+import { DashboardTiles, MyClassesCompact } from "./DashboardTiles";
 import { FollowUp } from "./FollowUp";
 import { TodaySessions } from "./TodaySessions";
-import { UrgentItems } from "./UrgentItems";
 import { WeekProgress } from "./WeekProgress";
 
 /**
- * Home from `lg:` (phones keep the tile grid untouched): a `TwoColumn` dashboard of the person's OWN work. The
- * board follows the personal hats — teaching first, then the student profile — NOT the nav role: a principal who
- * also teaches gets the teaching board here and the management overview on /admin, because each thing has exactly
- * one home (docs/decisions.md). Every panel streams behind its own skeleton; the reads shared with the phone grid
- * (hats, tiles, timetable) are cached per request in `home-data.ts`.
+ * Home from `lg:` (phones keep the tile grid untouched): a dashboard of the person's OWN work. The board follows
+ * the personal hats — teaching first, then the student profile — NOT the nav role: a principal who also teaches
+ * gets the teaching board here and the management overview on /admin, because each thing has exactly one home
+ * (docs/decisions.md). Every panel streams behind its own skeleton; the reads shared with the phone grid (hats,
+ * tiles, timetable) are cached per request in `home-data.ts`.
  *
- * - Teacher — main: «نیاز به پیگیری» (the tasks I gave, least complete first, n/m), «امروز تدریس دارم» (today's
- *   sessions across classes); aside: tiles, «کلاس‌های من» compact. («نظرهای تازه» left with the comments —
- *   owner, round 7: no conversation for now.)
- * - Student — main: «امروز» (today's زنگ‌ها, the ringing one live), «فوری‌ها» (overdue + due today), «این هفته»
- *   (done/total of the week's due items); aside: the tiles (4 columns, 56 px marks).
- * - Everyone else, admins included: «کارهای نزدیک» and the tiles — the «مدیریت» tile opens the hub.
+ * Every board opens the same way (owner, nav round 2026-09-27): the tiles, and UNDER them the «تکالیف نزدیک» /
+ * «تسک‌های نزدیک» card, full width of that column — the card's «همهٴ …» link is the کارتابل's one door now that
+ * the nav has no «پنل من», so every role that reads work items gets it, on phones (`HomeGrid`) and here alike.
+ * That work column is the main one (7 tracks, the start/right side); the role panels sit in the wide aside (5).
+ *
+ * - Teacher — main: tiles, «تکالیف نزدیک», «نیاز به پیگیری» (the tasks I gave, least complete first, n/m);
+ *   aside: «امروز تدریس دارم» (today's sessions across classes), «کلاس‌های من» compact.
+ * - Student — main: tiles, «تکالیف نزدیک»; aside: «امروز» (today's زنگ‌ها, the ringing one live), «این هفته»
+ *   (done/total of the week's due items). «فوری‌ها» left: it listed the same overdue/today rows the card now
+ *   leads with, twice on one screen.
+ * - Everyone else, admins included: one column — the tiles, then the card, full width.
  */
 export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
   const home = await resolveHomeTiles(ctx);
   const canReadWork = canAtAnyScope(ctx.assignments, "workspace.work_item.read");
   const words = workItemWords(workItemVoice(ctx.assignments));
+  const nearby = canReadWork ? (
+    <Suspense fallback={<CardSkeleton rows={5} />}>
+      <NearbyCard words={words} empty={emptyOpenCopy(audienceOf(ctx.assignments), canAtAnyScope(ctx.assignments, "workspace.work_item.create"))} />
+    </Suspense>
+  ) : null;
 
   if (home.isTeacher) {
     return (
       <TwoColumn
-        asideFirst
+        asideWidth="wide"
         main={
           <>
+            <DashboardTiles home={home} />
+            {nearby}
             <Suspense fallback={<CardSkeleton rows={4} />}>
               <FollowUp />
-            </Suspense>
-            <Suspense fallback={<CardSkeleton rows={3} />}>
-              <TeacherToday />
             </Suspense>
           </>
         }
         aside={
-          <DashboardAside home={home}>
+          <>
+            <Suspense fallback={<CardSkeleton rows={3} />}>
+              <TeacherToday />
+            </Suspense>
             <MyClassesCompact offerings={home.hats?.teachingOfferings ?? []} />
-          </DashboardAside>
+          </>
         }
       />
     );
@@ -58,37 +69,32 @@ export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
   if (home.isStudent) {
     return (
       <TwoColumn
-        asideFirst
+        asideWidth="wide"
         main={
+          <>
+            <DashboardTiles home={home} />
+            {nearby}
+          </>
+        }
+        aside={
           <>
             <Suspense fallback={<CardSkeleton rows={4} />}>
               <StudentToday />
-            </Suspense>
-            <Suspense fallback={<CardSkeleton rows={3} />}>
-              <UrgentItems />
             </Suspense>
             <Suspense fallback={<CardSkeleton rows={1} />}>
               <WeekProgress />
             </Suspense>
           </>
         }
-        aside={<DashboardAside home={home} />}
       />
     );
   }
 
   return (
-    <TwoColumn
-      asideFirst
-      main={
-        canReadWork ? (
-          <Suspense fallback={<CardSkeleton rows={5} />}>
-            <NearbyCard words={words} empty={emptyOpenCopy(audienceOf(ctx.assignments), canAtAnyScope(ctx.assignments, "workspace.work_item.create"))} />
-          </Suspense>
-        ) : null
-      }
-      aside={<DashboardAside home={home} />}
-    />
+    <div className="flex flex-col gap-5">
+      <DashboardTiles home={home} full />
+      {nearby}
+    </div>
   );
 }
 

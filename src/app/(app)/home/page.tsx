@@ -18,8 +18,9 @@ export const metadata: Metadata = { title: "خانه" };
 /**
  * Home is an icon grid (product-owner decision, docs/decisions.md): the flat greeting (phones; from `lg:` the
  * compact `PageHeader` — no gradient block anywhere), the one-sentence «امروز» line (live, from the shell's summary
- * poller), then the person's live tiles and one card under them. From `lg:` the grid gives way to the per-role
- * dashboard (`HomeDashboard`: two columns, the tiles in the aside). Each streams in its own <Suspense> behind a
+ * poller), then the person's live tiles and the «تکالیف نزدیک» card under them — whose «همهٴ …» link is the
+ * کارتابل's one door (the nav has no «پنل من»). From `lg:` the grid gives way to the per-role dashboard
+ * (`HomeDashboard`: the same tiles with the same card under them, the role panels beside). Each streams in its own <Suspense> behind a
  * same-shape skeleton; `reveal-stagger` lets them rise in — on the first page view of a session only.
  */
 export default async function HomePage() {
@@ -35,7 +36,7 @@ export default async function HomePage() {
         }
         // From `lg:` this header IS the greeting row (the banner is hidden), so «اعلان‌ها» — the one door that
         // left the navigation and stayed a control — rides here; the phone banner carries the other rendering.
-        // «پنل من» is a TILE in the grid / dashboard aside since round 5, not a control.
+        // The کارتابل is neither a control nor a nav cell: it opens from the «تکالیف نزدیک» card below.
         actions={<NotificationsBell />}
       />
       <SchoolBanner firstName={ctx.firstName} />
