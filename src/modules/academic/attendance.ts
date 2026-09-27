@@ -530,6 +530,8 @@ export interface TeacherDayCell {
   startsAt: string;
   endsAt: string;
   offeringId: string;
+  /** The subject of the offering — the key of its hue (`SubjectIcon`). */
+  subjectId: string;
   subjectName: string;
   taken: boolean;
   absent: number;
@@ -564,6 +566,7 @@ export async function teacherDay(tx: Tx, ctx: AttendanceCtx, now = new Date()): 
         startsAt: p.startsAt,
         endsAt: p.endsAt,
         offeringId: s.offeringId,
+        subjectId: s.subjectId,
         subjectName: s.subjectName,
         taken: cell !== undefined,
         absent: cell?.absent ?? 0,

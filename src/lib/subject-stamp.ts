@@ -33,8 +33,8 @@ export function stampText(name: string): string {
   return OVERRIDES[w] ?? [...w].slice(0, 3).join("");
 }
 
-/** NFC, ي→ی / ك→ک, harakat stripped, trimmed — the shared first step of every rule here. */
-function normalizeName(name: string): string {
+/** NFC, ي→ی / ك→ک, harakat stripped, trimmed — the shared first step of every rule here (and of `subjectIcon`). */
+export function normalizeName(name: string): string {
   return name
     .normalize("NFC")
     .replace(/ي/g, "ی")
