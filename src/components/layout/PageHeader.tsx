@@ -1,5 +1,4 @@
-import { ArrowRight } from "lucide-react";
-import Link from "next/link";
+import { BackLink } from "@/components/layout/BackLink";
 import { cn } from "@/lib/cn";
 import { formatJalaliLong } from "@/lib/format";
 import { SchoolsMenu } from "@/components/layout/SchoolsMenu";
@@ -57,12 +56,7 @@ export async function PageHeader({
           {formatJalaliLong()}
         </span>
       </p>
-      {back ? (
-        <Link href={back.href} className="pressable inline-flex min-h-11 items-center gap-1 self-start text-sm text-text-muted [grid-area:back] hover:text-text lg:mt-4 lg:min-h-9">
-          <ArrowRight className="size-4" aria-hidden />
-          {back.label}
-        </Link>
-      ) : null}
+      {back ? <BackLink href={back.href} label={back.label} className="justify-self-start [grid-area:back] lg:mt-4" /> : null}
       <div className={cn("flex min-w-0 items-baseline gap-2 self-center [grid-area:title]", !back && "lg:mt-5")}>
         <TitleTag className="min-w-0 text-title font-bold text-text lg:text-display">{title}</TitleTag>
         {count !== undefined ? <span className="tabular shrink-0 text-meta text-text-muted">{count}</span> : null}
