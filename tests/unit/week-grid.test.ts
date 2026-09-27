@@ -1,6 +1,7 @@
 // The phone week grid (src/components/timetable/WeekGrid): a lesson cell reads the درس's NAME (`cellSubjectLabel`,
 // owner 2026-09-27), not the stamp's three letters; a دبیر's cell adds the class under it. The columns are the full
-// day names شنبه … جمعه, and جمعه is a tinted holiday column unless the school has lessons on it.
+// day names شنبه … جمعه, all seven the same width (owner 2026-09-27 follow-up): جمعه is a plain empty column unless
+// the school has lessons on it, never a tinted or narrower one.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -72,12 +73,18 @@ describe("WeekGrid columns", () => {
     expect(h.map((x) => x.today)).toEqual([false, false, false, true, false, false, false]);
   });
 
-  it("draw جمعه as a narrower holiday column: one tinted «تعطیل» cell per زنگ", () => {
+  it("draws جمعه as a plain empty column, the same width as every other day", () => {
     const html = render();
-    expect(html).toContain("grid-cols-[1rem_repeat(6,minmax(0,1fr))_minmax(0,0.625fr)]");
-    expect(headers(html).map((x) => x.holiday)).toEqual([false, false, false, false, false, false, true]);
-    const holidayCells = [...html.matchAll(/<button[^>]*data-holiday=""[^>]*aria-label="([^"]*)"[^>]*><\/button>/g)].map((m) => m[1]);
+    // All seven columns share one equal width — جمعه is never narrower.
+    expect(html).toContain("grid-cols-[1rem_repeat(7,minmax(0,1fr))]");
+    // The header carries no holiday tint any more.
+    expect(headers(html).map((x) => x.holiday)).toEqual([false, false, false, false, false, false, false]);
+    // Its cells are ordinary empty buttons (no fill, the same faint outline as any free period) that still say «تعطیل».
+    const holidayCells = [...html.matchAll(/<button[^>]*data-holiday=""[^>]*aria-label="([^"]*)"[^>]*>/g)].map((m) => m[1]);
     expect(holidayCells).toEqual(["جمعه، زنگ اول، تعطیل", "جمعه، زنگ دوم، تعطیل"]);
+    // No sand/warning tint class survives on either the header or the cells.
+    expect(html).not.toContain("warning-soft");
+    expect(html).not.toContain("warning-text");
   });
 
   it("render a school's جمعه lessons like any other day, in seven equal columns", () => {

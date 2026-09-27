@@ -29,26 +29,26 @@ export interface WeekGridProps {
   comingWeek?: boolean;
 }
 
-/** The holiday tint of جمعه (owner 2026-09-27, docs/decisions-pending/timetable-grid.md): soft sand, no new hue. */
-const HOLIDAY_TINT = "bg-warning-soft/60";
-
 /**
- * The phone face of the timetable (< md), drawn like a calendar month (owner 2026-09-27): seven columns شنبه …
- * جمعه (the FULL day name, the day of the month under it, today filled in the brand blue) and one row per زنگ with
- * its number in a narrow start column — the whole week at once, no sideways scroll at 360 px. جمعه is the holiday:
- * a narrower column in a soft sand tint whose cells read «جمعه تعطیل است.» in the card — unless the school has
- * lessons on جمعه, which then is an ordinary full-width day. Each lesson is a rounded square in its درس's «مُهر درس»
- * hue with the درس's NAME on one or two lines (`cellSubjectLabel`, owner 2026-09-27: not the stamp's letters; a
- * دبیر's cell adds the class under it); an empty زنگ is a faint outline; a زنگ تفریح is a wider gap between two rows.
- * The ringing cell wears the brand ring and the live progress bar; today's finished cells dim. Tapping a cell
- * selects it (ink ring) and the card under the grid reads it in full — the درس, the دبیر or the class, the day, the
- * زنگ, the time — and opens the درس page.
+ * The phone face of the timetable (< md), drawn like a calendar month (owner 2026-09-27): seven EQUAL columns
+ * شنبه … جمعه (the FULL day name, the day of the month under it, today filled in the brand blue) and one row per
+ * زنگ with its number in a narrow start column — the whole week at once, no sideways scroll at 360 px. جمعه is a
+ * day like any other in width, header style and cell style — it never reads as an add-on (owner 2026-09-27,
+ * follow-up: "Friday should be there, but empty, not squeezed in the corner"); when the school has no lessons on
+ * جمعه its cells are plain EMPTY cells (the same faint outline as a free period on any other day) and tapping one
+ * still reads «جمعه تعطیل است.» in the details card. A school with جمعه lessons renders them like any other day's,
+ * unchanged. Each lesson is a rounded square in its درس's «مُهر درس» hue with the درس's NAME on one or two lines
+ * (`cellSubjectLabel`, owner 2026-09-27: not the stamp's letters; a دبیر's cell adds the class under it); a زنگ
+ * تفریح is a wider gap between two rows. The ringing cell wears the brand ring and the live progress bar; today's
+ * finished cells dim. Tapping a cell selects it (ink ring) and the card under the grid reads it in full — the
+ * درس, the دبیر or the class, the day, the زنگ, the time — and opens the درس page.
  *
  * Width at 360 px (measured in Vazirmatn): 328 px content − 2 × 4 px padding = 320 px; a 16 px start column and
- * 7 gaps × 3 px leave 283 px for 6 + 0.625 fr → 42.7 px a day column, 26.7 px for جمعه (45.0 / 28.1 at 375). The
- * names are `text-cell` (11 px, 600) on one line: «چهارشنبه» is 41.1 px, «جمعه» 25.9. Cells are 56 px tall (≥ 44 px
- * targets) with no side padding, so a name line keeps the ~42 px it had in the six-column grid (seven letters,
- * `cellSubjectLabel`). With lessons on جمعه the seven columns are equal (40.4 px).
+ * 7 gaps × 3 px leave 283 px for 7 equal columns → 40.4 px each (42.8 at 375). The names are `text-cell` (11 px,
+ * 600) on one line: the widest, «چهارشنبه» (41.1 px), overhangs 0.7 px into the 3 px gap — no clipping. Cells are
+ * 56 px tall (≥ 44 px targets) with no side padding; a lesson name line keeps its seven-letter budget
+ * (`cellSubjectLabel`, unchanged — already computed for a ~40 px column, widest kept lines «هدیه‌های» 41.6,
+ * «آزمایشگاه» 41.5, «جغرافیای» 40.1 px).
  */
 export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspective, weekDays, comingWeek = false }: WeekGridProps) {
   const byDay = new Map(days.map((d) => [d.weekday, d.sessions]));
@@ -76,29 +76,23 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
 
   return (
     <div className="surface-work flex flex-col p-1">
-      <div
-        role="group"
-        aria-label="برنامهٴ هفتگی"
-        className={cn("grid gap-0.75", fridayOff ? "grid-cols-[1rem_repeat(6,minmax(0,1fr))_minmax(0,0.625fr)]" : "grid-cols-[1rem_repeat(7,minmax(0,1fr))]")}
-      >
-        {/* The headers are for the eye; every cell button speaks its own day and زنگ. */}
+      <div role="group" aria-label="برنامهٴ هفتگی" className="grid grid-cols-[1rem_repeat(7,minmax(0,1fr))] gap-0.75">
+        {/* The headers are for the eye; every cell button speaks its own day and زنگ. جمعه reads like any other day. */}
         <div aria-hidden className="contents">
           <span />
           {CALENDAR_WEEKDAYS.map((d, i) => {
             const isToday = d === liveDay;
-            const holiday = isHoliday(d);
             return (
               <span
                 key={d}
-                data-holiday={holiday ? "" : undefined}
                 className={cn(
                   "flex h-12 min-w-0 flex-col items-center justify-center rounded-stamp-lg",
-                  isToday ? "bg-primary-600 text-white" : holiday ? cn(HOLIDAY_TINT, "text-warning-text") : "text-text",
+                  isToday ? "bg-primary-600 text-white" : "text-text",
                 )}
               >
                 <span className="text-cell font-semibold whitespace-nowrap">{WEEKDAY_LABELS[d]}</span>
                 {weekDays?.[i] ? (
-                  <span className={cn("tabular text-meta leading-4", isToday ? "text-white/80" : holiday ? "text-warning-text/70" : "text-text-faint")}>{weekDays[i]}</span>
+                  <span className={cn("tabular text-meta leading-4", isToday ? "text-white/80" : "text-text-faint")}>{weekDays[i]}</span>
                 ) : null}
               </span>
             );
@@ -113,23 +107,7 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
             </span>
             {CALENDAR_WEEKDAYS.map((d) => {
               const selected = pick?.weekday === d && pick.periodNo === r.periodNo;
-              if (isHoliday(d)) {
-                return (
-                  <button
-                    key={d}
-                    type="button"
-                    data-holiday=""
-                    aria-pressed={selected}
-                    aria-label={`${WEEKDAY_LABELS[d]}${d === liveDay ? " (امروز)" : ""}، ${r.label}، تعطیل`}
-                    onClick={() => setPicked({ weekday: d, periodNo: r.periodNo })}
-                    className={cn(
-                      "pressable h-14 min-w-0 rounded-stamp-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                      HOLIDAY_TINT,
-                      selected && "ring-2 ring-inset ring-warning-text/40",
-                    )}
-                  />
-                );
-              }
+              const holiday = isHoliday(d);
               const here = cellSessions(d, r.periodNo);
               const s = here[0];
               const isNow = d === liveDay && r.periodNo === currentPeriodNo;
@@ -139,9 +117,10 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
                 <button
                   key={d}
                   type="button"
+                  data-holiday={holiday ? "" : undefined}
                   aria-pressed={selected}
                   aria-current={isNow && s ? "time" : undefined}
-                  aria-label={`${WEEKDAY_LABELS[d]}${d === liveDay ? " (امروز)" : ""}، ${r.label}، ${s ? names : "آزاد"}`}
+                  aria-label={`${WEEKDAY_LABELS[d]}${d === liveDay ? " (امروز)" : ""}، ${r.label}، ${holiday ? "تعطیل" : s ? names : "آزاد"}`}
                   onClick={() => setPicked({ weekday: d, periodNo: r.periodNo })}
                   className={cn(
                     "pressable relative flex h-14 min-w-0 flex-col items-center justify-center overflow-hidden rounded-stamp-lg text-center outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
