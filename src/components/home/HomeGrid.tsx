@@ -13,6 +13,8 @@ import { Tile } from "./Tile";
  * The grid is the page: the person's live tiles (the role tiles, then the admin's structure tiles), then
  * «تکالیف نزدیک», whose «همهٴ …» link opens the کارتابل. Nothing «به‌زودی» here — what is coming lives on «بیشتر ← نقشهٴ راه» (UX review 2026-09-27). Every tile is the ONE door to its destination (docs/decisions.md «one home per destination»):
  * the people sections and the counters live on /admin, which the nav itself opens; the structure pages live here.
+ * In the experimental «hub» layout there is no nav, and `resolveHomeTiles` returns `HUB_TILES` instead — every
+ * former nav destination is then a tile (docs/decisions-pending/home-hub-tiles.md).
  */
 export async function HomeGrid({ ctx }: { ctx: Ctx }) {
   const has = (p: Permission) => canAtAnyScope(ctx.assignments, p);

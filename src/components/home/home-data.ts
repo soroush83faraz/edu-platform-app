@@ -5,6 +5,7 @@
 import { cache } from "react";
 import type { Ctx } from "@/lib/ctx";
 import { homeTilesFor, type HomeTile } from "@/lib/modules-registry";
+import { getUiVariant, type UiVariant } from "@/lib/ui-variant";
 import { myTimetableQuery } from "@/modules/academic/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 import { hatsQuery, type Hats } from "@/modules/iam/hats";
@@ -26,15 +27,19 @@ export interface HomeTiles {
   /** The person's own hats — what the desktop board renders (the admin hat picks no board: /admin is the hub). */
   isStudent: boolean;
   isTeacher: boolean;
+  /** The viewer's layout (`getUiVariant()`): the hub has no nav, so the board's own links open the hub's pages. */
+  variant: UiVariant;
 }
 
-/** The live tiles of a person (hats + permissions), and the hats the desktop board branches on. */
+/** The live tiles of a person (hats + permissions + the viewer's layout variant), and the hats the desktop board branches on. */
 export const resolveHomeTiles = cache(async (ctx: Ctx): Promise<HomeTiles> => {
   const has = (p: Permission) => canAtAnyScope(ctx.assignments, p);
   const hats = await getHats();
   const isStudent = hats?.isStudent ?? false;
   const isTeacher = (hats?.teachingOfferings.length ?? 0) > 0;
   const adminScope = hats?.adminScope ?? null;
-  const tiles = homeTilesFor({ isStudent, isTeacher, isAdmin: adminScope !== null, adminScope, singleSchoolId: hats?.adminSingleSchoolId ?? null }, has);
-  return { tiles, hats, isStudent, isTeacher };
+  // The experimental «hub» layout (no nav) turns every former nav destination into a tile; classic is unchanged.
+  const variant = await getUiVariant();
+  const tiles = homeTilesFor({ isStudent, isTeacher, isAdmin: adminScope !== null, adminScope, singleSchoolId: hats?.adminSingleSchoolId ?? null }, has, { variant });
+  return { tiles, hats, isStudent, isTeacher, variant };
 });

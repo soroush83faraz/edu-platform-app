@@ -1,15 +1,12 @@
-import { CalendarDays, ChevronLeft, Plus, Presentation, UserCheck } from "lucide-react";
+import { CalendarDays, Presentation } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cn } from "@/lib/cn";
+import { ClassesActions, NoOfferingsYet, OfferingsGrid, TeachingWeek, hasTeachingWeek, offeringsSummaryFa } from "@/components/classes/ClassesParts";
 import { EmptyState } from "@/components/EmptyState";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { WeekTimetable } from "@/components/timetable/WeekTimetable";
-import { Button } from "@/components/ui/button";
 import { requireContext } from "@/lib/ctx";
-import { formatNumberFa, tehranNow } from "@/lib/format";
+import { tehranNow } from "@/lib/format";
 import { schoolWeekOf } from "@/lib/jalali-grid";
 import { myTimetableQuery } from "@/modules/academic/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
@@ -20,7 +17,8 @@ export const metadata: Metadata = { title: "کلاس‌های من" };
 /**
  * «کلاس‌های من» for a teacher: first «برنامهٴ هفتگی من» — the week of teaching sessions across classes, today's
  * column tinted — then one card per offering (درس, کلاس, students, open items I gave that class), each opening the
- * subject page. Reads the same `hatsQuery` as Home plus the personal timetable.
+ * subject page. Reads the same `hatsQuery` as Home plus the personal timetable. Every section is a shared part
+ * (`ClassesParts`), which the hub layout's own tile pages (`/classes/offerings`, `/classes/timetable`) draw one by one.
  */
 export default async function ClassesPage() {
   const hats = await hatsQuery();
@@ -35,39 +33,10 @@ export default async function ClassesPage() {
   const offerings = hats.data.teachingOfferings;
   const timetable = offerings.length > 0 ? await myTimetableQuery() : null;
   const tt = timetable?.ok ? timetable.data : null;
-  const teaching = tt?.teacher ?? null;
   const week = schoolWeekOf(tehranNow());
-  // A teacher's classes may sit in different schools: the period rows of the week table come from the sessions themselves.
-  const periods = teaching
-    ? [...new Map(teaching.days.flatMap((d) => d.sessions).map((s) => [s.periodNo, { periodNo: s.periodNo, label: s.label, startsAt: s.startsAt, endsAt: s.endsAt }])).values()].sort((a, b) => a.periodNo - b.periodNo)
-    : [];
   return (
     <ContentWidth className="gap-4">
-      <PageHeader
-        title="کلاس‌های من"
-        description={offerings.length > 0 ? `${formatNumberFa(offerings.length)} درس در این سال` : "درسی به شما سپرده نشده"}
-        actions={
-          <>
-            {/* The roll call of today's زنگ‌ها lives on /attendance; this is the teacher's door into it. */}
-            {offerings.length > 0 ? (
-              <Button asChild variant="outline">
-                <Link href="/attendance">
-                  <UserCheck aria-hidden />
-                  حضور و غیاب
-                </Link>
-              </Button>
-            ) : null}
-            {canCreate ? (
-              <Button asChild>
-                <Link href="/inbox/new">
-                  <Plus aria-hidden />
-                  تکلیف جدید
-                </Link>
-              </Button>
-            ) : null}
-          </>
-        }
-      />
+      <PageHeader title="کلاس‌های من" description={offeringsSummaryFa(offerings.length)} actions={<ClassesActions hasOfferings={offerings.length > 0} canCreate={canCreate} />} />
 
       {offerings.length > 0 ? (
         <section aria-labelledby="my-timetable-heading" className="flex flex-col gap-2.5">
@@ -76,51 +45,21 @@ export default async function ClassesPage() {
               <CalendarDays className="size-4 self-center" strokeWidth={1.75} aria-hidden />
               برنامهٴ هفتگی من
             </h3>
-            {teaching && tt ? <p className="tabular text-meta text-text-muted">{week.label}</p> : null}
+            {hasTeachingWeek(tt) ? <p className="tabular text-meta text-text-muted">{week.label}</p> : null}
           </div>
-          {teaching && tt ? (
-            <WeekTimetable days={teaching.days} periods={periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="class" perspective="staff" weekDays={week.days} comingWeek={week.comingWeek} />
-          ) : (
-            <EmptyState title="برنامهٴ هفتگی هنوز تنظیم نشده" description="وقتی مدرسه برنامهٴ کلاس‌ها را ثبت کند، زنگ‌های شما همین‌جا می‌آیند." className="surface-work py-10" />
-          )}
+          <TeachingWeek tt={tt} week={week} />
         </section>
       ) : null}
 
       {offerings.length === 0 ? (
-        <EmptyState title="هنوز درسی به شما سپرده نشده" description="وقتی مدیر درسی را به شما بدهد، کلاس‌ها همین‌جا می‌آیند." />
+        <NoOfferingsYet />
       ) : (
         <section aria-labelledby="offerings-heading" className="flex flex-col gap-2.5">
         <h3 id="offerings-heading" className="flex items-center gap-1.5 px-1 text-section font-semibold text-text">
           <Presentation className="size-4" strokeWidth={1.75} aria-hidden />
           درس‌های من
         </h3>
-        <ul className="reveal-grid grid grid-cols-2 gap-2.5 md:grid-cols-3">
-          {offerings.map((o) => (
-            <li key={o.offeringId} className="flex">
-              <Link href={`/subjects/${o.offeringId}`} className="surface-work surface-link flex w-full flex-col gap-3 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-row font-semibold text-text">
-                      <bdi>{o.subjectName}</bdi>
-                    </span>
-                    <span className="text-meta text-text-muted">
-                      کلاس <bdi>{o.classGroupName}</bdi>
-                    </span>
-                  </span>
-                  <ChevronLeft className="mt-1 size-4 shrink-0 text-text-faint" aria-hidden />
-                </div>
-                <div className="mt-auto flex flex-wrap items-center justify-between gap-2 text-meta">
-                  <span className="text-text-muted">
-                    <span className="tabular font-medium text-text">{formatNumberFa(o.activeStudents)}</span> دانش‌آموز
-                  </span>
-                  <span className={cn("tabular rounded-full px-2 py-0.5 font-medium", o.openItems > 0 ? "bg-info-soft text-primary-800" : "bg-surface-sunken text-text-muted")}>
-                    {formatNumberFa(o.openItems)} تکلیف باز
-                  </span>
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <OfferingsGrid offerings={offerings} />
         </section>
       )}
     </ContentWidth>

@@ -5,6 +5,8 @@
 // tile per STRUCTURE page, each gated by the permission and scope that guard the page itself. No OTHER tile is a
 // second door to a NAV destination — «کلاس من», «کلاس‌ها», «مدیریت», «بیشتر», «خانه» — and no admin SECTION
 // («دانش‌آموزان», «کارکنان», «کلاس‌ها», «نقش‌ها») gets one either.
+// That is the CLASSIC layout. The experimental «hub» layout (no nav) has its own list, `HUB_TILES`, where the tiles
+// ARE the doors — its one-door rules are the «hub layout» block below.
 // Plus the pure organization-admin predicate and the nav role.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -95,7 +97,7 @@ describe("homeTilesFor", () => {
     for (const hats of [principal, twoSchools]) expect(codes(homeTilesFor(hats, has(ADMIN_PERMS)))).toContain("schools");
   });
 
-  it("no tile is a second door to a nav destination («خانه», «مدیریت», «کلاس من», «کلاس‌ها», «راهنما», «بیشتر»)", () => {
+  it("classic: no tile is a second door to a nav destination («خانه», «مدیریت», «کلاس من», «کلاس‌ها», «راهنما», «بیشتر») — the hub layout has no nav, see below", () => {
     // The nav is THREE items — the role item, «خانه», «بیشتر» (owner, nav round 2026-09-27). The کارتابل (/inbox)
     // is no nav cell, but it DOES now have a tile (owner, 2026-09-27) — its second, accepted door alongside the
     // Home card's «همهٴ …» link — so «/inbox» is excluded from this nav-destination check on purpose.
@@ -140,6 +142,129 @@ describe("homeTilesFor", () => {
       "schools",
       "periods",
     ]);
+  });
+});
+
+// The EXPERIMENTAL «hub» layout (owner trial 2026-09-27, src/lib/ui-variant.ts, docs/decisions-pending/home-hub-tiles.md):
+// no bottom nav, no rail — the role item's contents are Home tiles, so in hub mode the tiles ARE the doors. The
+// one-door rule still holds per person (distinct hrefs AND distinct labels), and classic stays exactly as above.
+describe("homeTilesFor — hub layout", () => {
+  const STUDENT_PERMS = catalogPerms("student");
+  const TEACHER_PERMS = catalogPerms("teacher");
+  const ORG_PERMS = catalogPerms("org_admin");
+  const hub = { variant: "hub" } as const;
+  const hrefs = (tiles: ReturnType<typeof homeTilesFor>) => tiles.map((t) => t.href);
+
+  it("classic is the default and is unchanged: `variant: \"classic\"` and no options give the same list for every hat", () => {
+    for (const hats of [orgAdmin, principal, twoSchools, teacher, student]) {
+      for (const perms of [ADMIN_PERMS, PRINCIPAL_PERMS, STUDENT_PERMS, TEACHER_PERMS]) {
+        expect(homeTilesFor(hats, has(perms), { variant: "classic" })).toEqual(homeTilesFor(hats, has(perms)));
+        expect(homeTilesFor(hats, has(perms), {})).toEqual(homeTilesFor(hats, has(perms)));
+      }
+    }
+    // The hub-only tiles never leak into the classic list.
+    const classic = new Set(HOME_TILES.map((t) => t.code));
+    for (const code of ["my-week", "my-subjects", "my-class", "my-offerings", "teaching-week", "admin-students", "admin-overview"]) expect(classic.has(code)).toBe(false);
+  });
+
+  it("student: «پنل من», «حضور و غیاب», then what «کلاس من» held — the week, the درس list, the class", () => {
+    const tiles = homeTilesFor(student, has(STUDENT_PERMS), hub);
+    expect(codes(tiles)).toEqual(["inbox", "attendance", "my-week", "my-subjects", "my-class"]);
+    expect(tiles.map((t) => t.labelFa)).toEqual(["پنل من", "حضور و غیاب", "برنامهٴ هفتگی", "درس‌ها و دبیران", "کلاس من"]);
+    expect(hrefs(tiles)).toEqual(["/inbox", "/attendance", "/my-class/timetable", "/my-class/subjects", "/my-class/info"]);
+  });
+
+  it("teacher: «پنل من», «حضور و غیاب», then what «کلاس‌ها» held — the درس cards and the teaching week", () => {
+    const tiles = homeTilesFor(teacher, has(TEACHER_PERMS), hub);
+    expect(codes(tiles)).toEqual(["inbox", "attendance", "my-offerings", "teaching-week"]);
+    expect(tiles.map((t) => t.labelFa)).toEqual(["پنل من", "حضور و غیاب", "کلاس‌های من", "برنامهٴ هفتگی"]);
+    expect(hrefs(tiles)).toEqual(["/inbox", "/attendance", "/classes/offerings", "/classes/timetable"]);
+  });
+
+  it("organization admin: people and classes before structure, «مدرسه‌ها» (the organization's list) and the overview last", () => {
+    const tiles = homeTilesFor(orgAdmin, has(ORG_PERMS), hub);
+    expect(codes(tiles)).toEqual(["inbox", "admin-attendance", "admin-students", "admin-staff", "admin-classes", "admin-roles", "schools", "admin-overview"]);
+    expect(tiles.map((t) => t.labelFa)).toEqual(["پنل من", "حضور و غیاب", "دانش‌آموزان", "کارکنان", "کلاس‌ها", "نقش‌ها", "مدرسه‌ها", "نمای کلی"]);
+    expect(tile(tiles, "schools")?.href).toBe("/admin/schools");
+    expect(tile(tiles, "admin-overview")?.href).toBe("/admin");
+  });
+
+  it("principal of ONE school: the same, with «مدرسه» (their school's hub) and that school's «برنامهٴ کلاسی» — one schools tile", () => {
+    const tiles = homeTilesFor(principal, has(PRINCIPAL_PERMS), hub);
+    expect(codes(tiles)).toEqual(["inbox", "admin-attendance", "admin-students", "admin-staff", "admin-classes", "admin-roles", "schools", "periods", "admin-overview"]);
+    expect(tile(tiles, "schools")).toMatchObject({ labelFa: "مدرسه", href: "/admin/schools/s1" });
+    expect(tile(tiles, "periods")).toMatchObject({ labelFa: "برنامهٴ کلاسی", href: "/admin/schools/s1/periods" });
+    expect(tiles.filter((t) => t.code === "schools")).toHaveLength(1);
+    // Two schools: «مدرسه‌ها» plural, no برنامهٴ کلاسی tile (it belongs to one school) — as in classic.
+    const two = homeTilesFor(twoSchools, has(PRINCIPAL_PERMS), hub);
+    expect(tile(two, "schools")).toMatchObject({ labelFa: "مدرسه‌ها", href: "/admin/schools" });
+    expect(codes(two)).not.toContain("periods");
+  });
+
+  it("the admin section tiles need the admin hat's permission, as /admin does", () => {
+    const noAccess = ORG_PERMS.filter((p) => p !== "iam.admin.access");
+    expect(codes(homeTilesFor(orgAdmin, has(noAccess), hub)).filter((c) => c.startsWith("admin-") && c !== "admin-attendance")).toEqual([]);
+  });
+
+  it("multi-hat people get the union in order, with no duplicate destination and no duplicate label", () => {
+    const teachingPrincipal: TileHats = { ...principal, isTeacher: true };
+    const perms = has([...PRINCIPAL_PERMS, ...TEACHER_PERMS]);
+    const tp = homeTilesFor(teachingPrincipal, perms, hub);
+    expect(codes(tp)).toEqual([
+      "inbox",
+      "attendance",
+      "my-offerings",
+      "teaching-week",
+      "admin-attendance",
+      "admin-students",
+      "admin-staff",
+      "admin-classes",
+      "admin-roles",
+      "schools",
+      "periods",
+      "admin-overview",
+    ]);
+    // Two «حضور و غیاب» destinations for one person: the teacher's roll call keeps the name, the report says what it is.
+    expect(tile(tp, "attendance")?.labelFa).toBe("حضور و غیاب");
+    expect(tile(tp, "admin-attendance")?.labelFa).toBe("گزارش حضور و غیاب");
+    expect(new Set(tp.map((t) => t.labelFa)).size).toBe(tp.length);
+    // A plain admin keeps «حضور و غیاب» for the report — the other tile is not theirs.
+    expect(tile(homeTilesFor(principal, has(PRINCIPAL_PERMS), hub), "admin-attendance")?.labelFa).toBe("حضور و غیاب");
+    // A student who also teaches: «برنامهٴ هفتگی» is the teaching week; the class week steps aside (one label, one tile).
+    const teachingStudent: TileHats = { ...student, isTeacher: true };
+    const both = homeTilesFor(teachingStudent, has([...STUDENT_PERMS, ...TEACHER_PERMS]), hub);
+    expect(codes(both)).toEqual(["inbox", "attendance", "my-subjects", "my-class", "my-offerings", "teaching-week"]);
+  });
+
+  it("one door per destination, per person: every hub tile a person sees has a real, unique href and a unique label", () => {
+    const personas: [TileHats, Permission[]][] = [
+      [student, STUDENT_PERMS],
+      [teacher, TEACHER_PERMS],
+      [orgAdmin, ORG_PERMS],
+      [principal, PRINCIPAL_PERMS],
+      [twoSchools, VICE_PERMS],
+    ];
+    for (const [hats, perms] of personas) {
+      const tiles = homeTilesFor(hats, has(perms), hub);
+      expect(new Set(hrefs(tiles)).size).toBe(tiles.length);
+      expect(new Set(tiles.map((t) => t.labelFa)).size).toBe(tiles.length);
+      for (const href of hrefs(tiles)) expect(href.startsWith("/")).toBe(true);
+    }
+  });
+
+  it("there is no nav in hub mode, so the tiles carry every place the role item held — no destination is lost", () => {
+    // Student «کلاس من» and teacher «کلاس‌ها»: each section has its own page; the full pages stay for classic.
+    expect(hrefs(homeTilesFor(student, has(STUDENT_PERMS), hub))).toEqual(expect.arrayContaining(["/my-class/timetable", "/my-class/subjects", "/my-class/info"]));
+    expect(hrefs(homeTilesFor(teacher, has(TEACHER_PERMS), hub))).toEqual(expect.arrayContaining(["/classes/offerings", "/classes/timetable"]));
+    for (const route of ["my-class/timetable", "my-class/subjects", "my-class/info", "classes/offerings", "classes/timetable"]) {
+      const src = readFileSync(new URL(`../../src/app/(app)/${route}/page.tsx`, import.meta.url), "utf8");
+      // Each is an inner page reached from Home: the layout primitives and the way back.
+      expect(src).toContain("<ContentWidth");
+      expect(src).toContain('back={{ href: "/home", label: "خانه" }}');
+    }
+    // And the full pages keep drawing those same parts (no duplicated markup between the layouts).
+    expect(readFileSync(new URL("../../src/app/(app)/my-class/page.tsx", import.meta.url), "utf8")).toContain("<MySubjectsList");
+    expect(readFileSync(new URL("../../src/app/(app)/classes/page.tsx", import.meta.url), "utf8")).toContain("<OfferingsGrid");
   });
 });
 
