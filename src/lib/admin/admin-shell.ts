@@ -24,12 +24,11 @@ export const getAdminShell = cache(async (): Promise<AdminShell> => {
  * The admin SECTIONS of a caller — order and labels from `nav.ts`, counts from the cached overview. «نمای کلی» is
  * dropped: /admin is the hub itself (the landing page, the rail's «مدیریت», the phone nav's role item), so listing
  * it among its own sections would be a second door to a place you are already in — one home per destination
- * (docs/decisions.md). The organization-only entries («مدرسه‌ها», «راه‌اندازی مدرسه») are dropped for a
- * school-scoped admin by `adminSectionsFor`.
+ * (docs/decisions.md). The organization-only entry («مدرسه‌ها») is dropped for a school-scoped admin by
+ * `adminSectionsFor`.
  *
  * Every section carries the count its page holds, so the rail, the phone pill row and the landing rows all read
- * the same number: how many students/staff/classes/schools there are — and, for «راه‌اندازی مدرسه», how many
- * setup steps are still MISSING (the one number that page is about; its hint says so in words).
+ * the same number: how many schools/students/staff/classes there are, and the manager roles beside «نقش‌ها».
  */
 export function adminNavItems(assignments: readonly Assignment[], shell: AdminShell): AdminNavItem[] {
   const org = isOrganizationAdmin(assignments);

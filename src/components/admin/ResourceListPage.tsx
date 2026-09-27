@@ -22,6 +22,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  *
  * Per CALLER since round 7: «مدرسه‌ها» is a section for the organization admin (no back link — the rail and the
  * pill row are its way around) and a Home tile for a school-scoped admin (back to Home, where their tile is).
+ * A resource with a door of its own under another page names that page as `back` (درس‌ها → «مدرسه‌ها»).
  */
 function backOutOfAdmin(key: string, org: boolean): { href: string; label: string } | undefined {
   return isAdminSectionFor(key, { org }) ? undefined : { href: "/home", label: "خانه" };
@@ -64,14 +65,23 @@ export async function ResourceListPage({ def, sp, parent, basePath, back }: { de
         title={title}
         count={`${formatNumberFa(total)} مورد`}
         description={def.descriptionFa}
-        back={back ?? (def.parentParam ? { href: def.parentParam.backHref(parentId), label: def.parentParam.labelFa } : backOutOfAdmin(def.key, scope.kind === "organization"))}
+        back={
+          back ??
+          (def.parentParam
+            ? { href: def.parentParam.backHref(parentId), label: def.parentParam.labelFa }
+            : def.back
+              ? { href: def.back.href, label: def.back.labelFa }
+              : backOutOfAdmin(def.key, scope.kind === "organization"))
+        }
         actions={
           <>
-            {def.links?.map((l) => (
-              <Button key={l.href} asChild variant="outline">
-                <Link href={l.href}>{l.labelFa}</Link>
-              </Button>
-            ))}
+            {def.links
+              ?.filter((l) => !l.orgOnly || scope.kind === "organization")
+              .map((l) => (
+                <Button key={l.href} asChild variant="outline">
+                  <Link href={l.href}>{l.labelFa}</Link>
+                </Button>
+              ))}
             {canCreate ? <ResourceForm resource={def.key} labelFa={def.labelFa} fields={formFieldsOf(def, options)} options={options} mode="create" fixed={fixed} /> : null}
           </>
         }

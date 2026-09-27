@@ -341,9 +341,9 @@ export interface HomeTile {
   /** Shown only when the person holds it at any scope (the hat alone is not enough for admin tiles). */
   permission?: Permission;
   /**
-   * Admin tiles only: shown to this admin scope alone. «راه‌اندازی مدرسه», «پایه‌ها», «درس‌ها» and «مقطع‌ها» are
-   * `organization` — the owner's rule: whoever defines schools and the shared catalog is the organization admin;
-   * principals and vice principals reach the catalog through their school's hub instead.
+   * Admin tiles only: shown to this admin scope alone — e.g. «مدرسه» / «مدرسه‌ها» is `school` (the organization
+   * admin has the «مدرسه‌ها» section instead). The structure catalog has no tile: مقطع‌ها، پایه‌ها and سال‌ها are
+   * fixed, and درس‌ها live under «مدرسه‌ها» (2026-09-27).
    */
   adminScope?: TileAdminScope;
   /**

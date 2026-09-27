@@ -72,19 +72,19 @@ describe("B1 — offering edit through the mutation path", () => {
   });
 });
 
-describe("admin sub-navigation (owner's rule, QA round 2): «مدرسه‌ها» and «راه‌اندازی» are for the organization admin only", () => {
+describe("admin sub-navigation (owner's rule, QA round 2): «مدرسه‌ها» is for the organization admin only", () => {
   const orgAdmin: Assignment = { roleCode: "org_admin", roleId: "r-org", scopeType: "organization", scopeId: f.ORG_A, permissions: ALL };
   it("school-scoped admins lose the organization-only entries; the organization admin keeps the whole list", () => {
     expect(adminNavFor([orgAdmin]).map((i) => i.href)).toEqual(ADMIN_NAV.map((i) => i.href));
     for (const assignments of [[principalOf(f.SCHOOL_A)], [viceOf(f.SCHOOL_A)]]) {
       const hrefs = adminNavFor(assignments).map((i) => i.href);
-      expect(hrefs).not.toContain("/admin/infrastructure");
       // Round 7: the organization's schools LIST is organization-only too — a principal's door to their own
       // school is the Home tile that opens that school's hub, never this list.
       expect(hrefs).not.toContain("/admin/schools");
       expect(hrefs).toEqual(ADMIN_NAV.filter((i) => !i.orgOnly).map((i) => i.href));
     }
-    expect(ADMIN_NAV.filter((i) => i.orgOnly).map((i) => i.href)).toEqual(["/admin/schools", "/admin/infrastructure"]);
+    // 2026-09-27: «تنظیمات زیرساختی» is gone (the مقطع/پایه/سال catalog is fixed), so «مدرسه‌ها» is the only one.
+    expect(ADMIN_NAV.filter((i) => i.orgOnly).map((i) => i.href)).toEqual(["/admin/schools"]);
   });
 });
 
@@ -126,11 +126,10 @@ describe("every admin resource: edit payload ⊆ schema (no required key the edi
     return r.success ? {} : Object.fromEntries(r.error.issues.map((i) => [i.path.join("."), i.message]));
   };
 
-  it("QA round 2: every required select on an edit form names itself when left empty — «پایه را انتخاب کنید.», «مقطع را انتخاب کنید.»", () => {
+  it("QA round 2: every required select on an edit form names itself when left empty — «پایه را انتخاب کنید.»", () => {
     expect(issuesFor("classes", { gradeLevelId: "", name: "۱۰/۳", capacity: null })).toEqual({ gradeLevelId: "پایه را انتخاب کنید." });
     expect(issuesFor("classes", { gradeLevelId: null, name: "۱۰/۳", capacity: null })).toEqual({ gradeLevelId: "پایه را انتخاب کنید." });
     expect(issuesFor("classes", { gradeLevelId: "not-a-uuid", name: "۱۰/۳", capacity: null })).toEqual({ gradeLevelId: "شناسه نامعتبر است." });
-    expect(issuesFor("grades", { educationLevelId: "", name: "دهم", code: "G10", sequence: 1 })).toEqual({ educationLevelId: "مقطع را انتخاب کنید." });
     // Every required select that the schema itself validates (not create-only) refuses "" with a «… را انتخاب کنید.» message.
     for (const def of Object.values(RESOURCES)) {
       for (const field of def.formFields.filter((x) => x.type === "select" && x.required && !x.createOnly && !x.options)) {

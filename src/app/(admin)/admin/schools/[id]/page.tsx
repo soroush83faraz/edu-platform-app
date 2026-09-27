@@ -1,15 +1,16 @@
-import { BookOpen, CalendarClock, CalendarDays, ChevronLeft, GraduationCap, Plus, Users } from "lucide-react";
+import { BookOpen, CalendarClock, CalendarDays, ChevronLeft, GraduationCap, Plus, Users, UsersRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PageSection } from "@/components/layout/PageSection";
+import { StaffRow, StudentRow } from "@/components/admin/PeopleRows";
 import { ResourceForm } from "@/components/admin/ResourceForm";
 import { RowMark } from "@/components/RowMark";
 import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
-import { GENDER_LABELS, schoolResource, yearResource } from "@/lib/admin/resources";
+import { GENDER_LABELS, schoolResource } from "@/lib/admin/resources";
 import { schoolHubQuery, type SchoolHubData } from "@/lib/admin/school-queries";
 import { formatNumberFa, isoDateToJalali } from "@/lib/format";
 
@@ -19,10 +20,10 @@ const n = formatNumberFa;
 
 /**
  * /admin/schools/[id] — a school's own management hub, «انگار وارد پنل مدیر همان مدرسه شده‌ای» (owner): the آمار row
- * (کلاس‌ها/دانش‌آموزان/کارکنان, each a door to THIS school's filtered list), سال تحصیلی, this school's کلاس‌ها,
- * برنامهٔ زنگ‌بندی and the ارائهٴ درس summary. Every «افزودن» opens the SAME dialog its list page opens (shared
- * resource definition + strict schema + `adminResourceMutate`). There is no شعبه here (an internal, always-one
- * detail). Scope: a school outside the caller's scope is NOT_FOUND (`schoolHubQuery`).
+ * (کلاس‌ها/دانش‌آموزان/کارکنان, each a jump to its section on this page), سال تحصیلی (the fixed catalog — shown, not
+ * edited), this school's کلاس‌ها, کارکنان and دانش‌آموزان (a compact list each, the same row as the full list, and
+ * the door to that list filtered to this school), برنامهٔ زنگ‌بندی and the ارائهٴ درس summary. There is no شعبه
+ * here (an internal, always-one detail). Scope: a school outside the caller's scope is NOT_FOUND (`schoolHubQuery`).
  */
 export default async function SchoolHubPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -66,18 +67,20 @@ export default async function SchoolHubPage({ params }: { params: Promise<{ id: 
       <Stats d={d} />
       <Years d={d} />
       <Classes d={d} />
+      <Staff d={d} />
+      <Students d={d} />
       <Periods d={d} />
       <Offerings d={d} />
     </div>
   );
 }
 
-/** آمار مدرسه: three counters of THIS school, each a door to its own filtered list (کلاس‌ها, دانش‌آموزان, کارکنان). */
+/** آمار مدرسه: three counters of THIS school, each a jump to its section below (the filtered list when there is none). */
 function Stats({ d }: { d: SchoolHubData }) {
   const tiles: Array<{ href: string; label: string; value: number }> = [
     { href: "#classes", label: "کلاس‌ها", value: d.counts.classes },
-    { href: `/admin/students?school=${d.school.id}`, label: "دانش‌آموزان", value: d.counts.students },
-    { href: `/admin/staff?school=${d.school.id}`, label: "کارکنان", value: d.counts.staff },
+    { href: d.students ? "#students" : `/admin/students?school=${d.school.id}`, label: "دانش‌آموزان", value: d.counts.students },
+    { href: d.staff ? "#staff" : `/admin/staff?school=${d.school.id}`, label: "کارکنان", value: d.counts.staff },
   ];
   return (
     <ul className="surface-panel grid grid-cols-3">
@@ -134,6 +137,63 @@ function Classes({ d }: { d: SchoolHubData }) {
   );
 }
 
+/** «همه» — the door from a compact hub list to the full list, filtered to this school. */
+function AllLink({ href, total, shown }: { href: string; total: number; shown: number }) {
+  if (total === 0) return null;
+  return (
+    <Button asChild variant="ghost" size="sm">
+      <Link href={href}>
+        {total > shown ? `همهٴ ${n(total)} نفر` : "فهرست کامل"}
+        <ChevronLeft className="size-4" aria-hidden />
+      </Link>
+    </Button>
+  );
+}
+
+/** کارکنان of THIS school (anchored to it — `staff_profile.school_id`): the first rows of /admin/staff?school=. */
+function Staff({ d }: { d: SchoolHubData }) {
+  if (!d.staff) return null;
+  return (
+    <PageSection id="staff" title="کارکنان" icon={UsersRound} count={d.staff.total} surface="work" flush trailing={<AllLink href={`/admin/staff?school=${d.school.id}`} total={d.staff.total} shown={d.staff.rows.length} />}>
+      {d.staff.rows.length === 0 ? (
+        <NotYet what="همکاری با مدرسهٴ اصلیِ این مدرسه ثبت نشده. همکاران را از «کارکنان»ِ مدیریت ثبت کنید." />
+      ) : (
+        <List>
+          {d.staff.rows.map((r) => (
+            <StaffRow key={r.personId} row={r} />
+          ))}
+        </List>
+      )}
+    </PageSection>
+  );
+}
+
+/** دانش‌آموزان of THIS school (enrolled in it): the first rows of /admin/students?school=. */
+function Students({ d }: { d: SchoolHubData }) {
+  if (!d.students) return null;
+  return (
+    <PageSection
+      id="students"
+      title="دانش‌آموزان"
+      icon={GraduationCap}
+      count={d.students.total}
+      surface="work"
+      flush
+      trailing={<AllLink href={`/admin/students?school=${d.school.id}`} total={d.students.total} shown={d.students.rows.length} />}
+    >
+      {d.students.rows.length === 0 ? (
+        <NotYet what="دانش‌آموزی در این مدرسه ثبت‌نام نشده. دانش‌آموزان را از «دانش‌آموزان»ِ مدیریت ثبت کنید." />
+      ) : (
+        <List>
+          {d.students.rows.map((r) => (
+            <StudentRow key={r.personId} row={r} />
+          ))}
+        </List>
+      )}
+    </PageSection>
+  );
+}
+
 /** One link into the school's زنگ‌بندی (bell schedule) editor. */
 function Periods({ d }: { d: SchoolHubData }) {
   return (
@@ -177,16 +237,15 @@ function List({ children }: { children: React.ReactNode }) {
   return <ul className="divide-y divide-line/70 overflow-hidden rounded-card">{children}</ul>;
 }
 
-/** سال تحصیلی only — نام، بازه، «جاری». نوبت‌ها نمایش داده نمی‌شوند (view-level؛ خودِ داده و صفحهٴ نوبت‌ها دست‌نخورده است). */
+/**
+ * سال تحصیلی — نام، بازه، «جاری». Read-only: years are the FIXED catalog (۱۴۰۵-۱۴۰۶, ۱۴۰۶-۱۴۰۷ — written by the
+ * catalog seed and when a school is created), so there is no «سال تحصیلی جدید» here any more. نوبت‌ها are not shown.
+ */
 function Years({ d }: { d: SchoolHubData }) {
-  const yearForm = (tone: "primary" | "quiet") =>
-    d.can.structure ? (
-      <ResourceForm resource={yearResource.key} labelFa={yearResource.labelFa} fields={yearResource.formFields.filter((f) => f.name !== "schoolId")} options={{}} mode="create" tone={tone} fixed={{ schoolId: d.school.id }} />
-    ) : null;
   return (
-    <PageSection id="years" title="سال تحصیلی" icon={CalendarDays} count={d.years.length} surface="work" flush trailing={yearForm("quiet")}>
+    <PageSection id="years" title="سال تحصیلی" icon={CalendarDays} count={d.years.length} surface="work" flush>
       {d.years.length === 0 ? (
-        <NotYet what="بدون سال تحصیلی جاری نمی‌توان کلاس ساخت." action={yearForm("primary")} />
+        <NotYet what="سال تحصیلی این مدرسه با به‌روزرسانی بعدی سامانه اضافه می‌شود." />
       ) : (
         <List>
           {d.years.map((y) => (

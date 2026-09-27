@@ -6,17 +6,19 @@
 //   node scripts/seed-catalog.js --test   -> MIGRATION_DATABASE_URL_TEST  (database name must end with _test)
 //   pnpm tsx scripts/seed-catalog.ts      -> the same, uncompiled (local)
 //
-// Prints the same «[seed] catalog: …» line as `pnpm seed` (`scripts/seed.ts --catalog` — both call
-// `seedCatalogWith` from ./catalog, so there is one implementation). Idempotent; one transaction; exit 1 on error.
-// Unlike scripts/seed.ts it needs no SEED_ALLOW=1 in production: it writes the permission / role / type catalog
-// only — no accounts, no tenant rows — and running it on every deploy is exactly the point (deploy/README.md).
+// Prints the same «[seed] catalog: …» and «[seed] organization catalog: …» lines as `pnpm seed`
+// (`scripts/seed.ts --catalog` — both call `seedCatalogWith` + `seedOrgCatalogsWith` from ./catalog, so there is
+// one implementation). Idempotent; exit 1 on error. Unlike scripts/seed.ts it needs no SEED_ALLOW=1 in production:
+// it writes the permission / role / type catalog and the FIXED structure catalog of each organization (مقطع‌ها,
+// پایه‌ها, سال‌های تحصیلی — additive, never deletes) — no accounts, no people — and running it on every deploy is
+// exactly the point (deploy/README.md).
 //
 // Deliberately no `import.meta` / `require.main` guard: this file is a program, not a library (the compiled bundle
 // wraps it in its own module registry). Imports: `pg`, `node:*` and ./catalog only (the build refuses more).
 import fs from "node:fs";
 import path from "node:path";
 import { Client } from "pg";
-import { catalogCountsWith, formatCatalogSummary, seedCatalogWith } from "./catalog";
+import { catalogCountsWith, formatCatalogSummary, formatOrgCatalogSummary, seedCatalogWith, seedOrgCatalogsWith } from "./catalog";
 
 /** Loads ./.env for local runs (never overrides variables already set; Docker uses env_file). */
 function loadDotEnv(): void {
@@ -42,6 +44,8 @@ async function main(): Promise<void> {
   try {
     await seedCatalogWith(client);
     console.log(formatCatalogSummary(await catalogCountsWith(client)));
+    // Then the fixed مقطع/پایه/سال catalog of every organization (one transaction each; tenant rows under RLS).
+    console.log(formatOrgCatalogSummary(await seedOrgCatalogsWith(client)));
   } finally {
     await client.end();
   }

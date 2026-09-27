@@ -3,13 +3,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Pagination, SearchForm, lastPage } from "@/components/admin/AdminPage";
+import { StaffRow } from "@/components/admin/PeopleRows";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { one, type SearchParams } from "@/components/admin/ResourceListPage";
-import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { requireContext } from "@/lib/ctx";
-import { formatLoginIdentifierFa, formatNumberFa } from "@/lib/format";
+import { formatNumberFa } from "@/lib/format";
 import { staffListQuery } from "@/lib/admin/people-queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 
@@ -64,31 +64,7 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
       ) : (
         <ul className="surface-work divide-y divide-line/70">
           {rows.map((r) => (
-            <li key={r.personId}>
-              <Link href={`/admin/people/${r.personId}`} className="pressable flex min-h-14 items-center justify-between gap-3 px-4 py-2 hover:bg-surface-sunken">
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate text-row font-medium text-text">
-                    <bdi>
-                      {r.firstName} {r.lastName}
-                    </bdi>
-                  </span>
-                  <span className="flex flex-wrap items-center gap-x-2 text-meta text-text-muted">
-                    {r.loginIdentifier ? (
-                      <bdi dir="ltr" className="tabular">
-                        {formatLoginIdentifierFa(r.loginIdentifier)}
-                      </bdi>
-                    ) : null}
-                    {r.roles.map((x) => (
-                      <span key={x}>{x}</span>
-                    ))}
-                    {r.teaching > 0 ? <span>{formatNumberFa(r.teaching)} درس</span> : null}
-                  </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-1">
-                  {r.loginIdentifier === null ? <Chip tone="neutral">بدون حساب</Chip> : r.accountStatus === "locked" ? <Chip tone="danger">قفل</Chip> : r.mustChangePassword ? <Chip tone="warning">رمز اولیه</Chip> : <Chip tone="success">فعال</Chip>}
-                </span>
-              </Link>
-            </li>
+            <StaffRow key={r.personId} row={r} />
           ))}
         </ul>
       )}

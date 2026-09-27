@@ -81,7 +81,7 @@ export interface ResourceDef<TRow extends { id: string }, TInput> {
    * the main teacher of existing rows, only `tenancy.structure.write` defines new ones.
    */
   permission: { read: Permission; write: Permission; create?: Permission };
-  /** Organization-level catalog (levels, grades, subjects): school-scoped admins see it read-only. */
+  /** Organization-level catalog (subjects): school-scoped admins see it read-only. */
   orgOnly?: boolean;
   /** Creating needs an organization-scoped admin even though rows are school-owned (schools themselves). */
   createNeedsOrgScope?: boolean;
@@ -109,8 +109,10 @@ export interface ResourceDef<TRow extends { id: string }, TInput> {
   rowHref?: (row: TRow) => string;
   /** A printable page of a row («چاپ» in the row menu), e.g. a class's credentials sheet. */
   printHref?: (row: TRow) => string;
-  /** Extra links shown above the table (e.g. «شعبه‌ها» from schools). */
-  links?: Array<{ href: string; labelFa: string }>;
+  /** Extra links in the list header (e.g. «درس‌ها» from «مدرسه‌ها»); `orgOnly` ones only for an organization-scoped admin. */
+  links?: Array<{ href: string; labelFa: string; orgOnly?: boolean }>;
+  /** The list page's back link when it is neither a section nor a nested resource (درس‌ها → «مدرسه‌ها»). */
+  back?: { href: string; labelFa: string };
 }
 
 export const PAGE_SIZE = 50;

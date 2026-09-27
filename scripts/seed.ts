@@ -7,8 +7,10 @@
 //            role_permission rows (authoritative: extra rows of a system role are removed); the system
 //            workspace.work_item_type rows (organization_id NULL) with their work_item_status catalog; and
 //            notif.notification_type. The data and the writer live in ./catalog (pg-only), shared with the
-//            compiled scripts/seed-catalog.js that the deploy runs after `migrate` (deploy/README.md).
-// --demo:    two organizations with schools, years, terms, levels/grades, subjects, classes, offerings, persons,
+//            compiled scripts/seed-catalog.js that the deploy runs after `migrate` (deploy/README.md). Then the
+//            FIXED structure catalog of every organization (مقطع‌ها, the twelve پایه‌ها, سال ۱۴۰۵–۱۴۰۶ and
+//            ۱۴۰۶–۱۴۰۷ for each school — `seedOrgCatalogsWith`, src/modules/tenancy/fixed-catalog.ts).
+// --demo:    two organizations with schools, years, terms, subjects, classes, offerings, persons,
 //            accounts and role assignments; the students are enrolled in their class (school_enrollment +
 //            class_enrollment) and the teachers get real academic.teacher_assignment rows through the academic
 //            service (which derives the `teacher` role_assignment). Deterministic ids and phones → re-running
@@ -35,7 +37,6 @@ import {
   findAcademicYearByName,
   findClassGroupByName,
   findDefaultBranch,
-  findEducationLevelByCode,
   findGradeLevelByCode,
   findOffering,
   findSchoolByCode,
@@ -46,21 +47,29 @@ import {
   createBranch,
   createClassGroup,
   createClassOffering,
-  createEducationLevel,
-  createGradeLevel,
   createSchool,
   createSubject,
+  ensureCatalogYears,
   structureCounts,
   updateAcademicYear,
   updateClassGroup,
   updateClassOffering,
-  updateEducationLevel,
-  updateGradeLevel,
   updateSchool,
   updateSubject,
   upsertTerm,
 } from "../src/modules/tenancy/service";
-import { SYSTEM_ROLES, catalogCountsWith, formatCatalogSummary, seedCatalogWith, type CatalogCounts, type Queryable } from "./catalog";
+import {
+  SYSTEM_ROLES,
+  catalogCountsWith,
+  ensureOrgCatalogWith,
+  formatCatalogSummary,
+  formatOrgCatalogSummary,
+  seedCatalogWith,
+  seedOrgCatalogsWith,
+  type CatalogCounts,
+  type OrgCatalogCounts,
+  type Queryable,
+} from "./catalog";
 import { attendanceStatusFor, minutesLateFor, pastSchoolDays, rollCallPeriod } from "./attendance-plan";
 import { planTimetables, type PlanClass } from "./timetable-plan";
 
@@ -105,6 +114,24 @@ export async function seedCatalog(db: Db): Promise<Record<string, string>> {
 /** Row counts of the catalog tables (see ./catalog). */
 export async function catalogCounts(db: Db): Promise<CatalogCounts> {
   return withDriverConnection(db, (q) => catalogCountsWith(q));
+}
+
+/**
+ * The fixed مقطع/پایه/سال catalog of EVERY organization (`seedOrgCatalogsWith`, one transaction each) — what the
+ * deploy's compiled scripts/seed-catalog.js runs too. Kept apart from `seedCatalog` so the int tests that reseed
+ * the system catalog between files never touch the fixture organizations' structure.
+ */
+export async function seedOrgCatalogs(db: Db): Promise<OrgCatalogCounts> {
+  return withDriverConnection(db, (q) => seedOrgCatalogsWith(q));
+}
+
+/**
+ * The fixed catalog of ONE organization — every script that creates an organization calls it right after the
+ * organization row (مقطع‌ها + پایه‌ها exist before any class needs one); the schools it then creates get their fixed
+ * years through `ensureCatalogYears` inside the seed's own transaction.
+ */
+export async function ensureOrgCatalog(db: Db, orgId: string): Promise<OrgCatalogCounts> {
+  return withDriverConnection(db, (q) => ensureOrgCatalogWith(q, orgId));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -177,8 +204,8 @@ export interface DemoOrgSpec {
   key: string;
   name: string;
   slug: string;
+  /** `grade` is the code of a FIXED پایه (G1…G12, src/modules/tenancy/fixed-catalog.ts) — the catalog seed creates them. */
   schools: Array<{ code: string; name: string; gender: "girls" | "boys" | "mixed"; isDefault: boolean; classes: Array<{ name: string; grade: string }> }>;
-  grades: Array<{ code: string; name: string; seq: number }>;
   subjects: Array<{ code: string; name: string }>;
   /** subjects offered in every class (term 1) */
   offered: string[];
@@ -194,11 +221,6 @@ export const DANESH: DemoOrgSpec = {
   schools: [
     { code: "G", name: "دبیرستان دخترانهٴ دانش", gender: "girls", isDefault: true, classes: [{ name: "۱۰/۱", grade: "G10" }, { name: "۱۰/۲", grade: "G10" }] },
     { code: "B", name: "دبیرستان پسرانهٴ دانش", gender: "boys", isDefault: false, classes: [{ name: "۱۱/۳", grade: "G11" }] },
-  ],
-  grades: [
-    { code: "G10", name: "دهم", seq: 1 },
-    { code: "G11", name: "یازدهم", seq: 2 },
-    { code: "G12", name: "دوازدهم", seq: 3 },
   ],
   subjects: [
     { code: "MATH", name: "ریاضی" },
@@ -243,7 +265,6 @@ const NOOR: DemoOrgSpec = {
   name: "مدرسهٴ نور",
   slug: "noor-demo",
   schools: [{ code: "N", name: "مدرسهٴ نور", gender: "mixed", isDefault: true, classes: [{ name: "۱۰/۱", grade: "G10" }] }],
-  grades: [{ code: "G10", name: "دهم", seq: 1 }],
   subjects: [{ code: "MATH", name: "ریاضی" }],
   offered: ["MATH"],
   studentClass: "N:۱۰/۱",
@@ -294,6 +315,8 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
     .insert(organization)
     .values({ id: orgId, name: spec.name, slug: spec.slug, status: "active" })
     .onConflictDoUpdate({ target: organization.slug, set: { name: spec.name, status: "active" } });
+  // A new organization starts with the fixed مقطع‌ها + پایه‌ها; each school gets the fixed years below (`ensureCatalogYears`).
+  await ensureOrgCatalog(db, orgId);
 
   return db.transaction(async (tx) => {
     await tx.execute(sql`select set_config('app.current_org_id', ${orgId}, true)`);
@@ -311,24 +334,12 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
     };
 
     // ---- structure (find by natural key → update in place, else create with the deterministic id) ----
-    const levelRow = await findEducationLevelByCode(tx, "SEC2");
-    let levelId: string;
-    if (levelRow) {
-      await updateEducationLevel(tx, ctx, levelRow.id, { name: "متوسطهٴ دوم", sequence: 1 });
-      levelId = levelRow.id;
-    } else {
-      levelId = (await createEducationLevel(tx, ctx, { id: demoId(k("level:SEC2")), name: "متوسطهٴ دوم", code: "SEC2", sequence: 1 })).educationLevelId;
-    }
-
+    // مقطع‌ها and پایه‌ها are the FIXED catalog (`ensureOrgCatalog` above): the demo only looks its grades up.
     const gradeIds: Record<string, string> = {};
-    for (const g of spec.grades) {
-      const existing = await findGradeLevelByCode(tx, g.code);
-      if (existing) {
-        await updateGradeLevel(tx, ctx, existing.id, { name: g.name, sequence: g.seq, educationLevelId: levelId });
-        gradeIds[g.code] = existing.id;
-      } else {
-        gradeIds[g.code] = (await createGradeLevel(tx, ctx, { id: demoId(k(`grade:${g.code}`)), educationLevelId: levelId, name: g.name, code: g.code, sequence: g.seq })).gradeLevelId;
-      }
+    for (const code of new Set(spec.schools.flatMap((s) => s.classes.map((c) => c.grade)))) {
+      const existing = await findGradeLevelByCode(tx, code);
+      if (!existing) throw new Error(`seed: grade ${code} is not in the fixed catalog`);
+      gradeIds[code] = existing.id;
     }
 
     const subjectIds: Record<string, string> = {};
@@ -387,6 +398,8 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
         const res = await upsertTerm(tx, ctx, { id: demoId(k(`term:${s.code}:${t.seq}`)), academicYearId: yearId, name: t.name, sequence: t.seq, startsOn: t.startsOn, endsOn: t.endsOn });
         termIds.push(res.termId);
       }
+      // …and the rest of the fixed years (۱۴۰۶-۱۴۰۷), exactly as a school created from «مدرسه‌ها» gets them.
+      await ensureCatalogYears(tx, ctx, schoolId);
 
       for (const c of s.classes) {
         const existingClass = await findClassGroupByName(tx, yearId, branchId, c.name);
@@ -732,7 +745,10 @@ async function main(): Promise<void> {
     const roleIds = doCatalog
       ? await seedCatalog(db)
       : Object.fromEntries((await db.select({ code: role.code, id: role.id }).from(role).where(and(isNull(role.organizationId), inArray(role.code, SYSTEM_ROLE_CODES)))).map((r) => [r.code, r.id]));
-    if (doCatalog) console.log(formatCatalogSummary(await catalogCounts(db)));
+    if (doCatalog) {
+      console.log(formatCatalogSummary(await catalogCounts(db)));
+      console.log(formatOrgCatalogSummary(await seedOrgCatalogs(db)));
+    }
     if (doDemo) {
       const { logins, password, generated, counts } = await seedDemo(db, roleIds);
       console.log(`[seed] demo: ${logins.length} accounts in 2 organizations`);
