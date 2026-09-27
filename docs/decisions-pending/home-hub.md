@@ -79,3 +79,37 @@ logout; the bell top-left → «اعلان‌ها»), and every answer that poin
   admin who types /admin still gets it. Keep it reachable (e.g. a link on «مدرسه»), or retire it?
 - `/my-class/info` («کلاس من»: the class card + counts) has no door in hub any more (the tile was removed). Keep the
   page for a later link, or delete it?
+
+## Round 3 (owner, 2026-09-27): «به‌زودی» tiles back on Home, and a blue greeting card
+- **«به‌زودی» as tiles again — in their own section.** The modules the product map lists as coming
+  (`UPCOMING_MODULES`, `src/lib/modules-registry.ts`) are Home tiles once more, in the hub layout only: a section
+  **under** the live tiles, headed «به‌زودی» (`text-section`, dark), so live and upcoming never mix
+  (`src/components/home/UpcomingTiles.tsx`, drawn by `HomeGrid` on phones and `DashboardTiles` on the desktop board,
+  on the same grid as the live tiles above it). Same tile shape, the `grey` ClayIcon, a muted label and a small
+  «به‌زودی» pill (`text-xs`, white pill, muted text — not yellow: yellow stays for badges and the one action).
+  **Not doors:** a plain `<div aria-disabled="true">` — no link, no href, no hover, no toast/sheet; what each will
+  do is still on «بیشتر ← نقشهٴ راه». The glyph is the product map's own (`ModuleEntry.icon`, one per module, so
+  /roadmap and Home agree); none repeats a live tile's glyph for the same person (tested).
+- **Per role** (`ModuleEntry.soonFor`, read by `upcomingTilesFor(hats)`; a multi-hat person gets the union once, in
+  the map's order; no hat, none):
+  - student — تابلو اعلانات, درخواست‌ها, آزمون, برنامهٴ امتحانی, محتوای آموزشی, پیام‌ها, مشاوره, کیف امتیازی,
+    اعتراض نمره, حساب مالی, جلسات آنلاین (11)
+  - teacher — دفتر کلاسی, موارد انضباطی, تابلو اعلانات, گزارش‌ها, درخواست‌ها, آزمون, برنامهٴ امتحانی, محتوای
+    آموزشی, پیام‌ها, کیف امتیازی, اعتراض نمره, جلسات آنلاین (12)
+  - admin — دفتر کلاسی, موارد انضباطی, والدین, تابلو اعلانات, گزارش‌ها, درخواست‌ها, برنامهٴ امتحانی, پیام‌ها,
+    مشاوره, حساب مالی (10)
+  «آزمون» and «برنامهٴ امتحانی» stay two tiles because the map lists them as two modules.
+- **The greeting card is the blue brand card**: `bg-hero` (the allowed persian-blue gradient), `rounded-hero`,
+  `shadow-1`, white text — «سلام، <name>» `text-title` bold, the date (`text-meta` medium) and the school (`text-meta`).
+  At the end side, clipped by the card, the «دانینو» mark (`DoninoMark`, white/20) stands in four still water rings
+  (white strokes at 22 → 6 % opacity) — the splash's ripple at rest; no extra hue, no glow, `aria-hidden`, and the
+  text keeps clear of it (`pe-32`, `lg:pe-80`).
+  **Deviation from the brief:** the meta lines are pure white, not white/80. The gradient's light end is #0B6FD1 and
+  the RTL text sits over that half: white is 5.0:1 there, white/80 only 3.8:1 and the `on-hero-muted` tint 4.3:1 —
+  both under 4.5:1 for 13 px text. Hierarchy comes from size and weight instead.
+- Tests: `tests/unit/home-tiles.test.ts` (`upcomingTilesFor` per role, union, no hat; only upcoming codes, distinct
+  glyphs not shared with the person's live tiles, no href; no Home file links /roadmap and `UpcomingTiles` has no
+  link at all), `tests/unit/hub-home.test.ts` (the section follows the live tiles in `HomeGrid` and `DashboardTiles`
+  with the person's list; rendered per role: grey marks, `aria-disabled`, heading and pills, no `<a>`/href; the
+  greeting card's `bg-hero rounded-hero text-white overflow-hidden`, no `surface-work`, no translucent white text,
+  the decoration `aria-hidden`, no glow, static).

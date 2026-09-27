@@ -7,24 +7,31 @@ import { cn } from "@/lib/cn";
 import type { TeachingOffering } from "@/modules/iam/hats";
 import type { HomeTiles } from "../home-data";
 import { Tile } from "../Tile";
+import { UpcomingTiles } from "../UpcomingTiles";
 
 /**
  * The top of every desktop dashboard's work column: the person's live tiles as a grid of 56 px marks (the same
  * tiles as the phone grid, smaller), with the «تکالیف نزدیک» card right under it (owner, nav round 2026-09-27 —
  * tiles first, then the tasks card, stacked). `full` is the one-column board (no role panels beside it), which
- * spreads the marks over more columns. No «به‌زودی» panel: the roadmap is reached from «بیشتر».
+ * spreads the marks over more columns. In the hub layout the person's grey «به‌زودی» tiles follow in their own
+ * section, on the same grid (`UpcomingTiles`, owner 2026-09-27) — not doors; the roadmap stays on «بیشتر».
  */
 export function DashboardTiles({ home, full = false }: { home: HomeTiles; full?: boolean }) {
-  const { tiles } = home;
-  if (tiles.length === 0) return null;
+  const { tiles, upcoming } = home;
+  const grid = cn("reveal-grid grid gap-x-1 gap-y-2", full ? "grid-cols-6 xl:grid-cols-8" : "grid-cols-4 xl:grid-cols-6");
   return (
-    <nav aria-label="بخش‌ها">
-      <ul className={cn("reveal-grid grid gap-x-1 gap-y-2", full ? "grid-cols-6 xl:grid-cols-8" : "grid-cols-4 xl:grid-cols-6")}>
-        {tiles.map((t) => (
-          <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror} compact />
-        ))}
-      </ul>
-    </nav>
+    <>
+      {tiles.length > 0 ? (
+        <nav aria-label="بخش‌ها">
+          <ul className={grid}>
+            {tiles.map((t) => (
+              <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror} compact />
+            ))}
+          </ul>
+        </nav>
+      ) : null}
+      <UpcomingTiles tiles={upcoming} gridClassName={grid} compact />
+    </>
   );
 }
 
