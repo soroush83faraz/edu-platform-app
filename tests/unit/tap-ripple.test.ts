@@ -9,8 +9,11 @@ import { House } from "lucide-react";
 import { RIPPLE_MAX_RADIUS, RIPPLE_MS, TOUCH_DELAY_MS, inkTone, installTapRipple, rippleHost, spawnRipple } from "@/lib/tap-ripple";
 
 vi.mock("next/link", () => ({
-  default: ({ href, children, prefetch: _p, ...rest }: { href: string; children: React.ReactNode; prefetch?: unknown }) =>
-    createElement("a", { href, ...rest }, children),
+  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode; prefetch?: unknown }) => {
+    const { prefetch, ...attrs } = rest;
+    void prefetch;
+    return createElement("a", { href, ...attrs }, children);
+  },
 }));
 
 // ---- a fake DOM just big enough for the helper -------------------------------------------------------------------
@@ -54,8 +57,8 @@ class FakeEl {
     this.attrs.set(n, v);
   }
   closest(sel: string): FakeEl | null {
-    for (let e: FakeEl | null = this; e; e = e.parent) if (matches(e, sel)) return e;
-    return null;
+    if (matches(this, sel)) return this;
+    return this.parent ? this.parent.closest(sel) : null;
   }
   querySelector(sel: string): FakeEl | null {
     for (const c of this.children) {
