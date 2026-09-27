@@ -15,7 +15,7 @@ vi.mock("sonner", () => ({ toast: { success: () => {}, error: () => {} } }));
 // The server actions pull in the whole server stack (db, session); nothing here is submitted.
 vi.mock("@/lib/admin/people-actions", () => {
   const never = async () => ({ ok: false, code: "INTERNAL", message: "" });
-  return { assignRoleAction: never, revokeRoleAction: never, endTeachingAction: never, createAccountAction: never, placeStudentAction: never, resetPasswordAction: never, unlockAccountAction: never, createStaffAction: never, updateStaffAction: never };
+  return { assignRoleAction: never, revokeRoleAction: never, endTeachingAction: never, assignTeachingAction: never, createAccountAction: never, placeStudentAction: never, resetPasswordAction: never, unlockAccountAction: never, createStaffAction: never, updateStaffAction: never };
 });
 vi.mock("@/lib/admin/actions", () => ({ adminResourceMutate: async () => ({ ok: false, code: "INTERNAL", message: "" }) }));
 
@@ -63,7 +63,7 @@ const detail: PersonDetail = {
     { roleAssignmentId: "0199a000-0004-7000-8000-000000000001", roleCode: "vice_principal", roleName: "معاون", scopeType: "school", schoolId: SCHOOL_A, schoolName: "دبیرستان دوم", sourceType: "manual" },
     { roleAssignmentId: "0199a000-0004-7000-8000-000000000002", roleCode: "school_principal", roleName: "مدیر مدرسه", scopeType: "school", schoolId: SCHOOL_B, schoolName: "دبیرستان سوم", sourceType: "manual" },
   ],
-  teaching: [{ teacherAssignmentId: "0199a000-0005-7000-8000-000000000001", classOfferingId: "0199a000-0006-7000-8000-000000000001", className: "۱۰/۱", subjectName: "ریاضی" }],
+  teaching: [{ teacherAssignmentId: "0199a000-0005-7000-8000-000000000001", classOfferingId: "0199a000-0006-7000-8000-000000000001", className: "۱۰/۱", subjectId: "0199a000-0007-7000-8000-000000000001", subjectName: "ریاضی", role: "main" }],
   schoolIds: [SCHOOL_A],
 };
 
@@ -86,9 +86,9 @@ describe("staff pages: roles are display-only", () => {
     expect(html).not.toMatch(/>\s*لغو\s*</); // no «لغو» control (the hint below only SAYS where roles are revoked)
     // The one pointer to where roles ARE changed, for a caller who can change them.
     expect(html).toContain('href="/admin/roles"');
-    // Teaching is not a manager role: «پایان تدریس» stays with the teacher-assignment permission.
-    expect(html).toContain("پایان تدریس");
-    expect(html.match(/<button/g)?.length ?? 0).toBe(1);
+    // Teaching is not a manager role: it has its own section (tests/unit/teaching-card.test.ts), none of it here.
+    expect(html).not.toContain("پایان تدریس");
+    expect(html).not.toContain("<button");
   });
 
   it("without the role permission the card points nowhere, and without the teaching permission it is pure text", () => {

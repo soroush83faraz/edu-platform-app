@@ -10,6 +10,7 @@ import { seesSchoolCode } from "./school-code";
 import { classOptionsInScope, getPersonDetail, listClassCredentials, listStaff, listStudents, personCredential } from "./people";
 import { ClassIdInput, PeopleListInput, PersonIdInput } from "./people-dto";
 import { staffOptions } from "./resources";
+import { teachingFormOptions } from "./teaching";
 
 export const studentsListQuery = defineQuery({ schema: PeopleListInput, permission: "iam.person.read", scope: "any" }, async (tx, input, ctx) => {
   const scope = await getAdminScope(tx, ctx);
@@ -50,6 +51,11 @@ export const personDetailQuery = defineQuery({ schema: PersonIdInput, permission
   const schools = (await listSchools(tx)).filter((s) => scope.kind === "organization" || scope.schoolIds.includes(s.id)).map((s) => ({ value: s.id, label: s.name }));
   return { detail, scope, classes: detail.student ? await classOptionsInScope(tx, scope) : [], schools };
 });
+
+/** What «افزودن تدریس» offers: the caller's current-year classes with their offerings, and the درس catalog. */
+export const teachingOptionsQuery = defineQuery({ permission: "academic.teacher_assignment.write", scope: "any" }, async (tx, _input, ctx) =>
+  teachingFormOptions(tx, ctx, await getAdminScope(tx, ctx)),
+);
 
 export const classCredentialsQuery = defineQuery({ schema: ClassIdInput, permission: "iam.account.reset_password", scope: "any" }, async (tx, input, ctx) => {
   const scope = await getAdminScope(tx, ctx);

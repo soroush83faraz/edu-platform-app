@@ -142,3 +142,64 @@ It now says the years/levels/grades are ready-made (پایه‌های اول ت�
 نوبت‌ها); the admin builds classes (grade from the list), sets the زنگ‌بندی on the school page, the offerings and the
 «برنامهٴ هفتگی» on each class page, adds students and staff; the organization admin keeps the درس‌ها under
 «مدرسه‌ها ← درس‌ها». Pinned by `tests/unit/help-copy.test.ts`.
+
+## 6. «تدریس» on a colleague's page — «افزودن تدریس» (owner, 2026-09-27)
+
+**Ask.** «Where is a teacher assigned a subject now? On the teacher I can't make them teach a subject or assign a
+class… when the manager taps a staff member they should be able to do it.» Teaching was set only per class
+(/admin/classes/[id]/offerings: offering = درس × کلاس × نوبت, main teacher); the person page only listed it.
+
+**Change.** /admin/people/[id] of a STAFF member has its own «تدریس» section (`src/components/admin/TeachingCard.tsx`,
+main column, below مشخصات): each active teaching as «درس · کلاس» + its role (دبیر اصلی / کمکی / جانشین) with the
+subject stamp, «پایان تدریس» per row, and one outline «افزودن تدریس». Teaching left `RolesCard`, which is now «نقش‌ها»
+only (display-only, as §2). The dialog: **کلاس** (active classes of the CURRENT year in the caller's schools) →
+**درس** (the class's non-closed offerings «ریاضی (دبیر فعلی: …)», the نوبت named when the class has more than one;
+then, under «درس تازه برای این کلاس», the catalog's top-level درس‌ها the class lacks in its current نوبت — offered only
+where the caller holds `tenancy.structure.write` at that school) → **نقش تدریس** (default دبیر اصلی). Choosing دبیر
+اصلی for an offering that already has another main teacher shows a confirm step («این درس قبلاً دبیر اصلی دارد؛
+جایگزین شود؟» + the current teacher's name) before anything is sent; the server refuses the replacement without
+`replaceMain` anyway (CONFLICT, the same message → the dialog shows the same confirm step). On success
+`router.refresh()`; the offerings page reads the same `teacher_assignment` rows.
+
+**Permissions — the offerings page's, nothing new.** `assignTeachingAction` (`src/lib/admin/people-actions.ts`) is
+`defineAction({ permission: "academic.teacher_assignment.write", scope: "any" })`; the body
+(`assignTeaching`, `src/lib/admin/teaching.ts`) re-checks at the class's school with `can()`:
+1. `getAdminScope` (a non-admin → FORBIDDEN);
+2. person in the caller's scope — `requirePersonInScope`, the rule that shows the person page at all (NOT_FOUND);
+3. an active colleague: staff profile, no student profile, `left_on` null, person active — else VALIDATION on
+   `personId` «فقط همکارِ فعال را می‌توان دبیر درس کرد.»;
+4. class exists and is in scope (NOT_FOUND) → `academic.teacher_assignment.write` at its school (FORBIDDEN, the
+   offerings page's «شما اجازهٴ تعیین دبیر در این مدرسه را ندارید.») → active class of the current year (VALIDATION);
+5. existing offering: must belong to THIS class (NOT_FOUND — an offering id of another school smuggled under one's own
+   class answers like an unknown one); new درس: `tenancy.structure.write` at the school (FORBIDDEN, the offerings
+   page's «تعریف ارائهٴ درس جدید …») → the year's current نوبت (the one containing today, else the first — the shell
+   bar's rule) → `createClassOffering` (its own duplicate/term checks and audit);
+6. the colleague must not already teach that offering in ANY role (CONFLICT «این همکار هم‌اکنون در همین درس تدریس
+   دارد؛ …») — the derived `teacher` role_assignment is unique per (person, role template, offering), so a second
+   role on the same offering would otherwise fail in the database (the offerings page never met this: it only sets
+   main);
+7. role main + another main teacher: `replaceMain` required (CONFLICT), then `endTeacherAssignment` → `assignTeacher`
+   — the offerings form's swap; other roles: `assignTeacher` directly. Audit rows come from those services, in the
+   action's transaction.
+The options (`teachingOptionsQuery`, same permission) load only for a staff page and a caller holding the permission;
+the section's list is shown to every reader of the page, «افزودن تدریس» / «پایان تدریس» only with the permission.
+
+**Behaviour to note.** A school manager can now make any of THEIR colleagues teach in their own classes from the
+colleague's page; this is narrower than the offerings form's picker (`staffAssignableSql` also admits staff already
+teaching at the school but anchored elsewhere — those have no person page for the manager, so they are reached from
+the offerings page only). Switching someone's role on the same offering (e.g. assistant → main) is «پایان تدریس» then
+«افزودن تدریس».
+
+Tests: `tests/int/admin-scope.test.ts` «T» (own colleague → existing offering: teacher_assignment + derived role +
+audit, the offerings list shows them; same colleague again → CONFLICT; replacing the main teacher refused without
+confirmation, nothing written, then swapped; an assistant beside the main; a new درس defines the offering in the
+current نوبت; a درس the class already has → field error; another school's colleague / organization admin / class /
+offering (also under one's own class) / new درس in another school's class → NOT_FOUND for principal and vice, nothing
+written; a student → VALIDATION for the principal and the organization admin; the vice principal and the organization
+admin assign; the S1 principal's options never list the S2 class). `tests/unit/teaching-card.test.ts` (list for every
+reader, actions only with the permission, the «درس» picker's options, the strict input); `tests/unit/role-grant-ui.test.ts`
+now asserts the roles card carries no teaching control.
+
+Pre-existing, not touched: `tests/int/academic.test.ts` «getMyClass …» fails independently of this change —
+`MyClassTeacher` gained `subjectId` (cc95a88, «نشان درس») but the test's expected rows do not have it. Flag for the
+owner of «کلاس من».

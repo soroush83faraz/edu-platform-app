@@ -235,7 +235,8 @@ export interface PersonDetail {
    * /admin/roles only, whose query computes its own `revocable` flags.
    */
   roles: Array<{ roleAssignmentId: string; roleCode: string; roleName: string; scopeType: string; schoolId: string | null; schoolName: string | null; sourceType: string }>;
-  teaching: Array<{ teacherAssignmentId: string; classOfferingId: string; className: string; subjectName: string }>;
+  /** Active teaching: `role` main / assistant / substitute (the «تدریس» section on a colleague's page). */
+  teaching: Array<{ teacherAssignmentId: string; classOfferingId: string; className: string; subjectId: string; subjectName: string; role: string }>;
   /** Schools the person is anchored to (class, primary school, manual roles, live school enrollments); picks the credential sheet's school name. */
   schoolIds: string[];
 }
@@ -314,7 +315,14 @@ export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: strin
 
   const teaching = st
     ? await tx
-        .select({ teacherAssignmentId: teacherAssignment.id, classOfferingId: classOffering.id, className: classGroup.name, subjectName: subject.name })
+        .select({
+          teacherAssignmentId: teacherAssignment.id,
+          classOfferingId: classOffering.id,
+          className: classGroup.name,
+          subjectId: subject.id,
+          subjectName: subject.name,
+          role: teacherAssignment.role,
+        })
         .from(teacherAssignment)
         .innerJoin(classOffering, eq(classOffering.id, teacherAssignment.classOfferingId))
         .innerJoin(classGroup, eq(classGroup.id, classOffering.classGroupId))
