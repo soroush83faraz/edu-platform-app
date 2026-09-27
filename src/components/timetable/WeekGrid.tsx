@@ -12,6 +12,7 @@ import { formatNumberFa } from "@/lib/format";
 import { cellSubjectLabel } from "@/lib/subject-stamp";
 import { CALENDAR_WEEKDAYS, currentPeriodOf, defaultWeekCell, formatTimeRangeFa, FRIDAY, timeToMinutes, WEEKDAY_LABELS, weekRows, type PeriodLike, type WeekCell, type Weekday } from "@/lib/timetable";
 import { PeriodProgress } from "./PeriodProgress";
+import { cellOfferings, WeekClassList, weekClasses } from "./WeekClassList";
 import type { DayView, SessionSecondary } from "./types";
 
 export interface WeekGridProps {
@@ -49,6 +50,13 @@ export interface WeekGridProps {
  * 56 px tall (≥ 44 px targets) with no side padding; a lesson name line keeps its seven-letter budget
  * (`cellSubjectLabel`, unchanged — already computed for a ~40 px column, widest kept lines «هدیه‌های» 41.6,
  * «آزمایشگاه» 41.5, «جغرافیای» 40.1 px).
+ *
+ * A دبیر's week (`secondary === "class"`, owner 2026-09-27: "list all their classes at the bottom, and when they tap
+ * the schedule just make that one bolder") has no details card: under the grid `WeekClassList` lists every class of
+ * the week once. Nothing is selected on open. Tapping a lesson cell selects its class(es) — the row(s) turn bolder on
+ * `primary-50` and the cells of every OTHER class fade to 40 % — and tapping the same cell again, or an empty or
+ * تعطیل cell, clears it; tapping a row selects that class in the grid the same way (again: clears), and the row's
+ * chevron opens the درس page.
  */
 export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspective, weekDays, comingWeek = false }: WeekGridProps) {
   const byDay = new Map(days.map((d) => [d.weekday, d.sessions]));
@@ -56,7 +64,25 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
   const rows = weekRows(periods, all);
   const { currentPeriodNo } = currentPeriodOf(rows, nowMinutes);
   const [picked, setPicked] = useState<WeekCell | null>(null);
-  const pick = picked ?? defaultWeekCell(days, rows, today, nowMinutes);
+  // A دبیر's week: the class list replaces the details card, and the selection is the tapped cell's offerings (or a
+  // tapped row's) — nothing is selected until the دبیر taps.
+  const teacher = secondary === "class";
+  const [focus, setFocus] = useState<readonly string[]>([]);
+  const pick = teacher ? picked : (picked ?? defaultWeekCell(days, rows, today, nowMinutes));
+  const pickCell = (cell: WeekCell) => {
+    if (!teacher) {
+      setPicked(cell);
+      return;
+    }
+    const offerings = cellOfferings(days, cell);
+    const again = picked?.weekday === cell.weekday && picked.periodNo === cell.periodNo;
+    setPicked(again || offerings.length === 0 ? null : cell);
+    setFocus(again ? [] : offerings);
+  };
+  const pickClass = (offeringId: string) => {
+    setPicked(null);
+    setFocus(focus.includes(offeringId) ? [] : [offeringId]);
+  };
   // The column that is today — none on the جمعه that shows the coming week.
   const liveDay: Weekday | null = comingWeek && today === FRIDAY ? null : today;
   // جمعه is a holiday unless the school's week has lessons on it.
@@ -113,6 +139,9 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
               const isNow = d === liveDay && r.periodNo === currentPeriodNo;
               const past = d === liveDay && timeToMinutes(r.endsAt) <= nowMinutes;
               const names = here.map((x) => x.subjectName).join("، ");
+              // A دبیر's selected class: its cells stay full-strength, every other lesson fades.
+              const inFocus = focus.length > 0 && here.some((x) => focus.includes(x.offeringId));
+              const faded = focus.length > 0 && s && !inFocus;
               return (
                 <button
                   key={d}
@@ -121,11 +150,12 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
                   aria-pressed={selected}
                   aria-current={isNow && s ? "time" : undefined}
                   aria-label={`${WEEKDAY_LABELS[d]}${d === liveDay ? " (امروز)" : ""}، ${r.label}، ${holiday ? "تعطیل" : s ? names : "آزاد"}`}
-                  onClick={() => setPicked({ weekday: d, periodNo: r.periodNo })}
+                  onClick={() => pickCell({ weekday: d, periodNo: r.periodNo })}
                   className={cn(
                     "pressable relative flex h-14 min-w-0 flex-col items-center justify-center overflow-hidden rounded-stamp-lg text-center outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
                     s ? cn(subjectHueClasses(s.subjectId), "ring-1 ring-inset") : "ring-1 ring-inset ring-line/70",
-                    s && past && !selected && "opacity-60",
+                    s && past && !selected && !inFocus && !faded && "opacity-60",
+                    faded && "opacity-40",
                     selected && (s ? "shadow-1 ring-2 ring-current" : "ring-2 ring-text-faint"),
                     isNow && "ring-2 ring-primary-600",
                   )}
@@ -150,7 +180,9 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
         ))}
       </div>
 
-      {pick && pickedRow ? (
+      {teacher ? (
+        <WeekClassList classes={weekClasses(days, today, nowMinutes)} selected={focus} onSelect={pickClass} />
+      ) : pick && pickedRow ? (
         <div className="mt-2 border-t border-line/70 pt-1.5" aria-live="polite">
           <CrossFade swapKey={`${pick.weekday}-${pick.periodNo}`}>
             <p className="flex items-center justify-between gap-2 px-2 py-1 text-meta text-text-muted">
@@ -184,7 +216,8 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
                           <bdi>{s.subjectName}</bdi>
                         </span>
                         <span className="truncate text-meta text-text-muted">
-                          <bdi>{secondary === "class" ? `کلاس ${s.classGroupName}` : (s.teacherName ?? "دبیر هنوز مشخص نشده")}</bdi>
+                          {/* Only a student's or a class's week draws this card (a دبیر's has the class list). */}
+                          <bdi>{s.teacherName ?? "دبیر هنوز مشخص نشده"}</bdi>
                           {s.room ? (
                             <>
                               {" · "}

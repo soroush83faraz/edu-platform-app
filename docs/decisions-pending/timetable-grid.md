@@ -83,3 +83,35 @@ The student «کلاس من» page drops its visible title and the «مدرسه 
 reads «کلاس من» and the class card right under it names the class and the school. `PageHeader hideTitle` keeps the
 title for screen readers (sr-only heading) and, from `lg:`, only the context bar «مدرسه · سال · نوبت · date» — it
 carries the year, the term and today's date, which the page shows nowhere else.
+
+## A دبیر's classes under the week grid (owner 2026-09-27)
+
+**Ask.** "In the weekly schedule, for the teacher, list ALL their classes at the bottom, and when they tap on the
+schedule, just make that one bolder."
+
+**Decision (teacher perspective only — `secondary === "class"`; the student / class views keep the details card).**
+- Under the phone grid, inside the same `surface-work` card, `WeekClassList` (src/components/timetable/WeekClassList.tsx)
+  replaces the single-cell details card: «کلاس‌های این هفته (N)» and one row per OFFERING of the week, de-duplicated
+  by `offeringId`, ordered by class (`localeCompare("fa", { numeric: true })`) then درس. Each row: the درس's
+  `SubjectIcon`, the درس name, «کلاس X · N زنگ در هفته» (N = the offering's sessions in the week), and its next
+  session on the end side — «الان» (primary chip) while one of its periods is ringing, «امروز» + time for a later
+  one today, else the weekday + time of the next one, wrapping round the week (so on جمعه it reads شنبه).
+- **Default: nothing is selected.** A selection fades every other class's cells, so opening the page already faded
+  would make the week harder to read at a glance; the ringing cell still wears its brand ring and progress bar and
+  the ringing class's row reads «الان», which covers "what am I teaching now" without a selection.
+- **Tapping a lesson cell** selects its class(es) — a cell with two classes in one زنگ selects both. Their rows get
+  `data-selected` + `aria-pressed="true"`, a `primary-50` ground with a `primary-200` hairline, a bold `primary-900`
+  title and a 1 % lift (`motion-safe:` only; the colour transition is dropped under reduced motion). The grid cells
+  of every OTHER class fade to 40 % (the selected class's cells stay full-strength, even today's finished ones), and
+  the tapped cell keeps its ink ring. Tapping the same cell again, an empty cell or a تعطیل جمعه cell clears it.
+- **Tapping a row** selects that class in the grid the same way (no cell ring, since no cell was tapped) and never
+  navigates; tapping the selected row again clears it.
+- **Navigation: a separate 44 px chevron link at the row's end** (`prefetch={false}`, aria-label «باز کردن {درس}،
+  کلاس X»), tinted `primary-100` on the selected row. Chosen over "second tap navigates" because one control that
+  selects on the first tap and navigates on the second changes meaning under the finger and for a screen reader
+  (its role would have to flip between toggle and link); two sibling controls (a toggle button + a link — a link
+  cannot nest in a button) each say what they do and stay keyboard-reachable.
+- Not done: auto-scrolling the list into view when a cell is tapped — on a 375 × 812 phone the first rows already
+  sit under the grid, and scrolling the grid away from the finger that just tapped it felt worse. Easy to add
+  (`scrollIntoView({ block: "nearest" })`) if the owner wants it.
+- جمعه / holiday rendering in the grid and the student perspective are unchanged; tests in tests/unit/week-grid.test.ts.
