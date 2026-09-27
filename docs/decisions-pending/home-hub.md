@@ -194,3 +194,31 @@ logout; the bell top-left → «اعلان‌ها»), and every answer that poin
   subject set and pattern), new `roadmap.test.ts` (one tile per registry module in order; blue under «فعال», grey +
   pill for every upcoming one; month and description inside each tile; phase anchors, titles, months; no `<a>` /
   href at all; print lists carry every description).
+
+## «حساب من» — the profile page (/more) redesigned (owner, 2026-09-27: «remove the «بیشتر» title, make it prettier»)
+- **No visible title.** `/more` is «حساب من»: `metadata.title` and a screen-reader-only `PageHeader` title (`hideTitle`;
+  h2 — the shell already owns the page's sr-only h1). The header keeps the hub default back link «خانه» → /home (was
+  an explicit «بازگشت»). The route stays /more; the kept classic nav still labels it «بیشتر». The /help and /privacy
+  back link (`PublicBackLink`) now reads «حساب من». `ContentWidth size="reading"` — a column of rows never runs 1200 px.
+- **Profile card** (`src/components/profile/ProfileCard.tsx`): the Home greeting's language — `bg-hero`,
+  `rounded-hero`, `shadow-1`, white text — with the avatar (`UserRound` on a white/15 disc, as the top-bar profile
+  button draws it), the full name (`text-title` bold), one pill per hat from `roleHatsFor` / `ROLE_LABELS` (highest
+  first; «عضو» with none; a teacher of several offerings reads «دبیر · ۳ درس»), the school (the organization for an
+  organization admin) and the login identifier (phone in Persian digits or the username, `<bdi dir="ltr">`, with an
+  sr-only «شناسهٴ ورود:»). The pills DARKEN the ground (`primary-900/30` + white/20 hairline) so their 12 px white
+  text stays ≥ 5:1; a white/15 pill would fall to ≈ 3.9:1 at the gradient's light end.
+- **`BrandRipple`** (`src/components/brand/BrandRipple.tsx`): the faint «دانینو» mark in still water rings, extracted
+  from `HubGreeting` so both blue cards share one drawing (the greeting renders exactly as before).
+- **Rows in titled groups** (`PageSection surface="work" flush`, `text-section` headings): «حساب کاربری» (تغییر رمز)
+  and «راهنما و اطلاعات» (راهنما · حریم خصوصی · نقشهٴ راه), each ONE white card with hairline dividers. A row
+  (`ProfileRow`) is the whole link: `RowMark` glyph, title (`text-row`), hint under it (`text-meta` muted), end
+  chevron, ≥ 56 px. Rows tint on hover (`surface-sunken`) and settle on press (`pressable`) rather than lifting
+  (`surface-link`): they are rows OF a card, not cards, and a lifting row inside a divided list reads as broken.
+  «خروج» stays apart at the bottom in its own card — the unchanged `LogoutButton` (danger text, LogOut mark, caches
+  cleared before the action). Every destination and rule of the old page is kept; still nothing links into /admin.
+- Tests: `tests/unit/profile-page.test.ts` (no «بیشتر» anywhere in the page text, title «حساب من» sr-only with the
+  default back; the card's gradient, avatar, name, hats — principal + «دبیر · ۳ درس», org admin → organization,
+  «عضو» — Persian-digit phone, username as typed, no faint text; groups in order with the four hrefs; «خروج» last,
+  red, LogOut).
+- **Open for the owner:** (1) «حساب کاربری» holds one row (تغییر رمز) today — fold it into one group with the info rows,
+  or keep the room for future account rows? (2) Avatar is the glyph, not initials (matches the top-bar button).

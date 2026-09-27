@@ -4,7 +4,7 @@ import { cn } from "@/lib/cn";
 
 /**
  * The hub layout's profile door (docs/decisions-pending/home-hub.md): a 44 px round button at the START (right) of
- * the top bar that opens «بیشتر» — the account page (profile, password, help, logout). It draws the person glyph
+ * the top bar that opens «حساب من» (/more) — the account page (profile, password, help, logout). It draws the person glyph
  * (lucide `UserRound`) on a `surface-panel` circle — the owner preferred an icon to the first-name initial
  * (2026-09-27). Not a primary action: no fill, no blue.
  */
