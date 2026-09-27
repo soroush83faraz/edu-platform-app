@@ -7,9 +7,11 @@ import { PageSection } from "@/components/layout/PageSection";
 import { ProfileCard } from "@/components/profile/ProfileCard";
 import { ProfileRow } from "@/components/profile/ProfileRow";
 import { LogoutButton } from "@/components/shell/LogoutButton";
+import { contextPlaceFa } from "@/lib/context-place";
 import { requireContext } from "@/lib/ctx";
 import { UPCOMING_MODULES } from "@/lib/modules-registry";
 import { myLoginIdentifierQuery } from "@/lib/profile-queries";
+import { getShellContext } from "@/lib/shell-context";
 import { logoutAction } from "@/modules/iam/actions";
 
 export const metadata: Metadata = { title: "حساب من" };
@@ -31,8 +33,8 @@ export default async function MorePage() {
   const hats = roleHatsFor(ctx.assignments);
   const login = await myLoginIdentifierQuery();
   const teaching = ctx.assignments.filter((a) => a.roleCode === "teacher").length;
-  // The organization admin speaks for the organization, everyone else for their school.
-  const place = hats[0] === "org_admin" ? ctx.orgName : (ctx.schoolName ?? ctx.orgName);
+  // The organization admin speaks for the organization, everyone else for their school — the shell's one rule.
+  const place = contextPlaceFa(await getShellContext(), ctx);
 
   return (
     <ContentWidth size="reading" className="reveal-stagger gap-6">

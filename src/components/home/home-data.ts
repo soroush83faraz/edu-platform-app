@@ -4,7 +4,7 @@
 // the management overview belongs to /admin.
 import { cache } from "react";
 import type { Ctx } from "@/lib/ctx";
-import { homeTilesFor, SHOW_UPCOMING_ON_HOME, upcomingTilesFor, type HomeTile, type UpcomingTile } from "@/lib/modules-registry";
+import { homeTilesFor, showUpcomingOnHome, upcomingTilesFor, type HomeTile, type UpcomingTile } from "@/lib/modules-registry";
 import { getUiVariant, type UiVariant } from "@/lib/ui-variant";
 import { myClassQuery, myTimetableQuery } from "@/modules/academic/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
@@ -38,7 +38,7 @@ export interface HomeTiles {
   tiles: HomeTile[];
   /**
    * The hub Home's grey «به‌زودی» tiles for this person (`upcomingTilesFor`) — none in the classic layout, and none
-   * while `SHOW_UPCOMING_ON_HOME` is off (owner, 2026-09-27: hidden for now; the renderers stay wired).
+   * for anyone but the organization admin (`showUpcomingOnHome`, owner 2026-09-27).
    */
   upcoming: UpcomingTile[];
   hats: Hats | null;
@@ -58,7 +58,8 @@ export const resolveHomeTiles = cache(async (ctx: Ctx): Promise<HomeTiles> => {
   const adminScope = hats?.adminScope ?? null;
   // The experimental «hub» layout (no nav) turns every former nav destination into a tile; classic is unchanged.
   const variant = await getUiVariant();
-  const tiles = homeTilesFor({ isStudent, isTeacher, isAdmin: adminScope !== null, adminScope, singleSchoolId: hats?.adminSingleSchoolId ?? null }, has, { variant });
-  const upcoming = SHOW_UPCOMING_ON_HOME && variant === "hub" ? upcomingTilesFor({ isStudent, isTeacher, isAdmin: adminScope !== null }) : [];
+  const tileHats = { isStudent, isTeacher, isAdmin: adminScope !== null, adminScope, singleSchoolId: hats?.adminSingleSchoolId ?? null };
+  const tiles = homeTilesFor(tileHats, has, { variant });
+  const upcoming = variant === "hub" && showUpcomingOnHome(tileHats) ? upcomingTilesFor(tileHats) : [];
   return { tiles, upcoming, hats, isStudent, isTeacher, variant };
 });
