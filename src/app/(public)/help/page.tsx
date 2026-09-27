@@ -1,212 +1,121 @@
-import { Bell, ClipboardPlus, Inbox, KeyRound, LifeBuoy, LogIn, type LucideIcon, Settings2, Smartphone } from "lucide-react";
+import { CircleHelp, LifeBuoy, Presentation, School, Settings2 } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { ClayIcon } from "@/components/ClayIcon";
-import { RowMark } from "@/components/RowMark";
+import { PageSection } from "@/components/layout/PageSection";
 import { PublicBackLink } from "@/components/shell/PublicBackLink";
 import { getRequestContext } from "@/lib/ctx";
 import { productName } from "@/lib/product";
-import { canAtAnyScope } from "@/modules/iam/can";
+import { hasTeachingHat } from "@/lib/work-item-words";
+import { canAtAnyScope, navRoleFor } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "راهنما" };
 
-interface Topic {
-  id: string;
-  icon: LucideIcon;
-  title: string;
-  /** Who the section is for — shown as a small caption. */
-  audience: string;
-}
-
-const TOPICS: Topic[] = [
-  { id: "login", icon: LogIn, title: "ورود به سامانه", audience: "همه" },
-  { id: "password", icon: KeyRound, title: "تغییر رمز در اولین ورود", audience: "همه" },
-  { id: "inbox", icon: Inbox, title: "پنل من", audience: "دانش‌آموزان و کادر" },
-  { id: "new-item", icon: ClipboardPlus, title: "تکلیف جدید", audience: "دبیران و مدیران" },
-  { id: "notifications", icon: Bell, title: "اعلان‌ها", audience: "همه" },
-  { id: "admin", icon: Settings2, title: "مدیریت مدرسه", audience: "مدیر و معاون" },
-  { id: "install", icon: Smartphone, title: "نصب روی گوشی", audience: "همه" },
-];
-
 /**
- * The phase-1 guide: one card per topic, anchored (`/help#inbox`), with the clay marks of the product. Public
- * (linked from /login): without a session every topic is shown, each with its audience caption; a signed-in
- * reader sees only the topics of their roles.
+ * The phase-1 guide: short, friendly Q&A in accordions (`<QA>`), grouped by task for everyone and then by role.
+ * Public (linked from /login): without a session every role section is shown; a signed-in reader sees only the
+ * sections that match their own hats (a multi-hat person, e.g. an admin who also teaches, sees both).
  */
 export default async function HelpPage() {
   const ctx = await getRequestContext();
   const name = productName();
-  const canCreate = ctx ? canAtAnyScope(ctx.assignments, "workspace.work_item.create") : true;
-  const isAdmin = ctx ? canAtAnyScope(ctx.assignments, "iam.admin.access") : true;
-  const topics = TOPICS.filter((t) => (t.id === "new-item" ? canCreate : t.id === "admin" ? isAdmin : true));
+  const showStudent = !ctx || navRoleFor(ctx.assignments) === "student";
+  const showTeacher = !ctx || hasTeachingHat(ctx.assignments);
+  const showAdmin = !ctx || canAtAnyScope(ctx.assignments, "iam.admin.access");
 
   return (
-    <article className="flex flex-col gap-5 px-4 pt-3 pb-8 md:pt-6">
+    <article className="flex flex-col gap-6 px-4 pt-3 pb-8 md:pt-6">
       <PublicBackLink />
       <header className="flex items-start gap-4">
         <ClayIcon icon={LifeBuoy} size="xl" />
         <div className="flex min-w-0 flex-col gap-1">
           <h2 className="text-xl font-bold leading-8 text-text">راهنمای {name}</h2>
-          <p className="text-sm leading-6 text-text-muted">
-            کوتاه و به ترتیب کار: از ورود تا نصب روی گوشی.{ctx ? " بخش‌هایی که به نقش شما مربوط نیست نشان داده نمی‌شود." : " زیر عنوان هر بخش نوشته شده برای کدام نقش است."}
-          </p>
+          <p className="text-sm leading-6 text-text-muted">هرچه لازم دارید بدانید، کوتاه و ساده. روی هر سؤال بزنید تا باز شود.</p>
         </div>
       </header>
 
-      <nav aria-label="فهرست راهنما">
-        <ul className="flex flex-wrap gap-2">
-          {topics.map((t) => (
-            <li key={t.id}>
-              <a href={`#${t.id}`} className="inline-flex min-h-11 items-center rounded-full border border-line bg-surface px-4 text-sm text-text-muted transition-base hover:border-line-strong hover:text-text">
-                {t.title}
-              </a>
-            </li>
-          ))}
-        </ul>
-      </nav>
+      <PageSection id="general" title="برای همه" icon={CircleHelp}>
+        <div className="flex flex-col gap-2">
+          <QA id="login" question="چطور وارد شوم و رمزم را عوض کنم؟">
+            <p>نشانی سامانه را در مرورگر گوشی یا رایانه باز کنید — یا از آیکون {name} روی صفحهٴ اصلی، اگر نصبش کرده‌اید.</p>
+            <p>
+              شناسهٴ ورودتان شمارهٴ موبایل شماست. دانش‌آموزی که موبایل ندارد یک نام‌کاربری دارد که روی برگهٴ اعتبارنامه‌اش نوشته شده. رمز اولیه را هم از همان برگه یا از مدیر مدرسه بگیرید.
+            </p>
+            <p>در اولین ورود، سامانه پیش از هر چیز از شما رمز تازه می‌خواهد و تا این کار را نکنید بخش دیگری باز نمی‌شود. بعدها هر وقت خواستید از «بیشتر ← تغییر رمز» رمزتان را عوض کنید.</p>
+            <p>روی رایانهٴ مشترک مدرسه، گزینهٴ «این دستگاه عمومی است» را بزنید تا نشست‌تان زودتر (بعد از ۸ ساعت) خودکار بسته شود.</p>
+          </QA>
+          <QA id="forgot" question="اگر رمزم را فراموش کردم؟">
+            <p>خودتان نمی‌توانید رمز فراموش‌شده را از داخل سامانه برگردانید — این کار فقط با مدیر یا معاون مدرسه است. از او بخواهید یک رمز موقت تازه برایتان تعیین کند و با همان وارد شوید.</p>
+          </QA>
+          <QA id="timetable" question="برنامهٴ هفتگی کجاست؟">
+            <p>برنامهٴ هفتگی صفحهٴ جداگانه‌ای ندارد؛ همان‌جایی است که هر روز سر می‌زنید: دانش‌آموز در «کلاس من»، دبیر در «کلاس‌ها». همان‌جا زنگ‌های هر روز را می‌بینید.</p>
+          </QA>
+          <QA id="notifications" question="اعلان‌ها چطور کار می‌کند؟">
+            <p>«اعلان‌ها» خبر هر تغییری روی تکالیف و تسک‌های شماست: مورد تازه، تغییر مهلت، تغییر وضعیت. روی هر اعلان بزنید تا مستقیم به همان مورد بروید.</p>
+            <p>اعلان‌ها فقط داخل برنامه‌اند — پیامک یا نوتیفیکیشن گوشی در فاز ۱ نیست، پس بهتر است هر روز یک‌بار سر بزنید.</p>
+          </QA>
+          <QA id="install" question="نصب روی گوشی (اندروید و آیفون)">
+            <p>{name} یک برنامهٴ وب است؛ چیزی از فروشگاهی نصب نمی‌شود.</p>
+            <p>
+              <strong className="font-semibold text-text">اندروید / کروم:</strong> در خانه کارت «نصب برنامه روی گوشی» را بزنید، یا از منوی مرورگر «افزودن به صفحهٴ اصلی» را انتخاب کنید.
+            </p>
+            <p>
+              <strong className="font-semibold text-text">آیفون / سافاری:</strong> دکمهٴ هم‌رسانی (مربع با فلش) را بزنید و «افزودن به صفحهٴ اصلی» را انتخاب کنید.
+            </p>
+            <p>بعد از نصب، از همان آیکون روی صفحهٴ اصلی باز کنید — بدون نوار نشانی مرورگر.</p>
+          </QA>
+        </div>
+      </PageSection>
 
-      <Topic topic={TOPICS[0]}>
-        <Steps>
-          <li>نشانی سامانه را در مرورگر گوشی یا رایانه باز کنید (یا از نشان برنامه روی صفحهٴ اصلی).</li>
-          <li>
-            <strong className="font-semibold">شناسهٴ ورود</strong> شمارهٴ موبایل شماست (مثل <bdi dir="ltr">۰۹۱۲۱۲۳۴۵۶۷</bdi>). دانش‌آموزی که موبایل ندارد نام‌کاربری‌ای مثل <bdi dir="ltr">alk-14051001</bdi> دارد که روی برگهٴ اعتبارنامه‌اش نوشته شده است. ارقام فارسی و انگلیسی هر دو پذیرفته می‌شوند.
-          </li>
-          <li>رمز اولیه را از برگهٴ اعتبارنامه یا از مدیر مدرسه بگیرید.</li>
-          <li>روی دستگاه مشترک (رایانهٴ مدرسه) گزینهٴ «این دستگاه عمومی است» را بزنید تا نشست بعد از ۸ ساعت خودکار پایان یابد.</li>
-        </Steps>
-        <Note>پس از چند بار رمز اشتباه، ورود برای مدتی بسته می‌شود و پیام کلی نشان داده می‌شود. اگر حسابتان قفل شد، مدیر مدرسه از پروندهٴ شما «رفع قفل» می‌کند یا رمز موقت تازه می‌دهد.</Note>
-      </Topic>
-
-      <Topic topic={TOPICS[1]}>
-        <p>در اولین ورود (و هر بار که مدیر رمز موقت بدهد) سامانه پیش از هر چیز صفحهٴ «تغییر رمز» را نشان می‌دهد و تا رمز را تغییر ندهید هیچ بخش دیگری باز نمی‌شود.</p>
-        <Steps>
-          <li>رمز اولیه را در «رمز فعلی» بنویسید.</li>
-          <li>رمز جدیدی با دست‌کم ۸ نویسه انتخاب کنید که با شماره یا نام‌کاربری‌تان یکی نباشد و تکراری یا ترتیبی (مثل ۱۲۳۴۵۶۷۸) نباشد.</li>
-          <li>رمز جدید را در «تکرار رمز» دوباره بنویسید و ذخیره کنید. نشست‌های دیگرِ حسابتان به‌طور خودکار خارج می‌شوند.</li>
-        </Steps>
-        <Note>
-          بعداً می‌توانید از «بیشتر ← تغییر رمز» رمز را عوض کنید. رمز فراموش‌شده را فقط مدیر مدرسه با «تعیین رمز موقت» بازنشانی می‌کند.
-        </Note>
-      </Topic>
-
-      <Topic topic={TOPICS[2]}>
-        <p>
-          <Link href="/inbox" className="font-semibold text-primary-700 hover:underline">
-            پنل من
-          </Link>{" "}
-          فهرست تکالیف شماست: تکلیف‌هایی که دبیر یا کادر مدرسه داده، و یادداشت‌های شخصی خودتان.
-        </p>
-        <ul className="list-disc space-y-1 ps-5">
-          <li>
-            دو تب دارد: <strong className="font-semibold">انجام‌نشده</strong> و <strong className="font-semibold">انجام‌شده</strong>. تکالیف انجام‌نشده بر پایهٴ مهلت گروه می‌شوند: سررسیده، امروز، این هفته، بعداً، بدون مهلت.
-          </li>
-          <li>روی هر تکلیف بزنید تا جزئیات، توضیح، مهلت و گفت‌وگو را ببینید. تکلیف خوانده‌شده حساب می‌شود و نشان عدد روی «پنل من» کم می‌شود.</li>
-          <li>
-            وقتی تکلیفی را انجام دادید دکمهٴ <strong className="font-semibold">«انجام شد»</strong> را بزنید؛ دبیر همان لحظه اعلان می‌گیرد و پیشرفت کلاس را می‌بیند.
-          </li>
-          <li>در بخش «گفت‌وگو» می‌توانید نظر بنویسید — مثلاً «انجام دادم، فقط سؤال ۳ را نفهمیدم». نظر شما روی تکلیف کلاسی فقط برای دبیر و کادر مدرسه دیده می‌شود، نه هم‌کلاسی‌ها.</li>
-          <li>از «گزینه‌های بیشتر» می‌توانید تکلیفی را به بالای فهرست سنجاق کنید یا از پنل خودتان بایگانی کنید؛ تکلیف برای دیگران دست‌نخورده می‌ماند.</li>
-        </ul>
-        <Note>دبیران زیر فهرست، فیلتر «فقط تکالیف داده‌شده» را دارند و برای هر تکلیف می‌بینند چند نفر آن را انجام داده‌اند.</Note>
-      </Topic>
-
-      {canCreate ? (
-        <Topic topic={TOPICS[3]}>
-          <p>
-            از دکمهٴ زردِ{" "}
-            <Link href="/inbox/new" className="font-semibold text-primary-700 hover:underline">
-              «تکلیف جدید»
-            </Link>{" "}
-            در خانه یا بالای پنل من.
-          </p>
-          <Steps>
-            <li>عنوان کوتاه و روشن بنویسید (مثل «تمرین صفحهٴ ۴۲»)؛ توضیح اختیاری است.</li>
-            <li>اولویت را انتخاب کنید. «فوری» و «بالا» با نشان زرد در فهرست گیرندگان دیده می‌شود.</li>
-            <li>
-              مهلت را با دکمه‌های «امروز / فردا / هفتهٴ بعد» یا به شکل <bdi dir="ltr">۱۴۰۵/۰۷/۰۵</bdi> بدهید؛ بدون ساعت، پایان همان روز (۲۳:۵۹) حساب می‌شود. مهلتِ گذشته مجاز است اما هشدار می‌گیرد.
-            </li>
-            <li>
-              گیرندگان: <strong className="font-semibold">کلاس</strong> (درسِ خودتان؛ می‌توانید تیک چند نفر را بردارید)، <strong className="font-semibold">اشخاص</strong> (فقط مدیران: جست‌وجوی نام) یا <strong className="font-semibold">خودم</strong> (یادداشت شخصی که فقط در پنل خودتان می‌ماند).
-            </li>
-            <li>«ارسال» بزنید. هر گیرنده یک اعلان و یک ردیف در پنلش می‌گیرد؛ شما تکلیف را زیر «فقط تکالیف داده‌شده» با پیشرفت هر نفر می‌بینید.</li>
-          </Steps>
-          <Note>روی صفحهٴ تکلیف می‌توانید آن را «حذف» کنید (با تأیید) — دانش‌آموزان دیگر آن را در فهرست خود نمی‌بینند و هر وقت خواستید با «بازگشایی» برمی‌گردد؛ تکلیف انجام‌شده را هم می‌توانید «بازگشایی» کنید. با تیک «فقط برای کادر مدرسه» نظری می‌نویسید که دانش‌آموزان نمی‌بینند.</Note>
-        </Topic>
+      {showStudent ? (
+        <PageSection id="student" title="دانش‌آموز" icon={School}>
+          <div className="flex flex-col gap-2">
+            <QA id="student-items" question="تکالیف و تسک‌هایم را کجا ببینم؟">
+              <p>در «پنل من» همهٴ کارهای شما کنار هم است: تکلیف‌هایی که دبیرها داده‌اند و تسک‌های شخصی خودتان. دو تب دارد — انجام‌نشده و انجام‌شده — و انجام‌نشده‌ها بر پایهٴ مهلت مرتب می‌شوند.</p>
+              <p>روی هر مورد بزنید تا جزئیات و مهلتش را ببینید، و وقتی انجامش دادید دکمهٴ «انجام شد» را بزنید. صفحهٴ «کلاس من» هم درس‌ها و برنامهٴ هفتگی‌تان را نشان می‌دهد.</p>
+            </QA>
+            <QA id="student-new" question="چطور یک تسک شخصی بسازم؟">
+              <p>از «تسک جدید» در خانه یا بالای پنل من. یک عنوان کوتاه بنویسید و اگر خواستید مهلتی هم برایش بگذارید. این تسک فقط برای خودتان می‌ماند؛ کس دیگری آن را نمی‌بیند.</p>
+            </QA>
+          </div>
+        </PageSection>
       ) : null}
 
-      <Topic topic={TOPICS[4]}>
-        <p>
-          <Link href="/notifications" className="font-semibold text-primary-700 hover:underline">
-            اعلان‌ها
-          </Link>{" "}
-          خبرِ هر تغییر روی تکالیف شماست: تکلیف جدید، نظر تازه، تغییر وضعیت. روی هر اعلان بزنید تا به همان تکلیف بروید؛ «همه را خوانده‌شده کن» فقط وقتی اعلان نخوانده دارید نشان داده می‌شود. اعلان‌ها فقط درون برنامه‌اند — پیامک یا نوتیفیکیشن گوشی در فاز ۱ نیست، پس هر روز یک بار سر بزنید.
-        </p>
-      </Topic>
-
-      {isAdmin ? (
-        <Topic topic={TOPICS[5]}>
-          <p>
-            <Link href="/admin" className="font-semibold text-primary-700 hover:underline">
-              مدیریت
-            </Link>{" "}
-            ساختار مدرسه و افراد را نگه می‌دارد. ترتیب راه‌اندازی همان ترتیب چیپ‌های بالای صفحه است؛ صفحهٴ «راه‌اندازی مدرسه» (فقط برای مدیر سازمان، که مدرسه‌ها را تعریف می‌کند) چک‌لیست پیشرفت را نشان می‌دهد.
-          </p>
-          <ul className="list-disc space-y-1 ps-5">
-            <li>
-              <strong className="font-semibold">ساختار</strong>: مدرسه (فقط مدیر سازمان می‌سازد) ← سال تحصیلی و نوبت‌ها ← مقطع، پایه و درس (کاتالوگ سازمان) ← کلاس‌ها ← روی هر کلاس «ارائهٴ درس‌ها»: درس × نوبت × دبیر اصلی. تعیین دبیر همان‌جا نقش «معلم» را برای آن کلاس‌درس می‌دهد؛ معاون فقط دبیر را تغییر می‌دهد.
-            </li>
-            <li>
-              <strong className="font-semibold">دانش‌آموزان و کارکنان</strong>: ثبت با یک فرم (شخص + حساب + کلاس). رمز اولیه فقط یک بار، همان‌جا، نشان داده می‌شود — همان‌جا یادداشتش کنید و به دانش‌آموز برسانید. اگر گم شد، از پروندهٴ فرد «تعیین رمز موقت» را بزنید.
-            </li>
-            <li>
-              <strong className="font-semibold">پروندهٴ فرد</strong>: ویرایش مشخصات، «تعیین رمز موقت» (همهٴ نشست‌های او خارج می‌شود)، «رفع قفل»، ثبت‌نام یا انتقال کلاس، نقش‌ها و تدریس.
-            </li>
-            <li>
-              <strong className="font-semibold">جست‌وجو</strong> با نام یا شمارهٴ دانش‌آموزی، با ارقام فارسی یا انگلیسی. ورود گروهی از اکسل فعلاً از خط فرمان و به دست تیم فنی انجام می‌شود.
-            </li>
-          </ul>
-          <Note>مدیر مدرسه فقط مدرسه‌های خودش را می‌بیند و فقط نقش «معاون» می‌دهد؛ نقش مدیر مدرسه با مدیر سازمان است.</Note>
-        </Topic>
+      {showTeacher ? (
+        <PageSection id="teacher" title="دبیر" icon={Presentation}>
+          <div className="flex flex-col gap-2">
+            <QA id="teacher-new" question="چطور تکلیف جدید بدهم؟">
+              <p>از دکمهٴ زرد «تکلیف جدید» در خانه یا بالای پنل من. عنوان کوتاه بنویسید، اولویت و مهلت را تعیین کنید و گیرندگان را انتخاب کنید: یک کلاس (با امکان برداشتن تیک چند نفر) یا فقط خودتان.</p>
+              <p>بعد از ارسال، هر دانش‌آموز یک اعلان و یک ردیف در پنل خودش می‌گیرد.</p>
+            </QA>
+            <QA id="teacher-progress" question="پیشرفت کلاس را از کجا ببینم؟">
+              <p>زیر «پنل من»، فیلتر «فقط تکالیف داده‌شده» را بزنید؛ برای هر تکلیف می‌بینید چند دانش‌آموز آن را انجام داده‌اند.</p>
+              <p>اگر لازم شد می‌توانید تکلیف را «حذف» کنید — چیزی واقعاً از دست نمی‌رود و هر وقت خواستید با «بازگشایی» برش می‌گردانید.</p>
+            </QA>
+          </div>
+        </PageSection>
       ) : null}
 
-      <Topic topic={TOPICS[6]}>
-        <p>{name} یک برنامهٴ وب قابل نصب است؛ چیزی از فروشگاه دانلود نمی‌شود.</p>
-        <ul className="list-disc space-y-1 ps-5">
-          <li>
-            <strong className="font-semibold">اندروید / کروم</strong>: در صفحهٴ خانه کارت «نصب برنامه روی گوشی» را بزنید، یا از منوی مرورگر «افزودن به صفحهٴ اصلی» را انتخاب کنید.
-          </li>
-          <li>
-            <strong className="font-semibold">آیفون / سافاری</strong>: دکمهٴ هم‌رسانی (مربع با فلش) ← «افزودن به صفحهٴ اصلی» ← «افزودن».
-          </li>
-        </ul>
-        <p>پس از نصب، {name} را از آیکونش روی صفحهٴ اصلی باز کنید: بدون نوار نشانی و بدون سرآیند مرورگر باز می‌شود. در زبانهٴ معمولی مرورگر، نوار نشانی مال خود مرورگر است و برداشته نمی‌شود.</p>
-        <Note>برنامه هیچ داده‌ای روی گوشی نگه نمی‌دارد؛ بدون اینترنت فقط صفحهٴ «اتصال برقرار نیست» را می‌بینید و با «خروج» همه‌چیز از دستگاه پاک می‌شود — پس روی گوشی مشترک همیشه خروج کنید.</Note>
-      </Topic>
+      {showAdmin ? (
+        <PageSection id="admin" title="مدیر و معاون" icon={Settings2}>
+          <div className="flex flex-col gap-2">
+            <QA id="admin-structure" question="ساختار مدرسه و کلاس‌ها را از کجا می‌سازم؟">
+              <p>از «مدیریت». ترتیب راه‌اندازی همان ترتیب چیپ‌های بالای صفحه است: سال تحصیلی و نوبت‌ها، مقطع و پایه و درس، کلاس‌ها — و روی هر کلاس دبیرهایش را تعیین می‌کنید.</p>
+            </QA>
+            <QA id="admin-password" question="رمز کسی را فراموش کرده یا حسابش قفل شده؛ چه کنم؟">
+              <p>از پروندهٴ همان فرد در «مدیریت»، «تعیین رمز موقت» یا «رفع قفل» را بزنید. رمز موقت فقط همان‌جا و یک‌بار نشان داده می‌شود — همان‌جا یادداشتش کنید و به فرد برسانید.</p>
+            </QA>
+          </div>
+        </PageSection>
+      ) : null}
     </article>
   );
 }
 
-function Topic({ topic, children }: { topic: Topic; children: React.ReactNode }) {
+function QA({ id, question, children }: { id: string; question: string; children: React.ReactNode }) {
   return (
-    <section id={topic.id} aria-labelledby={`${topic.id}-title`} className="flex scroll-mt-20 flex-col gap-3 surface-work p-4">
-      <div className="flex items-center gap-3">
-        <RowMark icon={topic.icon} />
-        <div className="flex flex-col">
-          <h3 id={`${topic.id}-title`} className="text-base font-semibold text-text">
-            {topic.title}
-          </h3>
-          <span className="text-meta text-text-muted">{topic.audience}</span>
-        </div>
-      </div>
-      <div className="flex flex-col gap-2 text-sm leading-7 text-text">{children}</div>
-    </section>
+    <details id={id} className="surface-panel">
+      <summary className="flex min-h-11 cursor-pointer items-center px-4 text-sm font-medium text-text">{question}</summary>
+      <div className="flex flex-col gap-2 border-t border-line/70 px-4 py-3 text-sm leading-7 text-text-muted">{children}</div>
+    </details>
   );
-}
-
-function Steps({ children }: { children: React.ReactNode }) {
-  return <ol className="list-decimal space-y-1 ps-5 marker:text-text-muted">{children}</ol>;
-}
-
-function Note({ children }: { children: React.ReactNode }) {
-  return <p className="rounded-lg bg-surface-sunken px-3 py-2 text-sm leading-6 text-text-muted">{children}</p>;
 }

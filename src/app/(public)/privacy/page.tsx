@@ -1,4 +1,4 @@
-import { Building2, Eye, FileText, Globe, ListChecks, type LucideIcon, MapPin, Pencil, ShieldCheck } from "lucide-react";
+import { Eye, FileText, type LucideIcon, Pencil, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import { ClayIcon } from "@/components/ClayIcon";
 import { RowMark } from "@/components/RowMark";
@@ -9,9 +9,8 @@ export const metadata: Metadata = { title: "حریم خصوصی" };
 
 /**
  * The privacy notice of phase 1 — the client's own text (edu-platform-architecture/docs/client/06-etelaieh-harim-
- * khosoosi.md) adapted to a web page: what is stored, why, who sees it, where, external services, who owns it,
- * how to ask for a correction. The school is the data owner; the contact line is what the school configures.
- * Public: readable before signing in (linked from /login).
+ * khosoosi.md) adapted to a web page: what is stored, who sees it, how to ask for a correction. The contact line
+ * is what the school configures. Public: readable before signing in (linked from /login).
  */
 export default function PrivacyPage() {
   const name = productName();
@@ -39,10 +38,6 @@ export default function PrivacyPage() {
         <p>هیچ اطلاعات دیگری — مثل کد ملی، تاریخ تولد، نشانی خانه یا عکس — در فاز ۱ ثبت نمی‌شود.</p>
       </Section>
 
-      <Section icon={ListChecks} title="برای چه استفاده می‌شود">
-        <p>فقط برای این‌که هر نفر بتواند وارد {name} شود، کارهای کلاسی خودش را ببیند و انجام دهد، و مدرسه بتواند کلاس‌ها، دبیران و کاربران را مدیریت کند. هیچ استفادهٴ تبلیغاتی یا تحلیلی از اطلاعات نمی‌شود.</p>
-      </Section>
-
       <Section icon={Eye} title="چه کسی می‌بیند">
         <ul className="list-disc space-y-1 ps-5">
           <li>
@@ -56,18 +51,6 @@ export default function PrivacyPage() {
           </li>
         </ul>
         <p>اطلاعات هیچ دانش‌آموز یا کلاسی به مدرسهٴ دیگری نشان داده نمی‌شود؛ هر مدرسه داده‌های خودش را می‌بیند. نظری که یک دانش‌آموز روی تکلیف کلاسی می‌گذارد فقط برای دبیر و کادر مدرسه دیده می‌شود، نه هم‌کلاسی‌ها.</p>
-      </Section>
-
-      <Section icon={MapPin} title="کجا نگهداری می‌شود">
-        <p>روی سروری که داخل ایران قرار دارد. برنامه روی گوشی هیچ داده‌ای را ذخیره نمی‌کند؛ با خروج از حساب، همه‌چیز از دستگاه پاک می‌شود.</p>
-      </Section>
-
-      <Section icon={Globe} title="چه سرویس‌های بیرونی درگیرند">
-        <p>هیچ. در فاز ۱ هیچ سرویس بیرونی — تبلیغاتی، تحلیلی، فونت یا نقشه — با اطلاعات شما در ارتباط نیست و هیچ داده‌ای به خارج از سرور مدرسه فرستاده نمی‌شود.</p>
-      </Section>
-
-      <Section icon={Building2} title="مالک داده">
-        <p>مدرسه مالک این اطلاعات است و دربارهٴ ثبت، اصلاح و حذف آن‌ها تصمیم می‌گیرد. سازندهٴ سامانه فقط نگه‌دارندهٴ فنی است.</p>
       </Section>
 
       <Section icon={Pencil} title="حق درخواست اصلاح یا حذف">
