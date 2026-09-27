@@ -180,7 +180,7 @@ describe("navRoleFor", () => {
 });
 
 describe("product map", () => {
-  it("«تکالیف» is delivered (phase 1) and no longer «به‌زودی»; «برنامهٴ کلاسی» likewise", () => {
+  it("«تکالیف» is delivered (phase 1) and no longer «به‌زودی»; «برنامهٴ هفتگی» likewise", () => {
     expect(MODULES.find((m) => m.code === "homework")?.phase).toBe(1);
     expect(MODULES.find((m) => m.code === "class-schedule")?.phase).toBe(1);
     expect(UPCOMING_MODULES.map((m) => m.code)).not.toContain("homework");

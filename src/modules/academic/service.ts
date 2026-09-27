@@ -325,7 +325,7 @@ export type TimetableCtx = ServiceCtx & CanContext;
 export const TIMETABLE_MESSAGES = {
   offeringNotOfClass: "این درس برای این کلاس تعریف نشده است.",
   offeringClosed: "این درس پایان یافته و در برنامه قرار نمی‌گیرد.",
-  periodUnknown: "این زنگ در زنگ‌بندی مدرسه وجود ندارد.",
+  periodUnknown: "این زنگ در برنامهٴ کلاسی مدرسه وجود ندارد.",
   weekdayUnknown: "روز هفته نامعتبر است.",
   /** `(teacher, class, subject)` — the double-booking warning (allowed, flagged). */
   teacherClash: (teacher: string, cls: string, subject: string) => `${teacher} در همین زنگ در کلاس ${cls} (${subject}) هم درس دارد.`,

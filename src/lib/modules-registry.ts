@@ -110,13 +110,13 @@ export const MODULES: readonly ModuleEntry[] = [
   {
     // Delivered in phase 1 (owner's ask): /timetable sends each hat to its own view — «کلاس من», «کلاس‌های من», the admin class pages.
     code: "class-schedule",
-    labelFa: "برنامهٴ کلاسی",
+    labelFa: "برنامهٴ هفتگی",
     href: "/timetable",
     icon: CalendarDays,
     permission: "academic.timetable.read",
     phase: 1,
     competitorTerm: "برنامهٴ کلاسی",
-    descriptionFa: "برنامهٴ هفتگی هر کلاس، زنگ به زنگ، برای دانش‌آموز و دبیر؛ زنگ‌بندی و برنامه را مدیر تنظیم می‌کند.",
+    descriptionFa: "برنامهٴ هفتگی هر کلاس، زنگ به زنگ، برای دانش‌آموز و دبیر؛ برنامهٴ کلاسی و زنگ‌ها را مدیر تنظیم می‌کند.",
   },
 
   {
@@ -428,7 +428,7 @@ export const HOME_TILES: readonly HomeTile[] = [
     // A زنگ‌بندی belongs to ONE school and has no organization-wide page; an admin of several reaches it through
     // each school's hub («مدرسه‌ها» → the school → زنگ‌بندی).
     code: "periods",
-    labelFa: "زنگ‌بندی",
+    labelFa: "برنامهٴ کلاسی",
     // Empty on purpose: `oneSchool.only` drops this tile unless `homeTilesFor` rewrites the href with the school
     // it belongs to, so the placeholder is never rendered (`tests/unit/home-tiles.test.ts` guards it).
     href: "",

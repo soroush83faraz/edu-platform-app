@@ -22,7 +22,7 @@ const PERIODS: PeriodInput[] = [
 const render = (canEdit: boolean, initial: PeriodInput[] = PERIODS) =>
   renderToStaticMarkup(createElement(PeriodsEditor, { schoolId: "11111111-1111-7111-8111-111111111111", initial, canEdit }));
 
-describe("PeriodsEditor (زنگ‌بندی)", () => {
+describe("PeriodsEditor (برنامهٴ کلاسی)", () => {
   it("opens read-only for an admin who may edit: the times as text, one «ویرایش» and no input", () => {
     const html = render(true);
     expect(html).not.toContain("<input");
@@ -34,7 +34,7 @@ describe("PeriodsEditor (زنگ‌بندی)", () => {
     expect(html).toContain('dir="ltr"');
     // The edit-only affordances stay out of the read view.
     expect(html).not.toContain("زنگ جدید");
-    expect(html).not.toContain("ذخیرهٴ زنگ‌بندی");
+    expect(html).not.toContain("ذخیرهٴ برنامهٴ کلاسی");
     expect(html).not.toContain("انصراف");
   });
 
@@ -43,15 +43,15 @@ describe("PeriodsEditor (زنگ‌بندی)", () => {
     expect(html).not.toContain("<input");
     expect(html).not.toContain("<button");
     expect(html).not.toContain("ویرایش");
-    expect(html).toContain("شما این زنگ‌بندی را فقط می‌بینید؛ تغییر آن با مدیر یا معاون همین مدرسه است.");
+    expect(html).toContain("شما این برنامهٴ کلاسی را فقط می‌بینید؛ تغییر آن با مدیر یا معاون همین مدرسه است.");
     // The schedule itself is still readable.
     expect(html).toContain("زنگ اول");
     expect(html).toContain("۰۸:۴۵");
   });
 
-  it("a school with no زنگ at all is offered «تعریف زنگ‌بندی», not «ویرایش»", () => {
+  it("a school with no زنگ at all is offered «تعریف برنامهٴ کلاسی», not «ویرایش»", () => {
     const html = render(true, []);
     expect(html).toContain("هنوز زنگی تعریف نشده.");
-    expect(html).toContain("تعریف زنگ‌بندی");
+    expect(html).toContain("تعریف برنامهٴ کلاسی");
   });
 });

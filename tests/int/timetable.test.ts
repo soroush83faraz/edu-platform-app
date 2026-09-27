@@ -164,7 +164,7 @@ describe("setTimetableSlot", () => {
         (err: unknown) => AppError.is(err) && err.code === "VALIDATION" && err.message === "این درس برای این کلاس تعریف نشده است.",
       );
       await expect(setTimetableSlot(tx, vice, { ...cell, periodNo: 9, classOfferingId: f.OFFERING_A1 })).rejects.toSatisfy(
-        (err: unknown) => AppError.is(err) && err.code === "VALIDATION" && err.message === "این زنگ در زنگ‌بندی مدرسه وجود ندارد.",
+        (err: unknown) => AppError.is(err) && err.code === "VALIDATION" && err.message === "این زنگ در برنامهٴ کلاسی مدرسه وجود ندارد.",
       );
       await expect(setTimetableSlot(tx, vice, { ...cell, weekday: 6, classOfferingId: f.OFFERING_A1 })).rejects.toSatisfy(isCode("VALIDATION"));
       await tx.update(classOffering).set({ status: "closed" }).where(eq(classOffering.id, f.OFFERING_A1));

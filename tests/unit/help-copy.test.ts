@@ -29,9 +29,9 @@ describe("help — the admin's «ساختار مدرسه» answer", () => {
     expect(text).toContain("سال تحصیلی جاری و سال بعد");
   });
 
-  it("walks the admin through what IS theirs: classes with a grade from the list, زنگ‌بندی, the weekly timetable, students and staff; درس‌ها with the organization admin", async () => {
+  it("walks the admin through what IS theirs: classes with a grade from the list, «برنامهٴ کلاسی», the weekly timetable, students and staff; درس‌ها with the organization admin", async () => {
     const text = await answer("admin-structure");
-    for (const phrase of ["«کلاس‌ها»", "پایه‌اش را از فهرست", "زنگ‌بندی", "«برنامهٴ هفتگی»", "«دانش‌آموزان»", "«کارکنان»", "«مدرسه‌ها ← درس‌ها»", "مدیر سازمان"]) {
+    for (const phrase of ["«کلاس‌ها»", "پایه‌اش را از فهرست", "«برنامهٴ کلاسی»", "«برنامهٴ هفتگی»", "«دانش‌آموزان»", "«کارکنان»", "«مدرسه‌ها ← درس‌ها»", "مدیر سازمان"]) {
       expect(text, phrase).toContain(phrase);
     }
   });

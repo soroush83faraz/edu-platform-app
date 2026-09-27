@@ -149,7 +149,7 @@ describe("takeAttendance", () => {
         (err: unknown) => AppError.is(err) && err.code === "VALIDATION" && err.message === "برای روز آینده نمی‌توان حضور و غیاب ثبت کرد.",
       );
       await expect(takeAttendance(tx, admin, { ...cell, periodNo: 9, entries }, NOW)).rejects.toSatisfy(
-        (err: unknown) => AppError.is(err) && err.code === "VALIDATION" && err.message === "این زنگ در زنگ‌بندی مدرسه وجود ندارد.",
+        (err: unknown) => AppError.is(err) && err.code === "VALIDATION" && err.message === "این زنگ در برنامهٴ کلاسی مدرسه وجود ندارد.",
       );
       await expect(takeAttendance(tx, admin, { ...cell, date: "2026-02-31", entries }, NOW)).rejects.toSatisfy(
         (err: unknown) => AppError.is(err) && err.code === "VALIDATION" && err.message === "تاریخ نامعتبر است.",

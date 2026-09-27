@@ -22,7 +22,7 @@ const n = formatNumberFa;
  * /admin/schools/[id] — a school's own management hub, «انگار وارد پنل مدیر همان مدرسه شده‌ای» (owner): the آمار row
  * (کلاس‌ها/دانش‌آموزان/کارکنان, each a jump to its section on this page), سال تحصیلی (the fixed catalog — shown, not
  * edited), this school's کلاس‌ها, کارکنان and دانش‌آموزان (a compact list each, the same row as the full list, and
- * the door to that list filtered to this school), برنامهٔ زنگ‌بندی and the ارائهٴ درس summary. There is no شعبه
+ * the door to that list filtered to this school), برنامهٴ کلاسی and the ارائهٴ درس summary. There is no شعبه
  * here (an internal, always-one detail). Scope: a school outside the caller's scope is NOT_FOUND (`schoolHubQuery`).
  */
 export default async function SchoolHubPage({ params }: { params: Promise<{ id: string }> }) {
@@ -202,7 +202,7 @@ function Periods({ d }: { d: SchoolHubData }) {
         <Link href={`/admin/schools/${d.school.id}/periods`} className="surface-link pressable flex min-h-14 items-center gap-3 px-4 py-2">
           <RowMark icon={CalendarClock} />
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className="text-row font-medium text-text">برنامهٔ زنگ‌بندی</span>
+            <span className="text-row font-medium text-text">برنامهٴ کلاسی</span>
             <span className="text-meta text-text-muted">ساعت شروع و پایان هر زنگ این مدرسه</span>
           </span>
           <ChevronLeft className="size-4 shrink-0 text-text-faint" aria-hidden />

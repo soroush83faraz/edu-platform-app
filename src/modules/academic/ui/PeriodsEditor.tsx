@@ -78,7 +78,7 @@ export function PeriodsEditor({ schoolId, initial, canEdit }: { schoolId: string
         setError(r.fieldErrors?.periods?.[0] ?? r.message);
         return;
       }
-      toast.success(`${unchanged ? "زنگ‌بندی تأیید شد" : "زنگ‌بندی ذخیره شد"} (${formatNumberFa(r.data.count)} زنگ)`);
+      toast.success(`${unchanged ? "برنامهٴ کلاسی تأیید شد" : "برنامهٴ کلاسی ذخیره شد"} (${formatNumberFa(r.data.count)} زنگ)`);
       setEditing(false);
       router.refresh();
     });
@@ -87,7 +87,7 @@ export function PeriodsEditor({ schoolId, initial, canEdit }: { schoolId: string
   if (!editing) {
     return (
       <div className="flex flex-col gap-4">
-        {canEdit ? <p className="px-1 text-meta text-text-muted">زنگ‌بندی پیش‌فرض شش زنگ است. برای تغییر ساعت‌ها «ویرایش» را بزنید.</p> : null}
+        {canEdit ? <p className="px-1 text-meta text-text-muted">برنامهٴ کلاسی پیش‌فرض شش زنگ است. برای تغییر ساعت‌ها «ویرایش» را بزنید.</p> : null}
         <div className="surface-work flex flex-col">
           {initial.length > 0 ? (
             <>
@@ -122,10 +122,10 @@ export function PeriodsEditor({ schoolId, initial, canEdit }: { schoolId: string
         {canEdit ? (
           <Button type="button" size="lg" onClick={open}>
             <Pencil aria-hidden />
-            {initial.length > 0 ? "ویرایش" : "تعریف زنگ‌بندی"}
+            {initial.length > 0 ? "ویرایش" : "تعریف برنامهٴ کلاسی"}
           </Button>
         ) : (
-          <p className="px-1 text-meta text-text-muted">شما این زنگ‌بندی را فقط می‌بینید؛ تغییر آن با مدیر یا معاون همین مدرسه است.</p>
+          <p className="px-1 text-meta text-text-muted">شما این برنامهٴ کلاسی را فقط می‌بینید؛ تغییر آن با مدیر یا معاون همین مدرسه است.</p>
         )}
       </div>
     );
@@ -164,7 +164,7 @@ export function PeriodsEditor({ schoolId, initial, canEdit }: { schoolId: string
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" size="lg" onClick={save} disabled={pending}>
-          {pending ? "در حال ذخیره…" : "ذخیرهٴ زنگ‌بندی"}
+          {pending ? "در حال ذخیره…" : "ذخیرهٴ برنامهٴ کلاسی"}
         </Button>
         <Button type="button" size="lg" variant="outline" onClick={cancel} disabled={pending}>
           انصراف

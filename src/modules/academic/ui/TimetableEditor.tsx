@@ -67,7 +67,7 @@ export function TimetableEditor({ data, today, nowMinutes }: { data: ClassTimeta
   };
 
   if (periods.length === 0) {
-    return <p className="rounded-card border border-warning/40 bg-warning-soft/40 px-4 py-3 text-sm text-text">این مدرسه هنوز زنگ‌بندی ندارد؛ اول زنگ‌ها را در صفحهٴ مدرسه تعریف کنید.</p>;
+    return <p className="rounded-card border border-warning/40 bg-warning-soft/40 px-4 py-3 text-sm text-text">این مدرسه هنوز برنامهٴ کلاسی ندارد؛ اول زنگ‌ها را در صفحهٴ مدرسه تعریف کنید.</p>;
   }
   if (offerings.length === 0) {
     return <p className="rounded-card border border-warning/40 bg-warning-soft/40 px-4 py-3 text-sm text-text">این کلاس ارائهٴ درسی ندارد؛ اول از «ارائهٴ درس‌ها» درس و دبیر اضافه کنید.</p>;
