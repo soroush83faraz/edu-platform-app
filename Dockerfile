@@ -9,8 +9,17 @@ RUN corepack enable && corepack prepare pnpm@10.22.0 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile
 COPY . .
-# Build-time only: env.ts is not imported by the build, but Next may evaluate route modules.
-ENV NODE_ENV=production
+# Build-time only: Next evaluates route modules while collecting page data (e.g. /api/health), and those import
+# src/lib/env.ts, which validates the environment. The build context has no .env (.dockerignore) and a hosted
+# builder (Render) passes no runtime secrets into `docker build`, so the builder stage gets inert placeholders.
+# They exist ONLY in this stage — the runner stage below starts from a fresh image and reads the real values from
+# the runtime environment; nothing here is a secret or reaches the shipped image.
+ENV NODE_ENV=production \
+    DATABASE_URL=postgres://build:build@127.0.0.1:1/build \
+    MIGRATION_DATABASE_URL=postgres://build:build@127.0.0.1:1/build \
+    SESSION_SECRET=build-time-placeholder-not-a-secret-000000000000 \
+    INITIAL_PASSWORD_KEY=0000000000000000000000000000000000000000000000000000000000000000 \
+    PUBLIC_ORIGIN=http://localhost:3000
 RUN pnpm build
 
 # ---------- runner ----------
