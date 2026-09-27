@@ -12,6 +12,7 @@ import { academicYear, branch, classGroup, classOffering } from "@/modules/tenan
 import { canAtAnyScope } from "@/modules/iam/can";
 import { resourceOpGate, type AnyResourceDef, type ResourceOp } from "./defineResource";
 import { schoolsLabelFa } from "./nav";
+import { withSchoolCodeFor } from "./school-code";
 import { oneSchoolCounts } from "./overview";
 import { listStaff, listStudents, type StaffListRow, type StudentListRow } from "./people";
 import { classResource, listClassRows, schoolResource } from "./resources";
@@ -38,7 +39,8 @@ export interface SchoolHubClass {
 }
 
 export interface SchoolHubData {
-  school: { id: string; name: string; code: string; genderPolicy: string | null; isDefault: boolean };
+  /** `code` only for the organization admin (`withSchoolCodeFor`): a principal's page never receives it. */
+  school: { id: string; name: string; code?: string; genderPolicy: string | null; isDefault: boolean };
   /** آمار مدرسه — کلاس‌ها/دانش‌آموزان/کارکنان of THIS school (the stat row's numbers and doors). */
   counts: { classes: number; students: number; staff: number };
   years: SchoolHubYear[];
@@ -105,7 +107,7 @@ export const schoolHubQuery = defineQuery<SchoolHubData, typeof SchoolIdInput>(
 
     const gate = (def: AnyResourceDef, op: ResourceOp) => resourceOpGate(def, op, ctx.assignments, scope).ok;
     return {
-      school: { id: sch.id, name: sch.name, code: sch.code, genderPolicy: sch.genderPolicy, isDefault: sch.isDefault },
+      school: withSchoolCodeFor(scope, { id: sch.id, name: sch.name, code: sch.code, genderPolicy: sch.genderPolicy, isDefault: sch.isDefault }),
       // The stat row counts what its sections list, so a number and the list under it never disagree.
       counts: { ...counts, ...(staff ? { staff: staff.total } : {}), ...(students ? { students: students.total } : {}) },
       years,

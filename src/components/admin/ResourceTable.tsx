@@ -156,7 +156,8 @@ function formatCell(v: unknown): React.ReactNode {
 function initialOf(def: AnyResourceDef, row: Row): Record<string, FormValue> {
   if (def.formValues) return def.formValues(row);
   const out: Record<string, FormValue> = {};
-  for (const f of def.formFields) {
+  // The edit form never shows a `createOnly` field (natural keys such as the school code): its value is not sent to the client.
+  for (const f of def.formFields.filter((x) => !x.createOnly)) {
     const v = row[f.name];
     out[f.name] = v === undefined ? null : (v as FormValue);
   }
