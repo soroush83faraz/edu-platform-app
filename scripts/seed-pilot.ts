@@ -46,8 +46,8 @@ import { attendanceStatusFor, minutesLateFor, pastSchoolDays, rollCallPeriod } f
 import { hasTeacherClash, planTimetables, type PlanClass } from "./timetable-plan";
 
 /** A drizzle database with its driver (`$client`), which the organization catalog seed writes through. */
-type Db = NodePgDatabase<typeof schema> & { $client: NodePgClient };
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type Db = NodePgDatabase<typeof schema> & { $client: NodePgClient };
+export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 const { organization, person, staffProfile, role, authIdentity, userAccount, teacherAssignment, workItem, workItemAssignee, workItemComment } = schema;
 
@@ -417,7 +417,7 @@ export function expectedCounts(scale: number): ExpectedCounts {
 
 const ALL_ROLE_PERMS = PERMISSIONS.map((p) => p.code).filter((c) => !IMPLICIT_PERMISSIONS.includes(c));
 
-interface ActorCtx extends IamCtx, WorkspaceCtx {
+export interface ActorCtx extends IamCtx, WorkspaceCtx {
   orgId: string;
   personId: string;
   assignments: Assignment[];
@@ -452,21 +452,30 @@ export interface SchoolSummary {
   counts: Record<string, number>;
 }
 
-async function withOrg<T>(db: Db, orgId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
+export async function withOrg<T>(db: Db, orgId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select set_config('app.current_org_id', ${orgId}, true)`);
     return fn(tx);
   });
 }
 
-/** The real assignments of a person, as a full service ctx (`listValidAssignments`, like scripts/import.ts). */
-async function actorCtx(tx: Tx, orgId: string, personId: string, cache: Map<string, ActorCtx>): Promise<ActorCtx> {
+/**
+ * The real assignments of a person, as a full service ctx (`listValidAssignments`, like scripts/import.ts). `source`
+ * names the script in the audit rows (`request_id`, `user_agent`).
+ */
+export async function actorCtx(
+  tx: Tx,
+  orgId: string,
+  personId: string,
+  cache: Map<string, ActorCtx>,
+  source: { requestId: string; userAgent: string } = { requestId: "seed-pilot", userAgent: "scripts/seed-pilot.ts" },
+): Promise<ActorCtx> {
   const hit = cache.get(personId);
   if (hit) return hit;
   const account = await findAccountOfPerson(tx, personId);
   const assignments = await listValidAssignments(tx, personId);
   if (assignments.length === 0) throw new Error(`pilot: person ${personId} has no valid role assignment`);
-  const ctx: ActorCtx = { orgId, personId, userId: account?.userAccountId ?? null, requestId: "seed-pilot", userAgent: "scripts/seed-pilot.ts", assignments };
+  const ctx: ActorCtx = { orgId, personId, userId: account?.userAccountId ?? null, ...source, assignments };
   cache.set(personId, ctx);
   return ctx;
 }
@@ -1116,7 +1125,7 @@ function printSummary(result: SeedPilotResult): void {
 // cli
 // ---------------------------------------------------------------------------------------------------------------
 
-function loadDotEnv(): void {
+export function loadDotEnv(): void {
   const envPath = path.resolve(process.cwd(), ".env");
   if (!fs.existsSync(envPath)) return;
   try {
