@@ -5,7 +5,8 @@ import { can } from "@/modules/iam/can";
 import { assertSchoolInScope, getAdminScope } from "@/modules/iam/service";
 import { findSchoolById, listSchoolPeriods } from "@/modules/tenancy/repo";
 import { attendanceGaps, classAttendanceReport, defaultRange, getSessionForTaking, studentAttendanceSummary, teacherDay } from "./attendance";
-import { AttendanceCellInput, ClassAttendanceInput, ClassGroupIdInput, MyAttendanceInput, OfferingIdInput, SchoolIdInput, StudentAttendanceInput } from "./dto";
+import { attendanceReportReach } from "./attendance-report";
+import { AttendanceCellInput, AttendanceReportInput, ClassAttendanceInput, ClassGroupIdInput, MyAttendanceInput, OfferingIdInput, SchoolIdInput, StudentAttendanceInput } from "./dto";
 import { findStudentProfile, getMyClass, listClassesForPicker } from "./repo";
 import { getClassTimetable, getMyTimetable, getOfferingPage } from "./service";
 
@@ -73,14 +74,24 @@ export const classAttendanceReportQuery = defineQuery({ schema: ClassAttendanceI
 /** The teacher's own زنگ‌های today, marked «ثبت‌شده» or not — what `/attendance` opens on for a teacher. */
 export const teacherDayQuery = defineQuery({ permission: "academic.attendance.write", scope: "any" }, async (tx, _input, ctx) => teacherDay(tx, ctx));
 
-/** «امروز ثبت نشده» for the admin page, narrowed to the caller's schools (`academic.attendance.report`). */
-export const attendanceGapsQuery = defineQuery({ permission: "academic.attendance.report", scope: "any" }, async (tx, _input, ctx) => {
-  const scope = await getAdminScope(tx, ctx);
-  return attendanceGaps(tx, scope.kind === "organization" ? null : scope.schoolIds);
+/**
+ * The school `/admin/attendance?school=` is filtered to — its name for the title and the way back to its hub.
+ * Out of the caller's admin scope (or of the tenant) → NOT_FOUND (`attendanceReportReach`).
+ */
+export const attendanceReportSchoolQuery = defineQuery({ schema: SchoolIdInput, permission: "academic.attendance.report", scope: "any" }, async (tx, input, ctx) => {
+  const reach = await attendanceReportReach(tx, ctx, input.schoolId);
+  if (!reach.school) throw notFound();
+  return reach.school;
 });
 
-/** The class picker of `/admin/attendance`: the caller's active classes (the admin scope filters them). */
-export const attendanceClassesQuery = defineQuery({ permission: "academic.attendance.report", scope: "any" }, async (tx, _input, ctx) => {
-  const scope = await getAdminScope(tx, ctx);
-  return listClassesForPicker(tx, scope.kind === "organization" ? null : scope.schoolIds);
+/** «امروز ثبت نشده» for the admin page, narrowed to the caller's schools — or the ONE school of `?school=`. */
+export const attendanceGapsQuery = defineQuery({ schema: AttendanceReportInput, permission: "academic.attendance.report", scope: "any" }, async (tx, input, ctx) => {
+  const reach = await attendanceReportReach(tx, ctx, input.schoolId);
+  return attendanceGaps(tx, reach.schoolIds);
+});
+
+/** The class picker of `/admin/attendance`: the caller's active classes (the admin scope — or `?school=` — filters them). */
+export const attendanceClassesQuery = defineQuery({ schema: AttendanceReportInput, permission: "academic.attendance.report", scope: "any" }, async (tx, input, ctx) => {
+  const reach = await attendanceReportReach(tx, ctx, input.schoolId);
+  return listClassesForPicker(tx, reach.schoolIds);
 });

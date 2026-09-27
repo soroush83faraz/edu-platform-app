@@ -1,4 +1,4 @@
-import { AlarmClock, CalendarDays, CalendarOff, CalendarRange, CircleCheck, ListTodo, type LucideIcon, Plus, Sun, X } from "lucide-react";
+import { CircleCheck, ListTodo, type LucideIcon, Plus, X } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -8,7 +8,6 @@ import { CrossFade } from "@/components/motion/CrossFade";
 import { LeavingList } from "@/components/motion/LeavingList";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { SectionHeader } from "@/components/SectionHeader";
 import { SegmentedLinks } from "@/components/SegmentedLinks";
 import { Button } from "@/components/ui/button";
 import { type Audience, audienceOf, emptyDoneCopy, emptyOpenCopy } from "@/lib/empty-copy";
@@ -17,7 +16,7 @@ import { BUCKET_LABELS, type Bucket, formatNumberFa } from "@/lib/format";
 import { type WorkItemWords, workItemWords } from "@/lib/work-item-words";
 import { BUCKETS, INBOX_TABS, type InboxTab } from "@/modules/workspace/dto";
 import { listInboxQuery } from "@/modules/workspace/queries";
-import type { InboxRow as Row } from "@/modules/workspace/repo";
+import { InboxBuckets } from "@/modules/workspace/ui/InboxBuckets";
 import { InboxRow } from "@/modules/workspace/ui/InboxRow";
 
 export const metadata: Metadata = { title: "پنل من" };
@@ -25,8 +24,6 @@ export const metadata: Metadata = { title: "پنل من" };
 const TAB_LABELS: Record<InboxTab, string> = { todo: "انجام‌نشده", done: "انجام‌شده", all: "همه" };
 const TAB_ICONS: Record<Exclude<InboxTab, "all">, LucideIcon> = { todo: ListTodo, done: CircleCheck };
 const VISIBLE_TABS: Exclude<InboxTab, "all">[] = ["todo", "done"];
-const BUCKET_ORDER: Bucket[] = ["overdue", "today", "week", "later", "none"];
-const BUCKET_ICONS: Record<Bucket, LucideIcon> = { overdue: AlarmClock, today: Sun, week: CalendarDays, later: CalendarRange, none: CalendarOff };
 
 type Search = Record<string, string | string[] | undefined>;
 
@@ -76,7 +73,6 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   // the button above them says «تسک جدید» (src/lib/work-item-words, round 6).
   const createWords = workItemWords(createVoice);
   const filtered = Boolean(f.bucket || f.unread || f.mine);
-  const grouped = groupByBucket(rows, f.tab);
 
   return (
     <ContentWidth className="gap-3">
@@ -127,21 +123,17 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           <Empty tab={f.tab} filtered={filtered} canCreate={canCreate} clearHref={href({ tab: f.tab })} words={words} createWords={createWords} audience={audienceOf((await requireContext()).assignments)} firstTime={tabCounts.done === 0} />
         ) : (
           <div className="mt-2 flex flex-col">
-            {grouped.map(([bucket, items]) => (
-              <section key={bucket} aria-labelledby={`bucket-${bucket}`}>
-                {bucket !== "all" ? (
-                  <SectionHeader title={BUCKET_LABELS[bucket]} icon={BUCKET_ICONS[bucket]} count={items.length} tone={bucket === "overdue" ? "danger" : "neutral"} />
-                ) : (
-                  <div className="pt-3" />
-                )}
-                {/* Rows leave by collapsing, not popping; a row the detail page just finished is handed over. */}
-                <LeavingList className="reveal-rows surface-work divide-y divide-line/70" completedFrom={f.tab === "todo"}>
-                  {items.map((row) => (
-                    <InboxRow key={row.id} row={row} words={words} createVoice={createVoice} />
-                  ))}
-                </LeavingList>
-              </section>
-            ))}
+            {f.tab === "todo" ? (
+              // Each deadline bucket is its own box in a two-column grid (src/modules/workspace/ui/InboxBuckets).
+              <InboxBuckets rows={rows} words={words} createVoice={createVoice} />
+            ) : (
+              // «انجام‌شده» stays one list: no buckets to box.
+              <LeavingList className="reveal-rows surface-work divide-y divide-line/70">
+                {rows.map((row) => (
+                  <InboxRow key={row.id} row={row} words={words} createVoice={createVoice} />
+                ))}
+              </LeavingList>
+            )}
             {nextCursor || f.cursor ? (
               <div className="flex items-center justify-center gap-3 py-5">
                 {f.cursor ? (
@@ -161,13 +153,6 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       </CrossFade>
     </ContentWidth>
   );
-}
-
-function groupByBucket(rows: Row[], tab: InboxTab): [Bucket | "all", Row[]][] {
-  if (tab === "done") return rows.length ? [["all", rows]] : [];
-  const map = new Map<Bucket, Row[]>();
-  for (const r of rows) map.set(r.bucket, [...(map.get(r.bucket) ?? []), r]);
-  return BUCKET_ORDER.filter((b) => map.has(b)).map((b) => [b, map.get(b)!]);
 }
 
 function FilterChip({ href, active, label, removable }: { href: string; active: boolean; label: string; removable?: boolean }) {

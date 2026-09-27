@@ -37,7 +37,7 @@ export default async function HomePage() {
   if ((await getUiVariant()) === "hub") {
     return (
       <ContentWidth className="reveal-stagger pt-2 lg:pt-4">
-        <HubGreeting firstName={ctx.firstName} schoolName={ctx.schoolName} orgName={ctx.orgName} />
+        <HubGreeting firstName={ctx.firstName} schoolName={ctx.schoolName} orgName={ctx.orgName} assignments={ctx.assignments} />
         <div className="flex flex-col gap-5 lg:hidden">
           <Suspense fallback={<GridSkeleton />}>
             <HomeGrid ctx={ctx} />

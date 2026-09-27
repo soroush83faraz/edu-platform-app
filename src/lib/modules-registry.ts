@@ -443,12 +443,15 @@ export const HOME_TILES: readonly HomeTile[] = [
     // The admin's OWN «حضور و غیاب»: the class report and «امروز ثبت نشده». A different destination from the
     // teacher/student tile above (`/attendance`), and a different audience — `academic.attendance.report` is the
     // permission its queries check, which a teacher does not hold. One tile per audience, one door each.
+    // SCHOOL-SCOPED admins only (owner, 2026-09-27: «attendance separate for each school»): the organization admin
+    // reads it per school — «مدرسه‌ها» → the school → «حضور و غیاب» (`/admin/attendance?school=<id>`).
     code: "admin-attendance",
     labelFa: "حضور و غیاب",
     href: "/admin/attendance",
     icon: UserCheck,
     role: "admin",
     permission: "academic.attendance.report",
+    adminScope: "school",
   },
   {
     // «مدرسه» for an admin of exactly one school — straight to that school's hub, where its structure is edited.
@@ -594,11 +597,15 @@ export function homeTilesFor(
 }
 
 /**
- * Does the hub Home draw its «به‌زودی» section? Hidden for now (owner, 2026-09-27: the «درس‌های من» course cards
- * follow the tiles instead). `upcomingTilesFor` and `UpcomingTiles` stay wired — flip this to `true` to bring the
- * section back; `resolveHomeTiles` (src/components/home/home-data.ts) is the one reader.
+ * Does the hub Home draw its «به‌زودی» section for this viewer? For every ADMIN — the organization admin, a principal
+ * and a vice principal (owner, 2026-09-27, widened the same day from the organization admin alone): the people who
+ * run a school see what is coming, after all their live tiles; teachers and students get the «درس‌های من» course
+ * cards and no «به‌زودی». The admin hat decides, not the other hats: an admin who also teaches still sees it.
+ * `resolveHomeTiles` (src/components/home/home-data.ts) is the one reader.
  */
-export const SHOW_UPCOMING_ON_HOME = false;
+export function showUpcomingOnHome(hats: TileHats): boolean {
+  return hats.isAdmin;
+}
 
 /** A grey «به‌زودی» tile of the hub Home: a module that is not built yet — a label and a glyph, never an href. */
 export interface UpcomingTile {

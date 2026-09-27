@@ -20,7 +20,7 @@ import {
 } from "@/lib/attendance";
 import { formatNumberFa, isoDateToJalali } from "@/lib/format";
 import { WEEKDAY_LABELS } from "@/lib/timetable";
-import { attendanceClassesQuery, attendanceGapsQuery, classAttendanceReportQuery, studentAttendanceQuery } from "@/modules/academic/queries";
+import { attendanceClassesQuery, attendanceGapsQuery, attendanceReportSchoolQuery, classAttendanceReportQuery, studentAttendanceQuery } from "@/modules/academic/queries";
 
 export const metadata: Metadata = { title: "حضور و غیاب | مدیریت" };
 
@@ -37,28 +37,48 @@ const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? (v
  * be shared and printed), read the per-student totals with the absence percentage, drill into one student, and
  * above it all the «امروز ثبت نشده» list — today's زنگ‌ها of the caller's schools with no roll call yet, each a
  * link into the teacher's own page. Everything is narrowed by the admin scope inside the queries.
+ * `?school=<id>` (the «حضور و غیاب» door of a school's hub — owner, 2026-09-27: attendance is read per school) narrows
+ * every read to that ONE school, validated server-side against the admin scope (out of scope → 404); the title then
+ * names the school and the way back is that school's hub. The organization admin has no Home tile for this page.
  */
 export default async function AdminAttendancePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
+  const schoolParam = one(sp.school);
+  if (schoolParam && !UUID_RE.test(schoolParam)) notFound();
   const rangeDays = RANGES.some((r) => r.value === one(sp.range)) ? Number(one(sp.range)) : 30;
-  const classGroupId = UUID_RE.test(one(sp.class)) ? one(sp.class) : "";
-  const studentProfileId = UUID_RE.test(one(sp.student)) ? one(sp.student) : "";
+  const requestedClass = UUID_RE.test(one(sp.class)) ? one(sp.class) : "";
+  const requestedStudent = UUID_RE.test(one(sp.student)) ? one(sp.student) : "";
   const to = tehranToday();
   const from = addDaysIso(to, -(rangeDays - 1));
 
-  const classes = await attendanceClassesQuery();
+  // The school filter first: a school outside the caller's scope (or tenant) is a 404, before anything is read.
+  const schoolResult = schoolParam ? await attendanceReportSchoolQuery({ schoolId: schoolParam }) : null;
+  if (schoolResult && !schoolResult.ok) {
+    if (schoolResult.code === "UNAUTHENTICATED") redirect("/login");
+    notFound();
+  }
+  const school = schoolResult?.ok ? schoolResult.data : null;
+  const filter = school ? { schoolId: school.id } : {};
+
+  const classes = await attendanceClassesQuery(filter);
   if (!classes.ok) {
     if (classes.code === "UNAUTHENTICATED") redirect("/login");
     notFound();
   }
-  const gaps = await attendanceGapsQuery();
+  // Filtered to a school, the class must be one of ITS classes (the picker's list) — a class id of another school
+  // in the URL reads as no class, so the page never shows a report outside the school it names.
+  const classGroupId = school && !classes.data.some((c) => c.id === requestedClass) ? "" : requestedClass;
+  const gaps = await attendanceGapsQuery(filter);
   const report = classGroupId ? await classAttendanceReportQuery({ classGroupId, from, to }) : null;
+  // …and the drill-down student must be on that class's report.
+  const studentProfileId = school && !(report?.ok && report.data.students.some((st) => st.studentProfileId === requestedStudent)) ? "" : requestedStudent;
   const student = studentProfileId ? await studentAttendanceQuery({ studentProfileId, from, to }) : null;
   const hrefFor = (next: { class?: string; range?: string; student?: string }) => {
     const p = new URLSearchParams();
     const cls = next.class ?? classGroupId;
     const rng = next.range ?? String(rangeDays);
     const st = next.student ?? "";
+    if (school) p.set("school", school.id);
     if (cls) p.set("class", cls);
     if (rng !== "30") p.set("range", rng);
     if (st) p.set("student", st);
@@ -68,22 +88,32 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Round 5: this report is a Home tile, not an admin section — so the way back is Home, not a section list. */}
+      {/* Round 5: this report is a Home tile, not an admin section — so the way back is Home, not a section list.
+          Filtered to a school (reached from that school's hub), it names the school and goes back to its hub. */}
       <PageHeader
-        title="حضور و غیاب"
-        back={{ href: "/home", label: "خانه" }}
+        title={
+          school ? (
+            <>
+              حضور و غیاب <span className="text-text-muted">·</span> <bdi>{school.name}</bdi>
+            </>
+          ) : (
+            "حضور و غیاب"
+          )
+        }
+        back={school ? { href: `/admin/schools/${school.id}`, label: school.name } : { href: "/home", label: "خانه" }}
         description="گزارش کلاس‌ها در یک بازه، و زنگ‌هایی که امروز هنوز ثبت نشده‌اند. ثبت حضور و غیاب کار دبیر همان زنگ است؛ مدیر و معاون هم می‌توانند."
       />
 
       {/* A plain GET form: the URL carries class + range, so the report is shareable and printable. */}
       <form method="get" className="surface-work flex flex-wrap items-end gap-2 p-3">
+        {school ? <input type="hidden" name="school" value={school.id} /> : null}
         <label className="flex min-w-48 flex-1 flex-col gap-1 text-meta text-text-muted">
           کلاس
           <SelectNative name="class" defaultValue={classGroupId} aria-label="کلاس" className="h-11">
             <option value="">— انتخاب کلاس —</option>
             {classes.data.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name} — {c.schoolName}
+                {school ? c.name : `${c.name} — ${c.schoolName}`}
               </option>
             ))}
           </SelectNative>

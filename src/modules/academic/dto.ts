@@ -96,5 +96,9 @@ export type StudentAttendanceInput = z.output<typeof StudentAttendanceInput>;
 export const ClassAttendanceInput = z.object({ classGroupId: uuid, from: isoDate, to: isoDate }).strict();
 export type ClassAttendanceInput = z.output<typeof ClassAttendanceInput>;
 
+/** The admin report's optional school filter (`/admin/attendance?school=`); the service checks it against the admin scope. */
+export const AttendanceReportInput = z.object({ schoolId: uuid.optional() }).strict();
+export type AttendanceReportInput = z.output<typeof AttendanceReportInput>;
+
 export const MyAttendanceInput = z.object({ from: isoDate.optional(), to: isoDate.optional() }).strict();
 export type MyAttendanceInput = z.output<typeof MyAttendanceInput>;

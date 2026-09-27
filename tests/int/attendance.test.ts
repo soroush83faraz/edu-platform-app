@@ -10,11 +10,13 @@ import { attendanceEntry, attendanceSession, auditLog } from "@/db/schema";
 import { addDaysIso, tehranToday, weekdayOfIso } from "@/lib/attendance";
 import { AppError } from "@/lib/errors";
 import { DEFAULT_PERIODS } from "@/lib/timetable";
-import { classAttendanceReport, getSessionForTaking, studentAttendanceSummary, takeAttendance, teacherDay, type AttendanceCtx } from "@/modules/academic/attendance";
+import { attendanceGaps, classAttendanceReport, getSessionForTaking, studentAttendanceSummary, takeAttendance, teacherDay, type AttendanceCtx } from "@/modules/academic/attendance";
+import { attendanceReportReach } from "@/modules/academic/attendance-report";
+import { listClassesForPicker } from "@/modules/academic/repo";
 import { assignTeacher, enrollStudent, setTimetableSlot } from "@/modules/academic/service";
 import type { Assignment } from "@/modules/iam/can";
 import { PERMISSIONS } from "@/modules/iam/permissions";
-import { setSchoolPeriods } from "@/modules/tenancy/service";
+import { createAcademicYear, createClassGroup, createSchool, setSchoolPeriods } from "@/modules/tenancy/service";
 import * as f from "./fixtures";
 import { PG, Rollback, asAppRw, inRolledBackTx, pgCode } from "./helpers";
 
@@ -255,6 +257,48 @@ describe("classAttendanceReport", () => {
       expect((await classAttendanceReport(tx, teacher, { classGroupId: f.CLASS_GROUP_A1, from: YESTERDAY, to: TODAY })).sessions).toBe(2);
       await expect(classAttendanceReport(tx, viceElsewhere, { classGroupId: f.CLASS_GROUP_A1, from: YESTERDAY, to: TODAY })).rejects.toSatisfy(isCode("NOT_FOUND"));
       await expect(classAttendanceReport(tx, vice, { classGroupId: f.CLASS_GROUP_A1, from: TODAY, to: YESTERDAY })).rejects.toSatisfy(isCode("VALIDATION"));
+    });
+  });
+});
+
+// Owner (2026-09-27): attendance is read per school — the school hub's «حضور و غیاب» opens `/admin/attendance?school=`.
+// The filter is server-side: validated against the caller's admin scope, and every report read narrowed to it.
+describe("attendanceReportReach (the admin report's ?school= filter)", () => {
+  it("narrows the class picker and «امروز ثبت نشده» to the one school; out of scope, another tenant's or unknown → NOT_FOUND", async () => {
+    await rolledBack(async (tx) => {
+      await setUpClass(tx);
+      const s2 = await createSchool(tx, admin, { name: "دبیرستان دوم", code: "S2" });
+      const year = await createAcademicYear(tx, admin, { schoolId: s2.schoolId, name: "۱۴۰۵-۱۴۰۶", startsOn: "2026-09-23", endsOn: "2027-06-21", isCurrent: true, terms: [] });
+      const cg2 = await createClassGroup(tx, admin, { branchId: s2.branchId, academicYearId: year.academicYearId, gradeLevelId: f.GRADE_A, name: "۱۰/۹" });
+
+      // The organization admin: no filter = the whole organization; a filter = exactly that school, named.
+      expect(await attendanceReportReach(tx, admin)).toEqual({ schoolIds: null, school: null });
+      const atS2 = await attendanceReportReach(tx, admin, s2.schoolId);
+      expect(atS2).toEqual({ schoolIds: [s2.schoolId], school: { id: s2.schoolId, name: "دبیرستان دوم" } });
+      const atA = await attendanceReportReach(tx, admin, f.SCHOOL_A);
+      expect(atA.schoolIds).toEqual([f.SCHOOL_A]);
+
+      const whole = (await listClassesForPicker(tx, null)).map((c) => c.id);
+      expect(whole).toEqual(expect.arrayContaining([f.CLASS_GROUP_A1, cg2.classGroupId]));
+      expect((await listClassesForPicker(tx, atS2.schoolIds)).map((c) => c.id)).toEqual([cg2.classGroupId]);
+      const pickerA = (await listClassesForPicker(tx, atA.schoolIds)).map((c) => c.id);
+      expect(pickerA).toContain(f.CLASS_GROUP_A1);
+      expect(pickerA).not.toContain(cg2.classGroupId);
+
+      // Today's untaken زنگ of school A shows under A's filter only.
+      const gapsA = await attendanceGaps(tx, atA.schoolIds, NOW);
+      expect(gapsA.cells.map((c) => c.classGroupId)).toContain(f.CLASS_GROUP_A1);
+      expect((await attendanceGaps(tx, atS2.schoolIds, NOW)).cells).toEqual([]);
+
+      // A school-scoped manager: their own school only; the other school of the same organization is NOT_FOUND.
+      expect(await attendanceReportReach(tx, vice)).toEqual({ schoolIds: [f.SCHOOL_A], school: null });
+      expect((await attendanceReportReach(tx, vice, f.SCHOOL_A)).schoolIds).toEqual([f.SCHOOL_A]);
+      await expect(attendanceReportReach(tx, vice, s2.schoolId)).rejects.toSatisfy(isCode("NOT_FOUND"));
+      // Another tenant's school (invisible under RLS) and an unknown id: NOT_FOUND even for the organization admin.
+      await expect(attendanceReportReach(tx, admin, f.SCHOOL_B)).rejects.toSatisfy(isCode("NOT_FOUND"));
+      await expect(attendanceReportReach(tx, admin, OUTSIDER)).rejects.toSatisfy(isCode("NOT_FOUND"));
+      // No admin scope at all (a teacher): FORBIDDEN, as every admin read (the query's permission gate comes first).
+      await expect(attendanceReportReach(tx, teacher, f.SCHOOL_A)).rejects.toSatisfy(isCode("FORBIDDEN"));
     });
   });
 });

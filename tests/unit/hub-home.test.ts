@@ -14,7 +14,7 @@ const ctx = vi.hoisted(() => ({
   schoolName: "دبستان نمونه",
   assignments: [{ roleCode: "x", roleId: "r", scopeType: "school", scopeId: "s", permissions: ["workspace.work_item.read", "workspace.work_item.create"] }],
 }));
-type Shell = { schoolName: string | null; yearName: string | null; termName: string | null; schools: { id: string; name: string }[] };
+type Shell = { orgScoped?: boolean; orgName?: string | null; schoolName: string | null; yearName: string | null; termName: string | null; schools: { id: string; name: string }[] };
 const shell = vi.hoisted(() => ({ value: { schoolName: "دبستان نمونه", yearName: null, termName: null, schools: [] } as Shell }));
 vi.mock("@/lib/ctx", () => ({ requireContext: async () => ctx }));
 vi.mock("@/lib/shell-context", () => ({ getShellContext: async () => shell.value }));
@@ -42,6 +42,9 @@ const { HomeCourses } = await import("@/components/home/HomeCourses");
 const { formatJalaliWeekdayDate } = await import("@/lib/format");
 const { upcomingTilesFor } = await import("@/lib/modules-registry");
 type Ctx = import("@/lib/ctx").Ctx;
+/** A school-scoped hat (the ctx above) and the organization admin's hat — organization-scoped `iam.admin.access`. */
+const schoolHat = ctx.assignments as unknown as Ctx["assignments"];
+const orgHat = [{ roleCode: "org_admin", roleId: "r", scopeType: "organization", scopeId: "o", permissions: ["iam.admin.access"] }] as unknown as Ctx["assignments"];
 
 const TILE = { code: "placeholder", labelFa: "نمونه", href: "/placeholder", icon: () => null, role: "everyone" };
 const hatsOf = (hat: "teacher" | "student" | "admin") => ({ isStudent: hat === "student", isTeacher: hat === "teacher", isAdmin: hat === "admin" });
@@ -115,7 +118,7 @@ describe("hub Home (the default)", () => {
 
 describe("the hub greeting card", () => {
   it("one blue brand card: the hero gradient, the hero radius, white text — «سلام، <name>», today's date, the school", async () => {
-    const html = renderToStaticMarkup(await HubGreeting({ firstName: "سارا", schoolName: "دبستان نمونه", orgName: "سازمان نمونه" }));
+    const html = renderToStaticMarkup(await HubGreeting({ firstName: "سارا", schoolName: "دبستان نمونه", orgName: "سازمان نمونه", assignments: schoolHat }));
     const header = html.match(/^<header class="([^"]*)"/)?.[1].split(" ") ?? [];
     for (const c of ["bg-hero", "rounded-hero", "text-white", "overflow-hidden"]) expect(header).toContain(c);
     expect(header).not.toContain("surface-work");
@@ -136,21 +139,51 @@ describe("the hub greeting card", () => {
 
   it("an admin over several schools is introduced by the organization, as in the shell", async () => {
     shell.value = { ...shell.value, schoolName: null, schools: [{ id: "a", name: "الف" }, { id: "b", name: "ب" }] };
-    const html = renderToStaticMarkup(await HubGreeting({ firstName: "سارا", schoolName: "دبستان نمونه", orgName: "سازمان نمونه" }));
+    const html = renderToStaticMarkup(await HubGreeting({ firstName: "سارا", schoolName: "دبستان نمونه", orgName: "سازمان نمونه", assignments: schoolHat }));
     expect(html).toContain("<bdi>سازمان نمونه</bdi>");
     expect(html).not.toContain("دبستان نمونه");
   });
 
+  it("the ORGANIZATION admin reads «مدیر سازمان · <organization>» — never the school or branch, even with one school (owner, 2026-09-27)", async () => {
+    // One school in the organization: the shell reports the organization scope, no school name.
+    shell.value = { orgScoped: true, orgName: "سازمان نمونه", schoolName: null, yearName: "۱۴۰۵-۱۴۰۶", termName: null, schools: [] };
+    const html = renderToStaticMarkup(await HubGreeting({ firstName: "سارا", schoolName: "دبستان نمونه — شعبهٴ یک", orgName: "سازمان نمونه", assignments: orgHat }));
+    expect(html).toMatch(/<p class="text-meta text-white">مدیر سازمان · <bdi>سازمان نمونه<\/bdi><\/p>/);
+    expect(html).not.toContain("دبستان نمونه");
+    // The session alone says so too: a failed shell read (empty context) never falls back to the primary school.
+    shell.value = { schoolName: null, yearName: null, termName: null, schools: [] };
+    const fallback = renderToStaticMarkup(await HubGreeting({ firstName: "سارا", schoolName: "دبستان نمونه", orgName: "سازمان نمونه", assignments: orgHat }));
+    expect(fallback).toContain("مدیر سازمان · <bdi>سازمان نمونه</bdi>");
+    expect(fallback).not.toContain("دبستان نمونه");
+  });
+
+  it("an organization admin who also teaches: the organization still wins in the greeting", async () => {
+    shell.value = { orgScoped: true, orgName: "سازمان نمونه", schoolName: null, yearName: null, termName: null, schools: [] };
+    const teaching = [...orgHat, { roleCode: "teacher", roleId: "t", scopeType: "class_offering", scopeId: "o1", permissions: ["workspace.work_item.read"] }] as unknown as Ctx["assignments"];
+    const html = renderToStaticMarkup(await HubGreeting({ firstName: "سارا", schoolName: "دبستان نمونه", orgName: "سازمان نمونه", assignments: teaching }));
+    expect(html).toContain("مدیر سازمان · <bdi>سازمان نمونه</bdi>");
+    expect(html).not.toContain("دبستان نمونه");
+  });
+
+  it("a principal keeps their school, with no «مدیر سازمان» prefix", async () => {
+    const html = renderToStaticMarkup(await HubGreeting({ firstName: "سارا", schoolName: "دبستان نمونه", orgName: "سازمان نمونه", assignments: schoolHat }));
+    expect(html).toMatch(/<p class="text-meta text-white"><bdi>دبستان نمونه<\/bdi><\/p>/);
+    expect(html).not.toContain("مدیر سازمان");
+    expect(html).not.toContain("سازمان نمونه");
+  });
+
   it("no school on the session falls back to the organization", async () => {
-    const html = renderToStaticMarkup(await HubGreeting({ firstName: "سارا", schoolName: null, orgName: "سازمان نمونه" }));
+    shell.value = { schoolName: null, yearName: null, termName: null, schools: [] };
+    const html = renderToStaticMarkup(await HubGreeting({ firstName: "سارا", schoolName: null, orgName: "سازمان نمونه", assignments: schoolHat }));
     expect(html).toContain("<bdi>سازمان نمونه</bdi>");
   });
 });
 
-// Hidden for now (owner, 2026-09-27: `SHOW_UPCOMING_ON_HOME = false`, so `resolveHomeTiles` hands the renderers no
-// upcoming tiles — tests/unit/home-courses.test.ts). The renderers stay wired so one flag brings the section back.
-describe("the hub Home's «به‌زودی» section (owner, 2026-09-27; hidden for now)", () => {
-  it("stays wired after the live tiles on phones and on the desktop board, for when the flag is back on", async () => {
+// Every admin's Home (owner, 2026-09-27: `showUpcomingOnHome`, so `resolveHomeTiles` hands the
+// renderers upcoming tiles for admins only — tests/unit/home-courses.test.ts). The renderers draw whatever
+// they are handed, after the live tiles, on phones and on the desktop board.
+describe("the hub Home's «به‌زودی» section (owner, 2026-09-27; admins only)", () => {
+  it("renders after the live tiles on phones and on the desktop board", async () => {
     for (const hat of ["teacher", "student", "admin"] as const) {
       resolveHomeTiles.mockResolvedValue(homeFor(hat));
       const grid = await HomeGrid({ ctx: ctx as unknown as Ctx });
