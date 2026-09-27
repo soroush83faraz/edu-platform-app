@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { HomeDashboard } from "@/components/home/dashboard/HomeDashboard";
+import { HomeCourses } from "@/components/home/HomeCourses";
 import { HomeGrid } from "@/components/home/HomeGrid";
 import { HubGreeting } from "@/components/home/HubGreeting";
 import { NotificationsBell } from "@/components/home/NotificationsBell";
-import { DashboardSkeleton, GridSkeleton } from "@/components/home/HomeSkeletons";
+import { CoursesSkeleton, DashboardSkeleton, GridSkeleton } from "@/components/home/HomeSkeletons";
 import { SchoolBanner } from "@/components/home/SchoolBanner";
 import { TodayStrip } from "@/components/home/TodayStrip";
 import { ContentWidth } from "@/components/layout/ContentWidth";
@@ -31,7 +32,8 @@ export default async function HomePage() {
   const ctx = await requireContext(); // the (app) layout already redirected anonymous visitors
   // The «hub» layout (everyone's since 2026-09-27, docs/decisions-pending/home-hub.md): the greeting card on every
   // size — name, date, school — then the tiles, and nothing else above the fold: no «امروز» line and no «تکالیف
-  // نزدیک» card («پنل من» is a tile), no second bell (the top bar has it), no back link (this is Home).
+  // نزدیک» card («پنل من» is a tile), no second bell (the top bar has it), no back link (this is Home). Under the
+  // tiles, on every size, the «درس‌های من» course cards (`HomeCourses`, owner 2026-09-27) — full content width.
   if ((await getUiVariant()) === "hub") {
     return (
       <ContentWidth className="reveal-stagger pt-2 lg:pt-4">
@@ -46,6 +48,9 @@ export default async function HomePage() {
             <HomeDashboard ctx={ctx} />
           </Suspense>
         </div>
+        <Suspense fallback={<CoursesSkeleton />}>
+          <HomeCourses ctx={ctx} />
+        </Suspense>
         <InstallPrompt />
       </ContentWidth>
     );

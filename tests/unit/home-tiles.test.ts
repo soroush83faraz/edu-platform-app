@@ -173,11 +173,22 @@ describe("homeTilesFor — hub layout", () => {
     for (const code of ["my-week", "my-subjects", "my-offerings", "teaching-week", "admin-students"]) expect(classic.has(code)).toBe(false);
   });
 
-  it("student: پنل من · برنامهٴ هفتگی · درس‌ها و دبیران · حضور و غیاب — no «کلاس من» tile", () => {
+  it("student: پنل من · برنامهٴ هفتگی · حضور و غیاب — no «کلاس من» tile, no «درس‌ها و دبیران» tile (the course cards are)", () => {
     const tiles = homeTilesFor(student, has(STUDENT_PERMS), hub);
-    expect(labels(tiles)).toEqual(["پنل من", "برنامهٴ هفتگی", "درس‌ها و دبیران", "حضور و غیاب"]);
-    expect(hrefs(tiles)).toEqual(["/inbox", "/my-class/timetable", "/my-class/subjects", "/attendance"]);
+    expect(labels(tiles)).toEqual(["پنل من", "برنامهٴ هفتگی", "حضور و غیاب"]);
+    expect(hrefs(tiles)).toEqual(["/inbox", "/my-class/timetable", "/attendance"]);
     expect(hrefs(tiles)).not.toContain("/my-class/info");
+    // The درس list is the «درس‌های من» cards under the tiles now (owner, 2026-09-27) — for no hat is it a tile.
+    for (const [hats, perms] of [
+      [student, STUDENT_PERMS],
+      [teacher, TEACHER_PERMS],
+      [orgAdmin, ORG_PERMS],
+      [teachingStudent, [...STUDENT_PERMS, ...TEACHER_PERMS]],
+    ] as const) {
+      const all = homeTilesFor(hats, has(perms), hub);
+      expect(hrefs(all)).not.toContain("/my-class/subjects");
+      expect(labels(all)).not.toContain("درس‌ها و دبیران");
+    }
   });
 
   it("teacher: پنل من · کلاس‌های من · برنامهٴ هفتگی · حضور و غیاب", () => {
@@ -247,7 +258,7 @@ describe("homeTilesFor — hub layout", () => {
     expect(tile(homeTilesFor(principal, has(PRINCIPAL_PERMS), hub), "admin-attendance")?.labelFa).toBe("حضور و غیاب");
     // A student who also teaches: «برنامهٴ هفتگی» is the teaching week; the class week steps aside (one label, one tile).
     const both = homeTilesFor(teachingStudent, has([...STUDENT_PERMS, ...TEACHER_PERMS]), hub);
-    expect(codes(both)).toEqual(["inbox", "my-subjects", "my-offerings", "teaching-week", "attendance"]);
+    expect(codes(both)).toEqual(["inbox", "my-offerings", "teaching-week", "attendance"]);
   });
 
   it("the glyphs: a bell-schedule clock for «برنامهٴ کلاسی», the classroom board for «کلاس‌ها», a person's own teaching on the lectern beside it", () => {
@@ -286,7 +297,8 @@ describe("homeTilesFor — hub layout", () => {
   });
 
   it("there is no nav in hub mode, so the tiles carry the places the role item held", () => {
-    expect(hrefs(homeTilesFor(student, has(STUDENT_PERMS), hub))).toEqual(expect.arrayContaining(["/my-class/timetable", "/my-class/subjects"]));
+    // The student's درس list is not a tile any more: the «درس‌های من» course cards under the tiles open each درس.
+    expect(hrefs(homeTilesFor(student, has(STUDENT_PERMS), hub))).toEqual(expect.arrayContaining(["/my-class/timetable"]));
     expect(hrefs(homeTilesFor(teacher, has(TEACHER_PERMS), hub))).toEqual(expect.arrayContaining(["/classes/offerings", "/classes/timetable"]));
     for (const route of ["my-class/timetable", "my-class/subjects", "my-class/info", "classes/offerings", "classes/timetable"]) {
       const src = readFileSync(new URL(`../../src/app/(app)/${route}/page.tsx`, import.meta.url), "utf8");

@@ -1,0 +1,147 @@
+// «درس‌های من» — the hub Home's course cards (owner, 2026-09-27, after the university LMS dashboard): one card per
+// درس under the tiles — a student's class offerings (the «درس‌ها و دبیران» read), a teacher's own offerings (the hats
+// read) — each a whole-surface link into /subjects/[offeringId], topped by a patterned cover in the درس's hue
+// (`CourseCover`). A non-teaching admin gets no section. And the «به‌زودی» section is hidden for now
+// (`SHOW_UPCOMING_ON_HOME`). The Home reads run for real over mocked queries; the Server Components are rendered to markup.
+import { renderToStaticMarkup } from "react-dom/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const hats = vi.hoisted(() => ({ value: null as unknown }));
+const myClass = vi.hoisted(() => ({ value: null as unknown, calls: 0 }));
+vi.mock("@/modules/iam/hats", () => ({ hatsQuery: vi.fn(async () => ({ ok: true, data: hats.value })) }));
+vi.mock("@/modules/academic/queries", () => ({
+  myClassQuery: vi.fn(async () => {
+    myClass.calls++;
+    return { ok: true, data: myClass.value };
+  }),
+  myTimetableQuery: vi.fn(async () => ({ ok: true, data: null })),
+}));
+vi.mock("@/modules/workspace/queries", () => ({ homeOpenItemsQuery: vi.fn(async () => ({ ok: true, data: [] })) }));
+
+const { HomeCourses, CourseCards, homeCourses } = await import("@/components/home/HomeCourses");
+const { resolveHomeTiles } = await import("@/components/home/home-data");
+const { CourseCover, COVER_FAMILIES, coverFamily } = await import("@/components/illustrations/CourseCover");
+const { SHOW_UPCOMING_ON_HOME } = await import("@/lib/modules-registry");
+const { subjectHue } = await import("@/lib/subject-stamp");
+type Ctx = import("@/lib/ctx").Ctx;
+
+const ctx = { assignments: [{ roleCode: "x", roleId: "r", scopeType: "school", scopeId: "s", permissions: ["workspace.work_item.read"] }] } as unknown as Ctx;
+const baseHats = { isStudent: false, studentClass: null, teachingOfferings: [], adminScope: null, adminSingleSchoolId: null };
+const STUDENT_CLASS = {
+  classGroupName: "۱۰/۱",
+  schoolName: "دبیرستان نمونه",
+  classmates: 20,
+  teachers: [
+    { offeringId: "off-math", subjectId: "sub-math", subjectName: "ریاضی ۱", teacherName: "مریم رضایی" },
+    { offeringId: "off-phys", subjectId: "sub-phys", subjectName: "فیزیک ۱", teacherName: null },
+  ],
+};
+const TEACHING = [
+  { offeringId: "t-1", subjectId: "sub-math", subjectName: "ریاضی ۱", classGroupName: "۱۰/۱", activeStudents: 20, openItems: 2 },
+  { offeringId: "t-2", subjectId: "sub-math", subjectName: "ریاضی ۱", classGroupName: "۱۰/۲", activeStudents: 18, openItems: 0 },
+];
+
+const render = async () => {
+  const el = await HomeCourses({ ctx });
+  return el ? renderToStaticMarkup(el) : "";
+};
+const hrefsOf = (html: string) => [...html.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]);
+
+beforeEach(() => {
+  myClass.value = null;
+  myClass.calls = 0;
+});
+
+describe("«درس‌های من» on Home", () => {
+  it("student: one card per درس of the class, linking to its subject page, the دبیر under the name", async () => {
+    hats.value = { ...baseHats, isStudent: true, studentClass: { classGroupName: "۱۰/۱", schoolName: "x" } };
+    myClass.value = STUDENT_CLASS;
+    const html = await render();
+    expect(html).toContain(">درس‌های من</span>");
+    expect(hrefsOf(html)).toEqual(["/subjects/off-math", "/subjects/off-phys"]);
+    expect(html).toContain("<bdi>ریاضی ۱</bdi>");
+    expect(html).toContain("<bdi>مریم رضایی</bdi>");
+    expect(html).toContain("دبیر هنوز مشخص نشده");
+    // The card: a whole-surface link on the raised white material, clipped round, with the end chevron.
+    const link = html.match(/<a [^>]*class="([^"]+)"/)?.[1].split(" ") ?? [];
+    for (const c of ["surface-work", "surface-link", "pressable", "rounded-card", "overflow-hidden"]) expect(link).toContain(c);
+    expect(html).toContain("lucide-chevron-left");
+    // The grid: 2 columns on phones, 3 from md, 4 from lg.
+    expect(html).toMatch(/<ul class="[^"]*grid-cols-2[^"]*md:grid-cols-3[^"]*lg:grid-cols-4/);
+    // One read of the class (the cached «درس‌ها و دبیران» query), not one per card.
+    expect(myClass.calls).toBe(1);
+  });
+
+  it("teacher: one card per offering they teach, «کلاس <name>» under the درس — no class read", async () => {
+    hats.value = { ...baseHats, teachingOfferings: TEACHING };
+    const html = await render();
+    expect(hrefsOf(html)).toEqual(["/subjects/t-1", "/subjects/t-2"]);
+    expect(html).toContain("کلاس <bdi>۱۰/۱</bdi>");
+    expect(html).toContain("کلاس <bdi>۱۰/۲</bdi>");
+    expect(myClass.calls).toBe(0);
+  });
+
+  it("an admin who does not teach (and studies nowhere) gets no section at all", async () => {
+    hats.value = { ...baseHats, adminScope: "organization" };
+    expect(await render()).toBe("");
+    expect(myClass.calls).toBe(0);
+    expect(CourseCards({ courses: [] })).toBeNull();
+  });
+
+  it("a person who teaches and studies gets both, teaching first, each offering once", () => {
+    const both = homeCourses({ teachingOfferings: TEACHING, myClass: STUDENT_CLASS });
+    expect(both.map((c) => [c.offeringId, c.kind])).toEqual([
+      ["t-1", "teach"],
+      ["t-2", "teach"],
+      ["off-math", "study"],
+      ["off-phys", "study"],
+    ]);
+    expect(homeCourses({ teachingOfferings: [], myClass: null })).toEqual([]);
+  });
+});
+
+describe("CourseCover — the card's patterned cover", () => {
+  const ids = Array.from({ length: 40 }, (_, i) => `0192f0a1-0000-7000-8000-${String(i).padStart(12, "0")}`);
+
+  it("is deterministic per subject: same id → the same markup, family and hue", () => {
+    for (const id of ids.slice(0, 8)) {
+      const a = renderToStaticMarkup(CourseCover({ subjectId: id, name: "شیمی ۲" }));
+      const b = renderToStaticMarkup(CourseCover({ subjectId: id, name: "شیمی ۲" }));
+      expect(a).toBe(b);
+      expect(a).toContain(`data-family="${coverFamily(id)}"`);
+      expect(a).toContain(`data-hue="${subjectHue(id)}"`);
+    }
+  });
+
+  it("different درس‌ها get different patterns: every family occurs over a spread of ids", () => {
+    expect(new Set(ids.map(coverFamily))).toEqual(new Set(COVER_FAMILIES));
+    expect(COVER_FAMILIES.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("stays inside the subject palette, fills any box, is decorative, and carries the درس's own glyph", () => {
+    for (const id of ids.slice(0, 12)) {
+      const html = renderToStaticMarkup(CourseCover({ subjectId: id, name: "فیزیک ۱" }));
+      const hue = subjectHue(id);
+      expect(html).toMatch(/^<div aria-hidden="true"/);
+      expect(html).toContain('preserveAspectRatio="xMidYMid slice"');
+      expect(html).toContain(`--cv-0:var(--color-subject-${hue}-bg)`);
+      expect(html).toContain(`--cv-ink:var(--color-subject-${hue}-ink)`);
+      // No raw colour, no raster, no network.
+      expect(html.replace(' xmlns="http://www.w3.org/2000/svg"', "")).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|hsl\(|<image|https?:/i);
+      // The glyph of the درس (atom for فیزیک), not a generic one.
+      expect(html).toContain("lucide-atom");
+    }
+  });
+});
+
+describe("the «به‌زودی» section is hidden for now", () => {
+  it("the flag is off and the hub Home reads no upcoming tiles, for any hat", async () => {
+    expect(SHOW_UPCOMING_ON_HOME).toBe(false);
+    for (const h of [{ isStudent: true }, { teachingOfferings: TEACHING }, { adminScope: "organization" }]) {
+      hats.value = { ...baseHats, ...h };
+      const home = await resolveHomeTiles(ctx);
+      expect(home.variant).toBe("hub");
+      expect(home.upcoming).toEqual([]);
+    }
+  });
+});

@@ -113,3 +113,36 @@ logout; the bell top-left → «اعلان‌ها»), and every answer that poin
   with the person's list; rendered per role: grey marks, `aria-disabled`, heading and pills, no `<a>`/href; the
   greeting card's `bg-hero rounded-hero text-white overflow-hidden`, no `surface-work`, no translucent white text,
   the decoration `aria-hidden`, no glow, static).
+
+## Round 4 (owner, 2026-09-27): «درس‌های من» course cards; no «درس‌ها و دبیران» tile; «به‌زودی» hidden
+- **No «درس‌ها و دبیران» tile.** `my-subjects` left `HUB_TILES`; a student's hub tiles are «پنل من» · «برنامهٴ
+  هفتگی» · «حضور و غیاب». `/my-class/subjects` stays (classic «کلاس من», direct links); nothing on Home opens it.
+  The help page's student answer now points at «درس‌های من».
+- **«درس‌های من» — course cards after the university LMS dashboard** (`src/components/home/HomeCourses.tsx`), under
+  the tiles on every size (after the phone grid and after the desktop board, full content width), hub layout only.
+  One card per offering: a teacher's own offerings (from the hats read — no extra query; meta «کلاس <name>»), then a
+  student's class offerings (the «درس‌ها و دبیران» read `myClassQuery`, cached as `getMyClass` in `home-data.ts`, only
+  for a student; meta = the دبیر or «دبیر هنوز مشخص نشده»). A person with both hats gets both, teaching first, each
+  offering once; an admin who neither teaches nor studies gets no section. Each card is a whole-surface
+  `/subjects/[offeringId]` link (`prefetch={false}`): `surface-work surface-link pressable rounded-card
+  overflow-hidden`, the cover, then the name (`text-row` semibold, 2 lines max) and the meta line (`text-meta`
+  muted) with the end chevron. Grid: 2 columns on phones (12 px gap), 3 from `md:`, 4 from `lg:` (16 px gap).
+  Skeleton: `CoursesSkeleton`.
+- **The cover** (`src/components/illustrations/CourseCover.tsx`): inline SVG on a 320×180 board drawn
+  `xMidYMid slice` (120 px tall on phones, 16:9 from `md:`), `aria-hidden`, no raster/network. Six pattern families —
+  overlapping circles, hexagons (honeycomb), triangles (tessellation that reads as diamonds), waves, plaid (tartan
+  stripes), squares (some nested). Picked per subject: the HUE is the stamp hue (`subjectHue` = fnv1a(id) % 8, same
+  colour as its `SubjectIcon`), the FAMILY is `(fnv1a(id) >>> 3) % 6` (independent of the hue), and the rest of the
+  hash seeds the per-cell tones and a mirror. Tones are the hue's bg plus its ink mixed in at 10 / 20 / 32 %
+  (`color-mix` in oklab) — only subject-palette tokens. The درس's own glyph (`subjectIcon(name)`) sits centred on a
+  64 px disc of the hue's bg at 85 %, ink at 80 %.
+- **«به‌زودی» hidden for now:** `SHOW_UPCOMING_ON_HOME = false` in `src/lib/modules-registry.ts`, read once by
+  `resolveHomeTiles`; `upcomingTilesFor` / `UpcomingTiles` and their wiring in `HomeGrid` / `DashboardTiles` stay —
+  flipping the flag brings the section back.
+- Tests: `tests/unit/home-courses.test.ts` (student / teacher cards, hrefs and meta lines, one class read, none for
+  a non-teaching admin, both hats; the cover deterministic per subject, every family reachable, palette-only and
+  aria-hidden with the subject's glyph; the flag off and no upcoming tiles), `home-tiles.test.ts` (no subjects tile
+  for any hat), `hub-home.test.ts` (the section follows the tiles; «به‌زودی» wiring kept).
+- **Open for the owner:** (1) a teacher who teaches one درس in five classes sees five identical covers (the cover is
+  per درس, by design) — vary the tone layout per class if that reads as monotonous? (2) On the desktop teacher board
+  the aside «کلاس‌های من» list now repeats the course cards below it — keep both, or drop the aside list?

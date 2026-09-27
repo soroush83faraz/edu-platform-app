@@ -24,7 +24,7 @@ vi.mock("@/modules/workspace/queries", () => ({
   inboxSummaryQuery: vi.fn(async () => ({ ok: true, data: { overdue: 2, dueToday: 0, unread: 0, unreadNotifications: 0 } })),
 }));
 const resolveHomeTiles = vi.hoisted(() => vi.fn());
-vi.mock("@/components/home/home-data", () => ({ resolveHomeTiles, getMyTimetable: vi.fn(async () => null), getNearbyItems: vi.fn(async () => []) }));
+vi.mock("@/components/home/home-data", () => ({ resolveHomeTiles, getMyTimetable: vi.fn(async () => null), getNearbyItems: vi.fn(async () => []), getMyClass: vi.fn(async () => null) }));
 
 const { default: HomePage } = await import("@/app/(app)/home/page");
 const { HubGreeting } = await import("@/components/home/HubGreeting");
@@ -38,6 +38,7 @@ const { NotificationsBell } = await import("@/components/home/NotificationsBell"
 const { PageHeader } = await import("@/components/layout/PageHeader");
 const { TwoColumn } = await import("@/components/layout/TwoColumn");
 const { UpcomingTiles } = await import("@/components/home/UpcomingTiles");
+const { HomeCourses } = await import("@/components/home/HomeCourses");
 const { formatJalaliWeekdayDate } = await import("@/lib/format");
 const { upcomingTilesFor } = await import("@/lib/modules-registry");
 type Ctx = import("@/lib/ctx").Ctx;
@@ -91,6 +92,9 @@ describe("hub Home (the default)", () => {
     expect(order.indexOf(HubGreeting)).toBeGreaterThan(-1);
     expect(order.indexOf(HomeGrid)).toBeGreaterThan(order.indexOf(HubGreeting));
     expect(order.indexOf(HomeDashboard)).toBeGreaterThan(order.indexOf(HubGreeting));
+    // «درس‌های من» follows the tiles, on every size (owner, 2026-09-27).
+    expect(order.indexOf(HomeCourses)).toBeGreaterThan(order.indexOf(HomeGrid));
+    expect(order.indexOf(HomeCourses)).toBeGreaterThan(order.indexOf(HomeDashboard));
     for (const gone of [TodayStrip, SchoolBanner, PageHeader, NotificationsBell, NearbyCard]) expect(order).not.toContain(gone);
   });
 
@@ -143,8 +147,10 @@ describe("the hub greeting card", () => {
   });
 });
 
-describe("the hub Home's «به‌زودی» section (owner, 2026-09-27)", () => {
-  it("follows the live tiles on phones and on the desktop board, with that person's upcoming modules", async () => {
+// Hidden for now (owner, 2026-09-27: `SHOW_UPCOMING_ON_HOME = false`, so `resolveHomeTiles` hands the renderers no
+// upcoming tiles — tests/unit/home-courses.test.ts). The renderers stay wired so one flag brings the section back.
+describe("the hub Home's «به‌زودی» section (owner, 2026-09-27; hidden for now)", () => {
+  it("stays wired after the live tiles on phones and on the desktop board, for when the flag is back on", async () => {
     for (const hat of ["teacher", "student", "admin"] as const) {
       resolveHomeTiles.mockResolvedValue(homeFor(hat));
       const grid = await HomeGrid({ ctx: ctx as unknown as Ctx });

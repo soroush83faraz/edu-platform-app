@@ -1,7 +1,6 @@
 import {
   AlarmClock,
   Bell,
-  BookOpen,
   BookOpenCheck,
   CalendarCheck,
   CalendarDays,
@@ -503,18 +502,18 @@ function sectionTile(key: AdminSectionKey): HomeTile {
  * destination still holds per person: every href below is distinct, no person gets two tiles with one label
  * (`altLabelFa`) or one glyph (`altIcon`).
  *
- * Order (owner, 2026-09-27): «پنل من» first; then the student's tiles (the week, «درس‌ها و دبیران»), the
+ * Order (owner, 2026-09-27): «پنل من» first; then the student's tiles (the week), the
  * teacher's («کلاس‌های من», the teaching week), the admin's («مدرسه»/«مدرسه‌ها», دانش‌آموزان · کارکنان · کلاس‌ها ·
  * نقش‌ها, «برنامهٴ کلاسی»); «حضور و غیاب» is the LAST tile for every role (the admin's report after the roll call
  * for a person who has both). A multi-hat person gets the union in this order. No «کلاس من» tile (the class card
  * lives on /my-class/info, unlinked from Home) and no «نمای کلی» tile (the /admin overview) — owner, same day.
- * A section-shaped place (the week, «درس‌ها و دبیران», …) opens its own small page that draws that one section of
+ * A section-shaped place (the week, «کلاس‌های من», …) opens its own small page that draws that one section of
  * the full page (`/my-class/*`, `/classes/*`); the full pages stay for the classic layout (`HOME_TILES`).
  */
 export const HUB_TILES: readonly HomeTile[] = [
   homeTile("inbox"),
 
-  // Student — what «کلاس من» held: the week and the درس list.
+  // Student — what «کلاس من» held: the week (the درس list is the «درس‌های من» cards under the tiles).
   {
     code: "my-week",
     labelFa: "برنامهٴ هفتگی",
@@ -525,7 +524,8 @@ export const HUB_TILES: readonly HomeTile[] = [
     exceptRole: "teacher",
     permission: "academic.timetable.read",
   },
-  { code: "my-subjects", labelFa: "درس‌ها و دبیران", href: "/my-class/subjects", icon: BookOpen, role: "student", permission: "workspace.work_item.read" },
+  // No «درس‌ها و دبیران» tile (owner, 2026-09-27): the student's درس‌ها are the «درس‌های من» course cards under the
+  // tiles (`HomeCourses`); /my-class/subjects stays for the classic «کلاس من» and direct links.
 
   // Teacher — what «کلاس‌ها» held: the درس cards and the teaching week. «کلاس‌های من» is the classroom board, as
   // the admin «کلاس‌ها» is; a person who sees both reads their own teaching as the lectern.
@@ -592,6 +592,13 @@ export function homeTilesFor(
     };
   });
 }
+
+/**
+ * Does the hub Home draw its «به‌زودی» section? Hidden for now (owner, 2026-09-27: the «درس‌های من» course cards
+ * follow the tiles instead). `upcomingTilesFor` and `UpcomingTiles` stay wired — flip this to `true` to bring the
+ * section back; `resolveHomeTiles` (src/components/home/home-data.ts) is the one reader.
+ */
+export const SHOW_UPCOMING_ON_HOME = false;
 
 /** A grey «به‌زودی» tile of the hub Home: a module that is not built yet — a label and a glyph, never an href. */
 export interface UpcomingTile {

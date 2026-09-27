@@ -4,9 +4,9 @@
 // the management overview belongs to /admin.
 import { cache } from "react";
 import type { Ctx } from "@/lib/ctx";
-import { homeTilesFor, upcomingTilesFor, type HomeTile, type UpcomingTile } from "@/lib/modules-registry";
+import { homeTilesFor, SHOW_UPCOMING_ON_HOME, upcomingTilesFor, type HomeTile, type UpcomingTile } from "@/lib/modules-registry";
 import { getUiVariant, type UiVariant } from "@/lib/ui-variant";
-import { myTimetableQuery } from "@/modules/academic/queries";
+import { myClassQuery, myTimetableQuery } from "@/modules/academic/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 import { hatsQuery, type Hats } from "@/modules/iam/hats";
 import type { Permission } from "@/modules/iam/permissions";
@@ -22,6 +22,12 @@ export const getMyTimetable = cache(async () => {
   return r.ok ? r.data : null;
 });
 
+/** The student's class and its درس‌ها (the «درس‌ها و دبیران» read) — the «درس‌های من» course cards draw from it. */
+export const getMyClass = cache(async () => {
+  const r = await myClassQuery();
+  return r.ok ? r.data : null;
+});
+
 /** «تکالیف نزدیک» — both renderings draw the card (`NearbyCard`), so its list is read once per request too. */
 export const getNearbyItems = cache(async () => {
   const r = await homeOpenItemsQuery({ limit: 5 });
@@ -30,7 +36,10 @@ export const getNearbyItems = cache(async () => {
 
 export interface HomeTiles {
   tiles: HomeTile[];
-  /** The hub Home's grey «به‌زودی» tiles for this person (`upcomingTilesFor`) — none in the classic layout. */
+  /**
+   * The hub Home's grey «به‌زودی» tiles for this person (`upcomingTilesFor`) — none in the classic layout, and none
+   * while `SHOW_UPCOMING_ON_HOME` is off (owner, 2026-09-27: hidden for now; the renderers stay wired).
+   */
   upcoming: UpcomingTile[];
   hats: Hats | null;
   /** The person's own hats — what the desktop board renders (the admin hat picks no board: /admin is the hub). */
@@ -50,6 +59,6 @@ export const resolveHomeTiles = cache(async (ctx: Ctx): Promise<HomeTiles> => {
   // The experimental «hub» layout (no nav) turns every former nav destination into a tile; classic is unchanged.
   const variant = await getUiVariant();
   const tiles = homeTilesFor({ isStudent, isTeacher, isAdmin: adminScope !== null, adminScope, singleSchoolId: hats?.adminSingleSchoolId ?? null }, has, { variant });
-  const upcoming = variant === "hub" ? upcomingTilesFor({ isStudent, isTeacher, isAdmin: adminScope !== null }) : [];
+  const upcoming = SHOW_UPCOMING_ON_HOME && variant === "hub" ? upcomingTilesFor({ isStudent, isTeacher, isAdmin: adminScope !== null }) : [];
   return { tiles, upcoming, hats, isStudent, isTeacher, variant };
 });

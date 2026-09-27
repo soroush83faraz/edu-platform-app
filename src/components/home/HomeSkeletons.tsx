@@ -57,3 +57,23 @@ export function DashboardSkeleton() {
     </div>
   );
 }
+
+/** «درس‌های من» while its read lands: the heading line and a row of course cards (cover + two text lines). */
+export function CoursesSkeleton({ count = 4 }: { count?: number }) {
+  return (
+    <div aria-busy="true" aria-label="در حال بارگذاری" className="flex flex-col gap-2.5">
+      <Skeleton className="h-4 w-24 bg-neutral-200" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 lg:gap-4">
+        {Array.from({ length: count }, (_, i) => (
+          <div key={i} className="surface-work overflow-hidden">
+            <Skeleton className="h-30 w-full rounded-none bg-neutral-200 md:aspect-video md:h-auto" />
+            <div className="flex flex-col gap-2 px-3 pt-3 pb-3.5">
+              <Skeleton className="h-3.5 w-2/3" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
