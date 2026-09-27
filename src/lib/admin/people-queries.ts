@@ -6,6 +6,7 @@ import { audit } from "@/lib/audit";
 import { assertSchoolInScope, getAdminScope } from "@/modules/iam/service";
 import { findSchoolById, listSchools } from "@/modules/tenancy/repo";
 import { PAGE_SIZE } from "./defineResource";
+import { seesSchoolCode } from "./school-code";
 import { classOptionsInScope, getPersonDetail, listClassCredentials, listStaff, listStudents, personCredential } from "./people";
 import { ClassIdInput, PeopleListInput, PersonIdInput } from "./people-dto";
 import { staffOptions } from "./resources";
@@ -34,7 +35,8 @@ export const staffListQuery = defineQuery({ schema: PeopleListInput, permission:
  */
 export const peopleFormOptionsQuery = defineQuery({ permission: "iam.person.read", scope: "any" }, async (tx, _input, ctx) => {
   const scope = await getAdminScope(tx, ctx);
-  const schools = (await listSchools(tx)).filter((s) => scope.kind === "organization" || scope.schoolIds.includes(s.id)).map((s) => ({ value: s.id, label: s.name, code: s.code }));
+  // The code (the student form's username preview) goes to the organization admin only — never to a principal.
+  const schools = (await listSchools(tx)).filter((s) => scope.kind === "organization" || scope.schoolIds.includes(s.id)).map((s) => ({ value: s.id, label: s.name, ...(seesSchoolCode(scope) ? { code: s.code } : {}) }));
   return {
     scope,
     classes: await classOptionsInScope(tx, scope),

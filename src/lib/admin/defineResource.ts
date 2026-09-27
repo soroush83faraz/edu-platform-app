@@ -51,6 +51,8 @@ export interface Column<TRow> {
    * true («جاری», «پیش‌فرض») and nothing otherwise.
    */
   mobileMeta?: boolean | 1 | 2;
+  /** Shown only to an organization-scoped admin (the school's «کد»): dropped for everyone else by `resourceViewFor`. */
+  orgOnly?: boolean;
 }
 
 export interface ListOptions {
@@ -75,6 +77,8 @@ export interface ResourceDef<TRow extends { id: string }, TInput> {
   labelFaPlural: string;
   /** One line under the title. */
   descriptionFa?: string;
+  /** The organization admin's line instead of `descriptionFa`, when it names something only they see (the school code). */
+  orgDescriptionFa?: string;
   /**
    * `write` gates update/archive (and create unless `create` is set). `create` lets a resource demand a stronger
    * permission for NEW rows than for edits — offerings: a holder of `academic.teacher_assignment.write` alone edits
@@ -123,6 +127,16 @@ export type AnyResourceDef = ResourceDef<any, any>;
 /** The form fields of a resource for the options at hand (`formFieldsFor`, else the static list). */
 export function formFieldsOf(def: AnyResourceDef, options: Record<string, SelectOption[]>): FormField[] {
   return def.formFieldsFor ? def.formFieldsFor(options) : def.formFields;
+}
+
+/**
+ * The resource as THIS caller's list page renders it: `orgOnly` columns and the organization-only description are
+ * kept for an organization-scoped admin and dropped for a school scope. The list handler must not SELECT such a
+ * column for a school scope either (the rows reach the page) — this only keeps the table from asking for it.
+ */
+export function resourceViewFor(def: AnyResourceDef, scope: AdminScope): AnyResourceDef {
+  if (scope.kind === "organization") return def.orgDescriptionFa ? { ...def, descriptionFa: def.orgDescriptionFa } : def;
+  return { ...def, columns: def.columns.filter((c) => !c.orgOnly) };
 }
 
 /** Identity helper that keeps `TRow` / `TInput` inferred from the definition. */

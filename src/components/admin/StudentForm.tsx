@@ -20,6 +20,7 @@ export interface ClassOption {
 export interface SchoolOption {
   value: string;
   label: string;
+  /** Only in the organization admin's options: a principal is never sent the school code. */
   code?: string;
 }
 
@@ -69,7 +70,9 @@ export function StudentForm({ classes, schools, detail }: Props) {
       ? "خالی = همان شمارهٴ موبایل دانش‌آموز."
       : schoolCode
         ? `خالی = نام‌کاربری تولیدی «${schoolCode.toLowerCase()}-${String(v.studentNumber ?? "").trim() || "شماره"}».`
-        : "بدون موبایل، نام‌کاربری از کد مدرسه و شمارهٴ دانش‌آموزی ساخته می‌شود.";
+        : schools.some((s) => s.code)
+          ? "بدون موبایل، نام‌کاربری از کد مدرسه و شمارهٴ دانش‌آموزی ساخته می‌شود."
+          : "بدون موبایل، نام‌کاربری خودکار ساخته می‌شود.";
 
   // Fields on screen right now; an error on anything else is folded into the form-level line by `flatten`.
   const rendered = ["firstName", "lastName", "studentNumber", "gender", "contactPhone", "guardianPhone", "externalRef", ...(detail ? [] : ["classGroupId", "createAccount", "identifier", ...(schoolFieldShown ? ["schoolId"] : [])])];

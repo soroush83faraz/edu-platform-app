@@ -7,7 +7,7 @@ import { isAdminSectionFor, schoolsLabelFa } from "@/lib/admin/nav";
 import { ResourceForm } from "@/components/admin/ResourceForm";
 import { ResourceTable } from "@/components/admin/ResourceTable";
 import { Button } from "@/components/ui/button";
-import { formFieldsOf, type AnyResourceDef } from "@/lib/admin/defineResource";
+import { formFieldsOf, resourceViewFor, type AnyResourceDef } from "@/lib/admin/defineResource";
 import { adminResourceList } from "@/lib/admin/queries";
 import { formatNumberFa } from "@/lib/format";
 
@@ -32,13 +32,13 @@ function backOutOfAdmin(key: string, org: boolean): { href: string; label: strin
  * The generic list page of a resource: header (+ create form), search, table, pagination. `basePath` is where
  * pagination links point (defaults to /admin/<key>); `parent` is the parent id of a nested resource.
  */
-export async function ResourceListPage({ def, sp, parent, basePath, back }: { def: AnyResourceDef; sp: SearchParams; parent?: string; basePath?: string; back?: { href: string; label: string } }) {
+export async function ResourceListPage({ def: fullDef, sp, parent, basePath, back }: { def: AnyResourceDef; sp: SearchParams; parent?: string; basePath?: string; back?: { href: string; label: string } }) {
   const q = one(sp.q).slice(0, 80);
   const page = Math.max(1, Number.parseInt(one(sp.page) || "1", 10) || 1);
-  const parentId = parent ?? (def.parentParam ? one(sp[def.parentParam.name]) : "");
-  if (def.parentParam && !UUID_RE.test(parentId)) notFound();
+  const parentId = parent ?? (fullDef.parentParam ? one(sp[fullDef.parentParam.name]) : "");
+  if (fullDef.parentParam && !UUID_RE.test(parentId)) notFound();
 
-  const result = await adminResourceList({ resource: def.key, q, page, parent: parentId || undefined });
+  const result = await adminResourceList({ resource: fullDef.key, q, page, parent: parentId || undefined });
   if (!result.ok) {
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     notFound();
@@ -46,6 +46,8 @@ export async function ResourceListPage({ def, sp, parent, basePath, back }: { de
   // `canWrite` (edit/archive) and `canCreate` («… جدید») come from the same server-side gate as the mutation action:
   // a principal edits schools but never creates one, a vice principal edits offerings (main teacher) but defines none.
   const { rows, total, pageSize, options, canWrite, canCreate } = result.data;
+  // The caller's view of the resource: organization-only columns (the school «کد») exist for the organization admin alone.
+  const def = resourceViewFor(fullDef, result.data.scope);
   const fixed = def.parentParam ? { [def.parentParam.field]: parentId } : undefined;
   const hrefFor = (p: number) => {
     const params = new URLSearchParams();
