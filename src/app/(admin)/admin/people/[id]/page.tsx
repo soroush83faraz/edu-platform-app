@@ -4,17 +4,18 @@ import { AdminHeader } from "@/components/admin/AdminPage";
 import { AccountCard, EnrollmentCard, RolesCard } from "@/components/admin/PersonPanels";
 import { StaffForm } from "@/components/admin/StaffForm";
 import { StudentForm } from "@/components/admin/StudentForm";
+import { TeachingCard } from "@/components/admin/TeachingCard";
 import { Chip } from "@/components/Chip";
 import { requireContext } from "@/lib/ctx";
 import { formatPhoneFa, toFaDigits } from "@/lib/format";
-import { personDetailQuery } from "@/lib/admin/people-queries";
+import { personDetailQuery, teachingOptionsQuery } from "@/lib/admin/people-queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "پروندهٴ فرد | مدیریت" };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** /admin/people/[id] — the one page for a student or a staff member: edit, account, class, roles (read-only). */
+/** /admin/people/[id] — the one page for a student or a staff member: edit, account, class, teaching (+ «افزودن تدریس»), roles (read-only). */
 export default async function PersonPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!UUID_RE.test(id)) notFound();
@@ -35,6 +36,8 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     canTeaching: has("academic.teacher_assignment.write"),
   };
   const isStudent = detail.kind === "student";
+  // «افزودن تدریس» options only for a colleague and a caller who may assign teachers (the action re-checks everything).
+  const teachingOptions = detail.kind === "staff" && caps.canTeaching ? await teachingOptionsQuery() : null;
   return (
     <div className="flex flex-col gap-4">
       <AdminHeader
@@ -82,6 +85,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               </dl>
             </section>
           )}
+          {detail.kind === "staff" ? <TeachingCard detail={detail} canTeaching={caps.canTeaching} options={teachingOptions?.ok ? teachingOptions.data : null} /> : null}
         </div>
         <div className="flex flex-col gap-4">
           <AccountCard detail={detail} caps={caps} />

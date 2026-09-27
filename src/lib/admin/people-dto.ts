@@ -87,6 +87,24 @@ export const RevokeRoleInput = z.object({ roleAssignmentId: uuid }).strict();
 
 export const EndTeachingInput = z.object({ teacherAssignmentId: uuid }).strict();
 
+/**
+ * «افزودن تدریس» on a colleague's page: a class, then EITHER an existing offering of it OR a درس to define in the
+ * class's current نوبت, and the teaching role. `replaceMain` = the manager confirmed replacing the current main
+ * teacher. An empty pick (`""`) reads as missing; the handler names which (src/lib/admin/teaching.ts).
+ */
+const emptyAsMissing = z.preprocess((v) => (v === "" || v === null ? undefined : v), uuid.optional());
+export const AssignTeachingInput = z
+  .object({
+    personId: uuid,
+    classGroupId: z.string("کلاس را انتخاب کنید.").min(1, "کلاس را انتخاب کنید.").pipe(uuid),
+    classOfferingId: emptyAsMissing,
+    subjectId: emptyAsMissing,
+    role: z.enum(["main", "assistant", "substitute"], "نقش تدریس را انتخاب کنید.").default("main"),
+    replaceMain: z.boolean().default(false),
+  })
+  .strict();
+export type AssignTeachingInput = z.output<typeof AssignTeachingInput>;
+
 export const PeopleListInput = z
   .object({
     q: z.string().trim().max(80).default(""),

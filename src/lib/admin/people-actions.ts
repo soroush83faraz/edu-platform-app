@@ -10,8 +10,10 @@ import { adminCreateStaff, adminCreateStudent, adminPlaceStudent, adminResetInit
 import { assignRole, createAccountForPerson, getAdminScope, resolveIdentifier, revokeRoleAssignment, MESSAGES } from "@/modules/iam/service";
 import { findSchoolById } from "@/modules/tenancy/repo";
 import { getPersonDetail } from "./people";
+import { assignTeaching } from "./teaching";
 import {
   AssignRoleInput,
+  AssignTeachingInput,
   CreateAccountInput,
   CreateStaffInput,
   CreateStudentInput,
@@ -138,4 +140,22 @@ export const endTeachingAction = defineAction({ schema: EndTeachingInput, permis
   if (!schoolId || (scope.kind === "school" && !scope.schoolIds.includes(schoolId))) throw notFound();
   await endTeacherAssignment(tx, ctx, { teacherAssignmentId: input.teacherAssignmentId });
   return { teacherAssignmentId: input.teacherAssignmentId };
+});
+
+/**
+ * «افزودن تدریس» on a colleague's page — the offerings page's write from the person's side: the same permission
+ * (`academic.teacher_assignment.write`, re-checked at the class's school; defining a new offering also needs
+ * `tenancy.structure.write` there) and the same services (`createClassOffering`, `endTeacherAssignment`,
+ * `assignTeacher`). Person and class in the caller's scope, else NOT_FOUND (src/lib/admin/teaching.ts).
+ */
+export const assignTeachingAction = defineAction({ schema: AssignTeachingInput, permission: "academic.teacher_assignment.write", scope: "any" }, async (tx, input, ctx) => {
+  const res = await assignTeaching(tx, ctx, {
+    personId: input.personId,
+    classGroupId: input.classGroupId,
+    classOfferingId: input.classOfferingId,
+    subjectId: input.subjectId,
+    role: input.role,
+    replaceMain: input.replaceMain,
+  });
+  return { classOfferingId: res.classOfferingId, offeringCreated: res.offeringCreated, replaced: res.replacedTeacherAssignmentId !== null };
 });

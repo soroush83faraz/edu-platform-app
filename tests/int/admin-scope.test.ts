@@ -27,6 +27,9 @@
 //      of `workspace.work_item.create` through `personInScopeSql`) — a school manager never finds or assigns another
 //      school's people or the organization admin (INVALID_REFERENCE, the unknown-id answer; nothing written); the
 //      «کار جدید» class picker lists the manager's own schools' offerings (+ what they teach);
+//   T  (owner, 2026-09-27) «افزودن تدریس» on a colleague's page (`assignTeaching`): the offerings page's write from the
+//      person's side — own colleague × own class only (else NOT_FOUND, nothing written), a student is a VALIDATION
+//      error, a new درس defines the offering in the current نوبت, a main teacher is replaced only when confirmed;
 //   R  `assignRole` gives a manager role to an active colleague only — a student (or a colleague who has left) is a
 //      `personId` field error, whoever grants.
 // The school managers' permissions are READ FROM THE CATALOG (scripts/catalog.ts SYSTEM_ROLES), the very rows `pnpm
@@ -48,7 +51,8 @@ import { GATE_MESSAGES, resourceOpGate } from "@/lib/admin/defineResource";
 import { adminCountStatements, adminCounts } from "@/lib/admin/overview";
 import type { AdminScope } from "@/modules/iam/service";
 import { mutateResource } from "@/lib/admin/mutate";
-import { classResource, offeringResource, schoolResource, staffOptions } from "@/lib/admin/resources";
+import { classResource, listOfferingRows, offeringResource, schoolResource, staffOptions } from "@/lib/admin/resources";
+import { assignTeaching, teachingFormOptions, TEACHING_MESSAGES } from "@/lib/admin/teaching";
 import { getPersonDetail, listStaff, listStudents, personCredential, roleGrantCandidates } from "@/lib/admin/people";
 import { assignTeacher } from "@/modules/academic/service";
 import { adminCreateStaff, adminCreateStudent, adminPlaceStudent, adminResetInitialPassword, adminUnlockAccount, adminUpdatePerson, type AdminCtx } from "@/modules/iam/admin";
@@ -800,6 +804,112 @@ describe("admin scope hardening", () => {
       const student = await adminCreateStudent(tx, vice, { firstName: "رها", lastName: "نیکو", studentNumber: "S2-300", enrollment: { classGroupId: w.s2.classGroupId }, login: { createAccount: true } });
       expect(student.loginIdentifier).toBe("s2-s2-300");
       expect((await getPersonDetail(tx, s2Scope, student.personId)).enrollment?.classGroupId).toBe(w.s2.classGroupId);
+      throw new Rollback();
+    });
+  });
+
+  it("T (owner, 2026-09-27): «افزودن تدریس» on a colleague's page — a school manager makes their own colleague teach an existing offering or a NEW درس of their own class (same services: offering, teacher_assignment, derived role, audit); the main teacher is replaced only when confirmed; another school's class, offering or colleague is NOT_FOUND and a student is a VALIDATION error — nothing written; the organization admin assigns anywhere; the dialog's options are the manager's own classes", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const principal = resourceCtx(w.ctx.s2Principal);
+      const teacher = await adminCreateStaff(tx, w.ctx.s2Principal, { firstName: "بهرام", lastName: "شریفی", phone: "09127200060", schoolId: w.s2.schoolId });
+      const active = (offeringId: string) =>
+        tx
+          .select({ staffProfileId: schema.teacherAssignment.staffProfileId, role: schema.teacherAssignment.role })
+          .from(schema.teacherAssignment)
+          .where(and(eq(schema.teacherAssignment.classOfferingId, offeringId), isNull(schema.teacherAssignment.validTo)));
+      const assignmentCount = async () => (await tx.execute<{ n: number }>(sql`select count(*)::int as n from academic.teacher_assignment`)).rows[0].n;
+      const offeringCount = async () => (await tx.execute<{ n: number }>(sql`select count(*)::int as n from tenancy.class_offering`)).rows[0].n;
+
+      // The dialog's options: the manager's own current-year classes only, each with its offerings and main teacher.
+      const options = await teachingFormOptions(tx, principal, await getAdminScope(tx, w.ctx.s2Principal));
+      expect(options.classes.map((c) => c.value)).toEqual([w.s2.classGroupId]);
+      expect(options.classes[0]).toMatchObject({ currentTermId: w.s2.termId, canCreateOffering: true, offerings: [{ id: w.s2.offeringId, subjectId: f.SUBJECT_A, mainTeacher: null }] });
+
+      // 1. Existing offering, main teacher (none yet): the offerings page's rows — teacher_assignment + derived role + audit.
+      const r1 = await assignTeaching(tx, principal, { personId: teacher.personId, classGroupId: w.s2.classGroupId, classOfferingId: w.s2.offeringId, role: "main", replaceMain: false });
+      expect(r1).toMatchObject({ classOfferingId: w.s2.offeringId, offeringCreated: false, replacedTeacherAssignmentId: null });
+      expect(await active(w.s2.offeringId)).toEqual([{ staffProfileId: teacher.staffProfileId, role: "main" }]);
+      const derived = await tx
+        .select({ sourceId: roleAssignment.sourceId })
+        .from(roleAssignment)
+        .where(and(eq(roleAssignment.personId, teacher.personId), eq(roleAssignment.classOfferingId, w.s2.offeringId), isNull(roleAssignment.revokedAt)));
+      expect(derived).toEqual([{ sourceId: r1.teacherAssignmentId }]);
+      const audited = await tx.execute<{ n: number }>(sql`select count(*)::int as n from audit.audit_log where action = 'academic.teacher_assignment.created' and entity_id = ${r1.teacherAssignmentId}`);
+      expect(audited.rows[0].n).toBe(1);
+      // The class's offerings page reads the same row; the person page lists it with its role.
+      expect((await listOfferingRows(tx, await getAdminScope(tx, w.ctx.s2Principal), w.s2.classGroupId)).rows.find((r) => r.id === w.s2.offeringId)?.teacherName).toBe("بهرام شریفی");
+      expect((await getPersonDetail(tx, await getAdminScope(tx, w.ctx.s2Principal), teacher.personId)).teaching).toEqual([expect.objectContaining({ classOfferingId: w.s2.offeringId, role: "main" })]);
+      // Same colleague, same offering again (any role): CONFLICT, nothing new — one teaching per colleague and offering.
+      for (const role of ["main", "assistant"] as const) {
+        await expect(sub(tx, (sp) => assignTeaching(sp, principal, { personId: teacher.personId, classGroupId: w.s2.classGroupId, classOfferingId: w.s2.offeringId, role, replaceMain: true }))).rejects.toSatisfy(
+          isError("CONFLICT", TEACHING_MESSAGES.alreadyTeaches),
+        );
+      }
+
+      // 2. Replacing the main teacher: refused until confirmed (CONFLICT, nothing changed), then the offerings form's swap.
+      const before = await assignmentCount();
+      await expect(sub(tx, (sp) => assignTeaching(sp, principal, { personId: w.s2Vice.personId, classGroupId: w.s2.classGroupId, classOfferingId: w.s2.offeringId, role: "main", replaceMain: false }))).rejects.toSatisfy(isError("CONFLICT", TEACHING_MESSAGES.mainTaken));
+      expect(await assignmentCount()).toBe(before);
+      const r2 = await assignTeaching(tx, principal, { personId: w.s2Vice.personId, classGroupId: w.s2.classGroupId, classOfferingId: w.s2.offeringId, role: "main", replaceMain: true });
+      expect(r2.replacedTeacherAssignmentId).toBe(r1.teacherAssignmentId);
+      expect(await active(w.s2.offeringId)).toEqual([{ staffProfileId: w.s2Vice.staffProfileId, role: "main" }]);
+      expect(await tx.select({ id: roleAssignment.id }).from(roleAssignment).where(and(eq(roleAssignment.sourceId, r1.teacherAssignmentId), isNull(roleAssignment.revokedAt)))).toEqual([]);
+      // An assistant beside the main teacher needs no confirmation.
+      await assignTeaching(tx, principal, { personId: teacher.personId, classGroupId: w.s2.classGroupId, classOfferingId: w.s2.offeringId, role: "assistant", replaceMain: false });
+      expect((await active(w.s2.offeringId)).sort((a, b) => a.role.localeCompare(b.role))).toEqual([
+        { staffProfileId: teacher.staffProfileId, role: "assistant" },
+        { staffProfileId: w.s2Vice.staffProfileId, role: "main" },
+      ]);
+
+      // 3. A درس the class does not have: the offering is DEFINED (class × درس × current نوبت) and the colleague assigned.
+      const physics = await createSubject(tx, orgAdmin, { name: "فیزیک", code: "PHYS" });
+      const r3 = await assignTeaching(tx, principal, { personId: teacher.personId, classGroupId: w.s2.classGroupId, subjectId: physics.subjectId, role: "main", replaceMain: false });
+      expect(r3.offeringCreated).toBe(true);
+      const [created] = await tx
+        .select({ classGroupId: schema.classOffering.classGroupId, subjectId: schema.classOffering.subjectId, termId: schema.classOffering.termId, status: schema.classOffering.status })
+        .from(schema.classOffering)
+        .where(eq(schema.classOffering.id, r3.classOfferingId));
+      expect(created).toEqual({ classGroupId: w.s2.classGroupId, subjectId: physics.subjectId, termId: w.s2.termId, status: "active" });
+      expect(await active(r3.classOfferingId)).toEqual([{ staffProfileId: teacher.staffProfileId, role: "main" }]);
+      // …a درس it already has in that نوبت is the service's own field error (no duplicate offering).
+      await expect(sub(tx, (sp) => assignTeaching(sp, principal, { personId: teacher.personId, classGroupId: w.s2.classGroupId, subjectId: f.SUBJECT_A, role: "main", replaceMain: false }))).rejects.toSatisfy(fieldErrorOn("subjectId"));
+      // …neither an offering nor a درس: VALIDATION.
+      await expect(sub(tx, (sp) => assignTeaching(sp, principal, { personId: teacher.personId, classGroupId: w.s2.classGroupId, role: "main", replaceMain: false }))).rejects.toSatisfy(fieldErrorOn("subjectId"));
+
+      // 4. Outside the scope: NOT_FOUND and nothing written — another school's colleague, class, offering (also
+      // smuggled under the manager's own class), and a new درس in another school's class.
+      const [assignments, offerings] = [await assignmentCount(), await offeringCount()];
+      for (const input of [
+        { personId: w.s1Teacher.personId, classGroupId: w.s2.classGroupId, classOfferingId: w.s2.offeringId },
+        { personId: w.s1Principal.personId, classGroupId: w.s2.classGroupId, classOfferingId: w.s2.offeringId },
+        { personId: w.orgAdminPerson, classGroupId: w.s2.classGroupId, classOfferingId: w.s2.offeringId },
+        { personId: teacher.personId, classGroupId: f.CLASS_GROUP_A1, classOfferingId: f.OFFERING_A1 },
+        { personId: teacher.personId, classGroupId: w.s2.classGroupId, classOfferingId: f.OFFERING_A1 },
+        { personId: teacher.personId, classGroupId: f.CLASS_GROUP_A1, subjectId: physics.subjectId },
+      ]) {
+        for (const ctx of [principal, resourceCtx(w.ctx.s2Vice)]) {
+          await expect(sub(tx, (sp) => assignTeaching(sp, ctx, { ...input, role: "assistant", replaceMain: true })), JSON.stringify(input)).rejects.toSatisfy(isError("NOT_FOUND"));
+        }
+      }
+      expect([await assignmentCount(), await offeringCount()]).toEqual([assignments, offerings]);
+
+      // 5. A student is never a teacher (VALIDATION on the person, nothing written) — whoever assigns.
+      const student = await adminCreateStudent(tx, w.ctx.s2Principal, { firstName: "رها", lastName: "نیکو", studentNumber: "S2-310", enrollment: { classGroupId: w.s2.classGroupId }, login: { createAccount: false } });
+      for (const ctx of [principal, resourceCtx(orgAdmin)]) {
+        await expect(sub(tx, (sp) => assignTeaching(sp, ctx, { personId: student.personId, classGroupId: w.s2.classGroupId, classOfferingId: w.s2.offeringId, role: "assistant", replaceMain: false }))).rejects.toSatisfy(
+          (e: unknown) => fieldErrorOn("personId")(e) && (e as AppError).message === TEACHING_MESSAGES.notStaff,
+        );
+      }
+      expect(await assignmentCount()).toBe(assignments);
+
+      // 6. The vice principal does what the principal does; the organization admin assigns anyone anywhere in the organization.
+      await assignTeaching(tx, resourceCtx(w.ctx.s2Vice), { personId: w.s2Principal.personId, classGroupId: w.s2.classGroupId, classOfferingId: w.s2.offeringId, role: "substitute", replaceMain: false });
+      await assignTeaching(tx, resourceCtx(orgAdmin), { personId: w.s1Teacher.personId, classGroupId: w.s2.classGroupId, classOfferingId: r3.classOfferingId, role: "assistant", replaceMain: false });
+      expect((await active(r3.classOfferingId)).map((a) => a.staffProfileId).sort()).toEqual([teacher.staffProfileId, w.s1Teacher.staffProfileId].sort());
+      // The S1 principal's dialog never lists the S2 class.
+      const s1Options = await teachingFormOptions(tx, resourceCtx(w.ctx.s1Principal), await getAdminScope(tx, w.ctx.s1Principal));
+      expect(s1Options.classes.map((c) => c.value)).not.toContain(w.s2.classGroupId);
       throw new Rollback();
     });
   });

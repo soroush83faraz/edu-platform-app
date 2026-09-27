@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
 import { Chip } from "@/components/Chip";
 import { formatJalaliDateTime, formatLoginIdentifierFa, formatNumberFa } from "@/lib/format";
-import { createAccountAction, endTeachingAction, placeStudentAction, resetPasswordAction, unlockAccountAction } from "@/lib/admin/people-actions";
+import { createAccountAction, placeStudentAction, resetPasswordAction, unlockAccountAction } from "@/lib/admin/people-actions";
 import type { PersonDetail } from "@/lib/admin/people";
 import { roleLabel } from "@/lib/admin/labels";
 import { CredentialsDialog, type Credentials } from "./CredentialsDialog";
@@ -197,29 +197,18 @@ export function EnrollmentCard({ detail, classes, canEnroll }: { detail: PersonD
 }
 
 /**
- * Roles + teaching of a staff member. Manager roles are DISPLAY-ONLY here (owner, 2026-09-27: nobody changes a
- * colleague's role «وسط کار» from the staff pages) — plain chips, no picker, no «لغو»; they are granted and revoked on
- * /admin/roles only, and a caller who may do that gets one line pointing there. Teaching rows keep «پایان تدریس»:
- * ending a teaching assignment is the teacher-assignment capability (the derived «دبیر» role follows the teaching,
- * as on the offerings page), not a manager-role change.
+ * Manager roles of a staff member — DISPLAY-ONLY here (owner, 2026-09-27: nobody changes a colleague's role «وسط کار»
+ * from the staff pages): plain chips, no picker, no «لغو»; they are granted and revoked on /admin/roles only, and a
+ * caller who may do that gets one line pointing there. Teaching has its own section (`TeachingCard`): it is the
+ * teacher-assignment capability, not a manager-role change.
  */
 export function RolesCard({ detail, caps }: { detail: PersonDetail; caps: Caps }) {
-  const router = useRouter();
-  const [pending, start] = useTransition();
-  const endTeaching = (teacherAssignmentId: string) =>
-    start(async () => {
-      const r = await endTeachingAction({ teacherAssignmentId });
-      if (r.ok) {
-        toast.success("تدریس پایان یافت.");
-        router.refresh();
-      } else toast.error(r.message);
-    });
   return (
     <section aria-labelledby="roles-heading" className="flex flex-col gap-3 surface-work p-4">
       <h3 id="roles-heading" className="text-sm font-semibold text-text-muted">
-        نقش‌ها و تدریس
+        نقش‌ها
       </h3>
-      {detail.roles.length === 0 && detail.teaching.length === 0 ? <p className="text-sm text-text-muted">نقش مدیریتی یا تدریسی ندارد.</p> : null}
+      {detail.roles.length === 0 ? <p className="text-sm text-text-muted">نقش مدیریتی ندارد.</p> : null}
       {detail.roles.length > 0 ? (
         <ul aria-label="نقش‌ها" className="flex flex-wrap gap-2">
           {detail.roles.map((r) => (
@@ -228,22 +217,6 @@ export function RolesCard({ detail, caps }: { detail: PersonDetail; caps: Caps }
                 {roleLabel(r.roleCode)}
                 {r.schoolName ? ` — ${r.schoolName}` : r.scopeType === "organization" ? " — سازمان" : ""}
               </Chip>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {detail.teaching.length > 0 ? (
-        <ul className="divide-y divide-line rounded-lg border border-line">
-          {detail.teaching.map((t) => (
-            <li key={t.teacherAssignmentId} className="flex min-h-11 items-center justify-between gap-2 px-3 py-1 text-sm">
-              <span className="text-text">
-                دبیر {t.subjectName} <bdi>{t.className}</bdi>
-              </span>
-              {caps.canTeaching ? (
-                <Button type="button" variant="ghost" size="sm" className="text-danger" onClick={() => endTeaching(t.teacherAssignmentId)} disabled={pending}>
-                  پایان تدریس
-                </Button>
-              ) : null}
             </li>
           ))}
         </ul>
