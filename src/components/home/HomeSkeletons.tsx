@@ -34,16 +34,13 @@ export function CardSkeleton({ rows = 3 }: { rows?: number }) {
   );
 }
 
-/** The desktop dashboard's shape while its reads land: a two-column grid, a list card in the main column and a small tile grid in the aside. */
+/** The desktop dashboard's shape while its reads land: the work column (a small tile grid, the tasks card under
+ * it) at the start, the role panels in the wide aside — the same 7 + 5 tracks as `HomeDashboard`. */
 export function DashboardSkeleton() {
   return (
     <div aria-busy="true" aria-label="در حال بارگذاری" className="grid grid-cols-12 gap-6">
-      <div className="col-span-8 flex flex-col gap-5">
-        <CardSkeleton rows={4} />
-        <CardSkeleton rows={3} />
-      </div>
-      <div className="col-span-4 flex flex-col gap-5">
-        <div className="grid grid-cols-4 gap-x-1 gap-y-2">
+      <div className="col-span-7 flex flex-col gap-5">
+        <div className="grid grid-cols-4 gap-x-1 gap-y-2 xl:grid-cols-6">
           {Array.from({ length: 4 }, (_, i) => (
             <div key={i} className="flex min-h-24 flex-col items-center gap-2 pt-2">
               <Skeleton className="size-14 rounded-[0.9rem] bg-neutral-200" />
@@ -51,6 +48,10 @@ export function DashboardSkeleton() {
             </div>
           ))}
         </div>
+        <CardSkeleton rows={5} />
+      </div>
+      <div className="col-span-5 flex flex-col gap-5">
+        <CardSkeleton rows={3} />
         <Skeleton className="h-28 w-full rounded-card bg-neutral-200" />
       </div>
     </div>

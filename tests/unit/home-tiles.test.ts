@@ -1,8 +1,9 @@
 // The Home tile registry (`homeTilesFor`) under the IA rule (docs/decisions.md «one home per destination»): a
 // destination has exactly ONE door. Home carries the person's role tiles, then one tile per STRUCTURE page, each
 // gated by the permission and scope that guard the page itself. No tile is a second door to a NAV destination —
-// «پنل من» (a nav cell again since the 2026-09-27 UX review), «کلاس من», «کلاس‌های من», «مدیریت», «بیشتر»,
-// «خانه» — and no admin SECTION («دانش‌آموزان», «کارکنان», «کلاس‌ها», «نقش‌ها») gets one either.
+// «کلاس من», «کلاس‌ها», «مدیریت», «بیشتر», «خانه» — nor to the کارتابل, whose one door is the «همهٴ …» link of
+// Home's «تکالیف نزدیک» card (nav round 2026-09-27; `home-inbox-door.test.ts`), and no admin SECTION
+// («دانش‌آموزان», «کارکنان», «کلاس‌ها», «نقش‌ها») gets one either.
 // Plus the pure organization-admin predicate and the nav role.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -33,7 +34,7 @@ const teacher: TileHats = { isStudent: false, isTeacher: true, isAdmin: false, a
 const student: TileHats = { isStudent: true, isTeacher: false, isAdmin: false, adminScope: null };
 
 describe("homeTilesFor", () => {
-  it("no «پنل من» tile, for any hat: the کارتابل is a nav destination (UX review 2026-09-27)", () => {
+  it("no «پنل من» tile, for any hat: the کارتابل opens from Home's «تکالیف نزدیک» card (nav round 2026-09-27)", () => {
     expect(HOME_TILES.filter((t) => t.href === "/inbox" || t.code === "inbox")).toEqual([]);
     for (const hats of [orgAdmin, principal, teacher, student]) {
       expect(codes(homeTilesFor(hats, has(ADMIN_PERMS)))).not.toContain("inbox");
@@ -74,13 +75,14 @@ describe("homeTilesFor", () => {
     for (const hats of [principal, twoSchools]) expect(codes(homeTilesFor(hats, has(ADMIN_PERMS)))).toContain("schools");
   });
 
-  it("no tile is a second door to a nav destination («خانه», «پنل من», «مدیریت», «کلاس من», «کلاس‌ها», «راهنما», «بیشتر»)", () => {
-    // The nav is FOUR items — «خانه», «پنل من», the role item, «بیشتر» (docs/decisions.md, UX review 2026-09-27).
-    const navHrefs = ["/home", "/inbox", "/admin", "/my-class", "/classes", "/help", "/more"];
+  it("no tile is a second door to a nav destination («خانه», «مدیریت», «کلاس من», «کلاس‌ها», «راهنما», «بیشتر») or to the کارتابل", () => {
+    // The nav is THREE items — the role item, «خانه», «بیشتر» (owner, nav round 2026-09-27); the کارتابل (/inbox)
+    // is no nav cell but still has one door only: the Home card's «همهٴ …» link.
+    const navHrefs = ["/home", "/admin", "/my-class", "/classes", "/help", "/more", "/inbox"];
     expect(HOME_TILES.filter((t) => navHrefs.includes(t.href))).toEqual([]);
   });
 
-  it("neither the کارتابل nor «اعلان‌ها» is a tile: one is a nav cell, the other the bell on Home's greeting row", () => {
+  it("neither the کارتابل nor «اعلان‌ها» is a tile: one opens from the Home card, the other is the bell on Home's greeting row", () => {
     expect(HOME_TILES.filter((t) => t.href === "/inbox")).toEqual([]);
     expect(HOME_TILES.filter((t) => t.href.startsWith("/notifications"))).toEqual([]);
   });
@@ -93,9 +95,9 @@ describe("homeTilesFor", () => {
     }
   });
 
-  it("a student's own work is ONE door — the «پنل من» nav cell; a teacher keeps the tile they create from", () => {
+  it("a student's own work is ONE door — the Home card's «همهٴ تکالیف»; a teacher keeps the tile they create from", () => {
     // «تکالیف من» and «انجام‌شده» left the grid (owner, branding round): both were FILTERS of the کارتابل, and
-    // «پنل من» opens it with those very two tabs at the top.
+    // the card's «همهٴ تکالیف» opens it with those very two tabs at the top.
     expect(codes(homeTilesFor(student, has(["workspace.work_item.read", "academic.timetable.read"])))).toEqual([]);
     expect(HOME_TILES.filter((t) => t.href.startsWith("/inbox?tab="))).toEqual([]);
     expect(codes(homeTilesFor(teacher, has(["workspace.work_item.create", "iam.admin.access", "academic.timetable.read"])))).toEqual(["new-item"]);
@@ -178,7 +180,7 @@ describe("product map", () => {
   it("Home carries live destinations only: no tile points at the roadmap (UX review 2026-09-27)", () => {
     // What is coming is reached from «بیشتر ← نقشهٴ راه», never from a muted tile on Home.
     expect(HOME_TILES.filter((t) => t.href.startsWith("/roadmap"))).toEqual([]);
-    for (const file of ["HomeGrid.tsx", "dashboard/DashboardAside.tsx"]) {
+    for (const file of ["HomeGrid.tsx", "dashboard/DashboardTiles.tsx"]) {
       const src = readFileSync(new URL(`../../src/components/home/${file}`, import.meta.url), "utf8");
       expect(src).not.toContain("/roadmap");
       expect(src).not.toContain("UPCOMING");

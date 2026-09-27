@@ -9,7 +9,9 @@ import { CompactItemRow } from "./CompactItemRow";
 /**
  * «تکالیف نزدیک»: the next five open items of my کارتابل (assigned to me or given by me), by due date. Empty, it is
  * one line of text in the reader's voice (`empty`, from `src/lib/empty-copy.ts`) — no illustration, and no button:
- * the creation tile is right above it on Home.
+ * the creation tile is right above it on Home. Its «همهٴ …» link is the کارتابل's ONE door (owner, nav round
+ * 2026-09-27: no «پنل من» nav cell, no tile), so Home renders this card for every hat that reads work items, on
+ * phones (`HomeGrid`) and on the desktop dashboard (`HomeDashboard`) alike.
  */
 export async function NearbyCard({ words, empty }: { words: WorkItemWords; empty: EmptyCopy }) {
   const items = await homeOpenItemsQuery({ limit: 5 });

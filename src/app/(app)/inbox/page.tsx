@@ -81,6 +81,9 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   return (
     <ContentWidth className="gap-3">
       <PageHeader
+        // No nav cell leads here any more (nav round 2026-09-27): the page is opened from Home's card, so it
+        // goes back there like any inner page.
+        back={{ href: "/home", label: "خانه" }}
         title="پنل من"
         actions={
           canCreate ? (

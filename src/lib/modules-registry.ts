@@ -363,19 +363,20 @@ export interface HomeTile {
  * («بیشتر» and the role item — a student's «کلاس من», a teacher's «کلاس‌ها», an admin's «مدیریت» page), and
  * nothing the «بیشتر» page carries (راهنما, نقشهٴ راه, پروفایل).
  *
- * Round 5 (owner) settled two things (a third — «پنل من» as a tile — was reversed in the 2026-09-27 UX review:
- * the کارتابل is a nav cell again). «مدیریت» is now دانش‌آموزان ·
+ * Round 5 (owner) settled two things (a third — «پنل من» as a tile — was reversed: the کارتابل is reached from
+ * the «تکالیف نزدیک» card under the tiles, whose «همهٴ …» link is its one door — nav round 2026-09-27). «مدیریت» is now دانش‌آموزان ·
  * کارکنان · کلاس‌ها · نقش‌ها alone — every STRUCTURE page (مدرسه‌ها، سال تحصیلی، زنگ‌بندی، پایه‌ها، درس‌ها، مقطع‌ها،
  * راه‌اندازی مدرسه) and the admin's «حضور و غیاب» report left the admin nav and became its own tile here, gated by
  * the very permission and scope that guard its page, so an admin reaches each of them in one tap and never meets
- * it twice. And «مدیریت» itself lost its tile: the nav's first cell already opens /admin for an admin, so the
+ * it twice. And «مدیریت» itself lost its tile: the nav's role cell already opens /admin for an admin, so the
  * tile was a second door. «اعلان‌ها» stays a header control (the bell).
  *
  * Order: the person's role tiles, then the structure tiles by how often an admin opens them. `homeTilesFor` picks per person.
  */
 export const HOME_TILES: readonly HomeTile[] = [
-  // No «پنل من» tile (UX review 2026-09-27, owner): the کارتابل is a NAV destination again, with its unread badge
-  // on the nav cell, so a tile here would be its second door. The «امروز» line's links are FILTERS of it.
+  // No «پنل من» tile (owner): the کارتابل's one door is the «همهٴ …» link of Home's «تکالیف نزدیک» card, right
+  // under these tiles (nav round 2026-09-27 — no nav cell either), so a tile would be its second door. The
+  // «امروز» line's links are FILTERS of it.
   {
     // The ONE creation door on Home, for every hat that may open a کار (`NEW_ITEM_TILE_ROLES`): a دبیر, an
     // admin — and, since round 6, a student, whose own item is a personal «تسک». The label is role-aware
@@ -401,7 +402,7 @@ export const HOME_TILES: readonly HomeTile[] = [
     permission: "academic.attendance.read",
   },
 
-  // No «مدیریت» tile: the nav's first cell IS «مدیریت» for an admin (owner, round 5), so a tile would be a
+  // No «مدیریت» tile: the nav's role cell IS «مدیریت» for an admin (owner, round 5), so a tile would be a
   // second door to the people area. The tiles below are the destinations the nav no longer carries.
   {
     // The admin's OWN «حضور و غیاب»: the class report and «امروز ثبت نشده». A different destination from the
