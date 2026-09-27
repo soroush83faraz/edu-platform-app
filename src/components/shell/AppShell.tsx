@@ -18,9 +18,10 @@ import { inboxSummaryQuery } from "@/modules/workspace/queries";
  * ROLE MARK, the emblem that says which hat you are signed in with — and the content column; pages cap
  * their own width with `ContentWidth` (1200 px, or the reading measure). The admin layout passes `adminItems`
  * (sections with counts) so the rail can nest them under «مدیریت».
- * The experimental «hub» layout (`getUiVariant`, owner trial — docs/decisions-pending/home-hub.md) swaps the nav and
- * the mobile header for ONE top bar on every size: the profile avatar (→ «بیشتر») at the start, the bell at the end,
- * no school name, no bottom bar or rail (so no bottom padding reserved for it). «classic» renders exactly as before.
+ * The «hub» layout (`getUiVariant`, adopted by the owner — docs/decisions-pending/home-hub.md) swaps the nav and
+ * the mobile header for ONE top bar on every size: the profile icon (→ «بیشتر») at the start, the bell at the end,
+ * aligned with the content column, no school name, no bottom bar or rail (so no bottom padding reserved for it).
+ * Hub is everyone's layout now (`getUiVariant()` returns "hub"); the classic branch is kept so it can be reverted.
  */
 export async function AppShell({ ctx, children, adminItems }: { ctx: Ctx; children: React.ReactNode; adminItems?: readonly AdminNavItem[] }) {
   const summary = await inboxSummaryQuery();
@@ -49,9 +50,13 @@ export async function AppShell({ ctx, children, adminItems }: { ctx: Ctx; childr
       {hub ? null : <AppNav schoolName={title} role={navRole} hats={hats} adminItems={adminItems} />}
       <div className="flex min-w-0 flex-1 flex-col">
         {hub ? (
-          <header className="sticky top-0 z-10 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center justify-between gap-3 bg-canvas/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm lg:h-[calc(4rem+env(safe-area-inset-top))] lg:px-8">
-            <ProfileButton firstName={ctx.firstName} />
-            <NotificationsBell />
+          <header className="sticky top-0 z-10 bg-canvas/90 pt-[env(safe-area-inset-top)] backdrop-blur-sm">
+            {/* The bar's background spans the viewport; its two controls sit on the content column (the same
+                1200 px and gutters as `ContentWidth`), so on a wide screen they line up with the page, not the edges. */}
+            <div className="mx-auto flex h-14 w-full max-w-content items-center justify-between gap-3 px-4 lg:h-16 lg:px-8">
+              <ProfileButton />
+              <NotificationsBell />
+            </div>
           </header>
         ) : (
           <header className="sticky top-0 z-10 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-3 bg-canvas/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-sm lg:hidden">

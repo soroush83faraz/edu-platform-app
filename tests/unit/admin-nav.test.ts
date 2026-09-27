@@ -78,16 +78,17 @@ describe("one home per destination (nav · Home tiles · بیشتر)", () => {
     expect(tileHrefs).not.toContain("/admin");
   });
 
-  it("hub layout (no nav, no rail): the tiles ARE the doors — each of the person's sections is exactly one tile", () => {
-    // docs/decisions-pending/home-hub-tiles.md: with the «مدیریت» role item gone, every section (the overview too)
-    // becomes its own Home tile, so nothing an admin reached through the nav is lost, and nothing is there twice.
+  it("hub layout (no nav, no rail): the tiles ARE the doors — each of the person's sections is exactly one tile, the overview none", () => {
+    // docs/decisions-pending/home-hub-tiles.md: with the «مدیریت» role item gone, every section becomes its own Home
+    // tile, so nothing is there twice. The /admin overview («نمای کلی») is the exception: the owner took its tile
+    // off Home (2026-09-27), so the hub has no door to it.
     for (const [hats, org] of [
       [orgAdmin, true],
       [principal, false],
       [twoSchools, false],
     ] as const) {
       const tiles = homeTilesFor(hats, () => true, { variant: "hub" }).map((t) => t.href);
-      for (const href of adminSectionsFor({ org }).map((s) => s.href)) expect(tiles.filter((h) => h === href)).toEqual([href]);
+      for (const href of adminSectionsFor({ org }).map((s) => s.href)) expect(tiles.filter((h) => h === href)).toEqual(href === "/admin" ? [] : [href]);
       expect(new Set(tiles).size).toBe(tiles.length);
     }
     // A principal of one school gets their own school's hub, not the organization's list.

@@ -1,15 +1,16 @@
-// The experimental «hub» layout (owner trial, docs/decisions-pending/home-hub.md) against «classic», from static
-// server renders inspected as strings. Classic: the nav (bottom bar + rail) and the phone header with the school
-// name, as before. Hub: no nav at all, one top bar — the profile avatar (→ /more) at the start and the bell at the
-// end, no school name — and `PageHeader` leads every page back to «خانه» unless the page opts out (Home).
+// The «hub» layout — everyone's since the owner adopted it (docs/decisions-pending/home-hub.md) — against the kept
+// «classic» branch, from static server renders inspected as strings. Hub: no nav at all, one top bar — the profile
+// icon (→ /more) at the start and the bell at the end, on the content column, no school name — and `PageHeader`
+// leads every page back to «خانه» unless the page opts out (Home). Classic (reachable only by editing
+// `getUiVariant()`): the nav (bottom bar + rail) and the phone header with the school name, as before.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Ctx } from "@/lib/ctx";
 import type { UiVariant } from "@/lib/ui-variant";
 
-let variant: UiVariant = "classic";
-vi.mock("@/lib/ui-variant", () => ({ getUiVariant: async () => variant, UI_VARIANT_COOKIE: "donino-ui" }));
+let variant: UiVariant = "hub";
+vi.mock("@/lib/ui-variant", () => ({ getUiVariant: async () => variant }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/home" }));
 vi.mock("@/lib/shell-context", () => ({ getShellContext: async () => ({ schoolName: "دبستان نمونه", yearName: "۱۴۰۵-۱۴۰۶", termName: null, schools: [] }) }));
 vi.mock("@/modules/workspace/queries", () => ({ inboxSummaryQuery: async () => ({ ok: true, data: { overdue: 0, dueToday: 0, unread: 0, unreadNotifications: 2 } }) }));
@@ -17,6 +18,7 @@ vi.mock("@/modules/workspace/queries", () => ({ inboxSummaryQuery: async () => (
 const { AppShell } = await import("@/components/shell/AppShell");
 const { PageHeader } = await import("@/components/layout/PageHeader");
 const { SchoolBanner } = await import("@/components/home/SchoolBanner");
+const { ContentWidth } = await import("@/components/layout/ContentWidth");
 
 const ctx = {
   firstName: "سارا",
@@ -40,7 +42,7 @@ async function header(v: UiVariant, props: Partial<Parameters<typeof PageHeader>
 const topBar = (html: string) => html.slice(html.indexOf("<header"), html.indexOf("</header>") + 9);
 
 beforeEach(() => {
-  variant = "classic";
+  variant = "hub"; // what `getUiVariant()` returns for everyone (tests/unit/ui-variant.test.ts)
 });
 
 describe("AppShell: classic vs hub", () => {
@@ -62,7 +64,7 @@ describe("AppShell: classic vs hub", () => {
     expect(html).toContain("محتوا");
   });
 
-  it("hub top bar: the profile avatar → /more at the start, the bell (with its badge) at the end, on every size", async () => {
+  it("hub top bar: the profile icon → /more at the start, the bell (with its badge) at the end, on every size", async () => {
     const bar = topBar(await shell("hub"));
     expect(bar).not.toContain("lg:hidden");
     expect(bar).toContain("sticky");
@@ -73,8 +75,18 @@ describe("AppShell: classic vs hub", () => {
     expect(bell).toBeGreaterThan(profile); // DOM order = RTL start → end
     expect(bar).toContain('aria-label="حساب من"');
     expect(bar).toContain("surface-panel");
-    expect(bar).toContain(">س<"); // the first name's initial
+    expect(bar).toContain("lucide-user-round"); // a person glyph, not the first name's initial
+    expect(bar).not.toContain(">س<");
     expect(bar).toContain("۲ اعلان خوانده‌نشده");
+  });
+
+  it("hub top bar: the controls sit on the content column (1200 px, the page gutters), not the viewport edges", async () => {
+    const bar = topBar(await shell("hub"));
+    const inner = bar.match(/<div class="([^"]*)"/)?.[1] ?? "";
+    for (const cls of ["mx-auto", "w-full", "max-w-content", "px-4", "lg:px-8", "justify-between"]) expect(inner.split(" ")).toContain(cls);
+    // Exactly `ContentWidth`'s column: the same cap and the same gutters.
+    const content = renderToStaticMarkup(createElement(ContentWidth, null));
+    for (const cls of ["mx-auto", "w-full", "max-w-content", "px-4", "lg:px-8"]) expect(content).toContain(cls);
   });
 
   it("hub has no school-name box: the name is only the sr-only page heading", async () => {
@@ -84,10 +96,9 @@ describe("AppShell: classic vs hub", () => {
     expect(html).toContain('<h1 class="sr-only">دبستان نمونه</h1>');
   });
 
-  it("the profile button falls back to the CircleUser glyph with no usable name", async () => {
-    variant = "hub";
+  it("the profile button is the same person icon whatever the name", async () => {
     const html = renderToStaticMarkup(await AppShell({ ctx: { ...ctx, firstName: " " }, children: null }));
-    expect(topBar(html)).toContain("lucide-circle-user");
+    expect(topBar(html)).toContain("lucide-user-round");
   });
 });
 
@@ -119,12 +130,10 @@ describe("PageHeader: the default «خانه» back link in hub only", () => {
   });
 });
 
-describe("Home greeting: one bell only", () => {
-  it("the phone banner draws the bell in classic and leaves it to the top bar in hub", () => {
-    const withBell = renderToStaticMarkup(createElement(SchoolBanner, { firstName: "سارا" }));
-    const without = renderToStaticMarkup(createElement(SchoolBanner, { firstName: "سارا", bell: false }));
-    expect(withBell).toContain('href="/notifications"');
-    expect(without).not.toContain('href="/notifications"');
-    expect(without).toContain("سارا");
+describe("classic Home greeting", () => {
+  it("the classic phone banner still carries the bell (hub Home draws `HubGreeting` instead — tests/unit/hub-home.test.ts)", () => {
+    const html = renderToStaticMarkup(createElement(SchoolBanner, { firstName: "سارا" }));
+    expect(html).toContain('href="/notifications"');
+    expect(html).toContain("سارا");
   });
 });

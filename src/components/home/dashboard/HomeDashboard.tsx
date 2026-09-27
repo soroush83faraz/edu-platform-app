@@ -23,6 +23,8 @@ import { WeekProgress } from "./WeekProgress";
  * «تسک‌های نزدیک» card, full width of that column — the card's «همهٴ …» link is the کارتابل's one door now that
  * the nav has no «پنل من», so every role that reads work items gets it, on phones (`HomeGrid`) and here alike.
  * That work column is the main one (7 tracks, the start/right side); the role panels sit in the wide aside (5).
+ * In the «hub» layout (everyone's since 2026-09-27) the card is left out: «پنل من» is a tile there, and Home is the
+ * greeting card and the tiles (the role panels stay beside them).
  *
  * - Teacher — main: tiles, «تکالیف نزدیک», «نیاز به پیگیری» (the tasks I gave, least complete first, n/m);
  *   aside: «امروز تدریس دارم» (today's sessions across classes), «کلاس‌های من» compact.
@@ -35,7 +37,8 @@ export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
   const home = await resolveHomeTiles(ctx);
   const canReadWork = canAtAnyScope(ctx.assignments, "workspace.work_item.read");
   const words = workItemWords(workItemVoice(ctx.assignments));
-  const nearby = canReadWork ? (
+  // Classic only: in the hub layout «پنل من» is a tile, and the board opens with the tiles alone (owner, 2026-09-27).
+  const nearby = canReadWork && home.variant !== "hub" ? (
     <Suspense fallback={<CardSkeleton rows={5} />}>
       <NearbyCard words={words} empty={emptyOpenCopy(audienceOf(ctx.assignments), canAtAnyScope(ctx.assignments, "workspace.work_item.create"))} />
     </Suspense>

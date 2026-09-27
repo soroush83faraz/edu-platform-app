@@ -1,58 +1,31 @@
-// The experimental layout switch (owner trial, docs/decisions-pending/home-hub.md): `getUiVariant` reads the
-// `donino-ui` cookie («hub» only when it says so — anything else, or no cookie, is «classic»), and the «ظاهر آزمایشی»
-// toggle on «بیشتر» writes that same cookie for a year, site-wide, then reloads onto /home.
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+// The layout switch after the owner adopted the hub (2026-09-27, docs/decisions-pending/home-hub.md): `getUiVariant`
+// is «hub» for everyone — a leftover `donino-ui=classic` cookie from the trial is ignored — and «بیشتر» no longer
+// offers the «ظاهر آزمایشی» toggle. The classic branches stay reachable only by editing that one function.
+import { existsSync, readFileSync } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
 
-let cookieValue: string | undefined;
-vi.mock("next/headers", () => ({ cookies: async () => ({ get: (name: string) => (name === "donino-ui" && cookieValue !== undefined ? { name, value: cookieValue } : undefined) }) }));
+const jar = vi.hoisted(() => ({ value: undefined as string | undefined }));
+const cookies = vi.hoisted(() => vi.fn(async () => ({ get: (name: string) => (jar.value !== undefined ? { name, value: jar.value } : undefined) })));
+vi.mock("next/headers", () => ({ cookies }));
 
-const { getUiVariant, UI_VARIANT_COOKIE } = await import("@/lib/ui-variant");
-const { UiVariantToggle, UI_VARIANT_COOKIE_NAME, writeUiVariantCookie } = await import("@/components/shell/UiVariantToggle");
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-  cookieValue = undefined;
-});
+const { getUiVariant } = await import("@/lib/ui-variant");
 
 describe("getUiVariant", () => {
-  it("is «hub» only for the exact cookie value; missing or anything else is «classic»", async () => {
-    expect(await getUiVariant()).toBe("classic");
-    for (const [value, expected] of [
-      ["hub", "hub"],
-      ["classic", "classic"],
-      ["HUB", "classic"],
-      ["", "classic"],
-    ] as const) {
-      cookieValue = value;
-      expect(await getUiVariant()).toBe(expected);
+  it("is «hub» for everyone, whatever the old trial cookie says", async () => {
+    for (const value of [undefined, "hub", "classic", "HUB", ""]) {
+      jar.value = value;
+      expect(await getUiVariant()).toBe("hub");
     }
+    // It does not even read the cookie: the switch is the function itself, not a per-viewer preference.
+    expect(cookies).not.toHaveBeenCalled();
   });
 });
 
-describe("«ظاهر آزمایشی» toggle", () => {
-  it("the client mirror of the cookie name matches the server's", () => {
-    expect(UI_VARIANT_COOKIE_NAME).toBe(UI_VARIANT_COOKIE);
-  });
-
-  it("writes the cookie for a year, site-wide, lax", () => {
-    const doc = { cookie: "" };
-    vi.stubGlobal("document", doc);
-    writeUiVariantCookie("hub");
-    expect(doc.cookie).toBe("donino-ui=hub; path=/; max-age=31536000; samesite=lax");
-    writeUiVariantCookie("classic");
-    expect(doc.cookie).toBe("donino-ui=classic; path=/; max-age=31536000; samesite=lax");
-  });
-
-  it("renders «کلاسیک / هاب» as a radio pair of 44 px segments, the current one checked", () => {
-    for (const current of ["classic", "hub"] as const) {
-      const html = renderToStaticMarkup(createElement(UiVariantToggle, { current }));
-      expect(html).toContain("ظاهر آزمایشی");
-      const radios = [...html.matchAll(/<button[^>]*role="radio"[^>]*aria-checked="(true|false)"[^>]*>([^<]+)<\/button>/g)].map((m) => ({ checked: m[1] === "true", label: m[2], tag: m[0] }));
-      expect(radios.map((r) => r.label)).toEqual(["کلاسیک", "هاب"]);
-      expect(radios.map((r) => r.checked)).toEqual([current === "classic", current === "hub"]);
-      for (const r of radios) expect(r.tag).toContain("min-h-11");
-    }
+describe("no way to switch back from the UI", () => {
+  it("«بیشتر» has no «ظاهر آزمایشی» toggle, and the toggle component is gone", () => {
+    const more = readFileSync(new URL("../../src/app/(app)/more/page.tsx", import.meta.url), "utf8");
+    expect(more).not.toContain("UiVariantToggle");
+    expect(more).not.toContain("ظاهر آزمایشی");
+    expect(existsSync(new URL("../../src/components/shell/UiVariantToggle.tsx", import.meta.url))).toBe(false);
   });
 });

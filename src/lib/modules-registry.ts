@@ -1,16 +1,17 @@
 import {
-  Backpack,
+  AlarmClock,
   Bell,
   BookOpen,
   BookOpenCheck,
   CalendarCheck,
   CalendarDays,
   ClipboardCheck,
-  Clock,
+  ClipboardList,
   FileSpreadsheet,
   Handshake,
   HeartHandshake,
   Inbox,
+  Lectern,
   Library,
   type LucideIcon,
   Megaphone,
@@ -367,6 +368,11 @@ export interface HomeTile {
    * a name (hub layout: a teaching principal's roll call and the admin report are both «حضور و غیاب»).
    */
   altLabelFa?: string;
+  /**
+   * The glyph to use when another tile the SAME person sees already draws `icon` — no two tiles share a glyph (hub
+   * layout: a teaching principal's «کلاس‌های من» beside the admin «کلاس‌ها», the roll call beside the report).
+   */
+  altIcon?: LucideIcon;
 }
 
 /**
@@ -446,7 +452,8 @@ export const HOME_TILES: readonly HomeTile[] = [
     // Empty on purpose: `oneSchool.only` drops this tile unless `homeTilesFor` rewrites the href with the school
     // it belongs to, so the placeholder is never rendered (`tests/unit/home-tiles.test.ts` guards it).
     href: "",
-    icon: Clock,
+    // A bell schedule: the alarm clock is time AND bell, without echoing the notifications bell in the top bar.
+    icon: AlarmClock,
     role: "admin",
     permission: "tenancy.structure.write",
     oneSchool: { href: (id) => `/admin/schools/${id}/periods`, only: true },
@@ -469,24 +476,25 @@ function sectionTile(key: AdminSectionKey): HomeTile {
 }
 
 /**
- * The tiles of the EXPERIMENTAL «hub» layout (owner trial 2026-09-27, `src/lib/ui-variant.ts`,
- * docs/decisions-pending/home-hub-tiles.md). The hub has no bottom nav and no rail, so the role item that used to
- * sit at the bottom right — a student's «کلاس من», a teacher's «کلاس‌ها», an admin's «مدیریت» — is gone, and each
- * thing it held becomes its own Home tile: Home IS the nav, the tiles are the doors. One door per destination
- * still holds per person: every href below is distinct and no person gets two tiles with one label.
+ * The tiles of the «hub» layout — THE layout since the owner adopted it (2026-09-27, `src/lib/ui-variant.ts`,
+ * docs/decisions-pending/home-hub.md, home-hub-tiles.md). The hub has no bottom nav and no rail, so the role item
+ * that used to sit at the bottom right — a student's «کلاس من», a teacher's «کلاس‌ها», an admin's «مدیریت» — is
+ * gone, and each thing it held is its own Home tile: Home IS the nav, the tiles are the doors. One door per
+ * destination still holds per person: every href below is distinct, no person gets two tiles with one label
+ * (`altLabelFa`) or one glyph (`altIcon`).
  *
- * Order (most frequent first): «پنل من», «حضور و غیاب», then the student's class tiles, the teacher's, and the
- * admin's — the roll-call report, the people and classes (دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها), then the
- * structure («مدرسه»/«مدرسه‌ها», «برنامهٴ کلاسی») and the management overview last. A section-shaped place
- * (the week, «درس‌ها و دبیران», …) opens its own small page that draws that one section of the full page
- * (`/my-class/*`, `/classes/*`); the full pages stay for the classic layout. The classic list is `HOME_TILES`.
+ * Order (owner, 2026-09-27): «پنل من» first; then the student's tiles (the week, «درس‌ها و دبیران»), the
+ * teacher's («کلاس‌های من», the teaching week), the admin's («مدرسه»/«مدرسه‌ها», دانش‌آموزان · کارکنان · کلاس‌ها ·
+ * نقش‌ها, «برنامهٴ کلاسی»); «حضور و غیاب» is the LAST tile for every role (the admin's report after the roll call
+ * for a person who has both). A multi-hat person gets the union in this order. No «کلاس من» tile (the class card
+ * lives on /my-class/info, unlinked from Home) and no «نمای کلی» tile (the /admin overview) — owner, same day.
+ * A section-shaped place (the week, «درس‌ها و دبیران», …) opens its own small page that draws that one section of
+ * the full page (`/my-class/*`, `/classes/*`); the full pages stay for the classic layout (`HOME_TILES`).
  */
 export const HUB_TILES: readonly HomeTile[] = [
   homeTile("inbox"),
-  homeTile("attendance"),
 
-  // Student — what «کلاس من» held: the week, the درس list, the class itself (there is no classmates list in
-  // phase 1, so «کلاس من» is the class-info page: the class card and the هم‌کلاسی‌ها / درس‌ها counts).
+  // Student — what «کلاس من» held: the week and the درس list.
   {
     code: "my-week",
     labelFa: "برنامهٴ هفتگی",
@@ -498,25 +506,26 @@ export const HUB_TILES: readonly HomeTile[] = [
     permission: "academic.timetable.read",
   },
   { code: "my-subjects", labelFa: "درس‌ها و دبیران", href: "/my-class/subjects", icon: BookOpen, role: "student", permission: "workspace.work_item.read" },
-  { code: "my-class", labelFa: "کلاس من", href: "/my-class/info", icon: Backpack, role: "student", permission: "workspace.work_item.read" },
 
-  // Teacher — what «کلاس‌ها» held: the درس cards and the teaching week.
-  { code: "my-offerings", labelFa: "کلاس‌های من", href: "/classes/offerings", icon: Presentation, role: "teacher" },
+  // Teacher — what «کلاس‌ها» held: the درس cards and the teaching week. «کلاس‌های من» is the classroom board, as
+  // the admin «کلاس‌ها» is; a person who sees both reads their own teaching as the lectern.
+  { code: "my-offerings", labelFa: "کلاس‌های من", href: "/classes/offerings", icon: Presentation, altIcon: Lectern, role: "teacher" },
   { code: "teaching-week", labelFa: "برنامهٴ هفتگی", href: "/classes/timetable", icon: CalendarDays, role: "teacher", permission: "academic.timetable.read" },
 
-  // Admin — what «مدیریت» held, people and classes before structure. The report is «گزارش حضور و غیاب» for an
-  // admin who also takes or reads a roll call (the teacher/student tile above already reads «حضور و غیاب»).
-  { ...homeTile("admin-attendance"), altLabelFa: "گزارش حضور و غیاب" },
+  // Admin — what «مدیریت» held: the school first, then people and classes, then the bell schedule.
+  // «مدرسه‌ها» for EVERY admin scope here: the organization admin's section and a school admin's «مدرسه» tile
+  // become the one tile (the one-school rewrite still points a principal at their own school's hub).
+  { ...homeTile("schools"), adminScope: undefined },
   sectionTile("students"),
   sectionTile("staff"),
   sectionTile("classes"),
   sectionTile("roles"),
-  // «مدرسه‌ها» for EVERY admin scope here: the organization admin's section and a school admin's «مدرسه» tile
-  // become the one tile (the one-school rewrite still points a principal at their own school's hub).
-  { ...homeTile("schools"), adminScope: undefined },
   homeTile("periods"),
-  // The management overview (counters, «نیازمند توجه», the setup progress) — the /admin landing itself.
-  sectionTile("overview"),
+
+  // «حضور و غیاب» last, for every role. The admin's report reads «گزارش حضور و غیاب», on a report glyph, for an
+  // admin who also takes or reads a roll call (the teacher/student tile before it keeps the name and the glyph).
+  homeTile("attendance"),
+  { ...homeTile("admin-attendance"), altLabelFa: "گزارش حضور و غیاب", altIcon: ClipboardList },
 ];
 
 /** Options of `homeTilesFor`: which layout the viewer runs (`getUiVariant()`); classic when omitted. */
@@ -554,5 +563,12 @@ export function homeTilesFor(
       ? { ...t, href: t.oneSchool.href(schoolId), ...(t.oneSchool.label ? { labelFa: schoolsLabelFa({ kind: "school", schoolIds: [schoolId] }) } : {}) }
       : t;
   });
-  return shown.map((t) => (t.altLabelFa && shown.some((o) => o !== t && o.labelFa === t.labelFa) ? { ...t, labelFa: t.altLabelFa } : t));
+  return shown.map((t) => {
+    const others = shown.filter((o) => o !== t);
+    return {
+      ...t,
+      ...(t.altLabelFa && others.some((o) => o.labelFa === t.labelFa) ? { labelFa: t.altLabelFa } : {}),
+      ...(t.altIcon && others.some((o) => o.icon === t.icon) ? { icon: t.altIcon } : {}),
+    };
+  });
 }

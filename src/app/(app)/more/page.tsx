@@ -5,7 +5,6 @@ import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { RowMark } from "@/components/RowMark";
 import { LogoutButton } from "@/components/shell/LogoutButton";
-import { UiVariantToggle } from "@/components/shell/UiVariantToggle";
 import { requireContext } from "@/lib/ctx";
 import { formatLoginIdentifierFa, formatNumberFa } from "@/lib/format";
 import { UPCOMING_MODULES } from "@/lib/modules-registry";
@@ -37,8 +36,8 @@ export default async function MorePage() {
   const login = await myLoginIdentifierQuery();
   const loginIdentifier = login.ok ? login.data : null;
   const teaching = ctx.assignments.filter((a) => a.roleCode === "teacher").length;
-  // In the experimental «hub» layout «بیشتر» is the profile page, opened from the top bar's avatar: it leads back
-  // to Home with «بازگشت» (docs/decisions-pending/home-hub.md). In «classic» the nav cell names it; no back link.
+  // In the «hub» layout «بیشتر» is the profile page, opened from the top bar's profile icon: it leads back to Home
+  // with «بازگشت» (docs/decisions-pending/home-hub.md). In «classic» the nav cell names it; no back link.
   const variant = await getUiVariant();
 
   return (
@@ -82,9 +81,6 @@ export default async function MorePage() {
           <MoreLink href="/roadmap" icon={Map} label="نقشهٴ راه" hint={UPCOMING_HINT} />
         </ul>
       </nav>
-
-      {/* The owner's layout trial: «کلاسیک» (bottom nav / rail) or «هاب» (everything from Home). Reversible per viewer. */}
-      <UiVariantToggle current={variant} />
 
       {/* Only «خروج» for now (owner, QA round 2): «خروج از همهٴ دستگاه‌ها» is unmounted; `logoutAllAction` /
           `revokeAllForUser` stay for the service paths (password change, admin reset, `pnpm sessions:revoke`). */}

@@ -1,12 +1,14 @@
-// Experimental layout switch (owner trial, 2026-09-27). "classic" = today's shell (bottom nav / rail);
-// "hub" = profile + notifications top bar, no bottom nav or rail, every destination a Home tile.
-// Reversible per viewer: the «ظاهر آزمایشی» toggle writes the cookie; deleting it returns to the default.
-import { cookies } from "next/headers";
-
+// The layout switch. "hub" = profile + notifications top bar, no bottom nav or rail, every destination a Home tile;
+// "classic" = the earlier shell (bottom nav / rail).
+//
+// The owner tried the hub layout and adopted it for EVERYONE (2026-09-27, docs/decisions-pending/home-hub.md):
+// `getUiVariant()` returns "hub" unconditionally. It no longer reads the old `donino-ui` cookie, so a leftover
+// `donino-ui=classic` from the trial is ignored and nobody can switch (the «ظاهر آزمایشی» toggle on «بیشتر» is
+// gone). The classic branches (`AppShell`, `PageHeader`, `homeTilesFor`'s `HOME_TILES`, Home's «تکالیف نزدیک»
+// card and «امروز» line) are kept on purpose: returning "classic" here — this ONE function — reverts the whole
+// app to the earlier layout without touching anything else.
 export type UiVariant = "classic" | "hub";
-export const UI_VARIANT_COOKIE = "donino-ui";
 
 export async function getUiVariant(): Promise<UiVariant> {
-  const value = (await cookies()).get(UI_VARIANT_COOKIE)?.value;
-  return value === "hub" ? "hub" : "classic";
+  return "hub";
 }

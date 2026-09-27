@@ -42,3 +42,21 @@ describe("help — the admin's «ساختار مدرسه» answer", () => {
     expect(text).not.toContain("سال تحصیلی و نوبت‌ها، مقطع و پایه");
   });
 });
+
+// The hub layout (everyone's since 2026-09-27, docs/decisions-pending/home-hub.md): no bottom nav, every place a Home
+// icon, the profile icon at the top right opens the account, the bell at the top left the notifications.
+describe("help — where everything is in the hub layout", () => {
+  it("explains the layout: no bottom bar, everything on Home as icons, the profile icon (right) and the bell (left)", async () => {
+    const text = await answer("layout");
+    for (const phrase of ["نوار پایین", "«خانه»", "آیکون", "سمت راست", "تغییر رمز", "راهنما", "خروج", "زنگوله", "سمت چپ", "«اعلان‌ها»"]) {
+      expect(text, phrase).toContain(phrase);
+    }
+  });
+
+  it("no answer points at the retired doors: the «بیشتر» menu, the «تکالیف نزدیک» card, «همهٴ تکالیف», «کلاس من», «مدیریت»", async () => {
+    const html = renderToStaticMarkup(await HelpPage());
+    for (const gone of ["«بیشتر ←", "«تکالیف نزدیک»", "«همهٴ تکالیف»", "«کلاس من»", "«مدیریت»"]) expect(html, gone).not.toContain(gone);
+    expect(await answer("timetable")).toContain("«برنامهٴ هفتگی»");
+    expect(await answer("student-items")).toContain("«پنل من»");
+  });
+});
