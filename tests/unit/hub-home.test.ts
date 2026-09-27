@@ -179,10 +179,10 @@ describe("the hub greeting card", () => {
   });
 });
 
-// The organization admin's Home only (owner, 2026-09-27: `showUpcomingOnHome`, so `resolveHomeTiles` hands the
-// renderers upcoming tiles for that viewer alone — tests/unit/home-courses.test.ts). The renderers draw whatever
+// Every admin's Home (owner, 2026-09-27: `showUpcomingOnHome`, so `resolveHomeTiles` hands the
+// renderers upcoming tiles for admins only — tests/unit/home-courses.test.ts). The renderers draw whatever
 // they are handed, after the live tiles, on phones and on the desktop board.
-describe("the hub Home's «به‌زودی» section (owner, 2026-09-27; organization admin only)", () => {
+describe("the hub Home's «به‌زودی» section (owner, 2026-09-27; admins only)", () => {
   it("renders after the live tiles on phones and on the desktop board", async () => {
     for (const hat of ["teacher", "student", "admin"] as const) {
       resolveHomeTiles.mockResolvedValue(homeFor(hat));

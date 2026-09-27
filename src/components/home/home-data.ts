@@ -38,7 +38,7 @@ export interface HomeTiles {
   tiles: HomeTile[];
   /**
    * The hub Home's grey «به‌زودی» tiles for this person (`upcomingTilesFor`) — none in the classic layout, and none
-   * for anyone but the organization admin (`showUpcomingOnHome`, owner 2026-09-27).
+   * for anyone but an admin (`showUpcomingOnHome`, owner 2026-09-27).
    */
   upcoming: UpcomingTile[];
   hats: Hats | null;

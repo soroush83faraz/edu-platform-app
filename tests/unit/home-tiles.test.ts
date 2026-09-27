@@ -397,10 +397,9 @@ describe("product map", () => {
 // The hub Home's «به‌زودی» section (owner, 2026-09-27): the modules the product map lists as coming, as grey tiles
 // under the live ones — per role (`soonFor`), with a glyph of their own, and never a door.
 describe("showUpcomingOnHome (owner, 2026-09-27)", () => {
-  it("only the organization admin's Home draws «به‌زودی» — even when they also teach; principals, vice principals, teachers and students do not", () => {
-    expect(showUpcomingOnHome(orgAdmin)).toBe(true);
-    expect(showUpcomingOnHome({ ...orgAdmin, isTeacher: true })).toBe(true);
-    for (const hats of [principal, twoSchools, teacher, student, { ...principal, isTeacher: true }]) expect(showUpcomingOnHome(hats)).toBe(false);
+  it("every admin's Home draws «به‌زودی» — organization admin, principal, vice principal, even when they also teach; teachers and students do not", () => {
+    for (const hats of [orgAdmin, { ...orgAdmin, isTeacher: true }, principal, twoSchools, { ...principal, isTeacher: true }]) expect(showUpcomingOnHome(hats)).toBe(true);
+    for (const hats of [teacher, student]) expect(showUpcomingOnHome(hats)).toBe(false);
   });
 });
 

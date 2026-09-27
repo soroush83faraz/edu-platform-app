@@ -125,3 +125,4 @@ school.» — and «attendance separate for each school; not on the organisation
   for the org admin; `showUpcomingOnHome`), `home-courses.test.ts` (upcoming per viewer),
   `school-hub-attendance.test.ts` (the hub row + href), `tests/int/attendance.test.ts` (the school filter narrows
   the reads; out-of-scope / other-tenant / unknown → NOT_FOUND).
+- Owner, 2026-09-27 (later): «به‌زودی» on Home for every admin — organization admin, principal, vice principal; teachers and students still don't see it (`showUpcomingOnHome` = `hats.isAdmin`).

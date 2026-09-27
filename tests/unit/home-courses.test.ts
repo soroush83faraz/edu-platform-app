@@ -1,7 +1,7 @@
 // «درس‌های من» — the hub Home's course cards (owner, 2026-09-27, after the university LMS dashboard): one card per
 // درس under the tiles — a student's class offerings (the «درس‌ها و دبیران» read), a teacher's own offerings (the hats
 // read) — each a whole-surface link into /subjects/[offeringId], topped by a patterned cover in the درس's hue
-// (`CourseCover`). A non-teaching admin gets no section. And the «به‌زودی» section is the organization admin's alone
+// (`CourseCover`). A non-teaching admin gets no section. And the «به‌زودی» section is every admin's
 // (`showUpcomingOnHome`). The Home reads run for real over mocked queries; the Server Components are rendered to markup.
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -200,14 +200,21 @@ describe("course covers across a person's list (owner 2026-09-27)", () => {
   });
 });
 
-describe("the «به‌زودی» section is the organization admin's alone (owner, 2026-09-27)", () => {
-  it("students, teachers, principals and vice principals read no upcoming tiles", async () => {
-    for (const h of [{ isStudent: true }, { teachingOfferings: TEACHING }, { adminScope: "school", adminSingleSchoolId: "s1" }, { adminScope: "school", teachingOfferings: TEACHING }]) {
+describe("the «به‌زودی» section is every admin's (owner, 2026-09-27)", () => {
+  it("students and teachers read no upcoming tiles", async () => {
+    for (const h of [{ isStudent: true }, { teachingOfferings: TEACHING }]) {
       hats.value = { ...baseHats, ...h };
       const home = await resolveHomeTiles(ctx);
       expect(home.variant).toBe("hub");
       expect(home.upcoming).toEqual([]);
     }
+  });
+
+  it("principals and vice principals read the admin's upcoming modules — also when they teach", async () => {
+    hats.value = { ...baseHats, adminScope: "school", adminSingleSchoolId: "s1" };
+    expect((await resolveHomeTiles(ctx)).upcoming).toEqual(upcomingTilesFor({ isStudent: false, isTeacher: false, isAdmin: true }));
+    hats.value = { ...baseHats, adminScope: "school", teachingOfferings: TEACHING };
+    expect((await resolveHomeTiles(ctx)).upcoming).toEqual(upcomingTilesFor({ isStudent: false, isTeacher: true, isAdmin: true }));
   });
 
   it("the organization admin reads the admin's upcoming modules — and still does when they also teach", async () => {

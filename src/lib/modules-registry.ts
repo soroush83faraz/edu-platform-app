@@ -597,14 +597,14 @@ export function homeTilesFor(
 }
 
 /**
- * Does the hub Home draw its «به‌زودی» section for this viewer? For the ORGANIZATION admin only (owner, 2026-09-27:
- * the organization admin — who decides what the product becomes — sees what is coming, after all their live tiles;
- * everyone else, principals and vice principals included, gets the «درس‌های من» course cards and no «به‌زودی»).
- * The admin scope decides, not the other hats: an organization admin who also teaches still sees it.
+ * Does the hub Home draw its «به‌زودی» section for this viewer? For every ADMIN — the organization admin, a principal
+ * and a vice principal (owner, 2026-09-27, widened the same day from the organization admin alone): the people who
+ * run a school see what is coming, after all their live tiles; teachers and students get the «درس‌های من» course
+ * cards and no «به‌زودی». The admin hat decides, not the other hats: an admin who also teaches still sees it.
  * `resolveHomeTiles` (src/components/home/home-data.ts) is the one reader.
  */
 export function showUpcomingOnHome(hats: TileHats): boolean {
-  return hats.adminScope === "organization";
+  return hats.isAdmin;
 }
 
 /** A grey «به‌زودی» tile of the hub Home: a module that is not built yet — a label and a glyph, never an href. */
