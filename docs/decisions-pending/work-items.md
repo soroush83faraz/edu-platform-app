@@ -138,3 +138,24 @@ but is anchored at another school. The organization admin reaches all of them, a
 Tests: `tests/int/admin-scope.test.ts` «W» (principal of S1 / principal and vice of S2 / organization admin: search
 from 0 characters and by name, submit refusals incl. the organization admin and an unknown id — nothing written, own
 school OK, teacher FORBIDDEN, class picker per scope incl. «teaches elsewhere»).
+
+## «پنل من» — the «انجام‌نشده» buckets become boxes in a two-column grid (owner, 2026-09-27)
+
+Each non-empty deadline bucket («سررسیده», «امروز», «این هفته», «بعداً», «بدون مهلت») is its own `surface-work` box —
+the bucket's glyph, name and count on top (`SectionHeader`), its rows inside a `LeavingList` (fold on leave and the
+finish hand-off unchanged) — laid out `grid-cols-2` on every width (`src/modules/workspace/ui/InboxBuckets.tsx`).
+Four buckets read 2×2 on a phone; an odd last box keeps its one cell (normal flow, no `col-span`); boxes align to
+their top (`items-start`) so a one-row box does not stretch to a long neighbour. «سررسیده» differs only by its red
+name and count chip — no red fill. Kept at two columns on `xl` too: three columns turn four buckets into 3 + 1.
+
+- **Exception to «one `surface-work` per view»**: the owner asked for boxes; each bucket is a primary list of its own.
+- **Compact row** (`InboxBoxRow` in `InboxRow.tsx`): a phone column is ~160 px, so below `md:` the row is a 28 px
+  مُهر درس (or the 28 px type glyph), the title `text-row` clamped to two lines with its priority dot, and ONE meta
+  part — the deadline (red when overdue), or without one the درس / sender. Dropped on phones: class name, my
+  progress «۳/۲۵» on what I gave, the unread dot (the unread title stays semibold). From `md:` the box is wide
+  enough, so the full meta line, progress and unread dot come back (36 px stamp, 64 px row). ≥ 44 px on phones.
+- `WorkItemMark` takes a `className` (the smaller stamp); `SubjectStamp` itself is unchanged.
+- «انجام‌شده» keeps its single list of full `InboxRow`s (no buckets there).
+- Tests: `tests/unit/inbox-buckets.test.ts` (boxes per bucket in order inside `grid-cols-2`, empty buckets absent, odd
+  count without `col-span`, only «سررسیده» red and never as a fill, compact rows ≥ 44 px with the clamped title and
+  the red overdue deadline).
