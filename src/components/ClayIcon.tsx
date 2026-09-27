@@ -35,6 +35,7 @@ export function ClayIcon({
   size = "md",
   label,
   mirror = false,
+  rippleHost = false,
   className,
   children,
 }: {
@@ -43,11 +44,13 @@ export function ClayIcon({
   size?: ClaySize;
   label?: string;
   mirror?: boolean;
+  /** The pressed tile's ink lands on this squircle, clipped by its radius (`data-ripple-host`, `src/lib/tap-ripple.ts`). */
+  rippleHost?: boolean;
   className?: string;
   children?: React.ReactNode;
 }) {
   return (
-    <span className={cn("clay-icon", SIZES[size], className)} data-shade={shade} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+    <span className={cn("clay-icon", SIZES[size], className)} data-shade={shade} data-ripple-host={rippleHost ? "" : undefined} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
       <Icon strokeWidth={2} className={cn(mirror && "rtl:-scale-x-100")} aria-hidden />
       {children}
     </span>

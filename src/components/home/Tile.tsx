@@ -37,12 +37,14 @@ export function Tile({
         href={href}
         // Tiles live on Home: an admin tile crosses into the /admin frame (`framePrefetch`).
         prefetch={framePrefetch("/home", href)}
+        // Tap feedback: the squircle sinks (`press-mark`) and takes the ink (`rippleHost`), like an app icon.
+        data-ripple
         className={cn(
-          "pressable relative flex w-full max-w-32 flex-col items-center justify-start rounded-card px-1 text-center hover:bg-surface/50",
+          "press-mark relative flex w-full max-w-32 flex-col items-center justify-start rounded-card px-1 text-center hover:bg-surface/50",
           compact ? "min-h-24 gap-2 pt-2 pb-1.5" : "min-h-28 gap-2.5 pt-2.5 pb-2",
         )}
       >
-        <ClayIcon icon={icon} size={compact ? "xl" : "tile"} shade={muted ? "grey" : shade} mirror={mirror}>
+        <ClayIcon icon={icon} size={compact ? "xl" : "tile"} shade={muted ? "grey" : shade} mirror={mirror} rippleHost>
           {children}
         </ClayIcon>
         <span className={cn("text-meta font-semibold text-balance", muted ? "text-text-muted" : "text-text")}>{label}</span>

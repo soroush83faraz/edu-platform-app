@@ -89,7 +89,7 @@ export function CourseCards({ courses }: { courses: readonly HomeCourse[] }) {
             <Link
               prefetch={false}
               href={`/subjects/${c.offeringId}`}
-              className="surface-work surface-link pressable flex w-full flex-col overflow-hidden rounded-card"
+              className="surface-work surface-link pressable press-sink flex w-full flex-col overflow-hidden rounded-card"
             >
               <CourseCover subjectId={c.subjectId} name={c.subjectName} palette={c.palette} variantKey={c.variantKey} className="h-30 md:aspect-video md:h-auto" />
               <span className="flex flex-1 items-end gap-1 px-3 pt-2.5 pb-3">
