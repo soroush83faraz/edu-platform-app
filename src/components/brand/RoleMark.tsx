@@ -19,16 +19,16 @@ const ROLE_GLYPHS: Record<RoleKey, LucideIcon> = {
  * The emblem at the top of the screen. It is NOT a new element: it is the mark that already stood for the school —
  * the app header's square on phones, the white plate in the Home banner — with its glyph swapped for the one that
  * names the viewer's hat (owner: «one mark up there, and a glance at it tells me what kind of account this is»).
- * Same place, same size, same material; the school NAME stays where it is, and the product's own «دانینو» mark in
- * the desktop rail is untouched. The palette rule holds — one blue family, the hats differ by GLYPH alone.
+ * Same place, same size, same material; the school NAME stays where it is (the product's «دانینو» mark left
+ * the desktop rail in the 2026-09-27 nav round). The palette rule holds — one blue family, the hats differ by GLYPH alone.
  *
  * `tone`: `header` is the app header's 32 px hero-gradient square on phones; `plate` is the banner's white plate
  * over the hero gradient, where a blue square would disappear. Both are EXACTLY the markup the school mark had —
  * only the glyph inside changes, so nothing new is introduced into the product's icon vocabulary (CLAUDE.md keeps
  * the clay mark to the Home tiles, «خانه», illustrations, the subject page and login). `line` is the desktop
- * rail's rendering: the same glyph at 24 px in a `surface-panel` circle, on the school line under the «دانینو»
- * wordmark — the desktop has no school SQUARE to replace, and a second blue square beside the product's own mark
- * would compete with it, so the quiet material carries the hat there and the two surfaces agree on the GLYPH.
+ * rail's rendering: the same glyph at 24 px in a `surface-panel` circle, on the school line that opens the rail
+ * (the «دانینو» wordmark above it left in the 2026-09-27 nav round) — the desktop has no school SQUARE to replace,
+ * and a quiet line reads better there than a second blue square, so the quiet material carries the hat there and the two surfaces agree on the GLYPH.
  * `hats` comes from
  * `roleHatsFor(ctx.assignments)` — no query; the highest hat is drawn and every hat is named in the accessible
  * label and the tooltip («مدیر مدرسه · دبیر»). Renders nothing with no hat — callers keep the mark they had.

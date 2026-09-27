@@ -10,7 +10,7 @@ import { DEFAULT_PRODUCT_NAME, PRODUCT_NAME_LATIN } from "@/lib/product";
  *
  * It fills with `currentColor` and defaults to the `primary-700` navy token, so a caller recolours it by putting a
  * text colour on it (`text-white` over the hero gradient) and never by editing the path. Decorative by default;
- * pass `title` to label it. `size` is the rendered width in pixels — 24 (compact), 32/36 (headers), 40 (the rail).
+ * pass `title` to label it. `size` is the rendered width in pixels — 24 (compact), 32/36 (headers).
  */
 export function DoninoMark({ size = 40, className, title }: { size?: number; className?: string; title?: string }) {
   return (
@@ -30,14 +30,14 @@ export function DoninoMark({ size = 40, className, title }: { size?: number; cla
 }
 
 /**
- * The wordmark: the monogram beside the product's name, with an optional second line (the school, in the rail).
+ * The wordmark: the monogram beside the product's name, with an optional second line.
  *
- * `name` is passed in rather than read from `productName()` so the rail — a Client Component — can render the
+ * `name` is passed in rather than read from `productName()` so a Client Component can render the
  * `PRODUCT_NAME` override too; it defaults to «دانینو». `script` picks the wordmark under the mark: `"fa"` (the
  * default) is the Persian «دانینو» in Vazirmatn, the app's own font, and is the ONLY one the Persian UI uses;
  * `"latin"` is the lowercase «donino» of the printed logo, for the rare surface where a Latin string is already
- * acceptable — never as a UI label. The one place the product introduces itself: the desktop rail, the auth
- * pages, `/~offline`.
+ * acceptable — never as a UI label. The product introduces itself on the auth pages and `/~offline`; the
+ * desktop rail no longer carries it (owner, nav round 2026-09-27: it cluttered the corner).
  */
 export function DoninoWordmark({
   name = DEFAULT_PRODUCT_NAME,

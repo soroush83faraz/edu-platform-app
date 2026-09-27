@@ -1,7 +1,8 @@
-// The FOUR nav items per role, in order, from a static server render of `AppNav` (no DOM environment: the markup
-// is inspected as a string). Both renderings read خانه · پنل من · role item · بیشتر (RTL, first = start/right —
-// UX review 2026-09-27, owner: the کارتابل is a nav destination again, with its unread badge). «اعلان‌ها» stays
-// the bell on Home. The role item follows `navRoleFor`; `aria-current` marks the current route on both renderings.
+// The THREE nav items per role, in order, from a static server render of `AppNav` (no DOM environment: the markup
+// is inspected as a string). Both renderings read role item · خانه · بیشتر (RTL, first = start/right: the role item
+// on the right, «خانه» in the middle, «بیشتر» on the left — owner, nav round 2026-09-27). The کارتابل is no nav
+// cell: it is reached from Home's «تکالیف نزدیک» card, so the nav carries no unread badge. «اعلان‌ها» stays the
+// bell on Home. The role item follows `navRoleFor`; `aria-current` marks the current route on both renderings.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -12,44 +13,66 @@ vi.mock("next/navigation", () => ({ usePathname: () => pathname }));
 const { AppNav } = await import("@/components/shell/AppNav");
 const { InboxSummaryProvider } = await import("@/components/shell/InboxSummaryProvider");
 const { adminSectionsFor } = await import("@/lib/admin/nav");
+const { MONOGRAM_PATH } = await import("@/lib/brand/mark");
 type AdminNavItem = import("@/lib/admin/nav").AdminNavItem;
 
 function render(role: "admin" | "teacher" | "student" | null, at = "/home", adminItems?: readonly AdminNavItem[], unread = 0) {
   pathname = at;
-  const nav = createElement(AppNav, { schoolName: "دبستان", productName: "دانینو", role, adminItems });
+  const nav = createElement(AppNav, { schoolName: "دبستان", role, hats: role === "admin" ? ["principal"] : [], adminItems });
   const html = renderToStaticMarkup(createElement(InboxSummaryProvider, { initial: { overdue: 0, dueToday: 0, unread, unreadNotifications: 0 } } as Parameters<typeof InboxSummaryProvider>[0], nav));
   const links = [...html.matchAll(/<a([^>]*)href="([^"]+)"([^>]*)>(.*?)<\/a>/g)].map((m) => ({
     href: m[2],
     current: /aria-current="page"/.test(m[1] + m[3]),
     label: m[4].replace(/<[^>]+>/g, "").replace(/[۰-۹]+\+?/g, ""),
   }));
-  const bottom = links.slice(0, 4);
-  const side = links.slice(4, 8);
+  const bottom = links.slice(0, 3);
+  const side = links.slice(3, 6);
   return { html, bottom, side };
 }
 
 describe("AppNav items per role", () => {
-  it("student: «خانه», «پنل من», «کلاس من», «بیشتر» — the same four on both renderings", () => {
+  it("student: «کلاس من», «خانه», «بیشتر» — the same three on both renderings", () => {
     const { bottom, side } = render("student");
-    expect(bottom.map((l) => l.href)).toEqual(["/home", "/inbox", "/my-class", "/more"]);
-    expect(bottom.map((l) => l.label)).toEqual(["خانه", "پنل من", "کلاس من", "بیشتر"]);
-    expect(side.map((l) => l.href)).toEqual(["/home", "/inbox", "/my-class", "/more"]);
+    expect(bottom.map((l) => l.href)).toEqual(["/my-class", "/home", "/more"]);
+    expect(bottom.map((l) => l.label)).toEqual(["کلاس من", "خانه", "بیشتر"]);
+    expect(side.map((l) => l.href)).toEqual(["/my-class", "/home", "/more"]);
+    expect(side.map((l) => l.label)).toEqual(["کلاس من", "خانه", "بیشتر"]);
   });
 
-  it("teacher: «کلاس‌ها»; admin: «مدیریت»; no hat: «راهنما» — always the THIRD cell", () => {
-    expect(render("teacher").bottom[2]).toMatchObject({ href: "/classes", label: "کلاس‌ها" });
-    expect(render("admin").bottom[2]).toMatchObject({ href: "/admin", label: "مدیریت" });
-    expect(render(null).bottom[2]).toMatchObject({ href: "/help", label: "راهنما" });
+  it("teacher: «کلاس‌ها»; admin: «مدیریت»; no hat: «راهنما» — always the FIRST (right) cell, «خانه» in the middle", () => {
+    for (const [role, href, label] of [
+      ["teacher", "/classes", "کلاس‌ها"],
+      ["admin", "/admin", "مدیریت"],
+      [null, "/help", "راهنما"],
+    ] as const) {
+      const { bottom, side } = render(role);
+      expect(bottom.map((l) => l.href)).toEqual([href, "/home", "/more"]);
+      expect(bottom.map((l) => l.label)).toEqual([label, "خانه", "بیشتر"]);
+      expect(side.map((l) => l.href)).toEqual([href, "/home", "/more"]);
+    }
+  });
+
+  it("no «پنل من» on the nav, for any role: the کارتابل is reached from Home's card", () => {
+    for (const role of ["admin", "teacher", "student", null] as const) {
+      const { html } = render(role);
+      expect(html).not.toContain('href="/inbox"');
+      expect(html).not.toContain("پنل من");
+    }
   });
 
   it("aria-current follows the route on both renderings, nested routes included", () => {
     const admin = render("admin", "/admin/classes");
-    expect(admin.bottom.map((l) => l.current)).toEqual([false, false, true, false]);
-    expect(admin.side.map((l) => l.current)).toEqual([false, false, true, false]);
-    expect(render("student", "/home").bottom.map((l) => l.current)).toEqual([true, false, false, false]);
-    expect(render("teacher", "/inbox/new").bottom.map((l) => l.current)).toEqual([false, true, false, false]);
-    const off = render("student", "/change-password");
-    expect(off.bottom.every((l) => !l.current)).toBe(true);
+    expect(admin.bottom.map((l) => l.current)).toEqual([true, false, false]);
+    expect(admin.side.map((l) => l.current)).toEqual([true, false, false]);
+    expect(render("student", "/home").bottom.map((l) => l.current)).toEqual([false, true, false]);
+    expect(render("teacher", "/classes/abc").side.map((l) => l.current)).toEqual([true, false, false]);
+    expect(render("student", "/more").bottom.map((l) => l.current)).toEqual([false, false, true]);
+    // The کارتابل is no tab any more: on /inbox no cell is current and the sliding cell fades out.
+    for (const at of ["/inbox", "/inbox/new", "/change-password"]) {
+      const off = render("teacher", at);
+      expect(off.bottom.every((l) => !l.current)).toBe(true);
+      expect(off.html).toContain("opacity:0");
+    }
   });
 
   it("«خانه» is a bare, bigger house glyph — 24 px, no clay squircle — in both renderings", () => {
@@ -62,16 +85,25 @@ describe("AppNav items per role", () => {
     expect(html).not.toContain("lucide-layout-grid");
   });
 
-  it("«پنل من» carries the unread badge on both renderings; nothing is drawn at zero; «اعلان‌ها» stays off the nav", () => {
-    const quiet = render("student");
-    expect(quiet.html).not.toContain("خوانده‌نشده");
+  it("no unread badge on the nav — not even with unread items; «اعلان‌ها» stays off the nav (the bell keeps its badge)", () => {
     const busy = render("student", "/home", undefined, 3);
-    expect(busy.html.match(/aria-label="۳ مورد خوانده‌نشده"/g)?.length).toBe(2);
+    expect(busy.html).not.toContain("خوانده‌نشده");
+    expect(busy.html).not.toContain("۳");
     expect(busy.html).not.toContain('href="/notifications"');
     expect(busy.html).not.toContain("اعلان‌ها");
-    // Four columns, and the sliding cell is a quarter of the bar.
-    expect(quiet.html).toContain("grid-cols-4");
-    expect(quiet.html).toContain("w-1/4");
+    // Three columns, and the sliding cell is a third of the bar; on «خانه» it sits in the middle column.
+    expect(busy.html).toContain("grid-cols-3");
+    expect(busy.html).toContain("w-1/3");
+    expect(busy.html).toMatch(/inset-inline-start:33\.3+\d*%/);
+  });
+
+  it("the rail opens with the school line and the role mark — no «دانینو» wordmark or product mark", () => {
+    const { html } = render("admin");
+    const rail = html.slice(html.indexOf("<aside"));
+    expect(rail).toContain("دبستان");
+    expect(rail).toContain('role="img"');
+    expect(rail).not.toContain("دانینو");
+    expect(rail).not.toContain(MONOGRAM_PATH.slice(0, 60));
   });
 
   it("no cell drifts: the neighbour animation is gone (UX review 2026-09-27)", () => {
