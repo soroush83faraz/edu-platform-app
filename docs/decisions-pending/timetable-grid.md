@@ -57,6 +57,26 @@ is tinted as the holiday) and "I want the weekday names full, not just the first
   then no column is today — the جمعه header is not filled with next Friday's date.
 - The desktop table (md+) is unchanged (شنبه … پنج‌شنبه).
 
+## Follow-up (owner 2026-09-27): جمعه equal width, plain empty cells
+
+**Ask.** "In the weekly schedule I want Friday to be the same size as the other days, even if empty — not squeezed
+in the corner as if it were extra. It should be there, but empty."
+
+**Decision.**
+- The phone grid's seven columns are always equal width — `grid-cols-[1rem_repeat(7,minmax(0,1fr))]` after the
+  period-number column — whether or not جمعه has lessons. The 0.625 fr narrow holiday column is gone.
+- جمعه's header carries no tint or `data-holiday` marker any more: it reads «جمعه» and the day of the month exactly
+  like any other column, and only the today-highlight rule (brand fill) still singles a column out.
+- A تعطیل جمعه's cells render as ORDINARY EMPTY cells — the same faint `ring-line/70` outline as a free period on
+  any other day, no sand/warning fill. They keep `data-holiday=""` and an aria-label ending «تعطیل» (screen readers
+  still hear that the day is off) and tapping one still reads «جمعه تعطیل است.» in the details card, dropping the
+  زنگ/time line — only the visual tint is gone. A school with جمعه lessons is unaffected (already an ordinary day).
+- Width at 360 px recomputed for the now-always-equal columns: 283 px ÷ 7 = 40.4 px each (this is the same figure
+  the first follow-up already measured for a school with جمعه lessons, now the default for every school). The
+  widest header name, «چهارشنبه» (41.1 px), overhangs 0.7 px into the 3 px gap with no clipping, as already noted.
+  `cellSubjectLabel`'s seven-letter line budget (src/lib/subject-stamp.ts) needs no change: it was already sized
+  for a ~40 px column and its widest kept lines («هدیه‌های» 41.6, «آزمایشگاه» 41.5, «جغرافیای» 40.1 px) still fit.
+
 ## «کلاس من» without its page title (owner 2026-09-27)
 
 The student «کلاس من» page drops its visible title and the «مدرسه · کلاس …» line under it: the bottom nav already
