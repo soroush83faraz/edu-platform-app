@@ -9,7 +9,7 @@ import { LeavingList } from "@/components/motion/LeavingList";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SegmentedLinks } from "@/components/SegmentedLinks";
-import { SubjectStamp } from "@/components/SubjectStamp";
+import { SubjectIcon } from "@/components/SubjectStamp";
 import { Button } from "@/components/ui/button";
 import { formatNumberFa } from "@/lib/format";
 import { formatSessionFa, formatTimeRangeFa, WEEKDAY_LABELS } from "@/lib/timetable";
@@ -27,7 +27,7 @@ const TABS: Array<{ tab: Exclude<InboxTab, "all">; label: string; icon: LucideIc
 ];
 
 /**
- * The subject page: the درس under its مُهر درس with its class and teacher, the next session, every session of the week, then the
+ * The subject page: the درس beside its نشان درس (`SubjectIcon`) with its class and teacher, the next session, every session of the week, then the
  * work items of this درس — the caller's own inbox rows (a student sees what was given to them, a teacher what
  * they gave). A teacher gets «کار جدید برای این درس» with the offering pre-selected.
  */
@@ -54,7 +54,7 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
         back={{ href: backHref, label: backLabel }}
         title={
           <span className="flex items-center gap-3">
-            <SubjectStamp subjectId={offering.subjectId} name={offering.subjectName} size="lg" />
+            <SubjectIcon subjectId={offering.subjectId} name={offering.subjectName} size="lg" />
             <bdi>{offering.subjectName}</bdi>
           </span>
         }

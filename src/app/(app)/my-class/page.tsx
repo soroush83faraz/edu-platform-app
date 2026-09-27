@@ -1,10 +1,11 @@
-import { BookOpen, CalendarDays, School, Users } from "lucide-react";
+import { BookOpen, CalendarDays, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { RowMark } from "@/components/RowMark";
+import { SubjectIcon } from "@/components/SubjectStamp";
 import { SchoolClay } from "@/components/illustrations";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -101,7 +102,7 @@ export default async function MyClassPage() {
                   {cls.teachers.map((t) => (
                     <li key={t.offeringId}>
                       <Link href={`/subjects/${t.offeringId}`} className="pressable flex min-h-14 items-center gap-3 px-3 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
-                        <RowMark icon={School} />
+                        <SubjectIcon subjectId={t.subjectId} name={t.subjectName} />
                         <div className="flex min-w-0 flex-1 flex-col">
                           <p className="truncate text-row font-medium text-text">
                             <bdi>{t.subjectName}</bdi>

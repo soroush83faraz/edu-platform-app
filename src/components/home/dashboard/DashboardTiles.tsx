@@ -1,6 +1,7 @@
 import { ChevronLeft, Presentation } from "lucide-react";
 import Link from "next/link";
 import { PageSection } from "@/components/layout/PageSection";
+import { SubjectIcon } from "@/components/SubjectStamp";
 import { formatNumberFa } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type { TeachingOffering } from "@/modules/iam/hats";
@@ -52,6 +53,7 @@ export function MyClassesCompact({ offerings }: { offerings: TeachingOffering[] 
           {offerings.slice(0, 8).map((o) => (
             <li key={o.offeringId}>
               <Link href={`/subjects/${o.offeringId}`} className="pressable flex min-h-12 items-center gap-3 px-4 py-1.5 first:rounded-t-card last:rounded-b-card hover:bg-surface">
+                <SubjectIcon subjectId={o.subjectId} name={o.subjectName} />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-sm font-semibold text-text">
                     <bdi>{o.subjectName}</bdi>

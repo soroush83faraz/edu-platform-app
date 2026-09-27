@@ -72,7 +72,7 @@
 
     /* «مُهر درس» — eight muted subject hues (data colour, not UI colour; docs/decisions.md). Equal OKLCH lightness
        and chroma, 45° apart from 7°; every ink/bg pair ≥ 4.5:1. A subject's index = fnv1a32(subject id) % 8
-       (src/lib/subject-stamp.ts); used ONLY by SubjectStamp. */
+       (src/lib/subject-stamp.ts); used ONLY by SubjectStamp / SubjectIcon and the timetable cells (`subjectHueClasses`). */
     --color-subject-0-bg: #F9E3E7;
     --color-subject-0-ink: #6F3B46;
     --color-subject-1-bg: #F7E6DB;
