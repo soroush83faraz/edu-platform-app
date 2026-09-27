@@ -18,7 +18,7 @@ export function StudentRow({ row: r }: { row: StudentListRow }) {
   const pending = r.loginIdentifier !== null && r.accountStatus !== "locked" && r.mustChangePassword === true;
   return (
     <li>
-      <Link href={`/admin/people/${r.personId}`} className={ROW}>
+      <Link prefetch={false} href={`/admin/people/${r.personId}`} className={ROW}>
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-row font-medium text-text">
             <bdi>
@@ -46,7 +46,7 @@ export function StudentRow({ row: r }: { row: StudentListRow }) {
 export function StaffRow({ row: r }: { row: StaffListRow }) {
   return (
     <li>
-      <Link href={`/admin/people/${r.personId}`} className={ROW}>
+      <Link prefetch={false} href={`/admin/people/${r.personId}`} className={ROW}>
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-row font-medium text-text">
             <bdi>

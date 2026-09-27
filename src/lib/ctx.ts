@@ -10,15 +10,8 @@ import { NEXT_PATH_HEADER } from "@/lib/next-path-header";
 import { getClientIp, getUserAgent } from "@/lib/request";
 import type { Assignment } from "@/modules/iam/can";
 import { safeNextPath } from "@/modules/iam/next-path";
-import {
-  findAccountById,
-  findActiveMembership,
-  findOrganizationName,
-  findPersonName,
-  findPrimarySchoolName,
-  listValidAssignments,
-} from "@/modules/iam/repo";
-import { findLiveSessionByToken, readSessionToken, touchSession } from "@/modules/iam/session";
+import { findMemberContext, listValidAssignments } from "@/modules/iam/repo";
+import { findLiveSessionContext, readSessionToken, touchSession } from "@/modules/iam/session";
 
 export interface Ctx {
   requestId: string;
@@ -69,26 +62,26 @@ export const getRequestContext = cache(async (): Promise<Ctx | null> => {
   if (!token) return null;
   const requestId = await getRequestId();
 
+  // Two transactions, four statements when nothing is written (it runs on every request): the global half
+  // (session ⋈ account ⋈ organization name, then the throttled last-seen touch), then the tenant half
+  // (membership ⋈ person + primary school, then the valid assignments).
   const base = await withoutTenant(async (tx) => {
-    const session = await findLiveSessionByToken(tx, token);
-    if (!session || !session.currentOrgId) return null;
-    const account = await findAccountById(tx, session.userAccountId);
-    if (!account || account.status !== "active") return null;
+    const found = await findLiveSessionContext(tx, token);
+    if (!found) return null;
+    const { session, account, orgName } = found;
+    const orgId = session.currentOrgId;
+    if (!orgId || account.status !== "active") return null;
     const touched = await touchSession(tx, session);
-    const orgName = await findOrganizationName(tx, session.currentOrgId);
     if (!orgName) return null;
-    return { session, account, touched, orgName, orgId: session.currentOrgId };
+    return { session, account, touched, orgName, orgId };
   });
   if (!base) return null;
 
   const tenant = await withTenant({ orgId: base.orgId }, async (tx) => {
-    const membership = await findActiveMembership(tx, base.account.id);
-    if (!membership) return null;
-    const name = await findPersonName(tx, membership.personId);
-    if (!name) return null;
-    const schoolName = await findPrimarySchoolName(tx);
-    const assignments = await listValidAssignments(tx, membership.personId);
-    return { personId: membership.personId, name, schoolName, assignments };
+    const member = await findMemberContext(tx, base.account.id);
+    if (!member) return null;
+    const assignments = await listValidAssignments(tx, member.personId);
+    return { personId: member.personId, name: { firstName: member.firstName, lastName: member.lastName }, schoolName: member.schoolName, assignments };
   });
   if (!tenant) return null;
 

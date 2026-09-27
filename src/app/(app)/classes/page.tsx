@@ -97,7 +97,7 @@ export default async function ClassesPage() {
         <ul className="reveal-grid grid grid-cols-2 gap-2.5 md:grid-cols-3">
           {offerings.map((o) => (
             <li key={o.offeringId} className="flex">
-              <Link href={`/subjects/${o.offeringId}`} className="surface-work surface-link flex w-full flex-col gap-3 p-4">
+              <Link prefetch={false} href={`/subjects/${o.offeringId}`} className="surface-work surface-link flex w-full flex-col gap-3 p-4">
                 <div className="flex items-start justify-between gap-2">
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate text-row font-semibold text-text">

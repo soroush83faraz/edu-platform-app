@@ -116,6 +116,7 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
             {gaps.data.cells.slice(0, 30).map((c) => (
               <li key={`${c.classGroupId}:${c.periodNo}`}>
                 <Link
+                  prefetch={false}
                   href={`/attendance/${c.classGroupId}?date=${gaps.data.date}&period=${c.periodNo}`}
                   className="pressable flex min-h-14 items-center gap-3 px-3 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken"
                 >
@@ -182,7 +183,7 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
                 {report.data.students.map((s) => (
                   <tr key={s.studentProfileId} className="hover:bg-surface-sunken">
                     <th scope="row" className="px-3 py-2 text-start font-normal">
-                      <Link href={hrefFor({ student: s.studentProfileId })} className="text-text hover:text-primary-700 hover:underline">
+                      <Link prefetch={false} href={hrefFor({ student: s.studentProfileId })} className="text-text hover:text-primary-700 hover:underline">
                         <bdi>{s.fullName}</bdi>
                       </Link>
                     </th>

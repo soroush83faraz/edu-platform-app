@@ -40,6 +40,7 @@ export function InboxRow({
   return (
     <li data-row-id={row.id}>
       <Link
+        prefetch={false}
         href={`/inbox/${row.id}`}
         className="pressable flex min-h-16 items-center gap-3 px-3 py-2.5 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken active:bg-surface-sunken"
       >

@@ -13,7 +13,7 @@ export function CompactItemRow({ row }: { row: InboxRow }) {
   const showProgress = row.createdByMe && row.assigneesTotal > 0 && !(row.assigneesTotal === 1 && row.myAssigneeState);
   return (
     <li>
-      <Link href={`/inbox/${row.id}`} className="pressable flex min-h-14 items-center gap-3 px-3 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken active:bg-surface-sunken">
+      <Link prefetch={false} href={`/inbox/${row.id}`} className="pressable flex min-h-14 items-center gap-3 px-3 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken active:bg-surface-sunken">
         <WorkItemMark row={row} />
         <div className="flex min-w-0 flex-1 flex-col">
           <p className={cn("truncate text-sm text-text", row.unread ? "font-semibold" : "font-medium")}>

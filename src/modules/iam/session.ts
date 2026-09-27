@@ -13,7 +13,9 @@ import {
   SESSION_SLIDING_THRESHOLD_MS,
   SESSION_TTL_MS,
 } from "@/lib/session-cookie";
-import { userSession } from "./schema";
+import { organization } from "@/modules/tenancy/schema";
+import { accountColumns, type AccountRow } from "./repo";
+import { userAccount, userSession } from "./schema";
 
 export interface SessionRow {
   id: string;
@@ -62,18 +64,28 @@ export async function createSession(tx: Tx, input: CreateSessionInput, now = new
   return { token, session: rows[0] };
 }
 
-/** Not revoked and not expired (expiry is compared in the database, one clock). */
-export async function findLiveSessionByToken(tx: Tx, token: string): Promise<SessionRow | null> {
+/**
+ * The request context's global half in ONE statement (it runs on every request — `getRequestContext`): the live
+ * session — not revoked, not expired (expiry compared in the database, one clock) — its account and the name of the session's organization
+ * (null when the session has no organization or the row is gone). Global tables only (`withoutTenant`).
+ */
+export async function findLiveSessionContext(tx: Tx, token: string): Promise<{ session: SessionRow; account: AccountRow; orgName: string | null } | null> {
   const rows = await tx
     .select({
-      id: userSession.id,
-      userAccountId: userSession.userAccountId,
-      currentOrgId: userSession.currentOrgId,
-      isPublicDevice: userSession.isPublicDevice,
-      expiresAt: userSession.expiresAt,
-      lastSeenAt: userSession.lastSeenAt,
+      session: {
+        id: userSession.id,
+        userAccountId: userSession.userAccountId,
+        currentOrgId: userSession.currentOrgId,
+        isPublicDevice: userSession.isPublicDevice,
+        expiresAt: userSession.expiresAt,
+        lastSeenAt: userSession.lastSeenAt,
+      },
+      account: accountColumns,
+      orgName: organization.name,
     })
     .from(userSession)
+    .innerJoin(userAccount, eq(userAccount.id, userSession.userAccountId))
+    .leftJoin(organization, eq(organization.id, userSession.currentOrgId))
     .where(and(eq(userSession.tokenHash, hashToken(token)), isNull(userSession.revokedAt), gt(userSession.expiresAt, sql`now()`)))
     .limit(1);
   return rows[0] ?? null;

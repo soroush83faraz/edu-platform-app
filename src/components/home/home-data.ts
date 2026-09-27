@@ -9,6 +9,7 @@ import { myTimetableQuery } from "@/modules/academic/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 import { hatsQuery, type Hats } from "@/modules/iam/hats";
 import type { Permission } from "@/modules/iam/permissions";
+import { homeOpenItemsQuery } from "@/modules/workspace/queries";
 
 export const getHats = cache(async (): Promise<Hats | null> => {
   const r = await hatsQuery();
@@ -18,6 +19,12 @@ export const getHats = cache(async (): Promise<Hats | null> => {
 export const getMyTimetable = cache(async () => {
   const r = await myTimetableQuery();
   return r.ok ? r.data : null;
+});
+
+/** «تکالیف نزدیک» — both renderings draw the card (`NearbyCard`), so its list is read once per request too. */
+export const getNearbyItems = cache(async () => {
+  const r = await homeOpenItemsQuery({ limit: 5 });
+  return r.ok ? r.data : [];
 });
 
 export interface HomeTiles {

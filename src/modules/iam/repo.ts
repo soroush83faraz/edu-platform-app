@@ -17,7 +17,8 @@ export interface AccountRow {
   lockedUntil: Date | null;
 }
 
-const accountColumns = {
+/** The account columns every reader selects (shared with `findLiveSessionContext` in ./session). */
+export const accountColumns = {
   id: userAccount.id,
   loginIdentifier: userAccount.loginIdentifier,
   phoneE164: userAccount.phoneE164,
@@ -120,22 +121,29 @@ export async function findActiveMembership(tx: Tx, userAccountId: string): Promi
   return rows[0] ?? null;
 }
 
-/** Tenant-bound. */
-export async function findPersonName(tx: Tx, personId: string): Promise<{ firstName: string; lastName: string } | null> {
-  const rows = await tx.select({ firstName: person.firstName, lastName: person.lastName }).from(person).where(eq(person.id, personId)).limit(1);
+/**
+ * Tenant-bound. The request context's tenant half in ONE statement (it runs on every request — `getRequestContext`):
+ * the caller's active membership in the bound organization joined to its person row (no row when either is
+ * missing or invisible under RLS), plus the organization's primary school name — the default school, else the
+ * oldest one; null when the organization has no school yet.
+ */
+export async function findMemberContext(
+  tx: Tx,
+  userAccountId: string,
+): Promise<{ personId: string; firstName: string; lastName: string; schoolName: string | null } | null> {
+  const primarySchool = tx.select({ name: school.name }).from(school).orderBy(desc(school.isDefault), asc(school.createdAt)).limit(1);
+  const rows = await tx
+    .select({
+      personId: organizationMembership.personId,
+      firstName: person.firstName,
+      lastName: person.lastName,
+      schoolName: sql<string | null>`(${primarySchool})`,
+    })
+    .from(organizationMembership)
+    .innerJoin(person, eq(person.id, organizationMembership.personId))
+    .where(and(eq(organizationMembership.userAccountId, userAccountId), eq(organizationMembership.status, "active")))
+    .limit(1);
   return rows[0] ?? null;
-}
-
-/** Global table. */
-export async function findOrganizationName(tx: Tx, orgId: string): Promise<string | null> {
-  const rows = await tx.select({ name: organization.name }).from(organization).where(eq(organization.id, orgId)).limit(1);
-  return rows[0]?.name ?? null;
-}
-
-/** Tenant-bound. The default school, else the oldest one. */
-export async function findPrimarySchoolName(tx: Tx): Promise<string | null> {
-  const rows = await tx.select({ name: school.name }).from(school).orderBy(desc(school.isDefault), asc(school.createdAt)).limit(1);
-  return rows[0]?.name ?? null;
 }
 
 /**

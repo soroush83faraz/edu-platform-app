@@ -47,7 +47,7 @@ export default async function RolesPage() {
             {assignments.map((a) => (
               <li key={a.roleAssignmentId} className="flex min-h-12 items-center justify-between gap-3 px-4 py-1.5">
                 <span className="flex min-w-0 flex-col">
-                  <Link href={`/admin/people/${a.personId}`} className="truncate text-row font-medium text-primary-700 hover:underline">
+                  <Link prefetch={false} href={`/admin/people/${a.personId}`} className="truncate text-row font-medium text-primary-700 hover:underline">
                     <bdi>
                       {a.firstName} {a.lastName}
                     </bdi>

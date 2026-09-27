@@ -177,7 +177,7 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
               <ul>
                 {pickedSessions.map((s) => (
                   <li key={s.offeringId}>
-                    <Link href={`/subjects/${s.offeringId}`} className="pressable flex min-h-16 items-center gap-3 rounded-xl px-2 py-2 hover:bg-surface-sunken">
+                    <Link prefetch={false} href={`/subjects/${s.offeringId}`} className="pressable flex min-h-16 items-center gap-3 rounded-xl px-2 py-2 hover:bg-surface-sunken">
                       <SubjectStamp subjectId={s.subjectId} name={s.subjectName} />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-row font-semibold text-text">

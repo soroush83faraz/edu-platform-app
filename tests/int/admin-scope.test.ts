@@ -45,6 +45,8 @@ import { roleAssignment, schoolEnrollment, staffProfile, userAccount } from "@/d
 import { AppError } from "@/lib/errors";
 import { DEFAULT_PERIODS } from "@/lib/timetable";
 import { GATE_MESSAGES, resourceOpGate } from "@/lib/admin/defineResource";
+import { adminCountStatements, adminCounts } from "@/lib/admin/overview";
+import type { AdminScope } from "@/modules/iam/service";
 import { mutateResource } from "@/lib/admin/mutate";
 import { classResource, offeringResource, schoolResource, staffOptions } from "@/lib/admin/resources";
 import { getPersonDetail, listStaff, listStudents, personCredential, roleGrantCandidates } from "@/lib/admin/people";
@@ -897,6 +899,31 @@ describe("admin scope hardening", () => {
       expect((await assignRole(tx, w.ctx.s2Vice, { personId: colleague.personId, roleCode: "vice_principal", schoolId: w.s2.schoolId })).created).toBe(true);
       // The `student` role is the student's marker, not a manager role: unaffected (idempotent here).
       expect((await assignRole(tx, w.ctx.s2Principal, { personId: student.personId, roleCode: "student", studentProfileId: student.studentProfileId })).created).toBe(false);
+      throw new Rollback();
+    });
+  });
+
+  it("overview counters (performance round 2026-09-27): the one-statement `adminCounts` equals the 21 counters run one by one, for the organization and for a school scope", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const scopes: AdminScope[] = [{ kind: "organization" }, { kind: "school", schoolIds: [w.s2.schoolId] }];
+      for (const scope of scopes) {
+        const combined = await adminCounts(tx, scope);
+        const statements = adminCountStatements(scope);
+        expect(Object.keys(combined).sort()).toEqual(Object.keys(statements).sort());
+        for (const [key, statement] of Object.entries(statements)) {
+          const res = await tx.execute<{ n: number }>(sql`select (${statement}) as n`);
+          expect(combined[key as keyof typeof combined], key).toBe(Number(res.rows[0]?.n));
+        }
+      }
+      // The school scope sees S2 alone: its one school, its one class and offering; the organization sees S1 too.
+      const s2 = await adminCounts(tx, { kind: "school", schoolIds: [w.s2.schoolId] });
+      const org = await adminCounts(tx, { kind: "organization" });
+      expect(s2.schools).toBe(1);
+      expect(s2.classes).toBe(1);
+      expect(s2.offerings).toBe(1);
+      expect(org.schools).toBeGreaterThanOrEqual(2);
+      expect(org.managerRoles).toBeGreaterThan(s2.managerRoles);
       throw new Rollback();
     });
   });

@@ -61,6 +61,7 @@ export default async function AttendancePage() {
             {cells.map((c) => (
               <li key={`${c.classGroupId}:${c.periodNo}`}>
                 <Link
+                  prefetch={false}
                   href={`/attendance/${c.classGroupId}?date=${day?.ok ? day.data.date : ""}&period=${c.periodNo}`}
                   className="pressable flex min-h-14 items-center gap-3 px-3 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken"
                 >
@@ -155,7 +156,7 @@ export default async function AttendancePage() {
       {canReport ? (
         <p className="px-1 text-meta text-text-muted">
           گزارش کامل مدرسه در{" "}
-          <Link href="/admin/attendance" className="text-primary-700 hover:underline">
+          <Link href="/admin/attendance" prefetch={false} className="text-primary-700 hover:underline">
             مدیریت ← حضور و غیاب
           </Link>
           .

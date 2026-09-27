@@ -20,10 +20,11 @@ export function SchoolsMenu({ schools }: { schools: ReadonlyArray<{ id: string; 
           <ChevronDown className="size-3.5 text-text-faint" aria-hidden />
         </button>
       </DropdownMenuTrigger>
+      {/* The header menu opens on (app) pages too: `prefetch={false}`, no background render of the admin frame. */}
       <DropdownMenuContent align="start" className="min-w-56">
         {schools.map((s) => (
           <DropdownMenuItem key={s.id} asChild className="min-h-10">
-            <Link href={`/admin/schools/${s.id}`}>
+            <Link href={`/admin/schools/${s.id}`} prefetch={false}>
               <bdi>{s.name}</bdi>
             </Link>
           </DropdownMenuItem>

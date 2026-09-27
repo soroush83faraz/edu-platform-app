@@ -1225,3 +1225,42 @@ animations, the pill's transition clamped).
   and the time wheel (`text-section`); the attendance day chips, the roadmap months and the subject page's session
   chips. Rows are a little tighter (13/20 meta lines instead of 14/24). No component relied on the bug — nothing
   was re-styled.
+
+## 2026-09-27 — navigation speed: fewer round trips, no prefetch storms, a skeleton on every click
+
+Owner: «going from one page to another takes a long time». Measured on the production build (`next start`, local
+Postgres, every role; statements counted by wrapping `pg`'s `Client.query`, CPU from V8 profiles — the
+instrumentation is not committed). The hosted instance (Render free: 0.1 CPU, Supabase through the session pooler)
+pays every statement as a network round trip and every millisecond of JavaScript about ten times over, so the pass
+targets statement count, background requests and perceived latency, not micro-optimisations.
+
+- **Request context: 12 → 7 statements on every request.** `getRequestContext` reads session ⋈ account ⋈
+  organization name in one statement (`findLiveSessionContext`, replaces `findLiveSessionByToken` + two lookups) and
+  membership ⋈ person + the primary school in one (`findMemberContext`); assignments stay their own statement. Same
+  predicates, same null-on-any-gap result, still two transactions (global, then tenant under RLS), still cached
+  per request with React `cache()`.
+- **Admin overview: 21 sequential counters → one statement** (`adminCounts` runs `adminCountStatements` as scalar
+  sub-selects). It runs on every /admin page (the layout's section counts): /admin 47 → 23 statements,
+  /admin/students 52 → 28, /admin/schools/[id] 60 → 36. An int test proves the combined row equals each counter run
+  alone, for an organization and a school scope.
+- **Shell context:** the current year and its نوبت in one statement. **Home:** «تکالیف نزدیک» is read once per
+  request (`getNearbyItems`, React `cache`) — both renderings (phone grid, desktop dashboard) draw the card.
+- **Pool:** idle clients live 5 minutes (pg's default closed them after 10 s, so a user reading a page paid a new
+  TLS + SCRAM connect through the pooler on the next click), TCP keep-alive, `allowExitOnIdle` for scripts/tests.
+- **Prefetch storms removed.** Next prefetches every `<Link>` in the viewport. Entity rows (کارتابل rows, people,
+  classes, timetable cells, Home's compact rows…) now pass `prefetch={false}`: an admin list page fired 32–36
+  background RSC requests per view (~12 ms CPU each → seconds of 0.1-CPU time queued in front of the next click);
+  now 11–15. Links that cross route groups — (app) ↔ /admin ↔ (public) — are not prefetched either
+  (`src/lib/frame-prefetch.ts`, `framePrefetch`): each group draws its own shell in its layout, so such a prefetch
+  renders the whole target layout (context, counts, admin overview) for a click that may never come.
+- **A skeleton on every click.** `loading.tsx` for every (app) section and for /admin (`PageSkeleton`: `list`,
+  `detail`, `cards`, `home` shapes in the page's own frame; inside /admin unframed, the layout keeps the nav). A
+  dynamic route with a loading boundary is prefetched down to it, so the click commits the placeholder at once
+  (same-frame navigations: ~100–130 ms → ~20–40 ms to the first visual change locally) and the page streams in.
+- **Unchanged on purpose:** RLS through `withTenant`, `can()` inside the transaction, no cross-request cache of any
+  tenant or per-user data, the 45 s summary poller (it lives in the shared layout and does not re-fire on
+  navigation).
+- **What a paid instance changes:** the remaining cost per navigation is ~20–35 ms of server CPU for the page's RSC
+  render plus 17–36 statements. At 0.1 CPU that CPU is ~0.2–0.4 s wall-clock and any concurrent request queues
+  behind it; a 0.5–1 CPU instance removes most of it. Free instances also sleep after inactivity (the first request
+  after a nap is a cold start of many seconds) — no code change addresses that.

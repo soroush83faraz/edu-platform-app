@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/cn";
+import { framePrefetch } from "@/lib/frame-prefetch";
 import { ClayIcon, type ClayShade } from "@/components/ClayIcon";
 
 /**
@@ -34,6 +35,8 @@ export function Tile({
     <li className="flex justify-center">
       <Link
         href={href}
+        // Tiles live on Home: an admin tile crosses into the /admin frame (`framePrefetch`).
+        prefetch={framePrefetch("/home", href)}
         className={cn(
           "pressable relative flex w-full max-w-32 flex-col items-center justify-start rounded-card px-1 text-center hover:bg-surface/50",
           compact ? "min-h-24 gap-2 pt-2 pb-1.5" : "min-h-28 gap-2.5 pt-2.5 pb-2",

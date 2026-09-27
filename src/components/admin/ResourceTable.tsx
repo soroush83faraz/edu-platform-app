@@ -64,7 +64,7 @@ export function ResourceTable({ def, rows, options, canWrite, fixed }: { def: An
           return (
             <li key={row.id} className="flex items-center gap-1 pe-1">
               {href ? (
-                <Link href={href} className="pressable flex min-h-16 min-w-0 flex-1 items-center gap-3 px-4 py-2 hover:bg-surface-sunken">
+                <Link prefetch={false} href={href} className="pressable flex min-h-16 min-w-0 flex-1 items-center gap-3 px-4 py-2 hover:bg-surface-sunken">
                   {body}
                 </Link>
               ) : (
@@ -102,7 +102,7 @@ export function ResourceTable({ def, rows, options, canWrite, fixed }: { def: An
                     return (
                       <td key={c.key} className={cn("px-3 py-2 align-middle text-text", i === 0 && "text-row", c.secondary && "hidden lg:table-cell", c.className)}>
                         {i === 0 && href ? (
-                          <Link href={href} className="flex min-h-11 items-center font-medium text-primary-700 hover:underline">
+                          <Link prefetch={false} href={href} className="flex min-h-11 items-center font-medium text-primary-700 hover:underline">
                             <bdi>{content}</bdi>
                           </Link>
                         ) : (
