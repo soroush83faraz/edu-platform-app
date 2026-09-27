@@ -6,6 +6,7 @@
 // Plus the pure organization-admin predicate and the nav role.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { SYSTEM_ROLES } from "../../scripts/catalog";
 import { HOME_TILES, MODULES, UPCOMING_MODULES, homeTilesFor, type TileHats } from "@/lib/modules-registry";
 import { isOrganizationAdmin, navRoleFor, type Assignment } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
@@ -19,8 +20,12 @@ const ADMIN_PERMS: Permission[] = [
   "workspace.work_item.read",
   "workspace.work_item.create",
 ];
-/** A vice principal: the admin hat, the roll-call report and the structure READ — never the structure write. */
-const VICE_PERMS: Permission[] = ["iam.admin.access", "tenancy.structure.read", "iam.person.write", "academic.attendance.report", "workspace.work_item.read"];
+/** The seeded roles' own permission sets (scripts/catalog.ts) — the vice principal holds the principal's (owner, 2026-09-27). */
+const catalogPerms = (code: string): Permission[] => SYSTEM_ROLES.find((r) => r.code === code)?.permissions ?? [];
+const PRINCIPAL_PERMS = catalogPerms("school_principal");
+const VICE_PERMS = catalogPerms("vice_principal");
+/** An admin hat WITHOUT `workspace.work_item.create` and without any structure write — no seeded role is like this any more. */
+const READ_ONLY_ADMIN_PERMS: Permission[] = ["iam.admin.access", "tenancy.structure.read", "academic.attendance.report", "workspace.work_item.read"];
 const has = (perms: readonly Permission[]) => (p: Permission) => perms.includes(p);
 const codes = (tiles: ReturnType<typeof homeTilesFor>) => tiles.map((t) => t.code);
 const tile = (tiles: ReturnType<typeof homeTilesFor>, code: string) => tiles.find((t) => t.code === code);
@@ -64,8 +69,17 @@ describe("homeTilesFor", () => {
     expect(tile(tiles, "schools")).toMatchObject({ labelFa: "مدرسه‌ها", href: "/admin/schools" });
   });
 
-  it("a vice principal reads the structure but edits none of it: the roll-call report and «مدرسه»", () => {
-    expect(codes(homeTilesFor(principal, has(VICE_PERMS)))).toEqual(["admin-attendance", "schools"]);
+  it("a vice principal of ONE school gets exactly the principal's tiles — «زنگ‌بندی» of that school included (catalog permissions)", () => {
+    const vice = homeTilesFor(principal, has(VICE_PERMS));
+    expect(vice).toEqual(homeTilesFor(principal, has(PRINCIPAL_PERMS)));
+    expect(codes(vice)).toEqual(["new-item", "admin-attendance", "schools", "periods"]);
+    expect(tile(vice, "periods")).toMatchObject({ href: "/admin/schools/s1/periods" });
+    // Two schools: the same plural «مدرسه‌ها» and no زنگ‌بندی tile as a principal of two.
+    expect(homeTilesFor(twoSchools, has(VICE_PERMS))).toEqual(homeTilesFor(twoSchools, has(PRINCIPAL_PERMS)));
+  });
+
+  it("an admin hat without the structure write reads the structure but edits none of it: the roll-call report and «مدرسه»", () => {
+    expect(codes(homeTilesFor(principal, has(READ_ONLY_ADMIN_PERMS)))).toEqual(["admin-attendance", "schools"]);
   });
 
   it("«مدرسه‌ها»/«مدرسه» is a tile for SCHOOL-scoped admins only — the organization admin has the section instead", () => {
@@ -110,9 +124,9 @@ describe("homeTilesFor", () => {
     expect(label(student)).toBe("تسک جدید");
     // A teaching principal is a teacher first.
     expect(label({ isStudent: false, isTeacher: true, isAdmin: true, adminScope: "school", singleSchoolId: "s1" })).toBe("تکلیف جدید");
-    // The permission still decides: without `workspace.work_item.create` nobody sees it (a vice principal,
-    // and a student in a deployment whose catalog has not been re-seeded).
-    expect(codes(homeTilesFor(principal, has(VICE_PERMS)))).not.toContain("new-item");
+    // The permission still decides: without `workspace.work_item.create` nobody sees it (an admin hat whose role
+    // lacks it, and a student in a deployment whose catalog has not been re-seeded).
+    expect(codes(homeTilesFor(principal, has(READ_ONLY_ADMIN_PERMS)))).not.toContain("new-item");
     expect(codes(homeTilesFor(student, has(["workspace.work_item.read"])))).not.toContain("new-item");
     // Still ONE door to the form.
     expect(HOME_TILES.filter((t) => t.href === "/inbox/new")).toHaveLength(1);

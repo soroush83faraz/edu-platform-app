@@ -13,9 +13,10 @@ const HINTS: Record<AdminSectionKey, string> = {
   overview: "",
   schools: "مدرسهٴ جدید، درس‌ها و صفحهٴ مدیریت هر مدرسه",
   students: "ثبت، حساب کاربری، انتقال کلاس",
-  staff: "دبیران و کادر؛ نقش مدیر/معاون",
+  staff: "دبیران و کادر؛ حساب کاربری و مدرسهٴ اصلی",
   classes: "دانش‌آموزان کلاس، ارائهٴ درس‌ها، برنامهٴ هفتگی",
-  roles: "چه کسی مدیر یا معاون کدام مدرسه است",
+  // The one door for manager roles (owner, 2026-09-27): the staff pages show roles, this section gives and revokes them.
+  roles: "دادن و لغو نقش مدیر و معاون هر مدرسه",
 };
 
 /**

@@ -6,9 +6,8 @@ import type { Tx } from "@/lib/actions";
 import { notFound } from "@/lib/errors";
 import { toAsciiDigits } from "@/lib/normalize";
 import { classEnrollment, schoolEnrollment, teacherAssignment } from "@/modules/academic/schema";
-import type { Assignment } from "@/modules/iam/can";
 import { authIdentity, contactPoint, organizationMembership, person, role, roleAssignment, staffProfile, studentProfile, userAccount } from "@/modules/iam/schema";
-import { assertSchoolInScope, canManageRole, liveSchoolEnrollmentSql, type AdminScope } from "@/modules/iam/service";
+import { assertSchoolInScope, liveSchoolEnrollmentSql, type AdminScope } from "@/modules/iam/service";
 import { findClassGroup } from "@/modules/tenancy/repo";
 import { academicYear, branch, classGroup, classOffering, gradeLevel, school, subject } from "@/modules/tenancy/schema";
 import { roleLabel } from "./labels";
@@ -192,6 +191,30 @@ export async function listStaff(tx: Tx, scope: AdminScope, opts: { q: string; pa
   };
 }
 
+/**
+ * Who «نقش جدید» on /admin/roles may pick: active colleagues (a staff profile, not left) inside the caller's scope —
+ * the very `personInScopeSql` that `assignRole` re-checks, so a teacher who only TEACHES at the caller's school (not
+ * anchored there) is not offered, and nobody of another school ever is. Students are not offered: a manager role is
+ * a staff role. When the scope spans several schools the options are grouped by primary school — but only under a
+ * school the caller covers; a colleague anchored here through a role, whose primary school is elsewhere, stays
+ * ungrouped rather than naming that other school.
+ */
+export async function roleGrantCandidates(tx: Tx, scope: AdminScope): Promise<Array<{ value: string; label: string; group?: string }>> {
+  const rows = await tx
+    .select({ id: person.id, firstName: person.firstName, lastName: person.lastName, schoolId: staffProfile.schoolId, schoolName: school.name })
+    .from(staffProfile)
+    .innerJoin(person, eq(person.id, staffProfile.personId))
+    .leftJoin(school, eq(school.id, staffProfile.schoolId))
+    .where(and(eq(person.status, "active"), isNull(staffProfile.leftOn), personInScope(scope, "iam.person.id")))
+    .orderBy(asc(person.lastName), asc(person.firstName));
+  const grouped = scope.kind === "organization" || scope.schoolIds.length > 1;
+  return rows.map((r) => ({
+    value: r.id,
+    label: `${r.firstName} ${r.lastName}`,
+    ...(grouped && r.schoolName && r.schoolId && (scope.kind === "organization" || scope.schoolIds.includes(r.schoolId)) ? { group: r.schoolName } : {}),
+  }));
+}
+
 export interface PersonDetail {
   id: string;
   firstName: string;
@@ -207,17 +230,17 @@ export interface PersonDetail {
   account: AccountFacts | null;
   enrollment: { classEnrollmentId: string; classGroupId: string; className: string; schoolId: string; schoolName: string; gradeName: string; yearName: string } | null;
   /**
-   * Manual + organization/school/branch roles. `schoolId` is the school the role lives under (a branch role's school);
-   * `revocable` mirrors `revokeRoleAssignment`'s permission step for the caller's `assignments` (the «لغو» button —
-   * a principal may revoke vice principals of their schools only; the server re-checks).
+   * Manual + organization/school/branch roles, for DISPLAY: `schoolId` is the school the role lives under (a branch
+   * role's school). The person page shows them read-only (owner, 2026-09-27) — granting and revoking happen on
+   * /admin/roles only, whose query computes its own `revocable` flags.
    */
-  roles: Array<{ roleAssignmentId: string; roleCode: string; roleName: string; scopeType: string; schoolId: string | null; schoolName: string | null; sourceType: string; revocable: boolean }>;
+  roles: Array<{ roleAssignmentId: string; roleCode: string; roleName: string; scopeType: string; schoolId: string | null; schoolName: string | null; sourceType: string }>;
   teaching: Array<{ teacherAssignmentId: string; classOfferingId: string; className: string; subjectName: string }>;
   /** Schools the person is anchored to (class, primary school, manual roles, live school enrollments); picks the credential sheet's school name. */
   schoolIds: string[];
 }
 
-export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: string, assignments: readonly Assignment[] = []): Promise<PersonDetail> {
+export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: string): Promise<PersonDetail> {
   const rows = await tx
     .select({
       id: person.id,
@@ -272,7 +295,7 @@ export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: strin
     enrollment = ce ?? null;
   }
 
-  const roleRows = await tx
+  const roles = await tx
     .select({
       roleAssignmentId: roleAssignment.id,
       roleCode: role.code,
@@ -288,7 +311,6 @@ export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: strin
     .leftJoin(branch, eq(branch.id, roleAssignment.branchId))
     .where(and(eq(roleAssignment.personId, personId), isNull(roleAssignment.revokedAt), sql`${roleAssignment.scopeType} in ('organization', 'school', 'branch')`))
     .orderBy(asc(role.code));
-  const roles = roleRows.map((r) => ({ ...r, revocable: canManageRole(assignments, r.roleCode, r.schoolId) }));
 
   const teaching = st
     ? await tx

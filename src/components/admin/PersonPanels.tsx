@@ -9,13 +9,12 @@ import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
 import { Chip } from "@/components/Chip";
 import { formatJalaliDateTime, formatLoginIdentifierFa, formatNumberFa } from "@/lib/format";
-import { assignRoleAction, createAccountAction, endTeachingAction, placeStudentAction, resetPasswordAction, revokeRoleAction, unlockAccountAction } from "@/lib/admin/people-actions";
+import { createAccountAction, endTeachingAction, placeStudentAction, resetPasswordAction, unlockAccountAction } from "@/lib/admin/people-actions";
 import type { PersonDetail } from "@/lib/admin/people";
 import { roleLabel } from "@/lib/admin/labels";
-import type { AssignableRole, RoleGrantOptions } from "@/modules/iam/service";
 import { CredentialsDialog, type Credentials } from "./CredentialsDialog";
 import { ResponsiveModal } from "./ResponsiveModal";
-import type { ClassOption, SchoolOption } from "./StudentForm";
+import type { ClassOption } from "./StudentForm";
 
 interface Caps {
   canReset: boolean;
@@ -197,32 +196,16 @@ export function EnrollmentCard({ detail, classes, canEnroll }: { detail: PersonD
   );
 }
 
-/** Manual roles (grant/revoke) and teaching assignments (end). */
-/** Roles + teaching of a staff member. `roleGrant` (server-computed) limits the picker to roles/schools the caller may grant. */
-export function RolesCard({ detail, caps, roleGrant }: { detail: PersonDetail; caps: Caps; roleGrant: RoleGrantOptions<SchoolOption> }) {
+/**
+ * Roles + teaching of a staff member. Manager roles are DISPLAY-ONLY here (owner, 2026-09-27: nobody changes a
+ * colleague's role «وسط کار» from the staff pages) — plain chips, no picker, no «لغو»; they are granted and revoked on
+ * /admin/roles only, and a caller who may do that gets one line pointing there. Teaching rows keep «پایان تدریس»:
+ * ending a teaching assignment is the teacher-assignment capability (the derived «دبیر» role follows the teaching,
+ * as on the offerings page), not a manager-role change.
+ */
+export function RolesCard({ detail, caps }: { detail: PersonDetail; caps: Caps }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [draft, setDraft] = useState<{ roleCode: string; schoolId: string }>({ roleCode: "", schoolId: roleGrant.schools[0]?.value ?? "" });
-  const grant = () =>
-    start(async () => {
-      if (!draft.roleCode) return;
-      const code = draft.roleCode as AssignableRole;
-      // Every role the picker can offer is school-scoped: «مدیر سازمان» is granted by nobody (round 7).
-      const r = await assignRoleAction({ personId: detail.id, roleCode: code, schoolId: draft.schoolId || null });
-      if (r.ok) {
-        toast.success(r.data.created ? "نقش داده شد." : "این نقش از قبل وجود داشت.");
-        setDraft((p) => ({ ...p, roleCode: "" }));
-        router.refresh();
-      } else toast.error(r.message);
-    });
-  const revoke = (roleAssignmentId: string) =>
-    start(async () => {
-      const r = await revokeRoleAction({ roleAssignmentId });
-      if (r.ok) {
-        toast.success("نقش لغو شد.");
-        router.refresh();
-      } else toast.error(r.message);
-    });
   const endTeaching = (teacherAssignmentId: string) =>
     start(async () => {
       const r = await endTeachingAction({ teacherAssignmentId });
@@ -231,7 +214,6 @@ export function RolesCard({ detail, caps, roleGrant }: { detail: PersonDetail; c
         router.refresh();
       } else toast.error(r.message);
     });
-  const roleOptions = roleGrant.roles.map((code) => ({ value: code, label: roleLabel(code) }));
   return (
     <section aria-labelledby="roles-heading" className="flex flex-col gap-3 surface-work p-4">
       <h3 id="roles-heading" className="text-sm font-semibold text-text-muted">
@@ -239,18 +221,13 @@ export function RolesCard({ detail, caps, roleGrant }: { detail: PersonDetail; c
       </h3>
       {detail.roles.length === 0 && detail.teaching.length === 0 ? <p className="text-sm text-text-muted">نقش مدیریتی یا تدریسی ندارد.</p> : null}
       {detail.roles.length > 0 ? (
-        <ul className="divide-y divide-line rounded-lg border border-line">
+        <ul aria-label="نقش‌ها" className="flex flex-wrap gap-2">
           {detail.roles.map((r) => (
-            <li key={r.roleAssignmentId} className="flex min-h-11 items-center justify-between gap-2 px-3 py-1 text-sm">
-              <span className="text-text">
+            <li key={r.roleAssignmentId}>
+              <Chip tone="neutral">
                 {roleLabel(r.roleCode)}
-                {r.schoolName ? <span className="text-text-muted"> — {r.schoolName}</span> : r.scopeType === "organization" ? <span className="text-text-muted"> — سازمان</span> : null}
-              </span>
-              {caps.canRoles && r.sourceType === "manual" && r.revocable ? (
-                <Button type="button" variant="ghost" size="sm" className="text-danger" onClick={() => revoke(r.roleAssignmentId)} disabled={pending}>
-                  لغو
-                </Button>
-              ) : null}
+                {r.schoolName ? ` — ${r.schoolName}` : r.scopeType === "organization" ? " — سازمان" : ""}
+              </Chip>
             </li>
           ))}
         </ul>
@@ -271,27 +248,14 @@ export function RolesCard({ detail, caps, roleGrant }: { detail: PersonDetail; c
           ))}
         </ul>
       ) : null}
-      {caps.canRoles && detail.staff && roleOptions.length > 0 ? (
-        <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-          <SelectNative aria-label="نقش جدید" value={draft.roleCode} onChange={(e) => setDraft((p) => ({ ...p, roleCode: e.target.value }))}>
-            <option value="">افزودن نقش…</option>
-            {roleOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </SelectNative>
-          <SelectNative aria-label="مدرسهٴ نقش" value={draft.schoolId} onChange={(e) => setDraft((p) => ({ ...p, schoolId: e.target.value }))} disabled={!draft.roleCode}>
-            {roleGrant.schools.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </SelectNative>
-          <Button type="button" variant="outline" onClick={grant} disabled={pending || !draft.roleCode}>
-            افزودن
-          </Button>
-        </div>
+      {caps.canRoles ? (
+        <p className="flex flex-wrap items-center gap-x-1 text-meta text-text-muted">
+          نقش مدیر و معاون فقط در بخش
+          <Link href="/admin/roles" className="inline-flex min-h-11 items-center font-medium text-primary-700 hover:underline">
+            «نقش‌ها»
+          </Link>
+          داده یا لغو می‌شود.
+        </p>
       ) : null}
     </section>
   );

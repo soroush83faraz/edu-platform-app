@@ -41,8 +41,11 @@ export const UpdateStudentInput = z
   .strict();
 export type UpdateStudentInput = z.output<typeof UpdateStudentInput>;
 
-export const RoleGrant = z.object({ roleCode: z.enum(ASSIGNABLE_ROLES), schoolId: uuid.nullable().optional() }).strict();
-
+/**
+ * A new colleague: person + phone account + primary school. NO manager roles (owner, 2026-09-27): «مدیر مدرسه» and
+ * «معاون» are granted on /admin/roles only (`AssignRoleInput`), never from the staff pages — `.strict()` refuses a
+ * stray `roles` key instead of silently granting through a second door.
+ */
 export const CreateStaffInput = z
   .object({
     firstName: personName("نام"),
@@ -53,7 +56,6 @@ export const CreateStaffInput = z
     employmentType: z.enum(["full_time", "part_time", "contractor"]).default("full_time"),
     /** The school this staff member belongs to (scope anchor for school admins). */
     schoolId: uuid.nullable().optional(),
-    roles: z.array(RoleGrant).max(5).default([]),
   })
   .strict();
 export type CreateStaffInput = z.output<typeof CreateStaffInput>;
@@ -78,6 +80,7 @@ export const PlaceStudentInput = z.object({ personId: uuid, classGroupId: uuid }
 
 export const CreateAccountInput = z.object({ personId: uuid, identifier: optionalText(64) }).strict();
 
+/** «نقش جدید» on /admin/roles — the ONE request path that grants a manager role (the service re-runs the whole matrix). */
 export const AssignRoleInput = z.object({ personId: uuid, roleCode: z.enum(ASSIGNABLE_ROLES), schoolId: uuid.nullable().optional() }).strict();
 
 export const RevokeRoleInput = z.object({ roleAssignmentId: uuid }).strict();

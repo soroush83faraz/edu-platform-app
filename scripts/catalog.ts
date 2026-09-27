@@ -35,6 +35,18 @@ export interface Queryable {
 // ---------------------------------------------------------------------------------------------------------------
 
 const ALL_ROLE_PERMS: Permission[] = PERMISSIONS.map((p) => p.code).filter((c) => !IMPLICIT_PERMISSIONS.includes(c));
+/**
+ * The two SCHOOL managers — «مدیر مدرسه» and «معاون» — hold the very same permissions (owner, 2026-09-27: the vice
+ * principal has exactly the principal's capabilities, inside their own school). What either of them may do is
+ * decided by the permission AND the scope of the assignment — `can()` at the school, `getAdminScope` for people and
+ * structure — never by the role code:
+ *   • `iam.role_assignment.write` held at a school grants and revokes `vice_principal` there only; `school_principal`
+ *     needs it at the ORGANIZATION (only the organization admin appoints principals) and `org_admin` is nobody's to
+ *     give (`resolveRoleGrant` / `revokeRoleAssignment`, docs/admin.md «ماتریس اعطای نقش»);
+ *   • `tenancy.structure.write` never creates a school (`createNeedsOrgScope`) nor edits the organization's درس‌ها
+ *     (`orgOnly`); `integ.import.write` is checked at the importing school (`--school`).
+ */
+const SCHOOL_MANAGER_PERMS: Permission[] = ALL_ROLE_PERMS;
 const WORK_ITEM_ALL: Permission[] = [
   "workspace.work_item.read",
   "workspace.work_item.create",
@@ -54,38 +66,11 @@ export interface SystemRole {
 /** System role templates (doc 03 §7). Custom roles are out of phase 1. */
 export const SYSTEM_ROLES: SystemRole[] = [
   { code: "org_admin", name: "مدیر سازمان", description: "همهٴ دسترسی‌ها در سطح سازمان", allowedScopeTypes: ["organization"], permissions: ALL_ROLE_PERMS },
-  // Holds `iam.role_assignment.write` too, but the service only lets a school-scoped admin grant/revoke `vice_principal`
-  // at their own schools (owner's matrix: principals are appointed by the organization admin only), and
-  // `tenancy.structure.write` never creates schools outside the organization scope (docs/admin.md).
-  { code: "school_principal", name: "مدیر مدرسه", description: "همهٴ دسترسی‌ها در سطح یک مدرسه", allowedScopeTypes: ["school"], permissions: ALL_ROLE_PERMS },
-  {
-    code: "vice_principal",
-    name: "معاون",
-    description: "کارتابل، افراد، ثبت‌نام، حساب‌ها و تعیین دبیر در سطح مدرسه",
-    allowedScopeTypes: ["school", "branch"],
-    permissions: [
-      "iam.admin.access",
-      "tenancy.structure.read",
-      "iam.person.read",
-      "iam.person.write",
-      "academic.enrollment.write",
-      // Owner's matrix: a vice principal defines teachers — sets/changes the main teacher of EXISTING offerings and ends
-      // teaching (the derived `teacher` role follows); defining offerings/structure stays `tenancy.structure.write`.
-      "academic.teacher_assignment.write",
-      // Owner: admins (principal + vice) define each class's weekly schedule; the bell schedule itself is structure.
-      "academic.timetable.read",
-      "academic.timetable.write",
-      // Owner: the vice principal runs the daily roll call of the school — takes it for any class, sees every
-      // report; the teacher only their own زنگ.
-      "academic.attendance.read",
-      "academic.attendance.write",
-      "academic.attendance.report",
-      "iam.account.reset_password",
-      "iam.account.unlock",
-      ...WORK_ITEM_ALL,
-      "notif.notification.read",
-    ],
-  },
+  // The school managers: one permission set (`SCHOOL_MANAGER_PERMS`), bounded by the school of the assignment.
+  // `vice_principal` keeps `branch` among its allowed scope types (no screen grants it there — `resolveRoleGrant`
+  // always targets the school); a branch-scoped holder reaches no further than that branch's school.
+  { code: "school_principal", name: "مدیر مدرسه", description: "همهٴ دسترسی‌ها در سطح یک مدرسه", allowedScopeTypes: ["school"], permissions: SCHOOL_MANAGER_PERMS },
+  { code: "vice_principal", name: "معاون", description: "همهٴ دسترسی‌های مدیر مدرسه، در سطح همان مدرسه", allowedScopeTypes: ["school", "branch"], permissions: SCHOOL_MANAGER_PERMS },
   {
     code: "teacher",
     name: "معلم",

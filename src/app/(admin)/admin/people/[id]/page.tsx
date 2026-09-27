@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "پروندهٴ فرد | مدیریت
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** /admin/people/[id] — the one page for a student or a staff member: edit, account, class, roles. */
+/** /admin/people/[id] — the one page for a student or a staff member: edit, account, class, roles (read-only). */
 export default async function PersonPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!UUID_RE.test(id)) notFound();
@@ -24,7 +24,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     notFound();
   }
-  const { detail, classes, schools, roleGrant } = result.data;
+  const { detail, classes, schools } = result.data;
   const has = (p: Parameters<typeof canAtAnyScope>[1]) => canAtAnyScope(ctx.assignments, p);
   const caps = {
     canReset: has("iam.account.reset_password"),
@@ -60,7 +60,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               <h3 id="edit-heading" className="mb-3 text-sm font-semibold text-text-muted">
                 مشخصات
               </h3>
-              {isStudent ? <StudentForm classes={classes} schools={schools} detail={detail} /> : <StaffForm schools={schools} detail={detail} roleGrant={roleGrant} />}
+              {isStudent ? <StudentForm classes={classes} schools={schools} detail={detail} /> : <StaffForm schools={schools} detail={detail} />}
             </section>
           ) : (
             <section className="surface-work p-4 text-sm text-text">
@@ -86,7 +86,8 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         <div className="flex flex-col gap-4">
           <AccountCard detail={detail} caps={caps} />
           {isStudent ? <EnrollmentCard detail={detail} classes={classes} canEnroll={caps.canEnroll} /> : null}
-          {detail.kind === "staff" ? <RolesCard detail={detail} caps={caps} roleGrant={roleGrant} /> : null}
+          {/* Roles are shown here, never changed here: /admin/roles is their one door (owner, 2026-09-27). */}
+          {detail.kind === "staff" ? <RolesCard detail={detail} caps={caps} /> : null}
         </div>
       </div>
     </div>

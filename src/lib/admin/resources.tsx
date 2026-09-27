@@ -73,8 +73,8 @@ function requireOrgScope(scope: AdminScope): void {
 }
 
 export const RESOURCE_MESSAGES = {
-  offeringCreateForbidden: "تعریف ارائهٴ درس جدید فقط با مدیر مدرسه یا مدیر سازمان است.",
-  offeringStructureForbidden: "تغییر ساعت یا وضعیت ارائهٴ درس فقط با مدیر مدرسه یا مدیر سازمان است.",
+  offeringCreateForbidden: "تعریف ارائهٴ درس جدید فقط با مدیر و معاون مدرسه یا مدیر سازمان است.",
+  offeringStructureForbidden: "تغییر ساعت یا وضعیت ارائهٴ درس فقط با مدیر و معاون مدرسه یا مدیر سازمان است.",
   teacherAssignForbidden: "شما اجازهٴ تعیین دبیر در این مدرسه را ندارید.",
 } as const;
 
@@ -471,9 +471,11 @@ export async function staffOptions(tx: Tx, scope: AdminScope): Promise<SelectOpt
 
 /**
  * Two permissions on one form (owner's matrix, docs/admin.md): defining an offering (`create`) and changing its
- * hours/status are STRUCTURE (`tenancy.structure.write` — principal, organization admin); setting, changing or
- * removing the main teacher of an EXISTING offering is `academic.teacher_assignment.write` (the vice principal
- * holds it too). Both are checked at the offering's school with `can()`, after the scope rule (NOT_FOUND first).
+ * hours/status are STRUCTURE (`tenancy.structure.write` — organization admin, principal, vice principal); setting,
+ * changing or removing the main teacher of an EXISTING offering is `academic.teacher_assignment.write`. Every seeded
+ * manager holds both (the vice principal matches the principal since 2026-09-27); the split still stands for a
+ * holder of the teacher permission alone. Both are checked at the offering's school with `can()`, after the scope
+ * rule (NOT_FOUND first).
  */
 export const offeringResource = defineResource<OfferingRow, z.output<typeof OfferingInput>>({
   key: "offerings",
@@ -516,7 +518,7 @@ export const offeringResource = defineResource<OfferingRow, z.output<typeof Offe
     const cg = await findClassGroup(tx, input.classGroupId);
     if (!cg) throw notFound();
     assertSchoolInScope(scope, cg.schoolId);
-    // Structure: a vice principal (teacher_assignment.write only) may not define offerings — FORBIDDEN for a class they can see.
+    // Structure: a holder of teacher_assignment.write alone may not define offerings — FORBIDDEN for a class they can see.
     if (!(await can(tx, ctx, "tenancy.structure.write", { scopeType: "school", id: cg.schoolId }))) throw forbidden(RESOURCE_MESSAGES.offeringCreateForbidden);
     const missing = (["subjectId", "termId"] as const).filter((k) => !input[k]);
     if (missing.length > 0 || !input.subjectId || !input.termId) {
@@ -543,7 +545,7 @@ export const offeringResource = defineResource<OfferingRow, z.output<typeof Offe
     const school = { scopeType: "school", id: schoolId } as const;
     const [before] = await tx.select({ weeklyHours: classOffering.weeklyHours, status: classOffering.status }).from(classOffering).where(eq(classOffering.id, id)).limit(1);
     if (!before) throw notFound();
-    // The form always resubmits hours + status; only a CHANGE to them is a structure edit (a vice principal leaves them as they are).
+    // The form always resubmits hours + status; only a CHANGE to them is a structure edit (a teacher-only editor leaves them as they are).
     const weeklyHours = input.weeklyHours ?? null;
     if (weeklyHours !== (before.weeklyHours === null ? null : Number(before.weeklyHours)) || input.status !== before.status) {
       if (!(await can(tx, ctx, "tenancy.structure.write", school))) throw forbidden(RESOURCE_MESSAGES.offeringStructureForbidden);

@@ -398,14 +398,19 @@ export const SCHOOL_ROLES: readonly AssignableRole[] = ["school_principal", "vic
  * an `org_admin` assignment is organization-SCOPED, so `revokeRoleAssignment`'s `orgLevel` rule still catches it.
  */
 export const ORG_GRANTED_ROLES: readonly AssignableRole[] = ["school_principal"];
-/** What a SCHOOL-scoped holder of `iam.role_assignment.write` (a principal) may grant/revoke, at their own schools. */
+/**
+ * What a SCHOOL-scoped holder of `iam.role_assignment.write` — a principal or a vice principal, who hold the same
+ * permissions (owner, 2026-09-27) — may grant/revoke, at their own schools only. `school_principal` is not in it
+ * (`ORG_GRANTED_ROLES`), so no school manager can mint or unseat a principal, and neither can reach another school.
+ */
 export const SCHOOL_GRANTABLE_ROLES: readonly AssignableRole[] = ["vice_principal"];
 
 /**
- * Pure mirror of the permission step of `resolveRoleGrant` / `revokeRoleAssignment` for the UI (pickers, «لغو»
- * buttons) — the server re-runs the real check. `schoolId` is the role's school (`null` for organization roles).
- * Organization-scoped holders manage every role everywhere; a school-scoped holder manages `vice_principal` at the
- * schools of the assignments that carry the permission; anyone else (vice principals) manages nothing.
+ * Pure mirror of the permission step of `resolveRoleGrant` / `revokeRoleAssignment` for the UI (the grant picker and
+ * the «لغو» buttons of /admin/roles) — the server re-runs the real check. `schoolId` is the role's school (`null` for
+ * organization roles). Organization-scoped holders manage every role everywhere; a school-scoped holder (principal or
+ * vice principal alike) manages `vice_principal` at the schools of the assignments that carry the permission;
+ * anyone without the permission manages nothing.
  */
 export function canManageRole(assignments: readonly Assignment[], roleCode: string, schoolId: string | null): boolean {
   // مدیر سازمان یکتاست و فقط با کد (seed) تعریف/حذف می‌شود؛ از هیچ رابط کاربری‌ای لغو نمی‌شود (owner).
@@ -436,9 +441,9 @@ export interface RoleGrantOptions<S> {
 /**
  * Which manager roles the caller may grant and where — the picker-side mirror of the `can(iam.role_assignment.write)`
  * check `assignRole` enforces (docs/admin.md «ماتریس اعطای نقش»): an organization-scoped holder grants the SCHOOL
- * roles at every school; a school-scoped holder (a principal) grants `vice_principal` only, at the schools of the
- * assignments that carry the permission; anyone else (vice principals) grants nothing. `schools` are the scope's
- * schools, so an option here is never a school the caller cannot see.
+ * roles at every school; a school-scoped holder (a principal or a vice principal) grants `vice_principal` only, at
+ * the schools of the assignments that carry the permission; anyone without the permission grants nothing.
+ * `schools` are the scope's schools, so an option here is never a school the caller cannot see.
  *
  * `org_admin` is offered by NOBODY (round 7): the organization has one مدیر سازمان, established at seed time, and
  * `resolveRoleGrant` refuses the role to every caller — so no picker may show it.
@@ -803,7 +808,9 @@ export interface CreateStaffResult {
 /**
  * person + staff_profile + user_account (phone) + membership + manual role assignments. The `teacher` role is
  * NEVER granted here — it is derived from class offerings by `assignTeacher`. Roles need `iam.role_assignment.write`
- * at their scope (`resolveRoleGrant`): a vice principal, who may register staff, cannot mint a principal.
+ * at their scope (`resolveRoleGrant`): a school manager (principal or vice principal), who may register staff and
+ * appoint vice principals of their own school, cannot mint a principal. The admin UI no longer sends roles with a new
+ * colleague (manager roles are granted on /admin/roles only); the pilot seed still does, through this same check.
  */
 export async function createStaff(tx: Tx, ctx: IamCtx, input: CreateStaffInput): Promise<CreateStaffResult> {
   const names = cleanNames(input);

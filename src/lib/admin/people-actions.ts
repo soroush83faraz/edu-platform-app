@@ -61,7 +61,7 @@ export const createStaffAction = defineAction({ schema: CreateStaffInput, permis
     employeeNumber: input.employeeNumber ?? null,
     employmentType: input.employmentType,
     schoolId: input.schoolId ?? null,
-    roles: input.roles.map((r) => ({ roleCode: r.roleCode, schoolId: r.schoolId ?? null })),
+    // No `roles`: manager roles are granted on /admin/roles only (`assignRoleAction`), never with a new colleague.
   });
   return { personId: res.personId, loginIdentifier: res.loginIdentifier, initialPassword: res.initialPassword };
 });
@@ -112,12 +112,16 @@ export const placeStudentAction = defineAction({ schema: PlaceStudentInput, perm
   adminPlaceStudent(tx, ctx, { personId: input.personId, classGroupId: input.classGroupId }),
 );
 
-/** The service applies the whole rule (docs/admin.md «ماتریس اعطای نقش»): person and school in scope (NOT_FOUND), `iam.role_assignment.write` at the role's scope (FORBIDDEN). */
+/**
+ * «نقش جدید» on /admin/roles — the only UI that grants a manager role (owner, 2026-09-27: the staff pages show roles,
+ * they do not change them). The service applies the whole rule (docs/admin.md «ماتریس اعطای نقش»): person and school
+ * in scope (NOT_FOUND), `iam.role_assignment.write` at the role's scope (FORBIDDEN), `org_admin` never.
+ */
 export const assignRoleAction = defineAction({ schema: AssignRoleInput, permission: "iam.role_assignment.write", scope: "any" }, async (tx, input, ctx) =>
   assignRole(tx, ctx, { personId: input.personId, roleCode: input.roleCode, schoolId: input.schoolId ?? null }),
 );
 
-/** The service applies the scope rule itself: person in scope + covered scope type (NOT_FOUND), permission at the role's scope (FORBIDDEN), org roles FORBIDDEN for school admins. */
+/** «لغو» on /admin/roles (its only UI). The service applies the scope rule itself: person in scope + covered scope type (NOT_FOUND), permission at the role's scope (FORBIDDEN), org roles FORBIDDEN for school admins. */
 export const revokeRoleAction = defineAction({ schema: RevokeRoleInput, permission: "iam.role_assignment.write", scope: "any" }, async (tx, input, ctx) => {
   await revokeRoleAssignment(tx, ctx, { roleAssignmentId: input.roleAssignmentId });
   return { roleAssignmentId: input.roleAssignmentId };

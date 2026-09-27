@@ -28,7 +28,7 @@ export const offeringPageQuery = defineQuery({ schema: OfferingIdInput, permissi
   getOfferingPage(tx, ctx, input.offeringId),
 );
 
-/** زنگ‌بندی of one school for the admin editor; `canEdit` = structure write (org admin, principal). */
+/** زنگ‌بندی of one school for the admin editor; `canEdit` = structure write at that school (org admin, principal, vice principal). */
 export const schoolPeriodsQuery = defineQuery(
   { schema: SchoolIdInput, permission: "iam.admin.access", scope: "any" },
   async (tx, input, ctx) => {
