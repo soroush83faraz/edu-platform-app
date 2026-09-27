@@ -12,7 +12,9 @@ const state = vi.hoisted(() => ({
   ctx: { firstName: "سارا", lastName: "احمدی", orgName: "سازمان نمونه", schoolName: "دبستان نمونه" as string | null, assignments: [] as Assignment[] },
   login: "+989351001000" as string | null,
   header: null as Record<string, unknown> | null,
+  shell: { orgScoped: false, orgName: "سازمان نمونه", schoolName: "دبستان نمونه" as string | null, yearName: null, termName: null, schools: [] as { id: string; name: string }[] },
 }));
+vi.mock("@/lib/shell-context", () => ({ getShellContext: async () => state.shell }));
 vi.mock("@/lib/ctx", () => ({ requireContext: async () => state.ctx }));
 vi.mock("@/lib/profile-queries", () => ({ myLoginIdentifierQuery: async () => ({ ok: true, data: state.login }) }));
 vi.mock("@/modules/iam/actions", () => ({ logoutAction: async () => undefined as never }));
@@ -43,6 +45,7 @@ beforeEach(() => {
   state.ctx = { firstName: "سارا", lastName: "احمدی", orgName: "سازمان نمونه", schoolName: "دبستان نمونه", assignments: [a("student", "student")] };
   state.login = "+989351001000";
   state.header = null;
+  state.shell = { orgScoped: false, orgName: "سازمان نمونه", schoolName: "دبستان نمونه", yearName: null, termName: null, schools: [] };
 });
 
 describe("«حساب من» (/more)", () => {
@@ -84,6 +87,23 @@ describe("«حساب من» (/more)", () => {
     expect(html).toContain("سازمان نمونه");
     expect(html).not.toContain("دبستان نمونه");
     expect(html).toContain(">admin.demo</bdi>");
+  });
+
+  it("the organization admin who also teaches, in a one-school organization: still the organization, never the school", async () => {
+    state.ctx.assignments = [a("org_admin", "organization", [ADMIN]), a("teacher", "class_offering")];
+    state.shell = { ...state.shell, orgScoped: true, schoolName: null };
+    const html = card(await page());
+    expect(html).toContain("سازمان نمونه");
+    expect(html).not.toContain("دبستان نمونه");
+  });
+
+  it("a principal is introduced by THEIR school (the shell's scope school), not the organization's primary one", async () => {
+    state.ctx.assignments = [a("school_principal", "school", [ADMIN])];
+    state.shell = { ...state.shell, schoolName: "دبیرستان دوم" };
+    const html = card(await page());
+    expect(html).toContain("دبیرستان دوم");
+    expect(html).not.toContain("دبستان نمونه");
+    expect(html).not.toContain("سازمان نمونه");
   });
 
   it("no hat: «عضو»; no login identifier: no identifier line", () => {

@@ -91,3 +91,37 @@ markup), so classic renders exactly as before:
 - `/admin` («نمای کلی») and `/my-class/info` («کلاس من») lost their only Home door in H3; the pages still exist.
 - Classic has the same «حضور و غیاب» ×2 label clash for a teaching principal (pre-existing); `altLabelFa` /
   `altIcon` are only set in `HUB_TILES`, so classic is left exactly as it was (apart from the two glyph changes).
+
+## Organisation admin: the organisation is the context; attendance per school; «به‌زودی» for them only (2026-09-27)
+Owner (organisation admin): «Why does the box at the top say «علامه طباطبایی»? The organisation admin is ABOVE the
+school.» — and «attendance separate for each school; not on the organisation admin's Home any more».
+- **One rule for «where am I»** — `contextPlaceFa` / `contextLineFa` (`src/lib/context-place.ts`). The organisation
+  admin's context is the ORGANISATION: the Home greeting card reads «مدیر سازمان · <organisation>», the «حساب من»
+  profile card, the shell title (`AppShell`, sr-only h1 / classic nav) and the `PageHeader` desktop context bar
+  («<organisation> · <year>», plus the «۲ مدرسه» chip when there are several; no school, no branch, no نوبت) — even
+  in a one-school organisation, and even when they also teach (their teaching pages keep class/school details).
+  The shell context (`getShellContext`) now carries `orgScoped` + `orgName`; the rule also falls back to the pure
+  `isOrganizationAdmin(ctx.assignments)` so a failed shell read never shows the primary school. Principals/vice
+  principals/teachers/students keep their school — and a principal now reads THEIR scope school (the shell's), not
+  the organisation's primary one (`ctx.schoolName`), which was a latent mismatch for a principal of a second school.
+- **Attendance per school.** The admin «حضور و غیاب» tile is `adminScope: "school"`: gone from the organisation
+  admin's Home (classic and hub), kept for principals/vice principals (one or several schools); teachers/students
+  keep their `/attendance` tile. The school hub (`/admin/schools/[id]`) has a «حضور و غیاب» row beside «برنامهٴ
+  کلاسی» (one card, same row style) → `/admin/attendance?school=<id>`, shown when the viewer holds
+  `academic.attendance.report` (the report's own permission). Shown on a principal's own hub too: a harmless second
+  door next to their Home tile — the one-door tests govern Home tiles, and the hub should read the same for every
+  admin who opens it.
+- **`/admin/attendance?school=`**: server-side (`attendanceReportReach`, `src/modules/academic/attendance-report.ts`)
+  — checked against the admin scope (a school manager only their own school, the org admin any school of the org;
+  another school / another tenant's / unknown → 404), and the class picker, «امروز ثبت نشده», the class (must be
+  one of that school's) and the student drill-down (must be on that class's report) are all narrowed to it. The
+  title reads «حضور و غیاب · <school>», the back link returns to that school's hub, the form carries the filter.
+- **«به‌زودی» on Home for the organisation admin only** (`showUpcomingOnHome(hats)` replaces the global
+  `SHOW_UPCOMING_ON_HOME = false`): drawn after all their live tiles on phones (`HomeGrid`) and the desktop board
+  (`DashboardTiles`); an org admin who also teaches still sees it (with the teacher's upcoming modules too);
+  principals, vice principals, teachers and students get none.
+- Tests: `tests/unit/org-context.test.ts` (the rule + the PageHeader bar, org admin vs principal),
+  `hub-home.test.ts` (greeting), `profile-page.test.ts` (profile card), `home-tiles.test.ts` (no attendance tile
+  for the org admin; `showUpcomingOnHome`), `home-courses.test.ts` (upcoming per viewer),
+  `school-hub-attendance.test.ts` (the hub row + href), `tests/int/attendance.test.ts` (the school filter narrows
+  the reads; out-of-scope / other-tenant / unknown → NOT_FOUND).

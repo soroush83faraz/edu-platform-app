@@ -1,8 +1,8 @@
 // «درس‌های من» — the hub Home's course cards (owner, 2026-09-27, after the university LMS dashboard): one card per
 // درس under the tiles — a student's class offerings (the «درس‌ها و دبیران» read), a teacher's own offerings (the hats
 // read) — each a whole-surface link into /subjects/[offeringId], topped by a patterned cover in the درس's hue
-// (`CourseCover`). A non-teaching admin gets no section. And the «به‌زودی» section is hidden for now
-// (`SHOW_UPCOMING_ON_HOME`). The Home reads run for real over mocked queries; the Server Components are rendered to markup.
+// (`CourseCover`). A non-teaching admin gets no section. And the «به‌زودی» section is the organization admin's alone
+// (`showUpcomingOnHome`). The Home reads run for real over mocked queries; the Server Components are rendered to markup.
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,7 +22,7 @@ vi.mock("@/modules/workspace/queries", () => ({ homeOpenItemsQuery: vi.fn(async 
 const { HomeCourses, CourseCards, homeCourses } = await import("@/components/home/HomeCourses");
 const { resolveHomeTiles } = await import("@/components/home/home-data");
 const { CourseCover, COVER_FAMILIES, COVER_PALETTES, coverFamily } = await import("@/components/illustrations/CourseCover");
-const { SHOW_UPCOMING_ON_HOME } = await import("@/lib/modules-registry");
+const { upcomingTilesFor } = await import("@/lib/modules-registry");
 const { subjectHue } = await import("@/lib/subject-stamp");
 type Ctx = import("@/lib/ctx").Ctx;
 
@@ -200,14 +200,24 @@ describe("course covers across a person's list (owner 2026-09-27)", () => {
   });
 });
 
-describe("the «به‌زودی» section is hidden for now", () => {
-  it("the flag is off and the hub Home reads no upcoming tiles, for any hat", async () => {
-    expect(SHOW_UPCOMING_ON_HOME).toBe(false);
-    for (const h of [{ isStudent: true }, { teachingOfferings: TEACHING }, { adminScope: "organization" }]) {
+describe("the «به‌زودی» section is the organization admin's alone (owner, 2026-09-27)", () => {
+  it("students, teachers, principals and vice principals read no upcoming tiles", async () => {
+    for (const h of [{ isStudent: true }, { teachingOfferings: TEACHING }, { adminScope: "school", adminSingleSchoolId: "s1" }, { adminScope: "school", teachingOfferings: TEACHING }]) {
       hats.value = { ...baseHats, ...h };
       const home = await resolveHomeTiles(ctx);
       expect(home.variant).toBe("hub");
       expect(home.upcoming).toEqual([]);
     }
+  });
+
+  it("the organization admin reads the admin's upcoming modules — and still does when they also teach", async () => {
+    hats.value = { ...baseHats, adminScope: "organization" };
+    const home = await resolveHomeTiles(ctx);
+    expect(home.upcoming.length).toBeGreaterThan(0);
+    expect(home.upcoming).toEqual(upcomingTilesFor({ isStudent: false, isTeacher: false, isAdmin: true }));
+
+    hats.value = { ...baseHats, adminScope: "organization", teachingOfferings: TEACHING };
+    const teaching = await resolveHomeTiles(ctx);
+    expect(teaching.upcoming).toEqual(upcomingTilesFor({ isStudent: false, isTeacher: true, isAdmin: true }));
   });
 });

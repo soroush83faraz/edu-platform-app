@@ -1,4 +1,4 @@
-import { BookOpen, CalendarClock, CalendarDays, ChevronLeft, GraduationCap, Plus, Users, UsersRound } from "lucide-react";
+import { BookOpen, CalendarClock, CalendarDays, ChevronLeft, GraduationCap, Plus, UserCheck, Users, UsersRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -23,7 +23,9 @@ const n = formatNumberFa;
  * /admin/schools/[id] — a school's own management hub, «انگار وارد پنل مدیر همان مدرسه شده‌ای» (owner): the آمار row
  * (کلاس‌ها/دانش‌آموزان/کارکنان, each a jump to its section on this page), سال تحصیلی (the fixed catalog — shown, not
  * edited), this school's کلاس‌ها, کارکنان and دانش‌آموزان (a compact list each, the same row as the full list, and
- * the door to that list filtered to this school), برنامهٴ کلاسی and the ارائهٴ درس summary. There is no شعبه
+ * the door to that list filtered to this school), برنامهٴ کلاسی and حضور و غیاب (this school's attendance report —
+ * owner, 2026-09-27: attendance is read per school, so the organization admin reaches it here, not on Home) and the
+ * ارائهٴ درس summary. There is no شعبه
  * here (an internal, always-one detail). Scope: a school outside the caller's scope is NOT_FOUND (`schoolHubQuery`).
  */
 export default async function SchoolHubPage({ params }: { params: Promise<{ id: string }> }) {
@@ -54,7 +56,7 @@ export default async function SchoolHubPage({ params }: { params: Promise<{ id: 
       <Classes d={d} />
       <Staff d={d} />
       <Students d={d} />
-      <Periods d={d} />
+      <SchoolDoors d={d} />
       <Offerings d={d} />
     </div>
   );
@@ -179,20 +181,29 @@ function Students({ d }: { d: SchoolHubData }) {
   );
 }
 
-/** One link into the school's زنگ‌بندی (bell schedule) editor. */
-function Periods({ d }: { d: SchoolHubData }) {
+/**
+ * The school's own pages, one row each in one card: برنامهٴ کلاسی (the زنگ‌بندی editor) and حضور و غیاب (the admin
+ * report filtered to THIS school — `/admin/attendance?school=<id>`, whose back link returns here).
+ */
+function SchoolDoors({ d }: { d: SchoolHubData }) {
+  const doors = [
+    { href: `/admin/schools/${d.school.id}/periods`, icon: CalendarClock, label: "برنامهٴ کلاسی", hint: "ساعت شروع و پایان هر زنگ این مدرسه" },
+    ...(d.can.attendance ? [{ href: `/admin/attendance?school=${d.school.id}`, icon: UserCheck, label: "حضور و غیاب", hint: "گزارش کلاس‌های این مدرسه و زنگ‌های ثبت‌نشدهٴ امروز" }] : []),
+  ];
   return (
-    <ul className="surface-work overflow-hidden rounded-card">
-      <li>
-        <Link href={`/admin/schools/${d.school.id}/periods`} className="surface-link pressable flex min-h-14 items-center gap-3 px-4 py-2">
-          <RowMark icon={CalendarClock} />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="text-row font-medium text-text">برنامهٴ کلاسی</span>
-            <span className="text-meta text-text-muted">ساعت شروع و پایان هر زنگ این مدرسه</span>
-          </span>
-          <ChevronLeft className="size-4 shrink-0 text-text-faint" aria-hidden />
-        </Link>
-      </li>
+    <ul className="surface-work divide-y divide-line/70 overflow-hidden rounded-card">
+      {doors.map((door) => (
+        <li key={door.href}>
+          <Link prefetch={false} href={door.href} className="surface-link pressable flex min-h-14 items-center gap-3 px-4 py-2">
+            <RowMark icon={door.icon} />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="text-row font-medium text-text">{door.label}</span>
+              <span className="text-meta text-text-muted">{door.hint}</span>
+            </span>
+            <ChevronLeft className="size-4 shrink-0 text-text-faint" aria-hidden />
+          </Link>
+        </li>
+      ))}
     </ul>
   );
 }

@@ -8,6 +8,7 @@ import { ProfileButton } from "@/components/shell/ProfileButton";
 import type { AdminNavItem } from "@/lib/admin/nav";
 import type { Ctx } from "@/lib/ctx";
 import { navRoleFor } from "@/modules/iam/can";
+import { contextPlaceFa } from "@/lib/context-place";
 import { getShellContext } from "@/lib/shell-context";
 import { getUiVariant } from "@/lib/ui-variant";
 import { inboxSummaryQuery } from "@/modules/workspace/queries";
@@ -26,10 +27,11 @@ import { inboxSummaryQuery } from "@/modules/workspace/queries";
 export async function AppShell({ ctx, children, adminItems }: { ctx: Ctx; children: React.ReactNode; adminItems?: readonly AdminNavItem[] }) {
   const summary = await inboxSummaryQuery();
   const initial = summary.ok ? summary.data : { overdue: 0, dueToday: 0, unread: 0, unreadNotifications: 0 };
-  // An admin whose scope holds more than one school is introduced by the ORGANIZATION, never by whichever school
-  // sorts first (owner, QA round 3); the cached shell context already knows (`getShellContext`, no extra query).
+  // The organization admin — and an admin whose scope holds more than one school — is introduced by the
+  // ORGANIZATION, never by whichever school sorts first (owner, QA round 3; 2026-09-27); the cached shell context
+  // already knows (`getShellContext`, no extra query) and `contextPlaceFa` is the one rule.
   const shell = await getShellContext();
-  const title = (shell.schools.length > 1 ? ctx.orgName : ctx.schoolName) ?? ctx.orgName;
+  const title = contextPlaceFa(shell, ctx);
   // The nav's role item («مدیریت» / «کلاس‌ها» / «کلاس من»), decided once here from the session — no query.
   const navRole = navRoleFor(ctx.assignments);
   // The hats the top-start emblem speaks for, from the same assignments — «مدیر سازمان» / «مدیر مدرسه» / «معاون» /

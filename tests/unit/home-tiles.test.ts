@@ -12,7 +12,7 @@ import { AlarmClock, ClipboardList, Lectern, Presentation, UserCheck } from "luc
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { SYSTEM_ROLES } from "../../scripts/catalog";
-import { HOME_TILES, MODULES, UPCOMING_MODULES, homeTilesFor, upcomingTilesFor, type TileHats } from "@/lib/modules-registry";
+import { HOME_TILES, MODULES, UPCOMING_MODULES, homeTilesFor, showUpcomingOnHome, upcomingTilesFor, type TileHats } from "@/lib/modules-registry";
 import { isOrganizationAdmin, navRoleFor, type Assignment } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
 
@@ -58,7 +58,8 @@ describe("homeTilesFor", () => {
   });
 
   it("the organization admin: the structure tiles the nav gave up, in that order — and no «مدیریت», «مدرسه‌ها» or «راه‌اندازی» tile", () => {
-    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["inbox", "admin-attendance"]);
+    // No «حضور و غیاب» either (owner, 2026-09-27): attendance is read per school, on each school's hub.
+    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["inbox"]);
     // Round 7: «مدرسه‌ها» (the organization's list) is an admin SECTION for this person, so Home does not carry it —
     // one door. «زنگ‌بندی» has no organization-wide page, so it has no tile either; the fixed catalog (مقطع، پایه،
     // سال) and the retired «تنظیمات زیرساختی» have no door anywhere (2026-09-27).
@@ -197,10 +198,13 @@ describe("homeTilesFor — hub layout", () => {
     expect(hrefs(tiles)).toEqual(["/inbox", "/classes/offerings", "/classes/timetable", "/attendance"]);
   });
 
-  it("organization admin: پنل من · مدرسه‌ها · دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها · حضور و غیاب — no «نمای کلی»", () => {
+  it("organization admin: پنل من · مدرسه‌ها · دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها — no «نمای کلی», no «حضور و غیاب»", () => {
     const tiles = homeTilesFor(orgAdmin, has(ORG_PERMS), hub);
-    expect(labels(tiles)).toEqual(["پنل من", "مدرسه‌ها", "دانش‌آموزان", "کارکنان", "کلاس‌ها", "نقش‌ها", "حضور و غیاب"]);
-    expect(hrefs(tiles)).toEqual(["/inbox", "/admin/schools", "/admin/students", "/admin/staff", "/admin/classes", "/admin/roles", "/admin/attendance"]);
+    expect(labels(tiles)).toEqual(["پنل من", "مدرسه‌ها", "دانش‌آموزان", "کارکنان", "کلاس‌ها", "نقش‌ها"]);
+    expect(hrefs(tiles)).toEqual(["/inbox", "/admin/schools", "/admin/students", "/admin/staff", "/admin/classes", "/admin/roles"]);
+    // Attendance is per school (owner, 2026-09-27): «مدرسه‌ها» → the school → «حضور و غیاب» (the school hub's door).
+    expect(codes(tiles)).not.toContain("admin-attendance");
+    expect(codes(homeTilesFor({ ...orgAdmin, isTeacher: true }, has([...ORG_PERMS, ...TEACHER_PERMS]), hub))).not.toContain("admin-attendance");
     // «برنامهٴ کلاسی» belongs to ONE school: the organization admin reaches it through «مدرسه‌ها» → the school.
     expect(codes(tiles)).not.toContain("periods");
     expect(hrefs(tiles)).not.toContain("/admin");
@@ -225,12 +229,12 @@ describe("homeTilesFor — hub layout", () => {
     expect(codes(homeTilesFor(orgAdmin, has(noAccess), hub)).filter((c) => c.startsWith("admin-") && c !== "admin-attendance")).toEqual([]);
   });
 
-  it("«حضور و غیاب» is the LAST tile for every role", () => {
+  it("«حضور و غیاب» is the LAST tile for every role that has one on Home (not the organization admin)", () => {
     for (const [hats, perms] of [
       [student, STUDENT_PERMS],
       [teacher, TEACHER_PERMS],
-      [orgAdmin, ORG_PERMS],
       [principal, PRINCIPAL_PERMS],
+      [twoSchools, VICE_PERMS],
     ] as const) {
       expect(labels(homeTilesFor(hats, has(perms), hub)).at(-1)).toBe("حضور و غیاب");
     }
@@ -377,9 +381,12 @@ describe("product map", () => {
     const withAttendance: Permission[] = [...ADMIN_PERMS, "academic.attendance.read"];
     expect(codes(homeTilesFor(student, has(withAttendance)))).toContain("attendance");
     expect(codes(homeTilesFor(teacher, has(withAttendance)))).toContain("attendance");
-    // An admin who neither teaches nor studies reads the REPORT instead — a different page with its own tile.
+    // A school admin who neither teaches nor studies reads the REPORT instead — a different page with its own tile;
+    // the organization admin reads it per school, from the school hub, so neither tile is theirs.
+    expect(codes(homeTilesFor(principal, has(withAttendance)))).not.toContain("attendance");
+    expect(codes(homeTilesFor(principal, has(withAttendance)))).toContain("admin-attendance");
     expect(codes(homeTilesFor(orgAdmin, has(withAttendance)))).not.toContain("attendance");
-    expect(codes(homeTilesFor(orgAdmin, has(withAttendance)))).toContain("admin-attendance");
+    expect(codes(homeTilesFor(orgAdmin, has(withAttendance)))).not.toContain("admin-attendance");
     expect(HOME_TILES.filter((t) => t.href === "/admin/attendance")).toHaveLength(1);
     // Without the permission (a role that never sees attendance) the tile disappears.
     expect(codes(homeTilesFor(student, has(ADMIN_PERMS)))).not.toContain("attendance");
@@ -389,6 +396,14 @@ describe("product map", () => {
 
 // The hub Home's «به‌زودی» section (owner, 2026-09-27): the modules the product map lists as coming, as grey tiles
 // under the live ones — per role (`soonFor`), with a glyph of their own, and never a door.
+describe("showUpcomingOnHome (owner, 2026-09-27)", () => {
+  it("only the organization admin's Home draws «به‌زودی» — even when they also teach; principals, vice principals, teachers and students do not", () => {
+    expect(showUpcomingOnHome(orgAdmin)).toBe(true);
+    expect(showUpcomingOnHome({ ...orgAdmin, isTeacher: true })).toBe(true);
+    for (const hats of [principal, twoSchools, teacher, student, { ...principal, isTeacher: true }]) expect(showUpcomingOnHome(hats)).toBe(false);
+  });
+});
+
 describe("upcomingTilesFor", () => {
   const soon = (hats: TileHats) => upcomingTilesFor(hats).map((t) => t.labelFa);
 

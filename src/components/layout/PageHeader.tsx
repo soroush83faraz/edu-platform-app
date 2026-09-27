@@ -8,7 +8,7 @@ import { getUiVariant } from "@/lib/ui-variant";
 /**
  * The header of every page, one DOM in two shapes. On phones: an optional back link, the title (`text-title`)
  * with the actions at its end, then the description. From `lg:` the same nodes settle into a slim header bar —
- * the context line «مدرسه · سال · نوبت» at the start, today's Jalali date and the page's primary action at the
+ * the context line «مدرسه · سال · نوبت» (the organization admin: «سازمان · سال») at the start, today's Jalali date and the page's primary action at the
  * end, a hairline under it — with the title (`text-display`) and description beneath. The action node moves
  * between the two rows through `grid-area`, so nothing is rendered twice and nothing is portalled after hydration.
  * `count` sits beside the title as a quiet tabular number (list pages). Context is read once per request.
@@ -41,7 +41,10 @@ export async function PageHeader({
   const hubHome = back === undefined && (await getUiVariant()) === "hub";
   const backLink = back || (hubHome ? { href: "/home", label: "خانه" } : undefined);
   // More than one school in the caller's scope: the chip replaces the name and opens the list (`SchoolsMenu`).
-  const context: React.ReactNode[] = [shell.schools.length > 1 ? <SchoolsMenu key="schools" schools={shell.schools} /> : shell.schoolName, shell.yearName, shell.termName].filter(Boolean);
+  // The organization admin's context is the ORGANIZATION (owner, 2026-09-27: never a school, even the only one) —
+  // its name leads, then the chip when there are several schools, then the year they share; no single نوبت.
+  const schoolsPart = shell.schools.length > 1 ? <SchoolsMenu key="schools" schools={shell.schools} /> : shell.schoolName;
+  const context: React.ReactNode[] = [shell.orgScoped ? shell.orgName : null, schoolsPart, shell.yearName, shell.termName].filter(Boolean);
   return (
     <header
       className={cn(
