@@ -16,13 +16,16 @@ import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
 import { can, canAtAnyScope, canBroadly, type CanContext } from "@/modules/iam/can";
 import { type WorkItemVoice, type WorkItemWords, createVoice, workItemStatusLabel, workItemVoice, workItemWords } from "@/lib/work-item-words";
 import { staffProfile } from "@/modules/iam/schema";
+import { getPermissionScope } from "@/modules/iam/service";
 import { notifyMany } from "@/modules/notif/service";
 import type { Recipients } from "./dto";
+import { managesItem } from "./manage-policy";
 import { creationNotifiable, notifiable } from "./notify-policy";
 import {
   type AssigneeRow,
   type CommentRow,
   type MyInboxState,
+  type PersonReach,
   type Priority,
   type StatusRow,
   type TransitionRow,
@@ -113,6 +116,20 @@ export interface CreateWorkItemResult {
 
 export const IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000;
 
+/**
+ * Who the caller may name as `persons` recipients — and find in the «اشخاص» picker (`searchPersonsQuery`), so the
+ * picker offers exactly what the submit accepts. FORBIDDEN without a BROAD `workspace.work_item.create` (a teacher
+ * sends to her classes, a student only to «خودم»). Otherwise the people inside that permission's scope
+ * (`getPermissionScope` → `personInScopeSql`, the admin people lists' rule): the organization admin reaches everyone
+ * of the organization; a school manager (principal or vice principal) only the people ANCHORED in their own schools —
+ * never another school's people and never an organization-scoped person such as the organization admin — plus
+ * themselves.
+ */
+export async function personReach(tx: Tx, ctx: WorkspaceCtx): Promise<PersonReach> {
+  if (!canBroadly(ctx.assignments, "workspace.work_item.create")) throw forbidden();
+  return { scope: await getPermissionScope(tx, ctx, "workspace.work_item.create"), selfId: ctx.personId };
+}
+
 async function resolveRecipients(tx: Tx, ctx: WorkspaceCtx, recipients: Recipients): Promise<string[]> {
   switch (recipients.kind) {
     case "self":
@@ -127,10 +144,13 @@ async function resolveRecipients(tx: Tx, ctx: WorkspaceCtx, recipients: Recipien
       return ids;
     }
     case "persons": {
-      // Free-form recipients are a staff-wide privilege (admins/principals); teachers send to their classes.
-      if (!canBroadly(ctx.assignments, "workspace.work_item.create")) throw forbidden();
-      const ids = await filterActivePersonIds(tx, recipients.ids);
-      if (ids.length !== new Set(recipients.ids).size) throw invalidReference("یکی از گیرندگان یافت نشد.");
+      // Free-form recipients are a staff-wide privilege (admins/principals) inside their own reach; teachers send
+      // to their classes. An id outside the reach gets the very answer an unknown, inactive or other-tenant id gets
+      // (no oracle for «exists in another school»), and it is refused before the item or any row is written.
+      const reach = await personReach(tx, ctx);
+      const wanted = [...new Set(recipients.ids)];
+      const ids = await filterActivePersonIds(tx, wanted, reach);
+      if (ids.length !== wanted.length) throw invalidReference("یکی از گیرندگان یافت نشد.");
       return ids;
     }
   }
@@ -318,9 +338,12 @@ async function setItemStatus(tx: Tx, ctx: WorkspaceCtx, item: WorkItemCore, to: 
 
 /**
  * Assignees: open → in_progress (own state `accepted`), → done (own state `done`; the item flips to done only
- * when EVERY assignee is done). Creator / broad `update` holders: any status; done marks all assignees done,
- * open («بازیابی») resets them to pending, cancelled is the UI's «حذف» (soft: nothing is deleted, «بازیابی»
- * brings it back). An assignee's own completion notifies no one (owner, round 7); the giver reads the n/m on the item.
+ * when EVERY assignee is done). Managers (`managesItem`, ./manage-policy — the creator, or a broad `update` holder
+ * who is NOT one of the assignees): any status; done marks all assignees done, open («بازیابی») resets them to
+ * pending, cancelled is the UI's «حذف» (soft: nothing is deleted, «بازیابی» brings it back). An assignee who did not
+ * create the item takes the assignee path whatever their hats — a principal given a تسک by the organization admin
+ * marks their own row only. An assignee's own completion notifies no one (owner, round 7); the giver reads the n/m
+ * on the item.
  */
 export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatusInput): Promise<ChangeStatusResult> {
   const item = await canViewWorkItem(tx, ctx, input.workItemId);
@@ -332,7 +355,7 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
   const note = input.note?.trim() ? input.note.trim() : null;
 
   const mine = await findMyAssigneeRow(tx, ctx.personId, item.id);
-  const manager = item.createdByPersonId === ctx.personId || canBroadly(ctx.assignments, "workspace.work_item.update");
+  const manager = managesItem(ctx, item, mine !== null);
   const before = { statusCode: item.statusCode, myState: mine?.state ?? null };
   let itemChanged = false;
   let recipients: string[] = [];
@@ -425,8 +448,9 @@ export interface ExtendDueAtInput {
 }
 
 /**
- * «تمدید»: the creator (or a broad `update` holder) moves the due date of an OPEN item to a later moment. The new
- * due must lie in the future — anything else is a back-date, which is not an extension. Every assignee is told
+ * «تمدید»: a manager of the item (`managesItem` — the creator, or a broad `update` holder who is not one of its
+ * assignees; an assignee never extends their own deadline) moves the due date of an OPEN item to a later moment. The
+ * new due must lie in the future — anything else is a back-date, which is not an extension. Every assignee is told
  * («مهلت تکلیف «…» تا … تمدید شد» in the actor's word, deduped per new due) and their inbox rows flip back to
  * unread; one audit row.
  */
@@ -434,8 +458,8 @@ export async function extendDueAt(tx: Tx, ctx: WorkspaceCtx, input: ExtendDueAtI
   const item = await canViewWorkItem(tx, ctx, input.workItemId);
   if (item.archivedAt) throw validation(undefined, `این ${nouns(ctx).singular} بایگانی شده است.`);
   if (!canAtAnyScope(ctx.assignments, "workspace.work_item.update")) throw forbidden();
-  const manager = item.createdByPersonId === ctx.personId || canBroadly(ctx.assignments, "workspace.work_item.update");
-  if (!manager) throw forbidden(`فقط دهندهٴ ${nouns(ctx).singular} می‌تواند مهلت را تمدید کند.`);
+  const mine = await findMyAssigneeRow(tx, ctx.personId, item.id);
+  if (!managesItem(ctx, item, mine !== null)) throw forbidden(`فقط دهندهٴ ${nouns(ctx).singular} می‌تواند مهلت را تمدید کند.`);
   if (item.statusCategory === "done" || item.statusCategory === "cancelled") throw validation(undefined, `این ${nouns(ctx).singular} بسته شده است؛ برای تمدید اول بازیابی کنید.`);
   if (input.dueAt.getTime() <= Date.now()) throw validation({ fieldErrors: { dueDate: ["مهلت جدید باید بعد از اکنون باشد."] } });
   if (item.dueAt && input.dueAt.getTime() === item.dueAt.getTime()) throw validation({ fieldErrors: { dueDate: ["مهلت تغییری نکرده است."] } });
@@ -560,7 +584,9 @@ export async function getWorkItemDetail(tx: Tx, ctx: WorkspaceCtx, workItemId: s
     myAssigneeState: mine?.state ?? null,
     viewer: {
       isCreator,
-      isManager: isCreator || canBroadly(ctx.assignments, "workspace.work_item.update"),
+      // The one rule `changeStatus` / `extendDueAt` enforce (./manage-policy): a broad holder who is an ASSIGNEE of
+      // someone else's item reads it as an assignee — «انجام شد» only, no «اتمام» / «تمدید» / «حذف» / «بازیابی».
+      isManager: managesItem(ctx, item, mine !== null),
       isStaff: staff,
       canComment: canAtAnyScope(ctx.assignments, "workspace.work_item.comment"),
       canUpdate: canAtAnyScope(ctx.assignments, "workspace.work_item.update"),

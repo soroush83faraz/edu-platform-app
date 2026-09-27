@@ -45,6 +45,8 @@ const STUDENT_PERMS = ["workspace.work_item.read", "workspace.work_item.create",
 const teacherOf = (offeringId: string): Assignment => ({ roleCode: "teacher", roleId: "r-teacher", scopeType: "class_offering", scopeId: offeringId, permissions: WORK_PERMS });
 const studentRole = (profileId: string): Assignment => ({ roleCode: "student", roleId: "r-student", scopeType: "student", scopeId: profileId, permissions: STUDENT_PERMS });
 const adminRole: Assignment = { roleCode: "org_admin", roleId: "r-admin", scopeType: "organization", scopeId: f.ORG_A, permissions: WORK_PERMS };
+/** A school manager's hat: the work permissions held BROADLY at one school (the catalog principal carries them all). */
+const principalRole = (schoolId: string): Assignment => ({ roleCode: "school_principal", roleId: "r-principal", scopeType: "school", scopeId: schoolId, permissions: WORK_PERMS });
 
 const ctxOf = (personId: string, assignments: Assignment[]): WorkspaceCtx => ({ orgId: f.ORG_A, personId, userId: null, requestId: "int-test", assignments });
 const teacher = ctxOf(f.PERSON_A2, [teacherOf(f.OFFERING_A1)]);
@@ -513,6 +515,102 @@ describe("notification policy (round 7)", () => {
   });
 });
 
+describe("a broad admin who is an ASSIGNEE takes the assignee path (verifier, 2026-09-27)", () => {
+  /**
+   * A person row for a hat of this file (items and transitions reference the actor) and, with `staffProfileId`, a
+   * colleague's staff profile anchored at school A — a school manager may only pick people anchored in their school
+   * («اشخاص» reach, tests/int/admin-scope.test.ts «W»).
+   */
+  const addPerson = async (tx: Tx, id: string, firstName: string, lastName: string, staffProfileId?: string) => {
+    await tx.execute(`insert into iam.person (id, organization_id, first_name, last_name) values ('${id}', '${f.ORG_A}', '${firstName}', '${lastName}')`);
+    if (staffProfileId) {
+      await tx.execute(`insert into iam.staff_profile (id, organization_id, person_id, school_id) values ('${staffProfileId}', '${f.ORG_A}', '${id}', '${f.SCHOOL_A}')`);
+    }
+  };
+
+  it("the organization admin gives a تسک to a principal and a student: the principal's «انجام شد» marks only their own row — item still open, nobody notified, no row flipped; they cannot close, restore, remove or extend it; the giver still can", async () => {
+    await rolledBack(async (tx) => {
+      const [student] = await enrollStudents(tx, 1);
+      const adminPerson = uuid(501);
+      await addPerson(tx, adminPerson, "محمد", "امینی");
+      const orgAdmin = ctxOf(adminPerson, [adminRole]);
+      // PERSON_A2 wears a school principal's hat: a BROAD `workspace.work_item.update` (the verifier's probe).
+      const principal = ctxOf(f.PERSON_A2, [principalRole(f.SCHOOL_A)]);
+      const due = new Date(Date.now() + 3 * 86_400_000);
+      const res = await createWorkItem(tx, orgAdmin, {
+        typeCode: "task",
+        title: "گزارش ماهانهٴ مدرسه",
+        priority: "normal",
+        dueAt: due,
+        recipients: { kind: "persons", ids: [f.PERSON_A2, student.personId] },
+      });
+      expect(res).toMatchObject({ assigneeCount: 2, notified: 2 });
+      for (const personId of [f.PERSON_A2, student.personId]) await markInboxRead(tx, ctxOf(personId, []), { workItemId: res.id });
+      const notificationsOfItem = () => tx.select({ id: notification.id }).from(notification).where(eq(notification.sourceId, res.id));
+      const before = (await notificationsOfItem()).length;
+
+      // The detail page reads them as an assignee: «انجام شد» only, not the giver's «اتمام / تمدید / حذف».
+      expect((await getWorkItemDetail(tx, principal, res.id)).viewer).toMatchObject({ isCreator: false, isManager: false });
+
+      const out = await changeStatus(tx, principal, { workItemId: res.id, toStatusCode: "done" });
+      expect(out).toMatchObject({ statusCode: "open", itemChanged: false, assigneesDone: 1, assigneesTotal: 2 });
+      const states = await tx.select({ personId: workItemAssignee.personId, state: workItemAssignee.state }).from(workItemAssignee).where(eq(workItemAssignee.workItemId, res.id));
+      expect(Object.fromEntries(states.map((s) => [s.personId, s.state]))).toEqual({ [f.PERSON_A2]: "done", [student.personId]: "pending" });
+      const [wi] = await tx.select({ completedAt: workItem.completedAt }).from(workItem).where(eq(workItem.id, res.id));
+      expect(wi.completedAt).toBeNull();
+      // Nobody hears about it — neither the giver nor the other assignee — and nobody's row turns unread again.
+      expect(await notificationsOfItem()).toHaveLength(before);
+      expect(await tx.select({ id: notification.id }).from(notification).where(eq(notification.recipientPersonId, adminPerson))).toEqual([]);
+      const entries = await tx.select({ personId: inboxEntry.personId, state: inboxEntry.state }).from(inboxEntry).where(eq(inboxEntry.workItemId, res.id));
+      expect(entries.map((e) => e.state)).toEqual(["read", "read", "read"]);
+      // The student still sees it open; the principal's own list files it under «انجام‌شده».
+      expect(await inboxTabCounts(tx, student.personId)).toEqual({ todo: 1, done: 0 });
+      expect(await inboxTabCounts(tx, f.PERSON_A2)).toEqual({ todo: 0, done: 1 });
+      const trail = await tx.select({ action: auditLog.action, after: auditLog.after }).from(auditLog).where(eq(auditLog.entityId, res.id));
+      expect(trail).toEqual(expect.arrayContaining([expect.objectContaining({ action: "workspace.work_item.status_changed", after: expect.objectContaining({ statusCode: "open", myState: "done" }) })]));
+
+      // The giver's rights are not theirs: «حذف» and «بازیابی» FORBIDDEN, «تمدید» FORBIDDEN, «انجام شد» twice VALIDATION.
+      await expect(changeStatus(tx, principal, { workItemId: res.id, toStatusCode: "cancelled" })).rejects.toSatisfy(isCode("FORBIDDEN"));
+      await expect(changeStatus(tx, principal, { workItemId: res.id, toStatusCode: "open" })).rejects.toSatisfy(isCode("FORBIDDEN"));
+      await expect(changeStatus(tx, principal, { workItemId: res.id, toStatusCode: "done" })).rejects.toSatisfy(isCode("VALIDATION"));
+      await expect(extendDueAt(tx, principal, { workItemId: res.id, dueAt: new Date(Date.now() + 7 * 86_400_000) })).rejects.toSatisfy(isCode("FORBIDDEN"));
+      const [still] = await tx.select({ statusId: workItem.statusId, dueAt: workItem.dueAt }).from(workItem).where(eq(workItem.id, res.id));
+      expect(still).toEqual({ statusId: ST.open, dueAt: due });
+      expect(await notificationsOfItem()).toHaveLength(before);
+
+      // The item closes when the last assignee is done — still silently (a student notifies nobody).
+      expect(await changeStatus(tx, student.ctx, { workItemId: res.id, toStatusCode: "done" })).toMatchObject({ statusCode: "done", itemChanged: true, assigneesDone: 2 });
+      expect(await notificationsOfItem()).toHaveLength(before);
+      // The giver keeps every creator action: «بازیابی» resets both rows and tells both assignees.
+      expect((await getWorkItemDetail(tx, orgAdmin, res.id)).viewer).toMatchObject({ isCreator: true, isManager: true });
+      expect(await changeStatus(tx, orgAdmin, { workItemId: res.id, toStatusCode: "open" })).toMatchObject({ statusCode: "open", itemChanged: true, assigneesDone: 0 });
+      expect(await notificationsOfItem()).toHaveLength(before + 2);
+    });
+  });
+
+  it("the admin override stays for a broad holder who is NOT an assignee (e.g. removing spam), and a creator who is also an assignee still manages", async () => {
+    await rolledBack(async (tx) => {
+      await enrollStudents(tx, 2);
+      const bystanderPerson = uuid(502);
+      await addPerson(tx, bystanderPerson, "سعید", "نوری", uuid(602));
+      const bystander = ctxOf(bystanderPerson, [principalRole(f.SCHOOL_A)]);
+      const homework = await createWorkItem(tx, teacher, { typeCode: "task", title: "تبلیغ", priority: "normal", recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: [] } });
+      expect((await getWorkItemDetail(tx, bystander, homework.id)).viewer).toMatchObject({ isCreator: false, isManager: true });
+      expect(await changeStatus(tx, bystander, { workItemId: homework.id, toStatusCode: "cancelled" })).toMatchObject({ statusCode: "cancelled", itemChanged: true });
+      expect(await changeStatus(tx, bystander, { workItemId: homework.id, toStatusCode: "open" })).toMatchObject({ statusCode: "open", itemChanged: true });
+
+      // A principal who picked themselves among the recipients is the giver: their `done` is the giver's — it closes the item for all.
+      const principal = ctxOf(f.PERSON_A2, [principalRole(f.SCHOOL_A)]);
+      const mine = await createWorkItem(tx, principal, { typeCode: "task", title: "جلسهٴ شورا", priority: "normal", recipients: { kind: "persons", ids: [f.PERSON_A2, bystanderPerson] } });
+      expect((await getWorkItemDetail(tx, principal, mine.id)).viewer).toMatchObject({ isCreator: true, isManager: true });
+      // …while the other picked colleague — a broad holder too — is only an assignee of it.
+      expect((await getWorkItemDetail(tx, bystander, mine.id)).viewer).toMatchObject({ isCreator: false, isManager: false });
+      await expect(changeStatus(tx, bystander, { workItemId: mine.id, toStatusCode: "cancelled" })).rejects.toSatisfy(isCode("FORBIDDEN"));
+      expect(await changeStatus(tx, principal, { workItemId: mine.id, toStatusCode: "done" })).toMatchObject({ statusCode: "done", itemChanged: true, assigneesDone: 2 });
+    });
+  });
+});
+
 describe("comment notifications are stored but never shown (round 7)", () => {
   it("a comment notification stays in the table, out of the list and the bell's count", async () => {
     await rolledBack(async (tx) => {
@@ -531,13 +629,15 @@ describe("searchPersons — the «اشخاص» picker from 0 characters", () => 
   it("an empty query lists active people alphabetically; typing narrows it", async () => {
     await rolledBack(async (tx) => {
       const students = await enrollStudents(tx, 3);
-      const all = await searchPersons(tx, "");
+      // The organization admin's reach (everyone); the school-scoped reach is tests/int/admin-scope.test.ts «W».
+      const reach = { scope: { kind: "organization" as const }, selfId: f.PERSON_A2 };
+      const all = await searchPersons(tx, "", reach);
       const ids = all.map((p) => p.id);
       expect(ids).toEqual(expect.arrayContaining([f.PERSON_A2, ...students.map((s) => s.personId)]));
       // Same first name, last names «شمارهٴ ۱/۲/۳»: they come in that order.
       expect(students.map((s) => ids.indexOf(s.personId))).toEqual([...students.map((s) => ids.indexOf(s.personId))].sort((a, b) => a - b));
       expect(all.length).toBeLessThanOrEqual(20);
-      const narrowed = await searchPersons(tx, "کریمی");
+      const narrowed = await searchPersons(tx, "کریمی", reach);
       expect(narrowed.map((p) => p.id)).toContain(f.PERSON_A2);
       expect(narrowed.map((p) => p.id)).not.toContain(students[0].personId);
     });

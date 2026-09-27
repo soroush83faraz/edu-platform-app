@@ -64,3 +64,77 @@ hit list scrolls (`max-h-72`).
   is an assignment flow; if unclear keep» — this is an assignment to other people, so it is kept. One line in
   `creationNotifiable` changes it.
 - Empty-state copy for «اعلان‌ها» no longer promises comment / «a student finished» notifications.
+
+## 5. Verifier round (2026-09-27): who MANAGES an item; the «اشخاص» reach
+
+### 5.1 An assignee's «انجام شد» is theirs alone — whatever their hats
+
+**Defect.** `changeStatus` took the manager branch for ANY broad `workspace.work_item.update` holder, so a principal /
+vice principal / organization admin who was only an ASSIGNEE of someone else's item closed it for everyone with
+their «انجام شد» (every assignee marked done, the item `done`, the other assignees notified and flipped unread).
+
+**Rule** (`src/modules/workspace/manage-policy.ts` → `managesItem`, pure, unit-tested): the item's **manager** — who
+may «اتمام» (close for everyone), «بازیابی», «حذف» and «تمدید» — is
+- its **creator** (the giver), also when they are one of its assignees;
+- otherwise a **broad `update` holder who is NOT an assignee** — the admin override (e.g. removing spam), kept as it was;
+- **never an assignee who did not create it**, whatever their hats.
+
+One predicate for `changeStatus`, `extendDueAt` (an assignee no longer extends their own deadline) and the detail read
+model's `viewer.isManager`, which `WorkItemActions` and `/inbox/[id]` draw from — so such a person sees the assignee
+set («انجام شد» only; their own status line; no «گیرندگان» progress panel) and the service refuses the rest
+(«حذف» / «بازیابی» / «تمدید» FORBIDDEN with the existing «فقط دهندهٴ … می‌تواند …» messages). Their «انجام شد» marks
+their own row, flips the item only when every assignee is done, and notifies nobody (round 7's rule, now also for
+broad hats). The audit row is unchanged (`workspace.work_item.status_changed`, `myState`).
+
+**Behaviour change for the owner:** a manager who RECEIVED a تسک (e.g. the organization admin → a principal) can no
+longer close, remove, restore or extend it — only the giver (or another broad admin who is not a recipient) can.
+
+**Kept, flag for the owner / security review:**
+- The admin override is organization-wide in phase 1, like the broad READ (docs/decisions.md «Visibility … per-school
+  partitioning is a later block»): a school-scoped principal can still open, close, remove or extend an item of
+  ANOTHER school that they did not create and did not receive.
+- A creator who is also one of several assignees («اشخاص» with themselves picked) sees «انجام شد», not «اتمام»; being
+  the giver, their «انجام شد» closes the item for everyone (the service cannot tell the two clicks apart). Unchanged.
+
+Tests: `tests/unit/manage-policy.test.ts`, `tests/unit/work-item-actions.test.ts` (button sets per `isManager`),
+`tests/int/workspace-service.test.ts` «a broad admin who is an ASSIGNEE…» (the verifier's probe: the organization
+admin gives a تسک to a principal and a student → the principal's «انجام شد» marks only their row, the item stays
+open, no notification to anyone, no row flipped; «حذف» / «بازیابی» / «تمدید» FORBIDDEN; the giver still manages; a
+broad non-assignee keeps the override; a creator-assignee still manages).
+
+### 5.2 «اشخاص» (search + `persons` recipients) and the class picker stay inside the caller's schools
+
+**Defect.** `searchPersonsQuery` and `resolveRecipients({ kind: 'persons' })` required a broad
+`workspace.work_item.create` and filtered by the organization (RLS) only: a school-scoped principal / vice principal
+could list and assign تسک to people of other schools and to the organization admin.
+
+**Fix.** `personReach(tx, ctx)` (workspace service) = FORBIDDEN without a broad `create` (a teacher still has no
+«اشخاص»; a student only «خودم» — unchanged), else `{ scope: getPermissionScope(ctx, 'workspace.work_item.create'),
+selfId }`. `searchPersons` and `filterActivePersonIds` REQUIRE it and apply the admin people lists' rule
+(`personInScopeSql`) OR the caller themselves:
+- organization admin → everyone of the organization (unchanged);
+- school manager → only people **anchored** in their schools (live school enrollment, staff primary school, school/
+  branch manager role) — never another school's people, never a holder of an organization-scoped role (the
+  organization admin).
+On submit an out-of-reach id gets exactly the unknown-id answer (`INVALID_REFERENCE` «یکی از گیرندگان یافت نشد.» — no
+oracle for «exists in another school»), before the item or any row is written.
+
+`getPermissionScope(tx, ctx, permission)` (iam/service) is `getAdminScope`'s rule for any permission (organization
+assignment → organization; else the schools of the school/branch assignments carrying it); `getAdminScope` now
+delegates to it for `iam.admin.access` (same result). For the catalog's managers the work-item scope and the admin
+scope are the same schools.
+
+**Also fixed — the class picker of «کار جدید»** (`newWorkItemOptionsQuery`): `listAllOfferings` listed EVERY open
+offering of the organization (درس, class name, head count) to a school-scoped principal, while the submit
+(`can(assign_class, class_offering)`) refused the other schools' ones (FORBIDDEN). Now `listOfferingsInScope`: the
+offerings of the broad `assign_class` scope (whole organization for the organization admin) plus those the caller
+teaches elsewhere (their derived teacher role) — exactly what the submit accepts.
+
+**Behaviour change for the owner:** a principal / vice principal no longer finds or reaches (a) people of other schools,
+(b) the organization admin, (c) people anchored nowhere — staff without a primary school or manager role, students
+without a live school enrollment (the admin people lists already hid them), (d) a teacher who teaches at their school
+but is anchored at another school. The organization admin reaches all of them, as before.
+
+Tests: `tests/int/admin-scope.test.ts` «W» (principal of S1 / principal and vice of S2 / organization admin: search
+from 0 characters and by name, submit refusals incl. the organization admin and an unknown id — nothing written, own
+school OK, teacher FORBIDDEN, class picker per scope incl. «teaches elsewhere»).

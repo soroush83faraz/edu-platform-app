@@ -112,6 +112,33 @@ pages; role assignment lives on «نقش‌ها» only.
   (the person is in scope) and so act as them. Before this change a vice principal could use that to gain the
   principal's extra permissions; now the permissions are equal, but it stays an impersonation path between peers.
 - Pre-existing: the SERVICE lets a school manager grant `vice_principal` to any in-scope person, a student included;
-  the UI offers staff only (`roleGrantCandidates`). A server-side «staff only» check would close it.
+  the UI offers staff only (`roleGrantCandidates`). A server-side «staff only» check would close it. → **Closed in §5.**
 - A vice principal can revoke a fellow vice principal and their own vice role (the principal cannot revoke a
   principal — that asymmetry is the owner's M2 rule, unchanged).
+
+## 5. Verifier round (2026-09-27): manager roles go to active staff only; the admin help rewritten
+
+**Manager roles → active colleagues only.** `assignRole` now refuses a MANAGER role (`school_principal`,
+`vice_principal`, and the `org_admin` self-bootstrap) unless the person is an **active colleague**: a staff profile
+with `left_on` null on an active person — exactly who `roleGrantCandidates` offers on /admin/roles. Anyone else — a
+student, a guardian-only person, a colleague who has left, an archived person — gets VALIDATION with a field error on
+`personId` («نقش مدیریتی فقط به کارکنان فعال داده می‌شود.», `MESSAGES.managerRoleNeedsStaff`); nothing is written.
+Order: `resolveRoleGrant` (FORBIDDEN / NOT_FOUND for the school) → person in scope (NOT_FOUND) → this check, so it
+only ever answers about a person the caller can already see in their own lists (no oracle). The `student` role is the
+student's marker, not a manager role, and is unaffected. Every path that grants a manager role goes through it:
+/admin/roles (`assignRoleAction`) and `createStaff` with `roles` (the demo and pilot seeds — their person gets a staff
+profile first, so the seed tests stay green). The importer grants no manager role (staff are imported without roles).
+
+Behaviour change: a colleague marked as left (`staff_profile.left_on`) can no longer be appointed until reinstated;
+roles they ALREADY hold are not touched (offboarding revocation is out of scope — flag).
+
+Tests: `tests/int/admin-scope.test.ts` «R» (principal and vice of S2 and the organization admin → a student: field
+error, nothing written; `roleGrantCandidates` never listed them; a left colleague refused, reinstated → granted; the
+`student` role still idempotent for the student).
+
+**Admin help** (`src/app/(public)/help/page.tsx`, «ساختار مدرسه و کلاس‌ها را از کجا می‌سازم؟»): the answer no longer
+sends admins to «چیپ‌های بالای صفحه» to create years, levels and grades (those pages are gone, the catalogs are fixed).
+It now says the years/levels/grades are ready-made (پایه‌های اول تا دوازدهم در سه مقطع، سال جاری و سال بعد با
+نوبت‌ها); the admin builds classes (grade from the list), sets the زنگ‌بندی on the school page, the offerings and the
+«برنامهٴ هفتگی» on each class page, adds students and staff; the organization admin keeps the درس‌ها under
+«مدرسه‌ها ← درس‌ها». Pinned by `tests/unit/help-copy.test.ts`.

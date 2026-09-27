@@ -4,12 +4,11 @@
 // happens INSIDE createWorkItem against the concrete offering. Also exports the two lookups the «کار جدید»
 // form calls from the client (roster of an offering, person search) — read-only, same gate.
 import { defineAction, defineQuery } from "@/lib/actions";
-import { forbidden, validation } from "@/lib/errors";
-import { canBroadly } from "@/modules/iam/can";
+import { validation } from "@/lib/errors";
 import { parseJalaliToInstant } from "@/lib/format";
 import { ChangeStatusInput, CreateWorkItemInput, ExtendDueInput, OfferingIdInput, SearchPersonsInput, SetPinnedInput, WorkItemIdInput } from "./dto";
 import { listOfferingRoster, searchPersons } from "./repo";
-import { archiveInbox, changeStatus, createWorkItem, extendDueAt, markInboxRead, setPinned } from "./service";
+import { archiveInbox, changeStatus, createWorkItem, extendDueAt, markInboxRead, personReach, setPinned } from "./service";
 
 /** The pickers' strings («۱۴۰۵/۰۷/۰۵», `HH:mm` or empty = end of day) → the UTC instant; field errors point at the right control. */
 function parseDue(dueDate: string | undefined, dueTime: string | undefined): Date | null {
@@ -75,9 +74,12 @@ export const offeringRosterQuery = defineQuery(
   async (tx, input) => listOfferingRoster(tx, input.classOfferingId),
 );
 
-/** Persian name search for the «اشخاص» picker (staff-wide creators only; the service enforces the same rule on submit). */
-export const searchPersonsQuery = defineQuery({ schema: SearchPersonsInput, permission: "iam.person.read", scope: "any" }, async (tx, input, ctx) => {
-  // A teacher holds person.read only inside her offerings; org-wide name search is for broad creators.
-  if (!canBroadly(ctx.assignments, "workspace.work_item.create")) throw forbidden();
-  return searchPersons(tx, input.q);
-});
+/**
+ * Persian name search for the «اشخاص» picker: broad creators only (a teacher holds person.read only inside her
+ * offerings and sends to her classes), and only the people inside the caller's reach (`personReach`: their own
+ * schools' people for a principal / vice principal, everyone for the organization admin) — the very reach
+ * `createWorkItem` enforces on submit.
+ */
+export const searchPersonsQuery = defineQuery({ schema: SearchPersonsInput, permission: "iam.person.read", scope: "any" }, async (tx, input, ctx) =>
+  searchPersons(tx, input.q, await personReach(tx, ctx)),
+);

@@ -22,6 +22,13 @@
 //      principal's capabilities inside their own school: vice principals appointed and revoked, structure, offerings
 //      (define, hours/status, teacher), bell schedule, import — and NOTHING outside it: another school, its people and
 //      its rows are NOT_FOUND, a principal or an organization admin is never theirs to mint or unseat (FORBIDDEN).
+// Verifier round (2026-09-27):
+//   W  the work-item «اشخاص» picker and `persons` recipients reach the admin scope only (`personReach`: the broad scope
+//      of `workspace.work_item.create` through `personInScopeSql`) — a school manager never finds or assigns another
+//      school's people or the organization admin (INVALID_REFERENCE, the unknown-id answer; nothing written); the
+//      «کار جدید» class picker lists the manager's own schools' offerings (+ what they teach);
+//   R  `assignRole` gives a manager role to an active colleague only — a student (or a colleague who has left) is a
+//      `personId` field error, whoever grants.
 // The school managers' permissions are READ FROM THE CATALOG (scripts/catalog.ts SYSTEM_ROLES), the very rows `pnpm
 // seed` writes, so this file tests the seeded matrix rather than a copy of it.
 // Everything runs inside withTenant transactions that end with Rollback; the catalog roles are seeded in beforeAll
@@ -40,7 +47,7 @@ import { DEFAULT_PERIODS } from "@/lib/timetable";
 import { GATE_MESSAGES, resourceOpGate } from "@/lib/admin/defineResource";
 import { mutateResource } from "@/lib/admin/mutate";
 import { classResource, offeringResource, schoolResource, staffOptions } from "@/lib/admin/resources";
-import { getPersonDetail, listStaff, listStudents, personCredential } from "@/lib/admin/people";
+import { getPersonDetail, listStaff, listStudents, personCredential, roleGrantCandidates } from "@/lib/admin/people";
 import { assignTeacher } from "@/modules/academic/service";
 import { adminCreateStaff, adminCreateStudent, adminPlaceStudent, adminResetInitialPassword, adminUnlockAccount, adminUpdatePerson, type AdminCtx } from "@/modules/iam/admin";
 import { can, type Assignment } from "@/modules/iam/can";
@@ -52,6 +59,7 @@ import {
   createStaff,
   createStudent,
   getAdminScope,
+  getPermissionScope,
   requirePersonInScope,
   requireStaffAssignable,
   revokeRoleAssignment,
@@ -60,6 +68,8 @@ import {
 } from "@/modules/iam/service";
 import { findSchoolByCode, findSchoolById } from "@/modules/tenancy/repo";
 import { createAcademicYear, createClassGroup, createClassOffering, createSchool, createSubject, setSchoolPeriods, MESSAGES as TENANCY_MESSAGES } from "@/modules/tenancy/service";
+import { listOfferingsInScope, searchPersons } from "@/modules/workspace/repo";
+import { createWorkItem, personReach } from "@/modules/workspace/service";
 import { SYSTEM_ROLES } from "../../scripts/catalog";
 import { runMigrations } from "../../scripts/migrate";
 import { seedCatalog } from "../../scripts/seed";
@@ -788,6 +798,105 @@ describe("admin scope hardening", () => {
       const student = await adminCreateStudent(tx, vice, { firstName: "رها", lastName: "نیکو", studentNumber: "S2-300", enrollment: { classGroupId: w.s2.classGroupId }, login: { createAccount: true } });
       expect(student.loginIdentifier).toBe("s2-s2-300");
       expect((await getPersonDetail(tx, s2Scope, student.personId)).enrollment?.classGroupId).toBe(w.s2.classGroupId);
+      throw new Rollback();
+    });
+  });
+
+  it("W (verifier, 2026-09-27): the work-item «اشخاص» reach is the admin scope — a school manager finds and assigns only people anchored in their own school (another school's people and the organization admin: absent from the search, refused on submit exactly like an unknown id, nothing written); the organization admin reaches everyone; a teacher has no «اشخاص»; the class picker lists the manager's own school (plus what they teach)", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const s1Student = await adminCreateStudent(tx, w.ctx.s1Principal, { firstName: "الهام", lastName: "جعفری", studentNumber: "S1-950", enrollment: { classGroupId: f.CLASS_GROUP_A1 }, login: { createAccount: false } });
+      const s2Student = await adminCreateStudent(tx, w.ctx.s2Principal, { firstName: "رها", lastName: "نیکو", studentNumber: "S2-950", enrollment: { classGroupId: w.s2.classGroupId }, login: { createAccount: false } });
+      const orgAdminCtx = asAdmin(w.orgAdminPerson, orgAdminRole);
+      const found = async (ctx: AdminCtx, q = "") => (await searchPersons(tx, q, await personReach(tx, ctx), 100)).map((p) => p.id);
+      const s1Side = [w.s1Principal.personId, w.s1Teacher.personId, s1Student.personId];
+      const s2Side = [w.s2Principal.personId, w.s2Vice.personId, s2Student.personId];
+
+      // The search (from 0 characters): the principal of S1 lists S1's colleagues, students and themselves — never S2's
+      // people nor the organization admin, not even by name.
+      const s1Found = await found(w.ctx.s1Principal);
+      expect(s1Found).toEqual(expect.arrayContaining(s1Side));
+      for (const id of [...s2Side, w.orgAdminPerson]) expect(s1Found).not.toContain(id);
+      expect(await found(w.ctx.s1Principal, "امینی")).toEqual([]);
+      expect(await found(w.ctx.s1Principal, "نیکو")).toEqual([]);
+      // S2's principal and vice principal alike: S2 only.
+      for (const ctx of [w.ctx.s2Principal, w.ctx.s2Vice]) {
+        const s2Found = await found(ctx);
+        expect(s2Found).toEqual(expect.arrayContaining(s2Side));
+        for (const id of [...s1Side, w.orgAdminPerson]) expect(s2Found).not.toContain(id);
+        expect(await found(ctx, "نیکو")).toEqual([s2Student.personId]);
+      }
+      // The organization admin: everyone of the organization.
+      expect(await found(orgAdminCtx)).toEqual(expect.arrayContaining([...s1Side, ...s2Side, w.orgAdminPerson]));
+
+      // The submit enforces the same reach: an out-of-reach id is refused with the very answer an unknown id gets.
+      const task = (ids: string[]) => ({ typeCode: "task" as const, title: "گزارش هفتگی", priority: "normal" as const, recipients: { kind: "persons" as const, ids } });
+      const notARecipient = isError("INVALID_REFERENCE", "یکی از گیرندگان یافت نشد.");
+      for (const outsider of [w.s2Principal.personId, s2Student.personId, w.orgAdminPerson, "0199a000-ffff-7000-8000-00000000dead"]) {
+        await expect(sub(tx, (sp) => createWorkItem(sp, w.ctx.s1Principal, task([w.s1Teacher.personId, outsider])))).rejects.toSatisfy(notARecipient);
+      }
+      for (const outsider of [w.s1Principal.personId, s1Student.personId, w.orgAdminPerson]) {
+        await expect(sub(tx, (sp) => createWorkItem(sp, w.ctx.s2Vice, task([outsider])))).rejects.toSatisfy(notARecipient);
+      }
+      const itemsBy = (personId: string) => tx.select({ id: schema.workItem.id }).from(schema.workItem).where(eq(schema.workItem.createdByPersonId, personId));
+      expect(await itemsBy(w.s1Principal.personId)).toEqual([]);
+      expect(await itemsBy(w.s2Vice.personId)).toEqual([]);
+      // Inside the school it works: a colleague, a student and themselves.
+      expect((await createWorkItem(tx, w.ctx.s1Principal, task([w.s1Teacher.personId, s1Student.personId, w.s1Principal.personId]))).assigneeCount).toBe(3);
+      // The organization admin gives to anyone — both schools' principals and students.
+      expect((await createWorkItem(tx, orgAdminCtx, task([w.s1Principal.personId, w.s2Principal.personId, s2Student.personId, s1Student.personId]))).assigneeCount).toBe(4);
+
+      // A teacher has no «اشخاص» at all (FORBIDDEN, unchanged): she gives to her classes.
+      const teacher = asAdmin(w.s1Teacher.personId, { roleCode: "teacher", roleId: "r-teacher", scopeType: "class_offering", scopeId: f.OFFERING_A1, permissions: catalogPerms("teacher") });
+      await expect(personReach(tx, teacher)).rejects.toSatisfy(isError("FORBIDDEN"));
+      await expect(sub(tx, (sp) => createWorkItem(sp, teacher, task([s1Student.personId])))).rejects.toSatisfy(isError("FORBIDDEN"));
+
+      // The class picker of «کار جدید»: a school manager's own school, never the other's names and head counts; the
+      // organization admin every class; a class a manager TEACHES at another school joins their list.
+      const offeringsOf = async (ctx: AdminCtx) => (await listOfferingsInScope(tx, await getPermissionScope(tx, ctx, "workspace.work_item.assign_class"), ctx.personId)).map((o) => o.id);
+      expect(await offeringsOf(w.ctx.s1Principal)).toContain(f.OFFERING_A1);
+      expect(await offeringsOf(w.ctx.s1Principal)).not.toContain(w.s2.offeringId);
+      for (const ctx of [w.ctx.s2Principal, w.ctx.s2Vice]) {
+        expect(await offeringsOf(ctx)).toContain(w.s2.offeringId);
+        expect(await offeringsOf(ctx)).not.toContain(f.OFFERING_A1);
+      }
+      expect(await offeringsOf(orgAdminCtx)).toEqual(expect.arrayContaining([f.OFFERING_A1, w.s2.offeringId]));
+      await assignTeacher(tx, orgAdmin, { staffProfileId: w.s1Principal.staffProfileId, classOfferingId: w.s2.offeringId, role: "assistant" });
+      expect(await offeringsOf(w.ctx.s1Principal)).toEqual(expect.arrayContaining([f.OFFERING_A1, w.s2.offeringId]));
+      throw new Rollback();
+    });
+  });
+
+  it("R (verifier, 2026-09-27): a manager role goes to an active colleague only — `vice_principal` / `school_principal` for a student is a `personId` field error for every granter (both school managers, the organization admin), nothing written; a colleague who has left is refused too, an active one is fine", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const student = await adminCreateStudent(tx, w.ctx.s2Principal, { firstName: "رها", lastName: "نیکو", studentNumber: "S2-960", enrollment: { classGroupId: w.s2.classGroupId }, login: { createAccount: false } });
+      const needsStaff = (e: unknown) => fieldErrorOn("personId")(e) && (e as AppError).message === MESSAGES.managerRoleNeedsStaff;
+      const managerRolesOf = (personId: string) =>
+        tx
+          .select({ id: roleAssignment.id })
+          .from(roleAssignment)
+          .where(and(eq(roleAssignment.personId, personId), sql`${roleAssignment.scopeType} in ('organization', 'school', 'branch')`, isNull(roleAssignment.revokedAt)));
+
+      for (const manager of [w.ctx.s2Principal, w.ctx.s2Vice]) {
+        await expect(sub(tx, (sp) => assignRole(sp, manager, { personId: student.personId, roleCode: "vice_principal", schoolId: w.s2.schoolId }))).rejects.toSatisfy(needsStaff);
+      }
+      for (const roleCode of ["vice_principal", "school_principal"] as const) {
+        await expect(sub(tx, (sp) => assignRole(sp, orgAdmin, { personId: student.personId, roleCode, schoolId: w.s2.schoolId }))).rejects.toSatisfy(needsStaff);
+      }
+      expect(await managerRolesOf(student.personId)).toEqual([]);
+      // The /admin/roles picker never offered the student (`roleGrantCandidates`); the service now answers the same.
+      expect((await roleGrantCandidates(tx, await getAdminScope(tx, w.ctx.s2Principal))).map((c) => c.value)).not.toContain(student.personId);
+
+      // A colleague who has left is not appointed either; back at work, they are.
+      const colleague = await adminCreateStaff(tx, w.ctx.s2Principal, { firstName: "حسین", lastName: "محمدی", phone: "09127200070", schoolId: w.s2.schoolId });
+      await tx.update(staffProfile).set({ leftOn: sql`current_date` }).where(eq(staffProfile.id, colleague.staffProfileId));
+      await expect(sub(tx, (sp) => assignRole(sp, w.ctx.s2Vice, { personId: colleague.personId, roleCode: "vice_principal", schoolId: w.s2.schoolId }))).rejects.toSatisfy(needsStaff);
+      expect(await managerRolesOf(colleague.personId)).toEqual([]);
+      await tx.update(staffProfile).set({ leftOn: null }).where(eq(staffProfile.id, colleague.staffProfileId));
+      expect((await assignRole(tx, w.ctx.s2Vice, { personId: colleague.personId, roleCode: "vice_principal", schoolId: w.s2.schoolId })).created).toBe(true);
+      // The `student` role is the student's marker, not a manager role: unaffected (idempotent here).
+      expect((await assignRole(tx, w.ctx.s2Principal, { personId: student.personId, roleCode: "student", studentProfileId: student.studentProfileId })).created).toBe(false);
       throw new Rollback();
     });
   });

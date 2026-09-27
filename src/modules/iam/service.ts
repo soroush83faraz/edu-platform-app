@@ -15,8 +15,9 @@ import { normalizeFa, normalizePhoneIR, toAsciiDigits } from "@/lib/normalize";
 import { schoolEnrollment } from "@/modules/academic/schema";
 import { enrollStudent } from "@/modules/academic/service";
 import { findClassGroup, findCurrentAcademicYear, findSchoolById, schoolIdOfBranch } from "@/modules/tenancy/repo";
-import { can, canAtAnyScope, isOrganizationAdmin, resolveScopeChain, type Assignment } from "./can";
+import { can, canAtAnyScope, resolveScopeChain, type Assignment } from "./can";
 import { generateInitialPassword, hashPassword } from "./password";
+import type { Permission } from "./permissions";
 import { findAccountByIdentifier } from "./repo";
 import { clearRecentFailures } from "./throttle";
 import { authIdentity, contactPoint, organizationMembership, person, role, roleAssignment, staffProfile, studentProfile, userAccount, userSession } from "./schema";
@@ -68,6 +69,8 @@ export const MESSAGES = {
   roleRevokeForbidden: "شما اجازهٴ لغو این نقش را ندارید.",
   derivedRoleNotRevocable: "این نقش از تخصیص درس مشتق شده و از این‌جا لغو نمی‌شود.",
   studentProfileMismatch: "پروفایل دانش‌آموز به این فرد تعلق ندارد.",
+  /** A manager role (مدیر مدرسه / معاون / مدیر سازمان) goes to an active colleague only — never a student (verifier, 2026-09-27). */
+  managerRoleNeedsStaff: "نقش مدیریتی فقط به کارکنان فعال داده می‌شود.",
   changed: "— تغییر داده شده",
 } as const;
 
@@ -81,12 +84,26 @@ export type AdminScope = { kind: "organization" } | { kind: "school"; schoolIds:
  * Phase-1 scope rule: an organization-scoped assignment carrying `iam.admin.access` → the whole organization;
  * otherwise the schools of the caller's school/branch-scoped admin assignments. No admin assignment → FORBIDDEN.
  * Every admin list filters by it; every admin mutation on a school-owned entity checks `assertSchoolInScope`.
+ * It is `getPermissionScope` for `iam.admin.access` (the organization branch is `isOrganizationAdmin`).
  */
 export async function getAdminScope(tx: Tx, ctx: { orgId: string; assignments: readonly Assignment[] }): Promise<AdminScope> {
-  if (isOrganizationAdmin(ctx.assignments)) return { kind: "organization" };
-  const admin = ctx.assignments.filter((a) => a.permissions.includes("iam.admin.access"));
+  return getPermissionScope(tx, ctx, "iam.admin.access");
+}
+
+/**
+ * The same rule for ANY permission: where the caller holds `permission` through a BROAD assignment — an
+ * organization-scoped one → the whole organization; otherwise the schools of the school-/branch-scoped assignments
+ * carrying it (a branch counts as its school). Teacher (`class_offering`) and student assignments never widen it;
+ * none of the broad kind → FORBIDDEN. A capability that reaches PEOPLE outside the admin pages — the work-item
+ * «اشخاص» picker and its `persons` recipients (`workspace.work_item.create`) — narrows by this scope through
+ * `personInScopeSql`, exactly as the admin people lists do with `getAdminScope`; for the catalog's managers, whose
+ * roles carry every permission, the two scopes are the same schools.
+ */
+export async function getPermissionScope(tx: Tx, ctx: { orgId: string; assignments: readonly Assignment[] }, permission: Permission): Promise<AdminScope> {
+  const holders = ctx.assignments.filter((a) => a.permissions.includes(permission));
+  if (holders.some((a) => a.scopeType === "organization")) return { kind: "organization" };
   const schoolIds = new Set<string>();
-  for (const a of admin) {
+  for (const a of holders) {
     if (a.scopeId === null) continue;
     if (a.scopeType === "school") schoolIds.add(a.scopeId);
     if (a.scopeType === "branch") {
@@ -527,10 +544,28 @@ async function resolveRoleGrant(tx: Tx, ctx: IamCtx, input: Omit<AssignRoleInput
 }
 
 /**
+ * An active colleague: a staff profile that has not left (`left_on` null) on an active person — who the /admin/roles
+ * picker offers (`roleGrantCandidates`) and the only kind of person a manager role may go to.
+ */
+async function isActiveStaff(tx: Tx, personId: string): Promise<boolean> {
+  const rows = await tx
+    .select({ id: staffProfile.id })
+    .from(staffProfile)
+    .innerJoin(person, eq(person.id, staffProfile.personId))
+    .where(and(eq(staffProfile.personId, personId), isNull(staffProfile.leftOn), eq(person.status, "active")))
+    .limit(1);
+  return rows.length > 0;
+}
+
+/**
  * Manual role assignment (source_type 'manual', granted_by = ctx.personId). Runtime guards for EVERY caller (actions,
  * importer, seed): `resolveRoleGrant` (manual code, allowed scope type, school in scope, `iam.role_assignment.write`
  * at the role's scope — FORBIDDEN otherwise), then the person must exist and, for a school-scoped caller, be inside
- * their scope (NOT_FOUND) — for the `student` role too, whose profile must belong to that very person.
+ * their scope (NOT_FOUND) — for the `student` role too, whose profile must belong to that very person. A MANAGER role
+ * (`org_admin` bootstrap, `school_principal`, `vice_principal`) additionally needs an active colleague
+ * (`isActiveStaff`): a student, a guardian-only person or a colleague who has left is refused with a field error
+ * (VALIDATION on `personId`, nothing written) — the person is already known to be in the caller's scope, so the
+ * answer reveals nothing the caller's own lists do not.
  */
 export async function assignRole(tx: Tx, ctx: IamCtx, input: AssignRoleInput): Promise<{ roleAssignmentId: string; created: boolean }> {
   const { roleId, target, adminScope } = await resolveRoleGrant(tx, ctx, input);
@@ -539,6 +574,10 @@ export async function assignRole(tx: Tx, ctx: IamCtx, input: AssignRoleInput): P
     // A profile of another person would hand `personId` the reach over that student's items.
     const [sp] = await tx.select({ personId: studentProfile.personId }).from(studentProfile).where(eq(studentProfile.id, target.studentProfileId)).limit(1);
     if (!sp || sp.personId !== input.personId) throw invalidReference(MESSAGES.studentProfileMismatch);
+  } else if (!(await isActiveStaff(tx, input.personId))) {
+    // A manager role is a STAFF role: it would give a student the school's whole admin surface (people, accounts,
+    // roles, structure) and every work item of the organization.
+    throw fieldError("personId", MESSAGES.managerRoleNeedsStaff);
   }
   const { scopeId, ...scope } = target;
   const existing = await tx

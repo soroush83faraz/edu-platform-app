@@ -2,12 +2,13 @@
 // the caller (`personId`) or goes through `canViewWorkItem` in the service; RLS hides other tenants underneath.
 // The inbox list is ONE SQL statement (inbox_entry ⨝ work_item ⨝ status ⨝ type ⨝ creator ⟕ درس/class + lateral counts) with
 // the Tehran day boundaries passed in as parameters, so bucket and tab filters run in the database.
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { type Bucket, type DayBounds, tehranDayBounds } from "@/lib/format";
 import { person, roleAssignment, staffProfile, studentProfile } from "@/modules/iam/schema";
+import { type AdminScope, personInScopeSql } from "@/modules/iam/service";
 import { classEnrollment } from "@/modules/academic/schema";
-import { classGroup, classOffering, gradeLevel, subject } from "@/modules/tenancy/schema";
+import { branch, classGroup, classOffering, gradeLevel, subject } from "@/modules/tenancy/schema";
 import type { InboxTab } from "./dto";
 import { inboxEntry, workItem, workItemAssignee, workItemComment, workItemStatus, workItemTransition, workItemType, workItemWatcher } from "./schema";
 
@@ -67,13 +68,27 @@ export async function findPersonName(tx: Tx, personId: string): Promise<string |
   return row ? `${row.f} ${row.l}` : null;
 }
 
-/** Ids of the given persons that exist in this tenant and are active (RLS already hides other organizations). */
-export async function filterActivePersonIds(tx: Tx, ids: readonly string[]): Promise<string[]> {
+/**
+ * The people a caller may name as `persons` recipients (service `personReach`): everyone inside `scope` by the admin
+ * people lists' rule (`personInScopeSql` — for a school scope, anchored in one of its schools and holding no
+ * organization-scoped role) plus the caller (`selfId`). Required by both lookups below, so neither can run unscoped.
+ */
+export interface PersonReach {
+  scope: AdminScope;
+  selfId: string;
+}
+
+function inReach(reach: PersonReach): SQL {
+  return sql`(${person.id} = ${reach.selfId}::uuid or ${personInScopeSql(reach.scope, "iam.person.id")})`;
+}
+
+/** Ids of the given persons that exist in this tenant, are active and inside `reach` (RLS already hides other organizations). */
+export async function filterActivePersonIds(tx: Tx, ids: readonly string[], reach: PersonReach): Promise<string[]> {
   if (ids.length === 0) return [];
   const rows = await tx
     .select({ id: person.id })
     .from(person)
-    .where(and(inArray(person.id, [...ids]), eq(person.status, "active")));
+    .where(and(inArray(person.id, [...ids]), eq(person.status, "active"), inReach(reach)));
   return rows.map((r) => r.id);
 }
 
@@ -142,15 +157,29 @@ export async function listTaughtOfferings(tx: Tx, personId: string): Promise<Off
   return sortOfferings(rows);
 }
 
-/** Every open offering of the organization (admins/principals — broad `assign_class`). */
-export async function listAllOfferings(tx: Tx): Promise<OfferingRow[]> {
+/**
+ * The class picker of a BROAD `assign_class` holder (admins/principals): every open offering of `scope` — the whole
+ * organization for an organization-scoped holder, the holder's own schools otherwise — plus the offerings they teach
+ * elsewhere (a principal placed as a teacher at another school). Exactly what `can(assign_class, class_offering)`
+ * accepts on submit, so a school manager is never offered, nor shown the names and head counts of, another school's
+ * classes.
+ */
+export async function listOfferingsInScope(tx: Tx, scope: AdminScope, personId: string): Promise<OfferingRow[]> {
+  const reach =
+    scope.kind === "organization"
+      ? undefined
+      : sql`(${branch.schoolId} = any(${sql.param(scope.schoolIds, undefined)}::uuid[]) or exists (
+          select 1 from ${roleAssignment} ra
+          where ra.class_offering_id = ${classOffering.id} and ra.person_id = ${personId}::uuid and ra.scope_type = 'class_offering' and ra.revoked_at is null
+            and (ra.valid_from is null or ra.valid_from <= current_date) and (ra.valid_to is null or ra.valid_to >= current_date)))`;
   const rows = await tx
     .select(OFFERING_SELECT)
     .from(classOffering)
     .innerJoin(classGroup, eq(classGroup.id, classOffering.classGroupId))
+    .innerJoin(branch, eq(branch.id, classGroup.branchId))
     .innerJoin(gradeLevel, eq(gradeLevel.id, classGroup.gradeLevelId))
     .innerJoin(subject, eq(subject.id, classOffering.subjectId))
-    .where(sql`${classOffering.status} <> 'closed' and ${classGroup.status} = 'active'`)
+    .where(and(sql`${classOffering.status} <> 'closed' and ${classGroup.status} = 'active'`, reach))
     .orderBy(asc(gradeLevel.sequence), asc(classGroup.name), asc(subject.name));
   return sortOfferings(rows);
 }
@@ -162,8 +191,11 @@ export interface PersonHit {
   kind: "student" | "staff" | "person";
 }
 
-/** Persian name search through the generated `search_text` (app.fa_norm + trigram index). */
-export async function searchPersons(tx: Tx, q: string, limit = 20): Promise<PersonHit[]> {
+/**
+ * Persian name search through the generated `search_text` (app.fa_norm + trigram index), inside `reach` only — a
+ * school manager never lists another school's people or the organization admin (`PersonReach`).
+ */
+export async function searchPersons(tx: Tx, q: string, reach: PersonReach, limit = 20): Promise<PersonHit[]> {
   const rows = await tx
     .select({
       id: person.id,
@@ -174,8 +206,8 @@ export async function searchPersons(tx: Tx, q: string, limit = 20): Promise<Pers
     .from(person)
     .leftJoin(studentProfile, eq(studentProfile.personId, person.id))
     .leftJoin(staffProfile, eq(staffProfile.personId, person.id))
-    // An empty query lists everyone (the first `limit`, alphabetically) — the picker filters as the name is typed.
-    .where(and(eq(person.status, "active"), q.trim() ? sql`${person.searchText} ilike '%' || app.fa_norm(${q}) || '%'` : undefined))
+    // An empty query lists everyone in reach (the first `limit`, alphabetically) — the picker filters as the name is typed.
+    .where(and(eq(person.status, "active"), inReach(reach), q.trim() ? sql`${person.searchText} ilike '%' || app.fa_norm(${q}) || '%'` : undefined))
     .orderBy(asc(person.lastName), asc(person.firstName))
     .limit(limit);
   return rows.map((r) => ({ ...r, kind: r.kind as PersonHit["kind"] }));

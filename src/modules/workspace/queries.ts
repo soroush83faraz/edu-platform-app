@@ -5,9 +5,10 @@ import { z } from "zod";
 import { defineQuery } from "@/lib/actions";
 import { createVoice, workItemVoice } from "@/lib/work-item-words";
 import { canAtAnyScope, canBroadly } from "@/modules/iam/can";
+import { getPermissionScope } from "@/modules/iam/service";
 import { unreadNotificationCount } from "@/modules/notif";
 import { ListInboxInput, WorkItemIdInput } from "./dto";
-import { type InboxSummary, inboxCounts, inboxTabCounts, isStaff, listAllOfferings, listInbox, listTaughtOfferings } from "./repo";
+import { type InboxSummary, inboxCounts, inboxTabCounts, isStaff, listInbox, listOfferingsInScope, listTaughtOfferings } from "./repo";
 import { getWorkItemDetail } from "./service";
 
 export const listInboxQuery = defineQuery({ schema: ListInboxInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) => {
@@ -46,10 +47,16 @@ export const inboxSummaryQuery = defineQuery({ permission: "workspace.work_item.
   return { ...counts, unreadNotifications };
 });
 
-/** What the «کار جدید» form needs: my offerings (all of them for broad admins), whether I may pick persons. */
+/**
+ * What the «کار جدید» form needs: my offerings — for a broad admin every offering of THEIR schools (the whole
+ * organization for the organization admin) plus what they teach, exactly what `can(assign_class, …)` accepts on
+ * submit — and whether I may pick persons (whom: `searchPersonsQuery`, inside the same reach the submit enforces).
+ */
 export const newWorkItemOptionsQuery = defineQuery({ permission: "workspace.work_item.create", scope: "any" }, async (tx, _input, ctx) => {
   const broadAssign = canBroadly(ctx.assignments, "workspace.work_item.assign_class");
-  const offerings = broadAssign ? await listAllOfferings(tx) : await listTaughtOfferings(tx, ctx.personId);
+  const offerings = broadAssign
+    ? await listOfferingsInScope(tx, await getPermissionScope(tx, ctx, "workspace.work_item.assign_class"), ctx.personId)
+    : await listTaughtOfferings(tx, ctx.personId);
   return {
     offerings,
     canPickPersons: canBroadly(ctx.assignments, "workspace.work_item.create"),

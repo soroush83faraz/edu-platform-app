@@ -27,6 +27,10 @@ export interface WorkItemActionsProps {
   dueAt: Date | null;
   assigneeCount: number;
   myAssigneeState: "pending" | "accepted" | "done" | null;
+  /**
+   * `viewer.isManager` of the detail read model (`managesItem`, ../manage-policy): the creator, or a broad admin who is
+   * NOT one of the assignees. A principal given a تسک by the organization admin is false here — an assignee.
+   */
   isManager: boolean;
   canUpdate: boolean;
   /** My inbox row's state, or `null` when I have none — the only thing left of the personal entry in this row. */
@@ -38,16 +42,18 @@ export interface WorkItemActionsProps {
 }
 
 /**
- * The action row of a کار — named «تکلیف» or «تسک» by the reader's hats. An assignee gets «انجام شد». Its creator
- * (or a broad admin) gets the three creator actions — «اتمام» (primary: closes it for everyone), «تمدید»
+ * The action row of a کار — named «تکلیف» or «تسک» by the reader's hats. An assignee gets «انجام شد» — also an
+ * assignee who holds a broad admin hat (a principal given a تسک by the organization admin): their «انجام شد» marks
+ * only their own row. The item's manager (`isManager`: its creator, or a broad admin who is not one of its
+ * assignees) gets the three creator actions — «اتمام» (primary: closes it for everyone), «تمدید»
  * (secondary: a later due date), «حذف» (ghost, red) — or, once it is closed, «بازیابی» (outline) and, on a
  * finished one, «حذف» beside it (destructive tint; owner, round 7). «حذف» is a LABEL: the stored status is still
  * `cancelled`, nothing leaves the database and «بازیابی» brings the item back (owner, round 4); after it the reader
  * goes back to the list. Who sees «حذف» is exactly who may cancel — the creator (a student only on their own
- * «تسک») or a broad `update` holder; the service enforces the same rule. There is no overflow menu: سنجاق / بایگانی
- * left the UI (owner, round 5 — «if the teacher wants, they can delete it»); `setPinned` / `archiveInbox` stay in
- * the service, unwired. Full-width and stacked on phones, one inline row from `sm:`, every target 44 px. Marks my
- * inbox row read once on mount.
+ * «تسک») or a broad `update` holder who is not an assignee; the service enforces the same rule (`managesItem`).
+ * There is no overflow menu: سنجاق / بایگانی left the UI (owner, round 5 — «if the teacher wants, they can delete
+ * it»); `setPinned` / `archiveInbox` stay in the service, unwired. Full-width and stacked on phones, one inline row
+ * from `sm:`, every target 44 px. Marks my inbox row read once on mount.
  *
  * Finishing is answered at once (optimistic, docs/decisions «حرکت در پاسخ به کار کاربر»): the title is struck
  * (`CompletionProvider`), «انجام شد» turns into its quiet outline twin whose check draws itself, and once the
