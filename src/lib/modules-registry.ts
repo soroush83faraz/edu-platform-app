@@ -4,7 +4,6 @@ import {
   CalendarCheck,
   CalendarDays,
   ClipboardCheck,
-  ClipboardPlus,
   Clock,
   FileSpreadsheet,
   Handshake,
@@ -27,7 +26,6 @@ import {
 } from "lucide-react";
 import type { ClayShade } from "@/components/ClayIcon";
 import { schoolsLabelFa } from "@/lib/admin/nav";
-import { NEW_ITEM_TILE_ROLES, newItemLabel } from "@/lib/work-item-words";
 import type { Permission } from "@/modules/iam/permissions";
 
 /**
@@ -330,7 +328,7 @@ export interface HomeTile {
   labelFa: string;
   href: string;
   icon: LucideIcon;
-  /** The clay mark's shade — every live tile is the one blue; only «کار جدید» (the action) is `yellow`. */
+  /** The clay mark's shade — every live tile is the one blue; `yellow` is reserved for the one action / high-priority case. */
   shade?: ClayShade;
   /**
    * Who sees the tile. A LIST when one destination genuinely belongs to two hats («حضور و غیاب» is the same page
@@ -376,21 +374,8 @@ export interface HomeTile {
 export const HOME_TILES: readonly HomeTile[] = [
   // No «پنل من» tile (owner): the کارتابل's one door is the «همهٴ …» link of Home's «تکالیف نزدیک» card, right
   // under these tiles (nav round 2026-09-27 — no nav cell either), so a tile would be its second door. The
-  // «امروز» line's links are FILTERS of it.
-  {
-    // The ONE creation door on Home, for every hat that may open a کار (`NEW_ITEM_TILE_ROLES`): a دبیر, an
-    // admin — and, since round 6, a student, whose own item is a personal «تسک». The label is role-aware
-    // and `homeTilesFor` rewrites it per person (`newItemLabel`); the permission check is unchanged, so the
-    // tile appears for a student only once the catalog grants them `workspace.work_item.create`.
-    code: "new-item",
-    shade: "yellow",
-    labelFa: "تکلیف جدید",
-    href: "/inbox/new",
-    icon: ClipboardPlus,
-    role: NEW_ITEM_TILE_ROLES,
-    permission: "workspace.work_item.create",
-  },
-
+  // «امروز» line's links are FILTERS of it. Nor a «کار جدید» creation tile (owner, 2026-09-27): creating one
+  // is reached only from the inbox page's own header button now, so Home carries no second door to it.
   {
     // One destination for two hats: the teacher takes today's roll call, the student reads their own month.
     // The ADMIN's report is a different page and has its own tile below (`admin-attendance`).
@@ -467,9 +452,6 @@ export function homeTilesFor(
       (!t.adminScope || hats.adminScope === t.adminScope) &&
       (!t.oneSchool?.only || schoolId !== null),
   ).map((t) => {
-    // The creation tile speaks the person's own word: «تکلیف جدید» for a teaching hat, «تسک جدید» for an
-    // admin who does not teach and for a student (`newItemLabel` — the same rule as the form and the کارتابل).
-    if (t.code === "new-item") return { ...t, labelFa: newItemLabel(hats) };
     return t.oneSchool && schoolId
       ? { ...t, href: t.oneSchool.href(schoolId), ...(t.oneSchool.label ? { labelFa: schoolsLabelFa({ kind: "school", schoolIds: [schoolId] }) } : {}) }
       : t;

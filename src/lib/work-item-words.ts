@@ -16,8 +16,8 @@
 //     «تکلیف» for the student who received it (`workItemVoice` is unchanged, so their کارتابل, their
 //     notifications and the detail page are untouched), while a personal `todo` reads «تسک»
 //     (`personalItemLabel`);
-//   • where there is NO item yet — the Home creation tile, the «تسک جدید» button, the create form — the
-//     VIEWER decides (`createVoice` / `voiceForHats`), because the only thing a student can open is their own تسک.
+//   • where there is NO item yet — the «تسک جدید» button, the create form — the VIEWER decides (`createVoice`),
+//     because the only thing a student can open is their own تسک.
 //
 // This is a PURE function of the request context's assignments (`ctx.assignments`), so a page pays no query for
 // it. Routes, permission codes, type codes (`task` / `todo`), DB values and audit actions are untouched — only
@@ -143,39 +143,10 @@ export function workItemWords(voice: WorkItemVoice): WorkItemWords {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// the Home grid's creation tile
+// the کارتابل's mirror filter
 // ---------------------------------------------------------------------------------------------------------------
 
-/** The hats the tile registry already computes from `getHats` (`TileHats` in src/lib/modules-registry). */
-export interface HatsLike {
-  isTeacher: boolean;
-  isAdmin: boolean;
-  isStudent?: boolean;
-}
-
-/** The same rule as `createVoice`, read off the hats a surface has already resolved. */
-export function voiceForHats(hats: HatsLike): WorkItemVoice {
-  if (hats.isTeacher) return "assignment";
-  if (hats.isAdmin) return "task";
-  return hats.isStudent ? "personal" : "assignment";
-}
-
-export function workItemWordsForHats(hats: HatsLike): WorkItemWords {
-  return workItemWords(voiceForHats(hats));
-}
-
-/**
- * The label of Home's one creation tile: «تکلیف جدید» for a teacher, «تسک جدید» for an admin who does not
- * teach — and «تسک جدید» for a student, whose one کار is the personal one they open for themselves (round 6).
- */
-export function newItemLabel(hats: HatsLike): string {
-  return workItemWordsForHats(hats).new;
-}
-
-/** Who sees the creation tile: every hat that may open a کار (`workspace.work_item.create` still decides). */
-export const NEW_ITEM_TILE_ROLES = ["teacher", "admin", "student"] as const;
-
-/** Who sees its mirror, «… داده‌شده»: only the hats that hand work to OTHER people — never the student. */
+/** Who sees the «… داده‌شده» filter: only the hats that hand work to OTHER people — never the student. */
 export const GIVEN_TILE_ROLES = ["teacher", "admin"] as const;
 
 /**

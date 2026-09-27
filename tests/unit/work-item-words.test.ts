@@ -5,11 +5,9 @@ import { describe, expect, it } from "vitest";
 import {
   type AssignmentLike,
   GIVEN_TILE_ROLES,
-  NEW_ITEM_TILE_ROLES,
   createVoice,
   hasTeachingHat,
   isStudentOnly,
-  newItemLabel,
   personalItemLabel,
   workItemStatusLabel,
   workItemVoice,
@@ -126,19 +124,8 @@ describe("the student's own «تسک» (round 6)", () => {
   });
 });
 
-describe("newItemLabel (the Home creation tile)", () => {
-  it("follows the same rule as the pages", () => {
-    expect(newItemLabel({ isTeacher: true, isAdmin: false })).toBe("تکلیف جدید");
-    expect(newItemLabel({ isTeacher: true, isAdmin: true })).toBe("تکلیف جدید");
-    expect(newItemLabel({ isTeacher: false, isAdmin: true })).toBe("تسک جدید");
-    expect(newItemLabel({ isTeacher: false, isAdmin: false })).toBe("تکلیف جدید");
-    expect(newItemLabel({ isTeacher: false, isAdmin: false, isStudent: true })).toBe("تسک جدید");
-    // A student who teaches (a rare double hat) gives homework, so the teaching word wins there too.
-    expect(newItemLabel({ isTeacher: true, isAdmin: false, isStudent: true })).toBe("تکلیف جدید");
-  });
-
-  it("the creation tile belongs to every hat that may open a کار; its mirror only to those who give one", () => {
-    expect([...NEW_ITEM_TILE_ROLES]).toEqual(["teacher", "admin", "student"]);
+describe("GIVEN_TILE_ROLES", () => {
+  it("only the hats that hand work to OTHER people see the mirror filter — never the student", () => {
     expect([...GIVEN_TILE_ROLES]).toEqual(["teacher", "admin"]);
   });
 });

@@ -26,7 +26,9 @@ const READ = ["workspace.work_item.read", "workspace.work_item.create"];
 const ctxWith = (permissions: string[]) =>
   ({ firstName: "سارا", assignments: [{ roleCode: "x", roleId: "r", scopeType: "school", scopeId: "s", permissions }] }) as unknown as Ctx;
 
-const TILE = { code: "new-item", labelFa: "تکلیف جدید", href: "/inbox/new", icon: () => null, role: "everyone" };
+// A generic stand-in tile (the registry no longer has a «new-item» tile — this fixture only exercises the
+// grid/dashboard's own layout, never the real HOME_TILES content).
+const TILE = { code: "placeholder", labelFa: "نمونه", href: "/placeholder", icon: () => null, role: "everyone" };
 function homeFor(hat: "teacher" | "student" | "admin") {
   return { tiles: [TILE], hats: { teachingOfferings: [] }, isTeacher: hat === "teacher", isStudent: hat === "student" };
 }

@@ -44,7 +44,7 @@ describe("homeTilesFor", () => {
   });
 
   it("the organization admin: the structure tiles the nav gave up, in that order — and no «مدیریت», «مدرسه‌ها» or «راه‌اندازی» tile", () => {
-    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["new-item", "admin-attendance"]);
+    expect(codes(homeTilesFor(orgAdmin, has(ADMIN_PERMS)))).toEqual(["admin-attendance"]);
     // Round 7: «مدرسه‌ها» (the organization's list) is an admin SECTION for this person, so Home does not carry it —
     // one door. «زنگ‌بندی» has no organization-wide page, so it has no tile either; the fixed catalog (مقطع، پایه،
     // سال) and the retired «تنظیمات زیرساختی» have no door anywhere (2026-09-27).
@@ -54,14 +54,14 @@ describe("homeTilesFor", () => {
 
   it("a principal of ONE school gets «مدرسه» and that school's زنگ‌بندی, and no organization catalog", () => {
     const tiles = homeTilesFor(principal, has(ADMIN_PERMS));
-    expect(codes(tiles)).toEqual(["new-item", "admin-attendance", "schools", "periods"]);
+    expect(codes(tiles)).toEqual(["admin-attendance", "schools", "periods"]);
     expect(tile(tiles, "schools")).toMatchObject({ labelFa: "مدرسه", href: "/admin/schools/s1" });
     expect(tile(tiles, "periods")).toMatchObject({ href: "/admin/schools/s1/periods" });
   });
 
   it("two schools: «مدرسه‌ها» plural and no زنگ‌بندی tile — a bell schedule belongs to one school", () => {
     const tiles = homeTilesFor(twoSchools, has(ADMIN_PERMS));
-    expect(codes(tiles)).toEqual(["new-item", "admin-attendance", "schools"]);
+    expect(codes(tiles)).toEqual(["admin-attendance", "schools"]);
     expect(tile(tiles, "schools")).toMatchObject({ labelFa: "مدرسه‌ها", href: "/admin/schools" });
   });
 
@@ -95,36 +95,26 @@ describe("homeTilesFor", () => {
     }
   });
 
-  it("a student's own work is ONE door — the Home card's «همهٴ تکالیف»; a teacher keeps the tile they create from", () => {
+  it("a student's own work is ONE door — the Home card's «همهٴ تکالیف»; no tile creates one any more", () => {
     // «تکالیف من» and «انجام‌شده» left the grid (owner, branding round): both were FILTERS of the کارتابل, and
     // the card's «همهٴ تکالیف» opens it with those very two tabs at the top.
     expect(codes(homeTilesFor(student, has(["workspace.work_item.read", "academic.timetable.read"])))).toEqual([]);
     expect(HOME_TILES.filter((t) => t.href.startsWith("/inbox?tab="))).toEqual([]);
-    expect(codes(homeTilesFor(teacher, has(["workspace.work_item.create", "iam.admin.access", "academic.timetable.read"])))).toEqual(["new-item"]);
+    // Round 2026-09-27 (owner): the creation tile is gone too — a teacher with none of the other tiles'
+    // permissions now sees an empty grid; creating stays possible only from the inbox page's own header button.
+    expect(codes(homeTilesFor(teacher, has(["workspace.work_item.create", "iam.admin.access", "academic.timetable.read"])))).toEqual([]);
   });
 
-  it("the ONE creation tile is for admins and students too, and says the person's own word", () => {
-    const label = (hats: TileHats) => tile(homeTilesFor(hats, has(ADMIN_PERMS)), "new-item")?.labelFa;
-    expect(label(teacher)).toBe("تکلیف جدید");
-    expect(label(orgAdmin)).toBe("تسک جدید");
-    expect(label(principal)).toBe("تسک جدید");
-    // Round 6: a student opens work for THEMSELVES, and that is a «تسک».
-    expect(label(student)).toBe("تسک جدید");
-    // A teaching principal is a teacher first.
-    expect(label({ isStudent: false, isTeacher: true, isAdmin: true, adminScope: "school", singleSchoolId: "s1" })).toBe("تکلیف جدید");
-    // The permission still decides: without `workspace.work_item.create` nobody sees it (a vice principal,
-    // and a student in a deployment whose catalog has not been re-seeded).
-    expect(codes(homeTilesFor(principal, has(VICE_PERMS)))).not.toContain("new-item");
-    expect(codes(homeTilesFor(student, has(["workspace.work_item.read"])))).not.toContain("new-item");
-    // Still ONE door to the form.
-    expect(HOME_TILES.filter((t) => t.href === "/inbox/new")).toHaveLength(1);
-    // A student's create tile has no mirror.
-    expect(codes(homeTilesFor(student, has(ADMIN_PERMS)))).toEqual(["new-item"]);
+  it("there is no creation tile any more: no «new-item» code and no «/inbox/new» href anywhere in HOME_TILES", () => {
+    expect(HOME_TILES.filter((t) => t.code === "new-item")).toEqual([]);
+    expect(HOME_TILES.filter((t) => t.href === "/inbox/new")).toEqual([]);
+    for (const hats of [orgAdmin, principal, twoSchools, teacher, student]) {
+      expect(codes(homeTilesFor(hats, has(ADMIN_PERMS)))).not.toContain("new-item");
+    }
   });
 
-  it("a teaching principal reads personal tiles first, then the school's structure", () => {
+  it("a teaching principal reads the school's structure, with no creation tile ahead of it", () => {
     expect(codes(homeTilesFor({ isStudent: false, isTeacher: true, isAdmin: true, adminScope: "school", singleSchoolId: "s1" }, has(ADMIN_PERMS)))).toEqual([
-      "new-item",
       "admin-attendance",
       "schools",
       "periods",
