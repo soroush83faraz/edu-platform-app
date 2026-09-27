@@ -25,7 +25,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { drizzle, type NodePgClient, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../src/db/schema";
 import { findAttendanceSession, listClassRoster, listClassSlots } from "../src/modules/academic/repo";
@@ -38,24 +38,15 @@ import { hashPassword } from "../src/modules/iam/password";
 import { IMPLICIT_PERMISSIONS, PERMISSIONS } from "../src/modules/iam/permissions";
 import { listValidAssignments } from "../src/modules/iam/repo";
 import { createStaff, createStudent, findAccountOfPerson, type IamCtx } from "../src/modules/iam/service";
-import { findAcademicYearByName, findClassGroupByName, findDefaultBranch, findEducationLevelByCode, findGradeLevelByCode, findOffering, findSchoolByCode, findSubjectByCode } from "../src/modules/tenancy/repo";
-import {
-  createAcademicYear,
-  createClassGroup,
-  createClassOffering,
-  createEducationLevel,
-  createGradeLevel,
-  createSchool,
-  createSubject,
-  updateBranch,
-  upsertTerm,
-} from "../src/modules/tenancy/service";
+import { findAcademicYearByName, findClassGroupByName, findDefaultBranch, findGradeLevelByCode, findOffering, findSchoolByCode, findSubjectByCode } from "../src/modules/tenancy/repo";
+import { createAcademicYear, createClassGroup, createClassOffering, createSchool, createSubject, ensureCatalogYears, updateBranch, upsertTerm } from "../src/modules/tenancy/service";
 import { addComment, changeStatus, createWorkItem, type WorkspaceCtx } from "../src/modules/workspace/service";
-import { seedCatalog } from "./seed";
+import { ensureOrgCatalog, seedCatalog } from "./seed";
 import { attendanceStatusFor, minutesLateFor, pastSchoolDays, rollCallPeriod } from "./attendance-plan";
 import { hasTeacherClash, planTimetables, type PlanClass } from "./timetable-plan";
 
-type Db = NodePgDatabase<typeof schema>;
+/** A drizzle database with its driver (`$client`), which the organization catalog seed writes through. */
+type Db = NodePgDatabase<typeof schema> & { $client: NodePgClient };
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 const { organization, person, staffProfile, role, authIdentity, userAccount, teacherAssignment, workItem, workItemAssignee, workItemComment } = schema;
@@ -152,8 +143,6 @@ export interface PilotOrgSpec {
   /** Phone block digit pair after +98935. */
   phoneBlock: number;
   school: { code: string; name: string; gender: "girls" | "boys"; branchName: string };
-  level: { code: string; name: string };
-  grades: Array<{ code: string; name: string; seq: number }>;
   subjects: PilotSubject[];
   classes: PilotClass[];
   teachers: PilotTeacherSpec[];
@@ -185,17 +174,6 @@ const SEC1_SUBJECTS: PilotSubject[] = [
   { code: "PE", name: "تربیت بدنی" },
 ];
 
-const SEC2_GRADES = [
-  { code: "G10", name: "دهم", seq: 1 },
-  { code: "G11", name: "یازدهم", seq: 2 },
-  { code: "G12", name: "دوازدهم", seq: 3 },
-];
-const SEC1_GRADES = [
-  { code: "G7", name: "هفتم", seq: 1 },
-  { code: "G8", name: "هشتم", seq: 2 },
-  { code: "G9", name: "نهم", seq: 3 },
-];
-
 const SEC2_CORE = ["MATH", "LIT", "ARAB", "ENG", "REL"];
 const sec2Class = (name: string, grade: string, extra: string[]): PilotClass => ({ name, grade, subjects: [...SEC2_CORE, ...extra] });
 const SEC1_CORE = ["MATH", "SCI", "LIT", "ARAB", "ENG", "REL"];
@@ -221,8 +199,6 @@ export const ALLAMEH: PilotOrgSpec = {
   slug: "allameh",
   phoneBlock: 10,
   school: { code: "ALK", name: "علامه طباطبایی — شعبهٴ کارگر", gender: "boys", branchName: "کارگر" },
-  level: { code: "SEC2", name: "متوسطهٴ دوم" },
-  grades: SEC2_GRADES,
   subjects: SEC2_SUBJECTS,
   classes: [
     sec2Class("۱۰/۱", "G10", ["PHYS", "CHEM"]),
@@ -243,8 +219,6 @@ export const FARZANEGAN: PilotOrgSpec = {
   slug: "farzanegan",
   phoneBlock: 20,
   school: { code: "FRZ", name: "فرزانگان", gender: "girls", branchName: "مرکزی" },
-  level: { code: "SEC1", name: "متوسطهٴ اول" },
-  grades: SEC1_GRADES,
   subjects: SEC1_SUBJECTS,
   classes: [
     sec1Class("۷/۱", "G7", ["SOC", "TECH"]),
@@ -276,8 +250,6 @@ export const HELLI: PilotOrgSpec = {
   slug: "helli",
   phoneBlock: 30,
   school: { code: "HL4", name: "حلی ۴", gender: "boys", branchName: "مرکزی" },
-  level: { code: "SEC2", name: "متوسطهٴ دوم" },
-  grades: SEC2_GRADES,
   subjects: SEC2_SUBJECTS,
   classes: [
     sec2Class("۱۰/۱", "G10", ["PHYS", "CHEM"]),
@@ -582,6 +554,8 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
 
   // Global row: no RLS.
   await db.insert(organization).values({ id: orgId, name: spec.name, slug: spec.slug, status: "active" }).onConflictDoNothing({ target: organization.slug });
+  // A new organization starts with the fixed مقطع‌ها + پایه‌ها (src/modules/tenancy/fixed-catalog.ts).
+  await ensureOrgCatalog(db, orgId);
 
   // The bootstrap ctx ACTS AS the organization admin whose person row is created first with this very id
   // (the same organization-scoped org_admin assignment a real login of theirs would carry).
@@ -608,13 +582,12 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
     );
     const ctx = await actorCtx(tx, orgId, admin.personId, ctxCache);
 
-    const levelRow = await findEducationLevelByCode(tx, spec.level.code);
-    const levelId = levelRow ? levelRow.id : (await createEducationLevel(tx, ctx, { id: pilotId(k(`level:${spec.level.code}`)), name: spec.level.name, code: spec.level.code, sequence: 1 })).educationLevelId;
-
+    // مقطع‌ها and پایه‌ها are the FIXED catalog (`ensureOrgCatalog` right after the organization row): look them up.
     const gradeIds: Record<string, string> = {};
-    for (const g of spec.grades) {
-      const existing = await findGradeLevelByCode(tx, g.code);
-      gradeIds[g.code] = existing ? existing.id : (await createGradeLevel(tx, ctx, { id: pilotId(k(`grade:${g.code}`)), educationLevelId: levelId, name: g.name, code: g.code, sequence: g.seq })).gradeLevelId;
+    for (const code of new Set(spec.classes.map((c) => c.grade))) {
+      const existing = await findGradeLevelByCode(tx, code);
+      if (!existing) throw new Error(`pilot: grade ${code} is not in the fixed catalog`);
+      gradeIds[code] = existing.id;
     }
     const subjectIds: Record<string, string> = {};
     const subjectNames: Record<string, string> = {};
@@ -650,6 +623,8 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
     ];
     const termIds: string[] = [];
     for (const t of terms) termIds.push((await upsertTerm(tx, ctx, { id: pilotId(k(`term:${t.seq}`)), academicYearId: yearId, name: t.name, sequence: t.seq, startsOn: t.startsOn, endsOn: t.endsOn })).termId);
+    // …and the rest of the fixed years (۱۴۰۶-۱۴۰۷), as every school gets them.
+    await ensureCatalogYears(tx, ctx, schoolId);
 
     const classIds: Record<string, string> = {};
     const offeringIds: Record<string, string> = {};

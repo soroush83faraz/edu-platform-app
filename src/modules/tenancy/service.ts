@@ -25,6 +25,7 @@ import {
   findTermBySequence,
   listSchoolPeriods,
 } from "./repo";
+import { FIXED_YEARS, catalogYearKey } from "./fixed-catalog";
 import { academicYear, branch, classGroup, classOffering, educationLevel, gradeLevel, school, schoolPeriod, subject, term } from "./schema";
 
 export type ServiceCtx = AuditCtx & { orgId: string; personId: string };
@@ -260,6 +261,34 @@ export async function updateAcademicYear(tx: Tx, ctx: ServiceCtx, academicYearId
     })
     .where(eq(academicYear.id, academicYearId));
   await audit(ctx, "tenancy.academic_year.updated", { schema: "tenancy", table: "academic_year", id: academicYearId }, before, input, tx);
+}
+
+/**
+ * The FIXED academic years (`FIXED_YEARS`: ۱۴۰۵-۱۴۰۶ current, ۱۴۰۶-۱۴۰۷, two نوبت each) for one school — years are
+ * no longer defined from the UI (owner, 2026-09-27), so a school created from «مدرسه‌ها» gets them here, in the
+ * same transaction. Same rule as the catalog seed (`ensureOrgCatalogWith`, scripts/catalog.ts): a year whose name
+ * has the same digits is reused untouched, a missing one is created with its terms, and ۱۴۰۵-۱۴۰۶ is made current
+ * only when the school has no current year. Idempotent; returns the ids of the years it created.
+ */
+export async function ensureCatalogYears(tx: Tx, ctx: ServiceCtx, schoolId: string): Promise<{ created: string[] }> {
+  const years = await tx.select({ id: academicYear.id, name: academicYear.name, isCurrent: academicYear.isCurrent }).from(academicYear).where(eq(academicYear.schoolId, schoolId));
+  let hasCurrent = years.some((y) => y.isCurrent);
+  const created: string[] = [];
+  for (const fy of FIXED_YEARS) {
+    const existing = years.find((y) => catalogYearKey(y.name) === catalogYearKey(fy.name));
+    if (existing) {
+      if (fy.isCurrent && !hasCurrent) {
+        await updateAcademicYear(tx, ctx, existing.id, { isCurrent: true });
+        hasCurrent = true;
+      }
+      continue;
+    }
+    const isCurrent = fy.isCurrent && !hasCurrent;
+    const res = await createAcademicYear(tx, ctx, { schoolId, name: fy.name, startsOn: fy.startsOn, endsOn: fy.endsOn, isCurrent, terms: fy.terms.map((t) => ({ ...t })) });
+    if (isCurrent) hasCurrent = true;
+    created.push(res.academicYearId);
+  }
+  return { created };
 }
 
 /** Insert or update-in-place by `(academic_year_id, sequence)`. */

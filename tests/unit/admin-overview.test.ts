@@ -1,7 +1,7 @@
 // The /admin landing page under the IA rule (docs/decisions.md «one home per destination»): every admin SECTION
-// gets exactly one row and «نمای کلی» none (it IS this page). Round 7: «مدرسه‌ها» and «تنظیمات زیرساختی» are
-// ordinary rows of that list for the organization admin — the setup checklist has no panel of its own any more —
-// while the remaining structure destinations stay Home tiles. Rendered statically, inspected as a string.
+// gets exactly one row and «نمای کلی» none (it IS this page). «مدرسه‌ها» is the FIRST row for the organization admin
+// (owner, 2026-09-27); «تنظیمات زیرساختی» is gone and the fixed catalog (مقطع، پایه، سال) has no door at all.
+// Rendered statically, inspected as a string.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -49,27 +49,27 @@ function render(org: boolean) {
 const hrefs = (html: string) => [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
 
 describe("AdminOverview (/admin landing)", () => {
-  it("«تنظیمات زیرساختی» and «مدرسه‌ها» are ordinary section rows for the organization admin — each linked exactly once, neither a panel of its own", () => {
+  it("«مدرسه‌ها» is the organization admin's first section row — linked exactly once, with درس‌ها named in its hint", () => {
     const html = render(true);
-    expect(hrefs(html).filter((h) => h === "/admin/infrastructure")).toEqual(["/admin/infrastructure"]);
+    const rows = hrefs(html.slice(html.indexOf('class="surface-work'))).filter((h) => h.startsWith("/admin/"));
+    expect(rows[0]).toBe("/admin/schools");
     expect(hrefs(html).filter((h) => h === "/admin/schools")).toEqual(["/admin/schools"]);
-    expect(html).toContain("تنظیمات زیرساختی");
-    // The progress bar lived in a panel above the list; the section row replaced it («progressbar» was its mark).
+    expect(html).toContain("مدرسهٴ جدید، درس‌ها و صفحهٴ مدیریت هر مدرسه");
     expect(html).not.toContain("progressbar");
   });
 
-  it("carries no moved row: سال تحصیلی، پایه‌ها، درس‌ها، مقطع‌ها and حضور و غیاب are Home tiles now", () => {
+  it("carries no door to the fixed catalog or its old hub, and none to درس‌ها or حضور و غیاب (the one lives under «مدرسه‌ها», the other is a Home tile)", () => {
     const html = render(true);
-    for (const href of ["/admin/attendance", "/admin/years", "/admin/grades", "/admin/subjects", "/admin/levels"]) {
+    for (const href of ["/admin/infrastructure", "/admin/attendance", "/admin/years", "/admin/terms", "/admin/grades", "/admin/subjects", "/admin/levels"]) {
       expect(hrefs(html)).not.toContain(href);
     }
+    expect(html).not.toContain("تنظیمات زیرساختی");
   });
 
-  it("shows a school-scoped admin neither «راه‌اندازی» nor the organization's «مدرسه‌ها» list (their door to their own school is a Home tile)", () => {
+  it("shows a school-scoped admin not the organization's «مدرسه‌ها» list (their door to their own school is a Home tile)", () => {
     const html = render(false);
-    expect(hrefs(html)).not.toContain("/admin/infrastructure");
     expect(hrefs(html)).not.toContain("/admin/schools");
-    expect(html).not.toContain("راه‌اندازی");
+    expect(hrefs(html)).not.toContain("/admin/infrastructure");
   });
 
   it("lists every other section once and never «نمای کلی» (this page)", () => {

@@ -1,7 +1,7 @@
 // The school hub (/admin/schools/[id]): a school's own management page — its آمار (کلاس‌ها/دانش‌آموزان/کارکنان,
-// each a door to that school's filtered list), سال تحصیلی, کلاس‌ها of this school, برنامهٔ زنگ‌بندی and the ارائهٴ
-// درس summary. Every «افزودن» reuses the resource definition of the matching list page, so nothing here duplicates
-// validation: the forms post to `adminResourceMutate` like everywhere else.
+// each a jump to its section below), سال تحصیلی (the fixed catalog, read-only), کلاس‌ها, کارکنان and دانش‌آموزان of
+// this school (a compact list each + the door to the full filtered list), برنامهٴ زنگ‌بندی and the ارائهٴ درس
+// summary. The people lists are the SAME queries as /admin/staff?school= and /admin/students?school= (first page).
 import { and, desc, eq, count, sql } from "drizzle-orm";
 import { z } from "zod";
 import { defineQuery } from "@/lib/actions";
@@ -9,10 +9,15 @@ import { notFound } from "@/lib/errors";
 import { assertSchoolInScope, getAdminScope } from "@/modules/iam/service";
 import { findSchoolById } from "@/modules/tenancy/repo";
 import { academicYear, branch, classGroup, classOffering } from "@/modules/tenancy/schema";
+import { canAtAnyScope } from "@/modules/iam/can";
 import { resourceOpGate, type AnyResourceDef, type ResourceOp } from "./defineResource";
 import { schoolsLabelFa } from "./nav";
 import { oneSchoolCounts } from "./overview";
-import { classResource, listClassRows, schoolResource, yearResource } from "./resources";
+import { listStaff, listStudents, type StaffListRow, type StudentListRow } from "./people";
+import { classResource, listClassRows, schoolResource } from "./resources";
+
+/** How many people each hub section lists before «همه» — enough to recognise the school, short enough to scan. */
+export const HUB_PEOPLE = 8;
 
 export const SchoolIdInput = z.object({ schoolId: z.uuid("شناسه نامعتبر است.") }).strict();
 
@@ -42,7 +47,13 @@ export interface SchoolHubData {
   /** The year the header names: the current one, else the newest. No نوبت‌ها here — a school year is enough granularity for this page. */
   focusYear: SchoolHubYear | null;
   offerings: { total: number; withoutTeacher: number };
-  can: { school: boolean; structure: boolean; classes: boolean };
+  /**
+   * کارکنان / دانش‌آموزان of THIS school — the first `HUB_PEOPLE` rows of the same lists /admin/staff?school= and
+   * /admin/students?school= show, with their totals. `null` when the caller may not read people (`iam.person.read`).
+   */
+  staff: { rows: StaffListRow[]; total: number } | null;
+  students: { rows: StudentListRow[]; total: number } | null;
+  can: { school: boolean; classes: boolean };
   /** «مدرسه» / «مدرسه‌ها» — what the list this page came from is called for THIS caller (`schoolsLabelFa`). */
   backLabelFa: string;
 }
@@ -87,15 +98,23 @@ export const schoolHubQuery = defineQuery<SchoolHubData, typeof SchoolIdInput>(
       .innerJoin(branch, eq(branch.id, classGroup.branchId))
       .where(and(eq(branch.schoolId, sch.id), eq(classGroup.status, "active"), sql`${classOffering.status} <> 'closed'`));
 
+    // Staff = anchored to this school (`staff_profile.school_id`), students = enrolled in it — the `?school=` filters.
+    const people = canAtAnyScope(ctx.assignments, "iam.person.read");
+    const staff = people ? await listStaff(tx, scope, { q: "", page: 1, pageSize: HUB_PEOPLE, schoolId: sch.id }) : null;
+    const students = people ? await listStudents(tx, scope, { q: "", page: 1, pageSize: HUB_PEOPLE, schoolId: sch.id }) : null;
+
     const gate = (def: AnyResourceDef, op: ResourceOp) => resourceOpGate(def, op, ctx.assignments, scope).ok;
     return {
       school: { id: sch.id, name: sch.name, code: sch.code, genderPolicy: sch.genderPolicy, isDefault: sch.isDefault },
-      counts,
+      // The stat row counts what its sections list, so a number and the list under it never disagree.
+      counts: { ...counts, ...(staff ? { staff: staff.total } : {}), ...(students ? { students: students.total } : {}) },
       years,
       classes,
       focusYear: focus,
       offerings: { total: Number(offerings?.total ?? 0), withoutTeacher: Number(offerings?.withoutTeacher ?? 0) },
-      can: { school: gate(schoolResource, "update"), structure: gate(yearResource, "create"), classes: gate(classResource, "create") },
+      staff,
+      students,
+      can: { school: gate(schoolResource, "update"), classes: gate(classResource, "create") },
       backLabelFa: schoolsLabelFa(scope),
     };
   },

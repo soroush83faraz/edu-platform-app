@@ -59,8 +59,9 @@ describe("seed --catalog", () => {
 
   it("the compiled scripts/seed-catalog.js (pg only, the deploy's `seed` service) prints the same summary and changes nothing after the TS seed", async () => {
     const { out, modules } = buildSeedCatalog();
-    // Only the entry, the catalog and the permission catalog reach the bundle — no drizzle, no zod, no schema.
-    expect(modules.sort()).toEqual(["scripts/catalog", "scripts/seed-catalog", "src/modules/iam/permissions"]);
+    // Only the entry, the catalog, the permission catalog and the fixed مقطع/پایه/سال data reach the bundle — no
+    // drizzle, no zod, no schema.
+    expect(modules.sort()).toEqual(["scripts/catalog", "scripts/seed-catalog", "src/modules/iam/permissions", "src/modules/tenancy/fixed-catalog"]);
 
     const pool = new Pool({ connectionString: OWNER_URL, max: 1 });
     try {
@@ -77,7 +78,12 @@ describe("seed --catalog", () => {
       const run = spawnSync(process.execPath, [out, "--test"], { encoding: "utf8", env: { ...process.env, MIGRATION_DATABASE_URL_TEST: OWNER_URL } });
       expect(run.stderr, run.stderr).toBe("");
       expect(run.status).toBe(0);
-      expect(run.stdout.trim()).toBe(formatCatalogSummary(counts));
+      // Line 1: the system catalog, unchanged by the TS seed that ran first. Line 2: the organizations' fixed
+      // structure catalog (the fixture organizations get their مقطع/پایه/سال here; afterAll rebuilds the fixtures).
+      const [systemLine, orgLine, ...rest] = run.stdout.trim().split(/\r?\n/);
+      expect(systemLine).toBe(formatCatalogSummary(counts));
+      expect(orgLine).toMatch(/^\[seed\] organization catalog: \d+ organizations; created \d+ levels, \d+ grades, \d+ years, \d+ terms;/);
+      expect(rest).toEqual([]);
       expect(path.basename(out)).toBe("seed-catalog.js");
 
       expect((await snapshot()).rows).toEqual(before);

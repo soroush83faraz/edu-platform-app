@@ -1,12 +1,13 @@
-// The structure resources of /admin, in onboarding order: school → branch → academic year (+ terms) → education
-// level → grade level → subject → class group → class offering. Each one maps a strict Zod input onto the
-// tenancy services; lists read under RLS and filter by the caller's admin scope (school-owned rows) — org-level
-// catalogs are read-only for school-scoped admins (`orgOnly`).
+// The structure resources of /admin: school → subject → class group → class offering. Each one maps a strict Zod
+// input onto the tenancy services; lists read under RLS and filter by the caller's admin scope (school-owned rows) —
+// the organization's درس‌ها are read-only for school-scoped admins (`orgOnly`). مقطع‌ها, پایه‌ها and سال‌های تحصیلی
+// (+ نوبت‌ها) are a FIXED catalog since 2026-09-27 (src/modules/tenancy/fixed-catalog.ts, written by the catalog
+// seed and by `ensureCatalogYears` when a school is created): they have no resource, no form and no route.
 import { and, asc, count, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import type { Tx } from "@/lib/actions";
 import { forbidden, notFound, validation } from "@/lib/errors";
-import { formatNumberFa, isoDateToJalali, jalaliToIsoDate } from "@/lib/format";
+import { formatNumberFa } from "@/lib/format";
 import { assignTeacher, endTeacherAssignment } from "@/modules/academic/service";
 import { classEnrollment, teacherAssignment } from "@/modules/academic/schema";
 import { can, isOrganizationAdmin, type Assignment } from "@/modules/iam/can";
@@ -15,26 +16,16 @@ import { assertSchoolInScope, isInScope, requireStaffAssignable, staffAssignable
 import { findClassGroup, listSchools, listTerms, schoolIdOfAcademicYear, schoolIdOfBranch, schoolIdOfClassOffering, schoolIdOfTerm } from "@/modules/tenancy/repo";
 import { academicYear, branch, classGroup, classOffering, educationLevel, gradeLevel, school, subject, term } from "@/modules/tenancy/schema";
 import {
-  createAcademicYear,
   createClassGroup,
   createClassOffering,
-  createEducationLevel,
-  createGradeLevel,
   createSchool,
   createSubject,
-  deleteAcademicYear,
-  deleteEducationLevel,
-  deleteGradeLevel,
   deleteSubject,
-  deleteTerm,
-  updateAcademicYear,
+  ensureCatalogYears,
   updateClassGroup,
   updateClassOffering,
-  updateEducationLevel,
-  updateGradeLevel,
   updateSchool,
   updateSubject,
-  upsertTerm,
 } from "@/modules/tenancy/service";
 import { defineResource, type AnyResourceDef, type FormField, type ListOptions, type SelectOption } from "./defineResource";
 import { adminSectionsFor, type AdminNavItem } from "./nav";
@@ -56,20 +47,6 @@ const requiredRef = (label: string) => z.string(`${label} را انتخاب کن
 export const pickMessage = (label: string) => `${label} را انتخاب کنید.`;
 const name = (label: string) => z.string().trim().min(1, `${label} را وارد کنید.`).max(120, `${label} حداکثر ۱۲۰ نویسه است.`);
 const code = z.string().trim().min(1, "کد را وارد کنید.").max(20, "کد حداکثر ۲۰ نویسه است.");
-const jalaliDate = (label: string) =>
-  z
-    .string()
-    .trim()
-    .min(1, `${label} را وارد کنید.`)
-    .transform((v, c) => {
-      const iso = jalaliToIsoDate(v);
-      if (!iso) {
-        c.addIssue({ code: "custom", message: "تاریخ نامعتبر است؛ مثال: ۱۴۰۵/۰۷/۰۱" });
-        return z.NEVER;
-      }
-      return iso;
-    });
-const sequence = z.number("ترتیب باید عدد باشد.").int("ترتیب باید عدد صحیح باشد.").min(1, "ترتیب از ۱ شروع می‌شود.").max(99, "ترتیب حداکثر ۹۹ است.");
 /** Optional integer field (`null` = empty). Every failure has its own Persian message — nothing falls through to Zod's default text. */
 const optionalInt = (min: number, max: number, label: string) =>
   z
@@ -110,11 +87,6 @@ const GENDER_OPTIONS: SelectOption[] = [
 
 function paginate(opts: ListOptions): { limit: number; offset: number } {
   return { limit: opts.pageSize, offset: (Math.max(1, opts.page) - 1) * opts.pageSize };
-}
-
-async function schoolOptions(tx: Tx, scope: AdminScope): Promise<SelectOption[]> {
-  const rows = await listSchools(tx);
-  return rows.filter((s) => isInScope(scope, s.id)).map((s) => ({ value: s.id, label: s.name }));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -164,8 +136,10 @@ export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolIn
     { name: "genderPolicy", labelFa: "جنسیت", type: "select", options: GENDER_OPTIONS, required: true },
     { name: "isDefault", labelFa: "مدرسهٴ پیش‌فرض سازمان", type: "toggle" },
   ],
-  /** The school's own page: the management hub where its سال تحصیلی, کلاس‌ها, کارکنان, دانش‌آموزان and برنامه are set up. */
+  /** The school's own page: the management hub where its کلاس‌ها, کارکنان, دانش‌آموزان and زنگ‌بندی are managed. */
   rowHref: (r) => `/admin/schools/${r.id}`,
+  /** The organization's درس‌ها live one step under «مدرسه‌ها» since «تنظیمات زیرساختی» is gone (owner, 2026-09-27). */
+  links: [{ href: "/admin/subjects", labelFa: "درس‌ها", orgOnly: true }],
   async list(tx, _ctx, scope, opts) {
     const where = and(scopeSchoolIds(scope), faLike(school.name, opts.q));
     const rows = await tx
@@ -182,6 +156,8 @@ export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolIn
     requireOrgScope(scope);
     if (!input.code) throw validation({ fieldErrors: { code: ["کد مدرسه را وارد کنید."] } }, "کد مدرسه را وارد کنید.");
     const res = await createSchool(tx, ctx, { name: input.name, code: input.code, genderPolicy: input.genderPolicy, isDefault: input.isDefault });
+    // Years are a fixed catalog now (no year form anywhere): the new school starts with ۱۴۰۵-۱۴۰۶ (current) and ۱۴۰۶-۱۴۰۷.
+    await ensureCatalogYears(tx, ctx, res.schoolId);
     return { id: res.schoolId };
   },
   async update(tx, ctx, scope, id, input) {
@@ -191,350 +167,8 @@ export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolIn
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-// academic year
+// subject (organization catalog; the fixed مقطع/پایه/سال catalog has no resource — src/modules/tenancy/fixed-catalog.ts)
 // ---------------------------------------------------------------------------------------------------------------
-
-interface YearRow {
-  id: string;
-  name: string;
-  schoolId: string;
-  schoolName: string;
-  startsOn: string;
-  endsOn: string;
-  isCurrent: boolean;
-  terms: number;
-}
-
-const YearInput = z
-  .object({
-    schoolId: optionalRef,
-    name: name("نام سال تحصیلی"),
-    startsOn: jalaliDate("تاریخ شروع"),
-    endsOn: jalaliDate("تاریخ پایان"),
-    isCurrent: z.boolean().default(false),
-    /** Create-only convenience: two standard terms (نوبت اول/دوم) split at the midpoint. */
-    withTerms: z.boolean().default(true),
-  })
-  .strict();
-
-function midpoint(startsOn: string, endsOn: string): string {
-  const a = new Date(`${startsOn}T00:00:00Z`).getTime();
-  const b = new Date(`${endsOn}T00:00:00Z`).getTime();
-  return new Date(Math.round((a + b) / 2)).toISOString().slice(0, 10);
-}
-
-function nextDay(iso: string): string {
-  return new Date(new Date(`${iso}T00:00:00Z`).getTime() + 86_400_000).toISOString().slice(0, 10);
-}
-
-export const yearResource = defineResource<YearRow, z.output<typeof YearInput>>({
-  key: "years",
-  labelFa: "سال تحصیلی",
-  labelFaPlural: "سال‌های تحصیلی",
-  descriptionFa: "هر مدرسه یک سال «جاری» دارد؛ نوبت‌ها (ترم‌ها) زیر هر سال تعریف می‌شوند.",
-  permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
-  columns: [
-    { key: "name", labelFa: "سال" },
-    { key: "schoolName", labelFa: "مدرسه", mobileMeta: 2 },
-    { key: "startsOn", labelFa: "شروع", render: (r) => <span className="tabular">{isoDateToJalali(r.startsOn)}</span>, secondary: true },
-    { key: "endsOn", labelFa: "پایان", render: (r) => <span className="tabular">{isoDateToJalali(r.endsOn)}</span>, secondary: true },
-    { key: "range", labelFa: "بازه", render: (r) => <span className="tabular">{isoDateToJalali(r.startsOn)} – {isoDateToJalali(r.endsOn)}</span>, className: "hidden", mobileMeta: 1 },
-    { key: "terms", labelFa: "نوبت‌ها", render: (r) => `${formatNumberFa(r.terms)} نوبت`, mobileMeta: 2 },
-    { key: "isCurrent", labelFa: "جاری", render: (r) => (r.isCurrent ? "✓" : ""), mobileMeta: 1 },
-  ],
-  schema: YearInput,
-  formFields: [
-    { name: "schoolId", labelFa: "مدرسه", type: "select", optionsKey: "schools", required: true, createOnly: true },
-    { name: "name", labelFa: "نام سال", type: "text", required: true, placeholder: "۱۴۰۵-۱۴۰۶" },
-    { name: "startsOn", labelFa: "تاریخ شروع", type: "jalali_date", required: true, placeholder: "۱۴۰۵/۰۷/۰۱" },
-    { name: "endsOn", labelFa: "تاریخ پایان", type: "jalali_date", required: true, placeholder: "۱۴۰۶/۰۳/۳۱" },
-    { name: "isCurrent", labelFa: "سال جاری این مدرسه", type: "toggle" },
-    { name: "withTerms", labelFa: "دو نوبت استاندارد بساز (نوبت اول/دوم)", type: "toggle", createOnly: true },
-  ],
-  formValues: (r) => ({ schoolId: r.schoolId, name: r.name, startsOn: isoDateToJalali(r.startsOn), endsOn: isoDateToJalali(r.endsOn), isCurrent: r.isCurrent, withTerms: true }),
-  rowHref: (r) => `/admin/terms?year=${r.id}`,
-  async loadOptions(tx, _ctx, scope) {
-    return { schools: await schoolOptions(tx, scope) };
-  },
-  async list(tx, _ctx, scope, opts) {
-    const where = and(scopeSchoolIds(scope), faLike(academicYear.name, opts.q));
-    const rows = await tx
-      .select({
-        id: academicYear.id,
-        name: academicYear.name,
-        schoolId: academicYear.schoolId,
-        schoolName: school.name,
-        startsOn: academicYear.startsOn,
-        endsOn: academicYear.endsOn,
-        isCurrent: academicYear.isCurrent,
-        terms: count(term.id),
-      })
-      .from(academicYear)
-      .innerJoin(school, eq(school.id, academicYear.schoolId))
-      .leftJoin(term, eq(term.academicYearId, academicYear.id))
-      .where(where)
-      .groupBy(academicYear.id, school.name)
-      .orderBy(asc(school.name), desc(academicYear.isCurrent), desc(academicYear.startsOn))
-      .limit(paginate(opts).limit)
-      .offset(paginate(opts).offset);
-    const [{ n }] = await tx.select({ n: count() }).from(academicYear).innerJoin(school, eq(school.id, academicYear.schoolId)).where(where);
-    return { rows, total: n };
-  },
-  async create(tx, ctx, scope, input) {
-    if (!input.schoolId) throw validation({ fieldErrors: { schoolId: [pickMessage("مدرسه")] } }, pickMessage("مدرسه"));
-    assertSchoolInScope(scope, input.schoolId);
-    const mid = midpoint(input.startsOn, input.endsOn);
-    const res = await createAcademicYear(tx, ctx, {
-      schoolId: input.schoolId,
-      name: input.name,
-      startsOn: input.startsOn,
-      endsOn: input.endsOn,
-      isCurrent: input.isCurrent,
-      terms: input.withTerms
-        ? [
-            { name: "نوبت اول", sequence: 1, startsOn: input.startsOn, endsOn: mid },
-            { name: "نوبت دوم", sequence: 2, startsOn: nextDay(mid), endsOn: input.endsOn },
-          ]
-        : [],
-    });
-    return { id: res.academicYearId };
-  },
-  async update(tx, ctx, scope, id, input) {
-    assertSchoolInScope(scope, await schoolIdOfAcademicYear(tx, id));
-    await updateAcademicYear(tx, ctx, id, { name: input.name, startsOn: input.startsOn, endsOn: input.endsOn, isCurrent: input.isCurrent });
-  },
-  archive: {
-    labelFa: "حذف",
-    confirmFa: "این سال تحصیلی و نوبت‌هایش حذف شوند؟ (فقط وقتی کلاس یا ثبت‌نامی به آن وصل نیست)",
-    async run(tx, ctx, scope, id) {
-      assertSchoolInScope(scope, await schoolIdOfAcademicYear(tx, id));
-      await deleteAcademicYear(tx, ctx, id);
-    },
-  },
-});
-
-// ---------------------------------------------------------------------------------------------------------------
-// term (nested under a year: /admin/terms?year=<id>)
-// ---------------------------------------------------------------------------------------------------------------
-
-interface TermRow {
-  id: string;
-  name: string;
-  sequence: number;
-  startsOn: string;
-  endsOn: string;
-  offerings: number;
-}
-
-const TermInputSchema = z
-  .object({
-    academicYearId: uuid,
-    name: name("نام نوبت"),
-    sequence,
-    startsOn: jalaliDate("تاریخ شروع"),
-    endsOn: jalaliDate("تاریخ پایان"),
-  })
-  .strict();
-
-export const termResource = defineResource<TermRow, z.output<typeof TermInputSchema>>({
-  key: "terms",
-  labelFa: "نوبت",
-  labelFaPlural: "نوبت‌ها",
-  descriptionFa: "نوبت‌های (ترم‌های) یک سال تحصیلی. هر ارائهٴ درس به یک نوبت وصل است.",
-  permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
-  parentParam: { name: "year", field: "academicYearId", labelFa: "سال تحصیلی", backHref: () => "/admin/years" },
-  columns: [
-    { key: "sequence", labelFa: "ترتیب", render: (r) => formatNumberFa(r.sequence) },
-    { key: "name", labelFa: "نام" },
-    { key: "startsOn", labelFa: "شروع", render: (r) => <span className="tabular">{isoDateToJalali(r.startsOn)}</span>, mobileMeta: 1 },
-    { key: "endsOn", labelFa: "پایان", render: (r) => <span className="tabular">{isoDateToJalali(r.endsOn)}</span>, mobileMeta: 1 },
-    { key: "offerings", labelFa: "ارائه‌ها", render: (r) => `${formatNumberFa(r.offerings)} ارائه`, secondary: true, mobileMeta: 2 },
-  ],
-  schema: TermInputSchema,
-  formFields: [
-    { name: "name", labelFa: "نام نوبت", type: "text", required: true, placeholder: "نوبت اول" },
-    { name: "sequence", labelFa: "ترتیب", type: "number", required: true, numeric: true },
-    { name: "startsOn", labelFa: "تاریخ شروع", type: "jalali_date", required: true, placeholder: "۱۴۰۵/۰۷/۰۱" },
-    { name: "endsOn", labelFa: "تاریخ پایان", type: "jalali_date", required: true, placeholder: "۱۴۰۵/۱۰/۳۰" },
-  ],
-  formValues: (r) => ({ name: r.name, sequence: r.sequence, startsOn: isoDateToJalali(r.startsOn), endsOn: isoDateToJalali(r.endsOn) }),
-  async list(tx, _ctx, scope, opts) {
-    if (!opts.parent) return { rows: [], total: 0 };
-    assertSchoolInScope(scope, await schoolIdOfAcademicYear(tx, opts.parent));
-    const rows = await tx
-      .select({ id: term.id, name: term.name, sequence: term.sequence, startsOn: term.startsOn, endsOn: term.endsOn, offerings: count(classOffering.id) })
-      .from(term)
-      .leftJoin(classOffering, eq(classOffering.termId, term.id))
-      .where(eq(term.academicYearId, opts.parent))
-      .groupBy(term.id)
-      .orderBy(asc(term.sequence));
-    return { rows, total: rows.length };
-  },
-  async create(tx, ctx, scope, input) {
-    assertSchoolInScope(scope, await schoolIdOfAcademicYear(tx, input.academicYearId));
-    const res = await upsertTerm(tx, ctx, { academicYearId: input.academicYearId, name: input.name, sequence: input.sequence, startsOn: input.startsOn, endsOn: input.endsOn });
-    return { id: res.termId };
-  },
-  async update(tx, ctx, scope, id, input) {
-    assertSchoolInScope(scope, await schoolIdOfAcademicYear(tx, input.academicYearId));
-    const [row] = await tx.select({ id: term.id, sequence: term.sequence }).from(term).where(and(eq(term.id, id), eq(term.academicYearId, input.academicYearId))).limit(1);
-    if (!row) throw notFound();
-    if (row.sequence !== input.sequence) {
-      const clash = await tx.select({ id: term.id }).from(term).where(and(eq(term.academicYearId, input.academicYearId), eq(term.sequence, input.sequence))).limit(1);
-      if (clash[0]) throw validation({ fieldErrors: { sequence: ["نوبتی با این ترتیب وجود دارد."] } }, "نوبتی با این ترتیب وجود دارد.");
-      await tx.update(term).set({ sequence: input.sequence }).where(eq(term.id, id));
-    }
-    await upsertTerm(tx, ctx, { academicYearId: input.academicYearId, name: input.name, sequence: input.sequence, startsOn: input.startsOn, endsOn: input.endsOn });
-  },
-  archive: {
-    labelFa: "حذف",
-    confirmFa: "این نوبت حذف شود؟ (فقط وقتی ارائهٴ درسی به آن وصل نیست)",
-    async run(tx, ctx, scope, id) {
-      const [row] = await tx.select({ academicYearId: term.academicYearId }).from(term).where(eq(term.id, id)).limit(1);
-      if (!row) throw notFound();
-      assertSchoolInScope(scope, await schoolIdOfAcademicYear(tx, row.academicYearId));
-      await deleteTerm(tx, ctx, id);
-    },
-  },
-});
-
-// ---------------------------------------------------------------------------------------------------------------
-// education level / grade level / subject (organization catalogs)
-// ---------------------------------------------------------------------------------------------------------------
-
-interface LevelRow {
-  id: string;
-  name: string;
-  code: string;
-  sequence: number;
-  grades: number;
-}
-
-const LevelInput = z.object({ name: name("نام مقطع"), code: code.optional(), sequence }).strict();
-
-export const levelResource = defineResource<LevelRow, z.output<typeof LevelInput>>({
-  key: "levels",
-  labelFa: "مقطع",
-  labelFaPlural: "مقطع‌ها",
-  descriptionFa: "مثل ابتدایی، متوسطهٴ اول، متوسطهٴ دوم. در سطح سازمان تعریف می‌شود.",
-  permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
-  orgOnly: true,
-  columns: [
-    { key: "sequence", labelFa: "ترتیب", render: (r) => formatNumberFa(r.sequence) },
-    { key: "name", labelFa: "نام" },
-    { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, secondary: true, mobileMeta: 2 },
-    { key: "grades", labelFa: "پایه‌ها", render: (r) => `${formatNumberFa(r.grades)} پایه`, mobileMeta: 1 },
-  ],
-  schema: LevelInput,
-  formFields: [
-    { name: "name", labelFa: "نام مقطع", type: "text", required: true, placeholder: "متوسطهٴ دوم" },
-    { name: "code", labelFa: "کد (انگلیسی)", type: "text", required: true, createOnly: true, ltr: true, placeholder: "SEC2" },
-    { name: "sequence", labelFa: "ترتیب", type: "number", required: true, numeric: true },
-  ],
-  async list(tx, _ctx, _scope, opts) {
-    const where = faLike(educationLevel.name, opts.q);
-    const rows = await tx
-      .select({ id: educationLevel.id, name: educationLevel.name, code: educationLevel.code, sequence: educationLevel.sequence, grades: count(gradeLevel.id) })
-      .from(educationLevel)
-      .leftJoin(gradeLevel, eq(gradeLevel.educationLevelId, educationLevel.id))
-      .where(where)
-      .groupBy(educationLevel.id)
-      .orderBy(asc(educationLevel.sequence));
-    return { rows, total: rows.length };
-  },
-  async create(tx, ctx, scope, input) {
-    requireOrgScope(scope);
-    if (!input.code) throw validation({ fieldErrors: { code: ["کد را وارد کنید."] } }, "کد را وارد کنید.");
-    return { id: (await createEducationLevel(tx, ctx, { name: input.name, code: input.code, sequence: input.sequence })).educationLevelId };
-  },
-  async update(tx, ctx, scope, id, input) {
-    requireOrgScope(scope);
-    await updateEducationLevel(tx, ctx, id, { name: input.name, sequence: input.sequence });
-  },
-  archive: {
-    labelFa: "حذف",
-    confirmFa: "این مقطع حذف شود؟ (فقط وقتی هیچ پایه‌ای زیر آن نیست)",
-    async run(tx, ctx, scope, id) {
-      requireOrgScope(scope);
-      await deleteEducationLevel(tx, ctx, id);
-    },
-  },
-});
-
-interface GradeRow {
-  id: string;
-  name: string;
-  code: string;
-  sequence: number;
-  educationLevelId: string;
-  levelName: string;
-  classes: number;
-}
-
-const GradeInput = z.object({ educationLevelId: requiredRef("مقطع"), name: name("نام پایه"), code: code.optional(), sequence }).strict();
-
-export const gradeResource = defineResource<GradeRow, z.output<typeof GradeInput>>({
-  key: "grades",
-  labelFa: "پایه",
-  labelFaPlural: "پایه‌ها",
-  descriptionFa: "مثل دهم، یازدهم، دوازدهم. هر کلاس به یک پایه وصل است.",
-  permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
-  orgOnly: true,
-  columns: [
-    { key: "sequence", labelFa: "ترتیب", render: (r) => formatNumberFa(r.sequence) },
-    { key: "name", labelFa: "نام" },
-    { key: "levelName", labelFa: "مقطع", secondary: true, mobileMeta: 1 },
-    { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, secondary: true, mobileMeta: 2 },
-    { key: "classes", labelFa: "کلاس‌ها", render: (r) => `${formatNumberFa(r.classes)} کلاس`, mobileMeta: 1 },
-  ],
-  schema: GradeInput,
-  formFields: [
-    { name: "educationLevelId", labelFa: "مقطع", type: "select", optionsKey: "levels", required: true },
-    { name: "name", labelFa: "نام پایه", type: "text", required: true, placeholder: "دهم" },
-    { name: "code", labelFa: "کد (انگلیسی)", type: "text", required: true, createOnly: true, ltr: true, placeholder: "G10" },
-    { name: "sequence", labelFa: "ترتیب", type: "number", required: true, numeric: true },
-  ],
-  async loadOptions(tx) {
-    const rows = await tx.select({ id: educationLevel.id, name: educationLevel.name }).from(educationLevel).orderBy(asc(educationLevel.sequence));
-    return { levels: rows.map((r) => ({ value: r.id, label: r.name })) };
-  },
-  async list(tx, _ctx, _scope, opts) {
-    const rows = await tx
-      .select({
-        id: gradeLevel.id,
-        name: gradeLevel.name,
-        code: gradeLevel.code,
-        sequence: gradeLevel.sequence,
-        educationLevelId: gradeLevel.educationLevelId,
-        levelName: educationLevel.name,
-        classes: count(classGroup.id),
-      })
-      .from(gradeLevel)
-      .innerJoin(educationLevel, eq(educationLevel.id, gradeLevel.educationLevelId))
-      .leftJoin(classGroup, eq(classGroup.gradeLevelId, gradeLevel.id))
-      .where(faLike(gradeLevel.name, opts.q))
-      .groupBy(gradeLevel.id, educationLevel.name, educationLevel.sequence)
-      .orderBy(asc(educationLevel.sequence), asc(gradeLevel.sequence));
-    return { rows, total: rows.length };
-  },
-  async create(tx, ctx, scope, input) {
-    requireOrgScope(scope);
-    if (!input.code) throw validation({ fieldErrors: { code: ["کد را وارد کنید."] } }, "کد را وارد کنید.");
-    return { id: (await createGradeLevel(tx, ctx, { educationLevelId: input.educationLevelId, name: input.name, code: input.code, sequence: input.sequence })).gradeLevelId };
-  },
-  async update(tx, ctx, scope, id, input) {
-    requireOrgScope(scope);
-    await updateGradeLevel(tx, ctx, id, { name: input.name, sequence: input.sequence, educationLevelId: input.educationLevelId });
-  },
-  archive: {
-    labelFa: "حذف",
-    confirmFa: "این پایه حذف شود؟ (فقط وقتی در کلاس یا ثبت‌نامی استفاده نشده)",
-    async run(tx, ctx, scope, id) {
-      requireOrgScope(scope);
-      await deleteGradeLevel(tx, ctx, id);
-    },
-  },
-});
 
 interface SubjectRow {
   id: string;
@@ -552,6 +186,8 @@ export const subjectResource = defineResource<SubjectRow, z.output<typeof Subjec
   descriptionFa: "فهرست درس‌های سازمان؛ در هر کلاس، «ارائهٴ درس» یک درس را به یک نوبت و یک دبیر وصل می‌کند.",
   permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
   orgOnly: true,
+  /** Reached from «مدرسه‌ها» (its «درس‌ها» link), so that is its way back. */
+  back: { href: "/admin/schools", labelFa: "مدرسه‌ها" },
   columns: [
     { key: "name", labelFa: "نام" },
     { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, secondary: true, mobileMeta: 2 },
@@ -647,7 +283,6 @@ export async function classOptions(tx: Tx, scope: AdminScope): Promise<Record<st
     .from(academicYear)
     .where(inArray(academicYear.schoolId, ids))
     .orderBy(desc(academicYear.isCurrent), desc(academicYear.startsOn));
-  const grades = await tx.select({ id: gradeLevel.id, name: gradeLevel.name }).from(gradeLevel).orderBy(asc(gradeLevel.sequence));
   const schoolName = (id: string) => schools.find((s) => s.id === id)?.name ?? "";
   const many = schools.length > 1;
   const defaultBranchOf = (schoolId: string) => branches.find((b) => b.schoolId === schoolId && b.isDefault) ?? branches.find((b) => b.schoolId === schoolId);
@@ -657,8 +292,23 @@ export async function classOptions(tx: Tx, scope: AdminScope): Promise<Record<st
       return b ? [{ value: b.id, label: s.name }] : [];
     }),
     years: years.map((y) => ({ value: y.id, label: `${y.name}${y.isCurrent ? " (جاری)" : ""}`, group: many ? schoolName(y.schoolId) : undefined })),
-    grades: grades.map((g) => ({ value: g.id, label: g.name })),
+    grades: await gradeOptions(tx),
   };
+}
+
+/**
+ * The پایه picker (native `<select>`): the organization's پایه‌ها in school order — اول … دوازدهم — each under its
+ * مقطع as an `<optgroup>` («دبستان», «متوسطهٴ اول», «متوسطهٴ دوم»). After the catalog seed these are exactly the
+ * twelve fixed grades; an extra row an organization had before the catalog is kept (never deleted) and still
+ * listed under its مقطع, so a class that uses it keeps a valid choice.
+ */
+export async function gradeOptions(tx: Tx): Promise<SelectOption[]> {
+  const rows = await tx
+    .select({ id: gradeLevel.id, name: gradeLevel.name, levelName: educationLevel.name })
+    .from(gradeLevel)
+    .innerJoin(educationLevel, eq(educationLevel.id, gradeLevel.educationLevelId))
+    .orderBy(asc(educationLevel.sequence), asc(gradeLevel.sequence), asc(gradeLevel.name));
+  return rows.map((g) => ({ value: g.id, label: g.name, group: g.levelName }));
 }
 
 /** The field that says WHICH SCHOOL a class lives in (its VALUE is the school's default branch id — `class_group.branch_id`). */
@@ -947,7 +597,7 @@ export async function listOfferingRows(tx: Tx, scope: AdminScope, classGroupId: 
 // ---------------------------------------------------------------------------------------------------------------
 
 export const RESOURCES: Record<string, AnyResourceDef> = Object.fromEntries(
-  [schoolResource, yearResource, termResource, levelResource, gradeResource, subjectResource, classResource, offeringResource].map((r) => [r.key, r]),
+  [schoolResource, subjectResource, classResource, offeringResource].map((r) => [r.key, r]),
 );
 
 export const RESOURCE_KEYS = Object.keys(RESOURCES) as [string, ...string[]];

@@ -7,15 +7,18 @@
 // now on Home (docs/decisions.md «one home per destination»). The pages themselves are untouched and still
 // render inside the admin shell.
 //
-// Round 7 (owner) brought TWO of them back, for the ORGANIZATION ADMIN alone: «مدرسه‌ها» (the list where schools
-// are defined) and «راه‌اندازی مدرسه» (the setup checklist). Both are ordinary sections here — same shape, same
-// glyph, same pill/rail rendering as their neighbours, no panel of their own on the landing page — and both are
-// `orgOnly`, so a school-scoped admin never meets them. Their Home tiles are gone: one door per destination
-// still holds, per person (a principal keeps the «مدرسه» tile that opens THEIR school's hub, which is a
-// different destination from the organization's list).
-import { GraduationCap, LayoutGrid, type LucideIcon, Rocket, School, ShieldCheck, Users, UsersRound } from "lucide-react";
+// Round 7 (owner) brought «مدرسه‌ها» (the list where schools are defined) back as an ordinary section for the
+// ORGANIZATION ADMIN alone (`orgOnly`): same shape, same glyph, same pill/rail rendering as its neighbours. Its
+// Home tile is gone for that person — one door per destination holds per person (a principal keeps the «مدرسه»
+// tile that opens THEIR school's hub, a different destination from the organization's list).
+//
+// 2026-09-27 (owner): «تنظیمات زیرساختی» is gone — مقطع‌ها, پایه‌ها and سال‌های تحصیلی are a fixed catalog nobody
+// edits (src/modules/tenancy/fixed-catalog.ts) and درس‌ها moved under «مدرسه‌ها». «مدرسه‌ها» is now the FIRST
+// section (the top management option), then دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها. «نمای کلی» stays the /admin
+// landing — the rail's «مدیریت» parent and the phone's role item — never a row of its own (`adminNavItems`).
+import { GraduationCap, LayoutGrid, type LucideIcon, School, ShieldCheck, Users, UsersRound } from "lucide-react";
 
-export type AdminSectionKey = "overview" | "students" | "staff" | "classes" | "roles" | "schools" | "infrastructure";
+export type AdminSectionKey = "overview" | "schools" | "students" | "staff" | "classes" | "roles";
 
 export interface AdminSection {
   key: AdminSectionKey;
@@ -28,12 +31,11 @@ export interface AdminSection {
 
 export const ADMIN_SECTIONS: readonly AdminSection[] = [
   { key: "overview", href: "/admin", labelFa: "نمای کلی", icon: LayoutGrid },
+  { key: "schools", href: "/admin/schools", labelFa: "مدرسه‌ها", icon: School, orgOnly: true },
   { key: "students", href: "/admin/students", labelFa: "دانش‌آموزان", icon: GraduationCap },
   { key: "staff", href: "/admin/staff", labelFa: "کارکنان", icon: UsersRound },
   { key: "classes", href: "/admin/classes", labelFa: "کلاس‌ها", icon: Users },
   { key: "roles", href: "/admin/roles", labelFa: "نقش‌ها", icon: ShieldCheck },
-  { key: "schools", href: "/admin/schools", labelFa: "مدرسه‌ها", icon: School, orgOnly: true },
-  { key: "infrastructure", href: "/admin/infrastructure", labelFa: "تنظیمات زیرساختی", icon: Rocket, orgOnly: true },
 ];
 
 /** Every key the admin nav still owns — a resource page NOT in this set moved to Home and needs its own way back. */

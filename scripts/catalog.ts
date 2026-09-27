@@ -9,15 +9,21 @@
 //     matrix reaches the database without a manual step.
 //
 // Because the image has no drizzle-orm package (Next bundles it into the route chunks) this module may import
-// ONLY `../src/modules/iam/permissions` (the permission catalog, import-free) and nothing else — the build fails
-// loudly on any other bare import. Same statements, same code, whichever entry runs it: nothing to drift.
+// ONLY `../src/modules/iam/permissions` (the permission catalog) and `../src/modules/tenancy/fixed-catalog` (the
+// fixed مقطع/پایه/سال data), both import-free, and nothing else — the build fails loudly on any other bare import.
+// Same statements, same code, whichever entry runs it: nothing to drift.
 //
 // Semantics (authoritative and idempotent, as before): permissions / types / statuses / notification types are
 // upserted by their natural key; `role_permission` rows of a system role that are no longer listed are DELETED,
 // stale statuses of a system type likewise; a second run changes nothing (tests/int/seed.test.ts). Runs as
 // app_owner (MIGRATION_DATABASE_URL); the system rows have `organization_id IS NULL` (the `system_templates` RLS
 // policy) so no tenant context is needed. New ids come from `app.uuid_generate_v7()` (migration 0000).
+//
+// The per-organization structure catalog (`ensureOrgCatalogWith` / `seedOrgCatalogsWith`, at the end) is a
+// SEPARATE step with its own transaction per organization: it writes tenant rows, so it binds the tenant for FORCE
+// RLS, and `seedCatalogWith` stays exactly the system catalog the int tests reseed between files.
 import { IMPLICIT_PERMISSIONS, PERMISSIONS, type Permission, type ScopeType } from "../src/modules/iam/permissions";
+import { FIXED_GRADES, FIXED_LEVELS, FIXED_YEARS, catalogNameKey, catalogYearKey } from "../src/modules/tenancy/fixed-catalog";
 
 /** What `pg.Client`, `pg.PoolClient` and `pg.Pool` all offer; the only database surface this module uses. */
 export interface Queryable {
@@ -314,4 +320,200 @@ export async function catalogCountsWith(q: Queryable): Promise<CatalogCounts> {
 /** The one summary line both CLIs print (`[seed] catalog: …`). */
 export function formatCatalogSummary(c: CatalogCounts): string {
   return `[seed] catalog: ${c.permissions} permissions, ${c.roles} system roles, ${c.workItemTypes} system work item types, ${c.workItemStatuses} statuses, ${c.notificationTypes} notification types`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// the fixed structure catalog of every organization (مقطع‌ها, پایه‌ها, سال‌های تحصیلی) — owner, 2026-09-27
+// ---------------------------------------------------------------------------------------------------------------
+
+export interface OrgCatalogCounts {
+  organizations: number;
+  levelsCreated: number;
+  levelsUpdated: number;
+  gradesCreated: number;
+  gradesUpdated: number;
+  yearsCreated: number;
+  yearsMadeCurrent: number;
+  termsCreated: number;
+}
+
+const emptyOrgCounts = (): OrgCatalogCounts => ({ organizations: 0, levelsCreated: 0, levelsUpdated: 0, gradesCreated: 0, gradesUpdated: 0, yearsCreated: 0, yearsMadeCurrent: 0, termsCreated: 0 });
+
+/** One audit row per catalog write, in the same transaction (actor NULL = system; request id `seed-catalog`). */
+async function auditCatalog(q: Queryable, orgId: string, action: string, table: string, id: string, before: unknown, after: unknown): Promise<void> {
+  await q.query(
+    `insert into audit.audit_log (id, organization_id, actor_person_id, actor_user_id, request_id, action, entity_schema, entity_table, entity_id, before, after)
+     values (app.uuid_generate_v7(), $1, null, null, 'seed-catalog', $2, 'tenancy', $3, $4, $5::jsonb, $6::jsonb)`,
+    [orgId, action, table, id, before === null ? null : JSON.stringify(before), after === null ? null : JSON.stringify(after)],
+  );
+}
+
+interface NamedRow {
+  id: string;
+  code: string;
+  name: string;
+  sequence: number;
+}
+
+/**
+ * The existing row each fixed entry REUSES, by entry code. Two passes: every row whose code IS a fixed code belongs
+ * to that entry (so inserting a missing fixed code can never collide with `…_org_code_uq`); then an entry still
+ * without a row takes the first unclaimed row whose name matches its name or an alias («ابتدایی» → دبستان).
+ */
+function matchRows<T extends NamedRow>(rows: readonly T[], entries: ReadonlyArray<{ code: string; name: string; aliases: readonly string[] }>): Map<string, T> {
+  const matched = new Map<string, T>();
+  const claimed = new Set<string>();
+  for (const e of entries) {
+    const row = rows.find((r) => r.code === e.code);
+    if (row) {
+      matched.set(e.code, row);
+      claimed.add(row.id);
+    }
+  }
+  const fixedCodes = new Set(entries.map((e) => e.code));
+  for (const e of entries) {
+    if (matched.has(e.code)) continue;
+    const keys = new Set([e.name, ...e.aliases].map(catalogNameKey));
+    const row = rows.find((r) => !claimed.has(r.id) && !fixedCodes.has(r.code) && keys.has(catalogNameKey(r.name)));
+    if (row) {
+      matched.set(e.code, row);
+      claimed.add(row.id);
+    }
+  }
+  return matched;
+}
+
+/**
+ * Ensures the fixed catalog of ONE organization, in its own transaction on `q` (a single connection) with the
+ * tenant bound for FORCE RLS: the three مقطع‌ها and twelve پایه‌ها (matched by code, then by name/alias; a match is
+ * brought to the fixed name, sequence and — for a پایه — مقطع, otherwise a row is inserted), and for EVERY school
+ * of the organization the years 1405–1406 and 1406–1407 with two نوبت each (matched by the digits of the name; a
+ * matched year is left as it is, a missing one is inserted, and 1405–1406 becomes current only in a school that
+ * has no current year). Nothing is ever deleted — rows an organization already has beyond the catalog stay
+ * (production is additive-only); the UI simply offers no way to edit any of it. Every write carries its audit
+ * row. Idempotent: a second run writes nothing.
+ */
+export async function ensureOrgCatalogWith(q: Queryable, orgId: string): Promise<OrgCatalogCounts> {
+  const counts = emptyOrgCounts();
+  counts.organizations = 1;
+  await q.query("BEGIN");
+  try {
+    await q.query("select set_config('app.current_org_id', $1, true)", [orgId]);
+
+    // ---- مقطع‌ها ----
+    const levelRows = (await q.query("select id, code, name, sequence from tenancy.education_level order by sequence, code")).rows as unknown as NamedRow[];
+    const levelMatch = matchRows(levelRows, FIXED_LEVELS);
+    const levelIds: Record<string, string> = {};
+    for (const l of FIXED_LEVELS) {
+      const row = levelMatch.get(l.code);
+      if (row) {
+        levelIds[l.code] = row.id;
+        if (row.name !== l.name || Number(row.sequence) !== l.sequence) {
+          await q.query("update tenancy.education_level set name = $2, sequence = $3 where id = $1", [row.id, l.name, l.sequence]);
+          await auditCatalog(q, orgId, "tenancy.education_level.updated", "education_level", row.id, { name: row.name, sequence: Number(row.sequence) }, { name: l.name, sequence: l.sequence });
+          counts.levelsUpdated++;
+        }
+      } else {
+        const res = await q.query("insert into tenancy.education_level (id, organization_id, name, code, sequence) values (app.uuid_generate_v7(), $1, $2, $3, $4) returning id", [
+          orgId,
+          l.name,
+          l.code,
+          l.sequence,
+        ]);
+        const id = String(res.rows[0].id);
+        levelIds[l.code] = id;
+        await auditCatalog(q, orgId, "tenancy.education_level.created", "education_level", id, null, { name: l.name, code: l.code, sequence: l.sequence });
+        counts.levelsCreated++;
+      }
+    }
+
+    // ---- پایه‌ها ----
+    const gradeRows = (await q.query("select id, code, name, sequence, education_level_id from tenancy.grade_level order by sequence, code")).rows as unknown as Array<NamedRow & { education_level_id: string }>;
+    const gradeMatch = matchRows(gradeRows, FIXED_GRADES);
+    for (const g of FIXED_GRADES) {
+      const levelId = levelIds[g.levelCode];
+      const row = gradeMatch.get(g.code);
+      if (row) {
+        if (row.name !== g.name || Number(row.sequence) !== g.sequence || row.education_level_id !== levelId) {
+          await q.query("update tenancy.grade_level set name = $2, sequence = $3, education_level_id = $4 where id = $1", [row.id, g.name, g.sequence, levelId]);
+          await auditCatalog(
+            q,
+            orgId,
+            "tenancy.grade_level.updated",
+            "grade_level",
+            row.id,
+            { name: row.name, sequence: Number(row.sequence), educationLevelId: row.education_level_id },
+            { name: g.name, sequence: g.sequence, educationLevelId: levelId },
+          );
+          counts.gradesUpdated++;
+        }
+      } else {
+        const res = await q.query(
+          "insert into tenancy.grade_level (id, organization_id, education_level_id, name, code, sequence) values (app.uuid_generate_v7(), $1, $2, $3, $4, $5) returning id",
+          [orgId, levelId, g.name, g.code, g.sequence],
+        );
+        const id = String(res.rows[0].id);
+        await auditCatalog(q, orgId, "tenancy.grade_level.created", "grade_level", id, null, { name: g.name, code: g.code, educationLevelId: levelId });
+        counts.gradesCreated++;
+      }
+    }
+
+    // ---- سال‌های تحصیلی (+ نوبت‌ها) of every school ----
+    const schools = (await q.query("select id from tenancy.school order by id")).rows as unknown as Array<{ id: string }>;
+    for (const s of schools) {
+      const years = (await q.query("select id, name, is_current from tenancy.academic_year where school_id = $1", [s.id])).rows as unknown as Array<{ id: string; name: string; is_current: boolean }>;
+      let hasCurrent = years.some((y) => y.is_current);
+      for (const fy of FIXED_YEARS) {
+        const existing = years.find((y) => catalogYearKey(y.name) === catalogYearKey(fy.name));
+        if (existing) {
+          if (fy.isCurrent && !hasCurrent) {
+            await q.query("update tenancy.academic_year set is_current = true where id = $1", [existing.id]);
+            await auditCatalog(q, orgId, "tenancy.academic_year.updated", "academic_year", existing.id, { isCurrent: false }, { isCurrent: true });
+            counts.yearsMadeCurrent++;
+            hasCurrent = true;
+          }
+          continue;
+        }
+        const current = fy.isCurrent && !hasCurrent;
+        const res = await q.query(
+          "insert into tenancy.academic_year (id, organization_id, school_id, name, starts_on, ends_on, is_current) values (app.uuid_generate_v7(), $1, $2, $3, $4, $5, $6) returning id",
+          [orgId, s.id, fy.name, fy.startsOn, fy.endsOn, current],
+        );
+        const yearId = String(res.rows[0].id);
+        if (current) hasCurrent = true;
+        const termIds: string[] = [];
+        for (const t of fy.terms) {
+          const tr = await q.query(
+            "insert into tenancy.term (id, organization_id, academic_year_id, name, sequence, starts_on, ends_on) values (app.uuid_generate_v7(), $1, $2, $3, $4, $5, $6) returning id",
+            [orgId, yearId, t.name, t.sequence, t.startsOn, t.endsOn],
+          );
+          termIds.push(String(tr.rows[0].id));
+          counts.termsCreated++;
+        }
+        await auditCatalog(q, orgId, "tenancy.academic_year.created", "academic_year", yearId, null, { schoolId: s.id, name: fy.name, isCurrent: current, termIds });
+        counts.yearsCreated++;
+      }
+    }
+    await q.query("COMMIT");
+    return counts;
+  } catch (err) {
+    await q.query("ROLLBACK");
+    throw err;
+  }
+}
+
+/** `ensureOrgCatalogWith` for every organization (the deploy's catalog step, `pnpm seed`); one transaction per organization. */
+export async function seedOrgCatalogsWith(q: Queryable): Promise<OrgCatalogCounts> {
+  const total = emptyOrgCounts();
+  const orgs = (await q.query("select id from tenancy.organization order by id")).rows as unknown as Array<{ id: string }>;
+  for (const o of orgs) {
+    const c = await ensureOrgCatalogWith(q, o.id);
+    for (const k of Object.keys(total) as Array<keyof OrgCatalogCounts>) total[k] += c[k];
+  }
+  return total;
+}
+
+/** The second summary line both CLIs print (`[seed] organization catalog: …`) — only zeros after the first run. */
+export function formatOrgCatalogSummary(c: OrgCatalogCounts): string {
+  return `[seed] organization catalog: ${c.organizations} organizations; created ${c.levelsCreated} levels, ${c.gradesCreated} grades, ${c.yearsCreated} years, ${c.termsCreated} terms; updated ${c.levelsUpdated} levels, ${c.gradesUpdated} grades, ${c.yearsMadeCurrent} current years`;
 }

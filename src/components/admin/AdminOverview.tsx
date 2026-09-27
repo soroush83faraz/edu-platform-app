@@ -11,21 +11,19 @@ import { formatNumberFa } from "@/lib/format";
 /** One line under each section on the landing page — what the section is for, in the admin's own words. */
 const HINTS: Record<AdminSectionKey, string> = {
   overview: "",
+  schools: "مدرسهٴ جدید، درس‌ها و صفحهٴ مدیریت هر مدرسه",
   students: "ثبت، حساب کاربری، انتقال کلاس",
   staff: "دبیران و کادر؛ نقش مدیر/معاون",
   classes: "دانش‌آموزان کلاس، ارائهٴ درس‌ها، برنامهٴ هفتگی",
   roles: "چه کسی مدیر یا معاون کدام مدرسه است",
-  schools: "مدرسهٴ جدید و صفحهٴ مدیریت هر مدرسه",
-  infrastructure: "مقطع‌ها، پایه‌ها، درس‌ها و سال تحصیلی",
 };
 
 /**
  * /admin landing: the counters, the management panels the page passes in («نیازمند توجه»), then every section the
- * caller may open — in the nav's order, each with its quiet glyph, a one-line hint and its count. «مدرسه‌ها» and
- * «راه‌اندازی مدرسه» are ordinary rows of that list for the organization admin (round 7): the setup checklist has
- * no panel of its own here any more, it is a section like its neighbours and its number is the steps still
- * missing. The remaining structure pages and the «حضور و غیاب» report live on Home as their own tiles, so this
- * list never carries a second door to them.
+ * caller may open — in the nav's order, each with its quiet glyph, a one-line hint and its count. «مدرسه‌ها» is
+ * the first row for the organization admin (owner, 2026-09-27; its page also holds the «درس‌ها» link). The
+ * «حضور و غیاب» report lives on Home as its own tile, so this list never carries a second door to it; the fixed
+ * catalog (مقطع‌ها، پایه‌ها، سال‌ها) has no door at all.
  * On phones this list IS the admin navigation (the pill row is for inner pages); on desktop the rail repeats it
  * under «مدیریت», which is the group header, not a second link.
  */
