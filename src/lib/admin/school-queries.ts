@@ -56,7 +56,12 @@ export interface SchoolHubData {
   staff: { rows: StaffListRow[]; total: number } | null;
   students: { rows: StudentListRow[]; total: number } | null;
   can: { school: boolean; classes: boolean };
-  /** «مدرسه» / «مدرسه‌ها» — what the list this page came from is called for THIS caller (`schoolsLabelFa`). */
+  /**
+   * The way back, per caller. A school-scoped admin (one school in scope) arrived from Home's «مدرسه» tile, which
+   * has no list behind it any more, so the door back is «خانه» → `/home`. The organization admin (or an admin
+   * scoped to several schools) arrived from the «مدرسه‌ها» list and goes back to it.
+   */
+  backHref: string;
   backLabelFa: string;
 }
 
@@ -117,7 +122,8 @@ export const schoolHubQuery = defineQuery<SchoolHubData, typeof SchoolIdInput>(
       staff,
       students,
       can: { school: gate(schoolResource, "update"), classes: gate(classResource, "create") },
-      backLabelFa: schoolsLabelFa(scope),
+      backHref: scope.kind === "school" && scope.schoolIds.length === 1 ? "/home" : "/admin/schools",
+      backLabelFa: scope.kind === "school" && scope.schoolIds.length === 1 ? "خانه" : schoolsLabelFa(scope),
     };
   },
 );

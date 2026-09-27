@@ -46,7 +46,11 @@ export async function PageHeader({
     <header
       className={cn(
         "grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 pt-4",
-        "[grid-template-areas:'back_back'_'title_actions'_'desc_desc']",
+        // Phones: the title always gets its own full-width row, so a long title (or the count beside it) never
+        // has to share space with the actions and shrink into overlap/truncation (owner report, `/admin/schools`
+        // count overlapping the title at 375 px). Actions that don't fit the title's row wrap onto their own row
+        // underneath instead.
+        "[grid-template-areas:'back_back'_'title_title'_'actions_actions'_'desc_desc']",
         "lg:pt-0 lg:[grid-template-areas:'context_actions'_'back_back'_'title_title'_'desc_desc']",
         hideTitle && !hubHome && "max-lg:sr-only",
         className,
