@@ -57,9 +57,9 @@ export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
         aside={
           <>
             <Suspense fallback={<CardSkeleton rows={3} />}>
-              <TeacherToday />
+              <TeacherToday weekHref={home.variant === "hub" ? "/classes/timetable" : "/classes"} />
             </Suspense>
-            <MyClassesCompact offerings={home.hats?.teachingOfferings ?? []} />
+            <MyClassesCompact offerings={home.hats?.teachingOfferings ?? []} allHref={home.variant === "hub" ? "/classes/offerings" : "/classes"} />
           </>
         }
       />
@@ -79,7 +79,7 @@ export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
         aside={
           <>
             <Suspense fallback={<CardSkeleton rows={4} />}>
-              <StudentToday />
+              <StudentToday weekHref={home.variant === "hub" ? "/my-class/timetable" : "/my-class"} />
             </Suspense>
             <Suspense fallback={<CardSkeleton rows={1} />}>
               <WeekProgress />
@@ -98,20 +98,20 @@ export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
   );
 }
 
-/** The student's today, from the cached personal timetable read. */
-async function StudentToday() {
+/** The student's today, from the cached personal timetable read. `weekHref`: «کلاس من», or the hub's own week page. */
+async function StudentToday({ weekHref }: { weekHref: string }) {
   const tt = await getMyTimetable();
   const student = tt?.student ?? null;
   const sessions = student?.days.find((d) => d.weekday === tt?.today)?.sessions ?? [];
   const hasTimetable = student ? student.days.some((d) => d.sessions.length > 0) : false;
-  return <TodaySessions sessions={sessions} today={tt?.today ?? 0} nowMinutes={tt?.nowMinutes ?? 0} secondary="teacher" weekHref="/my-class" hasTimetable={hasTimetable} />;
+  return <TodaySessions sessions={sessions} today={tt?.today ?? 0} nowMinutes={tt?.nowMinutes ?? 0} secondary="teacher" weekHref={weekHref} hasTimetable={hasTimetable} />;
 }
 
-/** «امروز تدریس دارم»: the teacher's sessions across classes today. */
-async function TeacherToday() {
+/** «امروز تدریس دارم»: the teacher's sessions across classes today. `weekHref`: «کلاس‌ها», or the hub's own week page. */
+async function TeacherToday({ weekHref }: { weekHref: string }) {
   const tt = await getMyTimetable();
   const teacher = tt?.teacher ?? null;
   const sessions = teacher?.days.find((d) => d.weekday === tt?.today)?.sessions ?? [];
   const hasTimetable = (teacher?.sessions ?? 0) > 0;
-  return <TodaySessions title="امروز تدریس دارم" sessions={sessions} today={tt?.today ?? 0} nowMinutes={tt?.nowMinutes ?? 0} secondary="class" weekHref="/classes" hasTimetable={hasTimetable} />;
+  return <TodaySessions title="امروز تدریس دارم" sessions={sessions} today={tt?.today ?? 0} nowMinutes={tt?.nowMinutes ?? 0} secondary="class" weekHref={weekHref} hasTimetable={hasTimetable} />;
 }

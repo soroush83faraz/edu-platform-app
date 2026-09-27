@@ -28,8 +28,11 @@ export function DashboardTiles({ home, full = false }: { home: HomeTiles; full?:
   );
 }
 
-/** (Teacher) «کلاس‌های من» as a compact list: درس، کلاس، the open items I gave that class; each row opens the subject page. */
-export function MyClassesCompact({ offerings }: { offerings: TeachingOffering[] }) {
+/**
+ * (Teacher) «کلاس‌های من» as a compact list: درس، کلاس، the open items I gave that class; each row opens the subject page.
+ * `allHref` is «همهٴ کلاس‌ها»: `/classes`, or the hub layout's `/classes/offerings`.
+ */
+export function MyClassesCompact({ offerings, allHref = "/classes" }: { offerings: TeachingOffering[]; allHref?: string }) {
   return (
     <PageSection
       id="my-classes-aside"
@@ -40,7 +43,7 @@ export function MyClassesCompact({ offerings }: { offerings: TeachingOffering[] 
       headingAs="h3"
       flush
       trailing={
-        <Link href="/classes" className="pressable inline-flex min-h-9 items-center gap-0.5 rounded-lg px-2 text-sm font-medium text-sky-strong hover:text-primary-700">
+        <Link href={allHref} className="pressable inline-flex min-h-9 items-center gap-0.5 rounded-lg px-2 text-sm font-medium text-sky-strong hover:text-primary-700">
           همهٴ کلاس‌ها
           <ChevronLeft className="size-4" aria-hidden />
         </Link>
