@@ -33,7 +33,7 @@ export function ModuleTileFace({
         className,
       )}
     >
-      <ClayIcon icon={icon} size={compact ? "xl" : "tile"} shade={soon ? "grey" : "blue"} />
+      <ClayIcon icon={icon} size={compact ? "xl" : "tile"} shade={soon ? "grey" : "blue"} rippleHost={!inert} />
       <span className={cn("text-meta font-semibold text-balance", soon ? "text-text-muted" : "text-text")}>{label}</span>
       {soon ? <span className="rounded-full bg-surface px-2 text-xs leading-5 font-medium text-text-muted">به‌زودی</span> : null}
     </span>

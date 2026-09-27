@@ -222,3 +222,41 @@ logout; the bell top-left → «اعلان‌ها»), and every answer that poin
   red, LogOut).
 - **Open for the owner:** (1) «حساب کاربری» holds one row (تغییر رمز) today — fold it into one group with the info rows,
   or keep the room for future account rows? (2) Avatar is the glyph, not initials (matches the top-bar button).
+
+## 2026-09-27 — Tap feedback: the sink and the small ink («اسپلش ریز»)
+
+Owner: «وقتی آیکون یا دکمه را می‌زنم، یک اسپلش ریز و کمی فرو برود، که حس کنم زده شد». Two parts, both answers to the
+user's own action (docs/decisions «حرکت در پاسخ به کار کاربر»): transform / opacity only, the house ease, no glow, no
+sound, no library.
+
+- **The sink (CSS `:active`, 120 ms in / back out):** `pressable` (buttons, rows, chips) keeps its 98 %, now 120 ms in
+  and 180 ms out; `surface-link` the same. New, unlayered in `globals.css` so they beat those utilities' `:active`:
+  `press-sink` — the Home course cards sink to 96 % and their shadow drops to the hairline one (220 ms back);
+  `press-mark` — a Home tile (and a /roadmap tile): the cell stays put, the clay squircle sinks to 94 % and its outer
+  shadow tightens, like pressing an app icon (220 ms back). The body's `-webkit-tap-highlight-color: transparent`
+  already removes the grey tap flash; `TapRipple` adds a passive no-op `touchstart` listener so iOS Safari applies
+  `:active` at all.
+- **The ink (`src/lib/tap-ripple.ts`, mounted once as `TapRipple` in the root layout):** one delegated listener set
+  on the document (`pointerdown` / `pointerup` / `pointercancel`, capture + passive) — no component renders or
+  re-renders. Targets: `.pressable`, every `button`, `[data-ripple]`, the innermost under the finger; a
+  `[data-ripple-host]` inside takes the ink instead (the tile's squircle: `ClayIcon rippleHost`); `[data-ripple="off"]`
+  opts a subtree out; disabled / `aria-disabled` targets get none (the inert «به‌زودی» tiles). The ink is a disc that
+  starts under the finger (at the host's centre when the finger is on the tile's label) and spreads from 20 % to full
+  size in the first 55 % of 420 ms while fading out, clipped by the host's radius (an `inset: 0; border-radius:
+  inherit; overflow: hidden` layer, inserted as the host's FIRST child so a tile's badge stays above it and
+  `space-*` / `:last-child` rules are untouched); the radius is capped at 140 px — a small splash on a wide row, not a
+  flood. Colour: persian blue 14 % on light surfaces; white 25 % where the host's own text is light (the clay
+  squircle, a primary button, anything on `bg-hero`) — read from the host's computed colour (`inkTone`). Touch waits
+  60 ms: a finger that starts a scroll (`pointercancel`) gets no ink, a quick tap gets it on lift.
+- Every ink target is a containing block through ONE base-layer rule, `:where(button, .pressable, [data-ripple],
+  [data-ripple-host]) { position: relative }` — base layer + `:where()`, so any `absolute` / `fixed` / `sticky`
+  utility still wins (the dialog/sheet close buttons, the date picker's clear button). Checked the few buttons with an
+  absolute child (the date/priority pickers' chevrons): they already sit in a full-width relative box.
+- **Reduced motion:** no ink at all (the helper checks `prefersReducedMotion()` per press), and the press becomes an
+  instant dim (`opacity: .72`, transitions clamped by the base layer) instead of a scale. Keyboard activation fires no
+  pointer event: it shows the press state only.
+- Tests: `tests/unit/tap-ripple.test.ts` (host resolution and opt-outs, the disc's size / origin / cap / tone, first
+  child and self-removal, transform + opacity keyframes only, reduced motion and the touch delay against a fake DOM;
+  the Home tile's `data-ripple` + `press-mark` + squircle host; every press scale under `no-preference`, the dim
+  under `reduce`, the clipped ink layer).
+- **Open for the owner:** the ink also plays on mouse clicks on desktop (same helper) — keep, or touch only?

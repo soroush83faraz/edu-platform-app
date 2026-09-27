@@ -398,7 +398,9 @@
   transition-duration: var(--duration-base);
   transition-timing-function: var(--ease-out);
 }
-/* `transition-base` plus the one press gesture of the product: the whole surface shrinks to 98%. */
+/* `transition-base` plus the one press gesture of the product: the whole surface shrinks to 98% — in 120 ms, back
+   in 180 ms (the `:active` duration is the way IN). Under reduced motion the press is an instant dim instead.
+   The ink splash on top of it is `TapRipple` (see «Tap feedback» below). */
 @utility pressable {
   transition-property: color, background-color, border-color, box-shadow, opacity, transform, translate, scale;
   transition-duration: var(--duration-base);
@@ -406,6 +408,12 @@
   @media (prefers-reduced-motion: no-preference) {
     &:active {
       scale: 0.98;
+      transition-duration: var(--duration-fast);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &:active {
+      opacity: 0.72;
     }
   }
 }
@@ -748,8 +756,87 @@
     &:active {
       scale: 0.98;
       translate: 0;
+      transition-duration: var(--duration-fast);
     }
   }
+}
+
+/* ---- Tap feedback (owner, 2026-09-27: «وقتی آیکون یا دکمه را می‌زنم، یک اسپلش ریز و کمی فرو برود»). Two parts:
+   the SINK — CSS `:active`, transform + shadow only, 120 ms in / 220 ms out on the house ease — and the INK — a
+   small circle that starts under the finger and spreads and fades inside the pressed surface, clipped by its
+   radius (`src/lib/tap-ripple.ts`, one delegated `pointerdown` listener installed by `TapRipple` in the root
+   layout; 420 ms, transform + opacity, Web Animations API, skipped under reduced motion). Ink targets:
+   `.pressable`, every `button`, and `[data-ripple]`; `[data-ripple-host]` inside the pressed element takes the ink
+   instead (the Home tile's squircle), `[data-ripple="off"]` opts a subtree out. No glow, no sound. ---- */
+
+/* The ink layer is absolutely positioned inside its host, so every ink target is a containing block. In the BASE
+   layer and behind `:where()` on purpose: any `absolute` / `fixed` / `sticky` utility on the element still wins. */
+@layer base {
+  :where(button, .pressable, [data-ripple], [data-ripple-host]) {
+    position: relative;
+  }
+}
+
+/* Unlayered on purpose (a deeper press than `pressable` / `surface-link`, whose utility `:active` rules it must
+   beat). `press-sink`: a card that is one whole link (the Home course cards) sinks to 96 % and its shadow drops to
+   the hairline one. `press-mark`: a Home tile — the cell stays put, its clay squircle sinks to 94 % and its outer
+   shadow tightens, like pressing an app icon. */
+.press-sink,
+.press-mark .clay-icon {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform, translate, scale;
+  transition-duration: 220ms;
+  transition-timing-function: var(--ease-out);
+}
+.press-mark {
+  transition-property: color, background-color, opacity;
+  transition-duration: var(--duration-base);
+  transition-timing-function: var(--ease-out);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .press-sink:active {
+    scale: 0.96;
+    translate: 0;
+    box-shadow: 0 1px 2px rgb(7 42 200 / 0.06);
+    transition-duration: var(--duration-fast);
+  }
+  .press-mark:active .clay-icon {
+    scale: 0.94;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.22),
+      0 2px 4px -3px rgb(11 20 64 / 0.3);
+    transition-duration: var(--duration-fast);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .press-sink:active,
+  .press-mark:active {
+    opacity: 0.72;
+  }
+}
+
+/* The ink. The layer fills its host (`inset: 0`, the host's radius, clipped); the ink is a disc placed under the
+   finger by `translate` — `top`/`left` are physical on purpose: they anchor pointer coordinates, which do not
+   mirror in RTL. Brand blue at 14 % on light surfaces; white at 25 % where the host's text is light (the clay
+   squircle, a primary button, anything on `bg-hero`) — `data-tone="light"`, read from the host's colour. */
+.tap-ink-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  --tap-ink: color-mix(in srgb, var(--color-primary-600) 14%, transparent);
+}
+.tap-ink-layer[data-tone="light"] {
+  --tap-ink: rgb(255 255 255 / 0.25);
+}
+.tap-ink {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 50%;
+  background: var(--tap-ink);
+  pointer-events: none;
+  will-change: transform, opacity;
 }
 /* ---- Opening splash (`src/components/brand/SplashScreen.tsx`): «دانینو» written once, with one pen. The layer
    opens on the launch still (the pale mark iOS has just shown), the pen traces the silhouette and then the channel,

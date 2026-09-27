@@ -33,7 +33,7 @@ function ModuleTiles({ modules, soon }: { modules: readonly ModuleEntry[]; soon:
         {modules.map((m) => (
           <li key={m.code} id={m.code} className="flex scroll-mt-24 justify-center">
             <details name="roadmap-module" className="group flex w-full max-w-32 flex-col items-center">
-              <summary className="pressable flex w-full cursor-pointer list-none justify-center rounded-card group-open:bg-surface/70 hover:bg-surface/50 [&::-webkit-details-marker]:hidden">
+              <summary data-ripple className="press-mark flex w-full cursor-pointer list-none justify-center rounded-card group-open:bg-surface/70 hover:bg-surface/50 [&::-webkit-details-marker]:hidden">
                 <ModuleTileFace icon={m.icon} label={m.labelFa} soon={soon} />
               </summary>
               <p className="flex flex-col gap-0.5 px-1 pt-1.5 pb-1 text-center text-meta text-balance text-text-muted">

@@ -4,6 +4,7 @@ import { SplashScreen } from "@/components/brand/SplashScreen";
 import { AppProviders } from "@/components/providers";
 import { RevealSession } from "@/components/RevealSession";
 import { ServiceWorkerRegistration } from "@/components/shell/ServiceWorkerRegistration";
+import { TapRipple } from "@/components/TapRipple";
 import { productName } from "@/lib/product";
 import { splashStartupImages } from "@/lib/pwa/splash";
 import "./globals.css";
@@ -63,6 +64,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <RevealSession />
         <AppProviders>{children}</AppProviders>
         <ServiceWorkerRegistration />
+        {/* Tap feedback: the small ink under the finger on every button, pressable row and tile (one listener). */}
+        <TapRipple />
       </body>
     </html>
   );
