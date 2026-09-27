@@ -174,7 +174,7 @@ describe("the admin surfaces read permissions, so the vice principal sees the pr
     const has = (perms: readonly string[]) => (p: Permission) => perms.includes(p);
     const vice = homeTilesFor(hats, has(VICE));
     expect(vice).toEqual(homeTilesFor(hats, has(PRINCIPAL)));
-    expect(vice.map((t) => t.code)).toEqual(["admin-attendance", "schools", "periods"]);
+    expect(vice.map((t) => t.code)).toEqual(["inbox", "admin-attendance", "schools", "periods"]);
     expect(vice.find((t) => t.code === "periods")?.href).toBe(`/admin/schools/${SCHOOL_A}/periods`);
   });
 });

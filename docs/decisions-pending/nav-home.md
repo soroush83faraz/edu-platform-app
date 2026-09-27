@@ -44,6 +44,17 @@ is `TwoColumn`'s main (7 tracks, start/right side; `asideWidth="wide"`), the rol
 - `/help` no longer names «پنل من» as a destination: the student and teacher answers point to «تکالیف نزدیک» in خانه
   and its «همهٴ تکالیف» (the فهرست تکالیف). «بیشتر ← راهنما» hint: «ورود، تکالیف، مدیریت».
 
+## «پنل من» returns as a Home tile (owner, 2026-09-27)
+- Partial reversal, same day: the owner asked for «پنل من» back as a Home TILE, beside «حضور و غیاب» — the two
+  side by side as the first tiles, in that order (RTL: «پنل من» to the right of «حضور و غیاب»). It is shown to
+  every student, teacher and admin holding `workspace.work_item.read` (`HOME_TILES` in `src/lib/modules-registry.ts`,
+  code `inbox`, href `/inbox`, `Inbox` glyph).
+- The nav itself is UNCHANGED — still the three items above; this is a tile only, not a fourth nav cell.
+- The کارتابل now has two accepted doors: this tile and the «همهٴ …» link of Home's «تکالیف نزدیک» card. The
+  owner was asked and accepts both; the Home card and its link are untouched.
+- Guarded by `tests/unit/home-tiles.test.ts` (tile presence, order, permission gate) and left alone by
+  `tests/unit/home-inbox-door.test.ts` (the card's door, which still exists unmodified).
+
 ## Open questions for the owner
 - The `/inbox` page is still TITLED «پنل من» (and its detail/new pages' back links say «پنل من»). Reaching it via
   «همهٴ تکالیف» and landing on «پنل من» is a small naming seam; renaming the page title (e.g. to «تکالیف» /

@@ -361,21 +361,32 @@ export interface HomeTile {
  * («بیشتر» and the role item — a student's «کلاس من», a teacher's «کلاس‌ها», an admin's «مدیریت» page), and
  * nothing the «بیشتر» page carries (راهنما, نقشهٴ راه, پروفایل).
  *
- * Round 5 (owner) settled two things (a third — «پنل من» as a tile — was reversed: the کارتابل is reached from
- * the «تکالیف نزدیک» card under the tiles, whose «همهٴ …» link is its one door — nav round 2026-09-27). «مدیریت» is now دانش‌آموزان ·
+ * Round 5 (owner) settled two things — a third, «پنل من» as a tile, went back and forth: dropped on nav round
+ * 2026-09-27 (the کارتابل's one door became Home's «تکالیف نزدیک» card and its «همهٴ …» link), then restored on
+ * 2026-09-27 (owner, docs/decisions-pending/nav-home.md): it is a tile again, beside «حضور و غیاب», and the card's
+ * link stays too — the owner accepts two doors to that one destination. «مدیریت» is now دانش‌آموزان ·
  * کارکنان · کلاس‌ها · نقش‌ها alone — every STRUCTURE page (مدرسه‌ها، سال تحصیلی، زنگ‌بندی، پایه‌ها، درس‌ها، مقطع‌ها،
  * راه‌اندازی مدرسه) and the admin's «حضور و غیاب» report left the admin nav and became its own tile here, gated by
  * the very permission and scope that guard its page, so an admin reaches each of them in one tap and never meets
  * it twice. And «مدیریت» itself lost its tile: the nav's role cell already opens /admin for an admin, so the
  * tile was a second door. «اعلان‌ها» stays a header control (the bell).
  *
- * Order: the person's role tiles, then the structure tiles by how often an admin opens them. `homeTilesFor` picks per person.
+ * Order: «پنل من», then the person's role tiles, then the structure tiles by how often an admin opens them. `homeTilesFor` picks per person.
  */
 export const HOME_TILES: readonly HomeTile[] = [
-  // No «پنل من» tile (owner): the کارتابل's one door is the «همهٴ …» link of Home's «تکالیف نزدیک» card, right
-  // under these tiles (nav round 2026-09-27 — no nav cell either), so a tile would be its second door. The
-  // «امروز» line's links are FILTERS of it. Nor a «کار جدید» creation tile (owner, 2026-09-27): creating one
-  // is reached only from the inbox page's own header button now, so Home carries no second door to it.
+  {
+    // Back as a Home tile (owner, 2026-09-27, docs/decisions-pending/nav-home.md): shown to EVERY role that reads
+    // work items — student, teacher, every admin — so it leads the grid, immediately before «حضور و غیاب» /
+    // «حضور و غیاب» admin below, the two side by side. The card's «همهٴ …» link stays too — the owner accepts
+    // two doors to this one destination. Nor a «کار جدید» creation tile (owner, 2026-09-27): creating one is
+    // reached only from the inbox page's own header button, so Home carries no second door to THAT.
+    code: "inbox",
+    labelFa: "پنل من",
+    href: "/inbox",
+    icon: Inbox,
+    role: ["student", "teacher", "admin"],
+    permission: "workspace.work_item.read",
+  },
   {
     // One destination for two hats: the teacher takes today's roll call, the student reads their own month.
     // The ADMIN's report is a different page and has its own tile below (`admin-attendance`).
