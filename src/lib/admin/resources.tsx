@@ -3,7 +3,7 @@
 // the organization's درس‌ها are read-only for school-scoped admins (`orgOnly`). مقطع‌ها, پایه‌ها and سال‌های تحصیلی
 // (+ نوبت‌ها) are a FIXED catalog since 2026-09-27 (src/modules/tenancy/fixed-catalog.ts, written by the catalog
 // seed and by `ensureCatalogYears` when a school is created): they have no resource, no form and no route.
-import { and, asc, count, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, countDistinct, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import type { Tx } from "@/lib/actions";
 import { forbidden, notFound, validation } from "@/lib/errors";
@@ -35,12 +35,12 @@ import { adminSectionsFor, type AdminNavItem } from "./nav";
 // shared pieces
 // ---------------------------------------------------------------------------------------------------------------
 
-const uuid = z.uuid("شناسه نامعتبر است.");
+const uuid = z.uuid("گزینهٴ انتخاب‌شده نامعتبر است.");
 /** A reference picked in a `<select>` that may be empty («انتخاب کنید…» → `""`/null → undefined); the handler names the missing field. */
 const optionalRef = z.preprocess((v) => (v === "" || v === null ? undefined : v), uuid.optional());
 /**
  * A reference picked in a REQUIRED `<select>` that is on the form in both modes: an empty choice («انتخاب کنید…»
- * sends `""`) is reported as «<label> را انتخاب کنید.» under that field instead of the generic «شناسه نامعتبر است.»
+ * sends `""`) is reported as «<label> را انتخاب کنید.» under that field instead of the generic «گزینهٴ انتخاب‌شده نامعتبر است.»
  * (QA round 2: a class saved without a grade). Create-only references keep `optionalRef` + a named message in `create`.
  */
 const requiredRef = (label: string) => z.string(`${label} را انتخاب کنید.`).min(1, `${label} را انتخاب کنید.`).pipe(uuid);
@@ -74,8 +74,8 @@ function requireOrgScope(scope: AdminScope): void {
 }
 
 export const RESOURCE_MESSAGES = {
-  offeringCreateForbidden: "تعریف ارائهٴ درس جدید فقط با مدیر و معاون مدرسه یا مدیر سازمان است.",
-  offeringStructureForbidden: "تغییر ساعت یا وضعیت ارائهٴ درس فقط با مدیر و معاون مدرسه یا مدیر سازمان است.",
+  offeringCreateForbidden: "افزودن درس به کلاس فقط با مدیر و معاون مدرسه یا مدیر سازمان است.",
+  offeringStructureForbidden: "تغییر ساعت یا وضعیت درس کلاس فقط با مدیر و معاون مدرسه یا مدیر سازمان است.",
   teacherAssignForbidden: "شما اجازهٴ تعیین دبیر در این مدرسه را ندارید.",
 } as const;
 
@@ -130,14 +130,14 @@ export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolIn
     { key: "name", labelFa: "نام" },
     { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, mobileMeta: 1, orgOnly: true },
     { key: "genderPolicy", labelFa: "جنسیت", render: (r) => GENDER_LABELS[r.genderPolicy ?? ""] ?? "—", secondary: true, mobileMeta: 2 },
-    { key: "isDefault", labelFa: "پیش‌فرض", render: (r) => (r.isDefault ? "✓" : ""), secondary: true, mobileMeta: 1 },
+    { key: "isDefault", labelFa: "مدرسهٴ اصلی", render: (r) => (r.isDefault ? "✓" : ""), secondary: true, mobileMeta: 1 },
   ],
   schema: SchoolInput,
   formFields: [
     { name: "name", labelFa: "نام مدرسه", type: "text", required: true, placeholder: "دبیرستان دخترانهٴ دانش" },
-    { name: "code", labelFa: "کد (انگلیسی)", type: "text", required: true, createOnly: true, ltr: true, placeholder: "G", hint: "با حرف انگلیسی شروع شود؛ بعداً تغییر نمی‌کند." },
+    { name: "code", labelFa: "کد لاتین مدرسه", type: "text", required: true, createOnly: true, ltr: true, placeholder: "G", hint: "پیشوند نام‌کاربری دانش‌آموزان بدون موبایل؛ با حرف لاتین شروع شود و بعداً تغییر نمی‌کند." },
     { name: "genderPolicy", labelFa: "جنسیت", type: "select", options: GENDER_OPTIONS, required: true },
-    { name: "isDefault", labelFa: "مدرسهٴ پیش‌فرض سازمان", type: "toggle" },
+    { name: "isDefault", labelFa: "مدرسهٴ اصلی سازمان", type: "toggle", hint: "در فهرست‌ها و صفحه‌ها اول می‌آید." },
   ],
   /** The school's own page: the management hub where its کلاس‌ها, کارکنان, دانش‌آموزان and زنگ‌بندی are managed. */
   rowHref: (r) => `/admin/schools/${r.id}`,
@@ -188,25 +188,24 @@ export const subjectResource = defineResource<SubjectRow, z.output<typeof Subjec
   key: "subjects",
   labelFa: "درس",
   labelFaPlural: "درس‌ها",
-  descriptionFa: "فهرست درس‌های سازمان؛ در هر کلاس، «ارائهٴ درس» یک درس را به یک نوبت و یک دبیر وصل می‌کند.",
+  descriptionFa: "فهرست درس‌های همهٴ مدرسه‌های سازمان؛ درس‌ها و دبیرهای هر کلاس در صفحهٴ همان کلاس تعیین می‌شود.",
   permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
   orgOnly: true,
   /** Reached from «مدرسه‌ها» (its «درس‌ها» link), so that is its way back. */
   back: { href: "/admin/schools", labelFa: "مدرسه‌ها" },
   columns: [
     { key: "name", labelFa: "نام" },
-    { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, secondary: true, mobileMeta: 2 },
-    { key: "offerings", labelFa: "ارائه‌ها", render: (r) => `${formatNumberFa(r.offerings)} ارائه`, mobileMeta: 1 },
+    // The subject code is an internal key (generated on create) — never shown (owner's polish pass, 2026-09-27).
+    { key: "offerings", labelFa: "کلاس‌ها", render: (r) => (r.offerings > 0 ? `در ${formatNumberFa(r.offerings)} کلاس` : "در هیچ کلاسی"), mobileMeta: 1 },
   ],
   schema: SubjectInput,
   formFields: [
     { name: "name", labelFa: "نام درس", type: "text", required: true, placeholder: "ریاضی" },
-    { name: "code", labelFa: "کد (انگلیسی)", type: "text", required: true, createOnly: true, ltr: true, placeholder: "MATH" },
   ],
   async list(tx, _ctx, _scope, opts) {
     const where = and(isNull(subject.parentSubjectId), faLike(subject.name, opts.q));
     const rows = await tx
-      .select({ id: subject.id, name: subject.name, code: subject.code, offerings: count(classOffering.id) })
+      .select({ id: subject.id, name: subject.name, code: subject.code, offerings: countDistinct(classOffering.classGroupId) })
       .from(subject)
       .leftJoin(classOffering, eq(classOffering.subjectId, subject.id))
       .where(where)
@@ -219,8 +218,9 @@ export const subjectResource = defineResource<SubjectRow, z.output<typeof Subjec
   },
   async create(tx, ctx, scope, input) {
     requireOrgScope(scope);
-    if (!input.code) throw validation({ fieldErrors: { code: ["کد را وارد کنید."] } }, "کد را وارد کنید.");
-    return { id: (await createSubject(tx, ctx, { name: input.name, code: input.code })).subjectId };
+    // The form no longer asks for a code (a principal never needs it): an internal one is generated when none is sent.
+    const subjectCode = input.code || `S${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 36 * 36).toString(36).toUpperCase()}`;
+    return { id: (await createSubject(tx, ctx, { name: input.name, code: subjectCode })).subjectId };
   },
   async update(tx, ctx, scope, id, input) {
     requireOrgScope(scope);
@@ -228,7 +228,7 @@ export const subjectResource = defineResource<SubjectRow, z.output<typeof Subjec
   },
   archive: {
     labelFa: "حذف",
-    confirmFa: "این درس حذف شود؟ (فقط وقتی در ارائهٴ درسی استفاده نشده)",
+    confirmFa: "این درس حذف شود؟ (فقط وقتی در هیچ کلاسی استفاده نشده باشد)",
     async run(tx, ctx, scope, id) {
       requireOrgScope(scope);
       await deleteSubject(tx, ctx, id);
@@ -332,7 +332,7 @@ export const classResource = defineResource<ClassRow, z.output<typeof ClassInput
   key: "classes",
   labelFa: "کلاس",
   labelFaPlural: "کلاس‌ها",
-  descriptionFa: "کلاس = پایه + نام در یک سال تحصیلی از یک مدرسه. روی هر کلاس: دانش‌آموزان و ارائهٴ درس‌ها.",
+  descriptionFa: "روی هر کلاس بزنید تا دانش‌آموزان، درس‌ها و دبیران و برنامهٴ هفتگی آن را ببینید.",
   permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
   columns: [
     { key: "name", labelFa: "کلاس" },
@@ -484,9 +484,9 @@ export async function staffOptions(tx: Tx, scope: AdminScope): Promise<SelectOpt
  */
 export const offeringResource = defineResource<OfferingRow, z.output<typeof OfferingInput>>({
   key: "offerings",
-  labelFa: "ارائهٴ درس",
-  labelFaPlural: "ارائهٴ درس‌ها",
-  descriptionFa: "درس × نوبت × دبیر اصلی. تخصیص دبیر همین‌جا نقش «معلم» را برای همان کلاس‌درس می‌سازد.",
+  labelFa: "درس",
+  labelFaPlural: "درس‌ها و دبیران",
+  descriptionFa: "درس‌های این کلاس، نوبت و دبیر اصلی هر کدام. دبیری که این‌جا تعیین شود، این کلاس را در «کلاس‌های من» می‌بیند.",
   permission: { read: "tenancy.structure.read", write: "academic.teacher_assignment.write", create: "tenancy.structure.write" },
   parentParam: { name: "class", field: "classGroupId", labelFa: "کلاس", backHref: (parent) => `/admin/classes/${parent}` },
   columns: [

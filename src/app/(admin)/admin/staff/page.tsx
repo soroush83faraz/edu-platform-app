@@ -38,7 +38,7 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
         title="کارکنان"
         count={`${formatNumberFa(total)} نفر`}
         back={school ? { href: `/admin/schools/${school.id}`, label: school.name } : undefined}
-        description="دبیران و کادر. حساب کاربری با شمارهٴ موبایل ساخته می‌شود؛ نقش «معلم» از تخصیص درس در صفحهٴ کلاس می‌آید."
+        description="دبیران و کادر. حساب کاربری با شمارهٴ موبایل ساخته می‌شود؛ هر همکاری که در صفحهٴ کلاس درسی به او سپرده شود، دبیر آن کلاس می‌شود."
         actions={
           canWrite ? (
             <Button asChild>

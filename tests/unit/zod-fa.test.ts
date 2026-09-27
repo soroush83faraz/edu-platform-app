@@ -30,7 +30,7 @@ describe("Zod v4 Persian error map", () => {
 
   it("enum, uuid, unknown keys — and a schema's own message wins", () => {
     expect(first(z.enum(["a", "b"]).safeParse("c"))).toBe("گزینهٴ انتخاب‌شده معتبر نیست.");
-    expect(first(z.uuid().safeParse("nope"))).toBe("شناسه نامعتبر است.");
+    expect(first(z.uuid().safeParse("nope"))).toBe("گزینهٴ انتخاب‌شده نامعتبر است.");
     expect(first(z.object({}).strict().safeParse({ x: 1 }))).toBe("فیلد ناشناخته در ورودی.");
     expect(first(z.number("ظرفیت باید عدد باشد.").safeParse("x"))).toBe("ظرفیت باید عدد باشد.");
     for (const r of [z.number().min(1).safeParse("x"), z.string().safeParse(null), z.date().safeParse("x"), z.number().multipleOf(2).safeParse(3)]) {

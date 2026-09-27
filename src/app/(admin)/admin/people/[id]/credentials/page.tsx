@@ -4,7 +4,7 @@ import { AdminHeader } from "@/components/admin/AdminPage";
 import { CredentialsSheet } from "@/components/admin/CredentialsSheet";
 import { personCredentialsQuery } from "@/lib/admin/people-queries";
 
-export const metadata: Metadata = { title: "اعتبارنامه | مدیریت" };
+export const metadata: Metadata = { title: "برگهٴ ورود | مدیریت" };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function PersonCredentialsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -19,7 +19,7 @@ export default async function PersonCredentialsPage({ params }: { params: Promis
   return (
     <div className="flex flex-col gap-4">
       <div className="no-print">
-        <AdminHeader title="اعتبارنامهٴ ورود" back={{ href: `/admin/people/${id}`, label: `${row.firstName} ${row.lastName}` }} />
+        <AdminHeader title="برگهٴ ورود" back={{ href: `/admin/people/${id}`, label: `${row.firstName} ${row.lastName}` }} />
       </div>
       <CredentialsSheet title={`${row.firstName} ${row.lastName}`} schoolName={schoolName} rows={[row]} />
     </div>

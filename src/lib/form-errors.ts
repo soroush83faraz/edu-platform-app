@@ -4,7 +4,7 @@ import type { FieldErrors } from "@/lib/actions";
 /**
  * Server field errors → one message per rendered field. Errors on fields the form does NOT render (a `createOnly`
  * key on an edit, a fixed parent id, a schema/form mismatch) are folded into the form-level line as
- * «خطای اعتبارسنجی: …» — so a validation failure can never be silent. `rendered` = the field names on screen;
+ * the form-level line — so a validation failure can never be silent. `rendered` = the field names on screen;
  * when omitted every field error is treated as rendered (legacy callers).
  */
 export function flatten(fieldErrors: FieldErrors | undefined, message: string, rendered?: readonly string[]): Record<string, string> {
@@ -16,7 +16,7 @@ export function flatten(fieldErrors: FieldErrors | undefined, message: string, r
     if (rendered && !rendered.includes(key)) hidden.push(v[0]);
     else out[key] = v[0];
   }
-  if (hidden.length > 0) out.form = `خطای اعتبارسنجی: ${[...new Set(hidden)].join(" ")}`;
+  if (hidden.length > 0) out.form = [...new Set(hidden)].join(" ");
   if (Object.keys(out).length === 0) out.form = message;
   return out;
 }

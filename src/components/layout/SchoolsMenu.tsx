@@ -14,7 +14,7 @@ export function SchoolsMenu({ schools }: { schools: ReadonlyArray<{ id: string; 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className="pressable -mx-2 inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full px-2 text-meta text-text-muted hover:text-text" aria-label={`${formatNumberFa(schools.length)} مدرسه در دامنهٴ شما`}>
+        <button type="button" className="pressable -mx-2 inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full px-2 text-meta text-text-muted hover:text-text" aria-label={`${formatNumberFa(schools.length)} مدرسهٴ شما`}>
           <School className="size-4 text-text-faint" strokeWidth={1.75} aria-hidden />
           <span className="tabular">{formatNumberFa(schools.length)}</span> مدرسه
           <ChevronDown className="size-3.5 text-text-faint" aria-hidden />

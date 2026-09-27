@@ -34,7 +34,7 @@ export function subjectPickOptions(cls: TeachingClassOption | undefined, subject
   const taken = new Set(cls.offerings.filter((o) => o.termId === cls.currentTermId).map((o) => o.subjectId));
   const fresh =
     cls.canCreateOffering && cls.currentTermId
-      ? subjects.filter((s) => !taken.has(s.value)).map((s) => ({ value: `s:${s.value}`, label: `${s.label} (ارائهٴ جدید)`, group: NEW_GROUP }))
+      ? subjects.filter((s) => !taken.has(s.value)).map((s) => ({ value: `s:${s.value}`, label: `${s.label} (تازه)`, group: NEW_GROUP }))
       : [];
   return [...existing, ...fresh];
 }
@@ -133,7 +133,7 @@ function AddTeachingDialog({ open, onOpenChange, detail, options }: { open: bool
     start(async () => {
       const r = await assignTeachingAction({ personId: detail.id, classGroupId: classId, ...readPick(pick), role, replaceMain });
       if (r.ok) {
-        toast.success(r.data.offeringCreated ? "ارائهٴ درس ساخته و تدریس ثبت شد." : r.data.replaced ? "دبیر اصلی جایگزین شد." : "تدریس ثبت شد.");
+        toast.success(r.data.offeringCreated ? "درس به کلاس اضافه و تدریس ثبت شد." : r.data.replaced ? "دبیر اصلی جایگزین شد." : "تدریس ثبت شد.");
         close(false);
         router.refresh();
         return;

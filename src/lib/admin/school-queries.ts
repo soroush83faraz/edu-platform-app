@@ -20,7 +20,7 @@ import { classResource, listClassRows, schoolResource } from "./resources";
 /** How many people each hub section lists before «همه» — enough to recognise the school, short enough to scan. */
 export const HUB_PEOPLE = 8;
 
-export const SchoolIdInput = z.object({ schoolId: z.uuid("شناسه نامعتبر است.") }).strict();
+export const SchoolIdInput = z.object({ schoolId: z.uuid("گزینهٴ انتخاب‌شده نامعتبر است.") }).strict();
 
 export interface SchoolHubYear {
   id: string;

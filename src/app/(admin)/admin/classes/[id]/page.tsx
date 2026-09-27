@@ -41,7 +41,7 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
             <Button asChild variant="outline">
               <Link href={`/admin/classes/${id}/offerings`}>
                 <BookOpen className="size-4" aria-hidden />
-                ارائهٴ درس‌ها ({formatNumberFa(offerings.length)})
+                درس‌ها و دبیران ({formatNumberFa(offerings.length)})
               </Link>
             </Button>
             <Button asChild variant="outline">
@@ -78,7 +78,7 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
         </section>
       ) : (
         <p className="rounded-card border border-warning/40 bg-warning-soft/40 px-4 py-2 text-sm text-text">
-          این کلاس هنوز ارائهٴ درسی ندارد؛ از «ارائهٴ درس‌ها» درس و دبیر اضافه کنید.
+          این کلاس هنوز درسی ندارد؛ از «درس‌ها و دبیران» درس و دبیر اضافه کنید.
         </p>
       )}
 

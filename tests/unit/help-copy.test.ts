@@ -46,9 +46,11 @@ describe("help — the admin's «ساختار مدرسه» answer", () => {
 // The hub layout (everyone's since 2026-09-27, docs/decisions-pending/home-hub.md): no bottom nav, every place a Home
 // icon, the profile icon at the top right opens the account, the bell at the top left the notifications.
 describe("help — where everything is in the hub layout", () => {
-  it("explains the layout: no bottom bar, everything on Home as icons, the profile icon (right) and the bell (left)", async () => {
+  it("explains the layout: everything on Home as icons, the profile icon (right) and the bell (left)", async () => {
     const text = await answer("layout");
-    for (const phrase of ["نوار پایین", "«خانه»", "آیکون", "سمت راست", "تغییر رمز", "راهنما", "خروج", "زنگوله", "سمت چپ", "«اعلان‌ها»"]) {
+    // A client reading help for the first time never saw a bottom bar: no «it is gone» history (polish pass, 2026-09-27).
+    expect(text).not.toContain("نوار پایین");
+    for (const phrase of ["«خانه»", "آیکون", "سمت راست", "تغییر رمز", "راهنما", "خروج", "زنگوله", "سمت چپ", "«اعلان‌ها»"]) {
       expect(text, phrase).toContain(phrase);
     }
   });

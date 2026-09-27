@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { MAX_PERIODS } from "@/lib/timetable";
 
-const uuid = z.uuid("شناسه نامعتبر است.");
+const uuid = z.uuid("گزینهٴ انتخاب‌شده نامعتبر است.");
 
 export const ClassGroupIdInput = z.object({ classGroupId: uuid }).strict();
 export type ClassGroupIdInput = z.output<typeof ClassGroupIdInput>;

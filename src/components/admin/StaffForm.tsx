@@ -94,13 +94,13 @@ export function StaffForm({ schools, detail }: { schools: SchoolOption[]; detail
       <div className="grid gap-4 sm:grid-cols-2">
         <Field field={{ name: "firstName", labelFa: "نام", type: "text", required: true }} options={[]} {...f("firstName")} />
         <Field field={{ name: "lastName", labelFa: "نام خانوادگی", type: "text", required: true }} options={[]} {...f("lastName")} />
-        {!detail ? <Field field={{ name: "phone", labelFa: "موبایل (شناسهٴ ورود)", type: "text", required: true, numeric: true, ltr: true, placeholder: "09121234567" }} options={[]} {...f("phone")} /> : null}
+        {!detail ? <Field field={{ name: "phone", labelFa: "موبایل (برای ورود)", type: "text", required: true, numeric: true, ltr: true, placeholder: "09121234567" }} options={[]} {...f("phone")} /> : null}
         <Field field={{ name: "gender", labelFa: "جنسیت", type: "select", options: GENDER }} options={GENDER} {...f("gender")} />
         <Field field={{ name: "employeeNumber", labelFa: "شمارهٴ کارمندی", type: "text", ltr: true, numeric: true }} options={[]} {...f("employeeNumber")} />
         <Field field={{ name: "employmentType", labelFa: "نوع همکاری", type: "select", options: EMPLOYMENT, required: true }} options={EMPLOYMENT} {...f("employmentType")} />
         {(detail && schools.length > 0) || (!detail && schools.length > 1) ? (
           <Field
-            field={{ name: "schoolId", labelFa: "مدرسهٴ اصلی", type: "select", options: schools, hint: "مدیر و معاون همین مدرسه پرونده و حساب این همکار را می‌بینند؛ نقش «معلم» به‌تنهایی این دسترسی را نمی‌دهد." }}
+            field={{ name: "schoolId", labelFa: "مدرسهٴ اصلی", type: "select", options: schools, hint: "مدیر و معاون همین مدرسه پرونده و حساب این همکار را می‌بینند؛ درس دادن در یک مدرسه به‌تنهایی این دسترسی را نمی‌دهد." }}
             options={schools}
             {...f("schoolId")}
           />

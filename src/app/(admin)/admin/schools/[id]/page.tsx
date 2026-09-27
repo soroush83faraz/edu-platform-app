@@ -241,7 +241,7 @@ function Years({ d }: { d: SchoolHubData }) {
   return (
     <PageSection id="years" title="سال تحصیلی" icon={CalendarDays} count={d.years.length} surface="work" flush>
       {d.years.length === 0 ? (
-        <NotYet what="سال تحصیلی این مدرسه با به‌روزرسانی بعدی سامانه اضافه می‌شود." />
+        <NotYet what="سال تحصیلی این مدرسه هنوز ثبت نشده است." />
       ) : (
         <List>
           {d.years.map((y) => (
@@ -264,13 +264,13 @@ function Years({ d }: { d: SchoolHubData }) {
 
 function Offerings({ d }: { d: SchoolHubData }) {
   return (
-    <PageSection id="offerings" title="ارائهٴ درس" icon={BookOpen} surface="panel">
+    <PageSection id="offerings" title="درس‌های کلاس‌ها" icon={BookOpen} surface="panel">
       {d.offerings.total === 0 ? (
         <NotYet what="درس، نوبت و دبیر هر کلاس در صفحهٴ همان کلاس تعریف می‌شود." />
       ) : (
         <div className="flex flex-col gap-2">
           <p className="text-sm text-text">
-            <span className="tabular">{n(d.offerings.total)}</span> ارائهٴ درس فعال
+            <span className="tabular">{n(d.offerings.total)}</span> درس فعال در کلاس‌ها
             {d.offerings.withoutTeacher > 0 ? (
               <>
                 <span aria-hidden className="text-text-faint"> · </span>
@@ -280,7 +280,7 @@ function Offerings({ d }: { d: SchoolHubData }) {
               </>
             ) : null}
           </p>
-          <p className="text-meta text-text-muted">از صفحهٴ هر کلاس، «ارائهٴ درس‌ها».</p>
+          <p className="text-meta text-text-muted">از صفحهٴ هر کلاس، «درس‌ها و دبیران».</p>
         </div>
       )}
     </PageSection>

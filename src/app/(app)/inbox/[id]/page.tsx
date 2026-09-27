@@ -16,7 +16,7 @@ import { CompletableTitle, CompletionProvider } from "@/modules/workspace/ui/Com
 import { WorkItemActions } from "@/modules/workspace/ui/WorkItemActions";
 
 // Role-neutral in the tab title (the page itself says «تکلیف» / «تسک» once it knows the reader).
-export const metadata: Metadata = { title: "کار" };
+export const metadata: Metadata = { title: "پنل من" };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

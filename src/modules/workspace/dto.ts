@@ -9,7 +9,7 @@ export const BUCKETS = ["overdue", "today", "week", "later", "none"] as const;
 
 export type InboxTab = (typeof INBOX_TABS)[number];
 
-const uuid = z.uuid("شناسه نامعتبر است.");
+const uuid = z.uuid("گزینهٴ انتخاب‌شده نامعتبر است.");
 
 export const Recipients = z.discriminatedUnion("kind", [
   z

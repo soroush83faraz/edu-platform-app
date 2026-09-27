@@ -97,12 +97,12 @@ describe("«تدریس» section on a colleague's page", () => {
   it("the «درس» picker: the class's offerings with their main teacher, then the درس‌ها it lacks in the current نوبت (only for a caller who may define offerings)", () => {
     expect(subjectPickOptions(cls, subjects)).toEqual([
       { value: `o:${OFFERING}`, label: "ریاضی (دبیر فعلی: مریم رضایی)", group: "درس‌های این کلاس" },
-      { value: `s:${PHYSICS}`, label: "فیزیک (ارائهٴ جدید)", group: "درس تازه برای این کلاس" },
+      { value: `s:${PHYSICS}`, label: "فیزیک (تازه)", group: "درس تازه برای این کلاس" },
     ]);
     expect(subjectPickOptions({ ...cls, canCreateOffering: false }, subjects).map((o) => o.value)).toEqual([`o:${OFFERING}`]);
     // Two نوبت‌ها: the نوبت is named; a درس offered only in the OTHER نوبت is still new for the current one.
     const twoTerms = { ...cls, offerings: [...cls.offerings, { id: "o2", subjectId: PHYSICS, subjectName: "فیزیک", termId: TERM_2, termName: "نوبت دوم", mainTeacher: null }] };
-    expect(subjectPickOptions(twoTerms, subjects).map((o) => o.label)).toEqual(["ریاضی — نوبت اول (دبیر فعلی: مریم رضایی)", "فیزیک — نوبت دوم (بدون دبیر)", "فیزیک (ارائهٴ جدید)"]);
+    expect(subjectPickOptions(twoTerms, subjects).map((o) => o.label)).toEqual(["ریاضی — نوبت اول (دبیر فعلی: مریم رضایی)", "فیزیک — نوبت دوم (بدون دبیر)", "فیزیک (تازه)"]);
     expect(subjectPickOptions(undefined, subjects)).toEqual([]);
   });
 

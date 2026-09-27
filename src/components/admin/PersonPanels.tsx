@@ -70,7 +70,7 @@ export function AccountCard({ detail, caps }: { detail: PersonDetail; caps: Caps
       {acct ? (
         <>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-            <dt className="text-text-muted">شناسهٴ ورود</dt>
+            <dt className="text-text-muted">نام‌کاربری</dt>
             <dd>
               <bdi dir="ltr" className="tabular font-medium text-text">
                 {formatLoginIdentifierFa(acct.loginIdentifier)}
@@ -111,7 +111,7 @@ export function AccountCard({ detail, caps }: { detail: PersonDetail; caps: Caps
           ) : null}
         </div>
       )}
-      <ResponsiveModal open={confirmReset} onOpenChange={setConfirmReset} title="تعیین رمز موقت" description="رمز فعلی باطل می‌شود، همهٴ نشست‌های این حساب خارج می‌شوند و رمز جدید فقط یک‌بار نمایش داده می‌شود.">
+      <ResponsiveModal open={confirmReset} onOpenChange={setConfirmReset} title="تعیین رمز موقت" description="رمز فعلی باطل می‌شود، این فرد از همهٴ دستگاه‌ها خارج می‌شود و رمز جدید فقط یک‌بار نمایش داده می‌شود.">
         <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
           <Button type="button" variant="outline" onClick={() => setConfirmReset(false)}>
             انصراف

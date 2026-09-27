@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { ASSIGNABLE_ROLES } from "@/modules/iam/service";
 
-const uuid = z.uuid("شناسه نامعتبر است.");
+const uuid = z.uuid("گزینهٴ انتخاب‌شده نامعتبر است.");
 const personName = (label: string) => z.string().trim().min(1, `${label} را وارد کنید.`).max(80, `${label} حداکثر ۸۰ نویسه است.`);
 const optionalText = (max: number) => z.string().trim().max(max).nullable().optional();
 const gender = z.enum(["female", "male"]).nullable().optional();

@@ -25,9 +25,9 @@ export function CredentialsDialog({ creds, onClose }: { creds: Credentials | nul
             <bdi>{creds.name}</bdi>
           </p>
           {/* Shown in Persian digits (`۰۹۳۵…`), copied as the national ASCII form (`0935…`) — both log in. */}
-          <CredentialLine label="شناسهٴ ورود" value={formatLoginIdentifierFa(creds.loginIdentifier)} copyText={phoneToNational(creds.loginIdentifier)} />
+          <CredentialLine label="نام‌کاربری" value={formatLoginIdentifierFa(creds.loginIdentifier)} copyText={phoneToNational(creds.loginIdentifier)} />
           <CredentialLine label="رمز اولیه" value={creds.initialPassword} />
-          <CopyAllButton text={`${creds.name}\nشناسهٴ ورود: ${phoneToNational(creds.loginIdentifier)}\nرمز اولیه: ${creds.initialPassword}`} />
+          <CopyAllButton text={`${creds.name}\nنام‌کاربری: ${phoneToNational(creds.loginIdentifier)}\nرمز اولیه: ${creds.initialPassword}`} />
           <Button type="button" onClick={onClose}>
             متوجه شدم
           </Button>

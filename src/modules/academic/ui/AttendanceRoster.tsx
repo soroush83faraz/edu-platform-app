@@ -8,7 +8,7 @@ import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ATTENDANCE_LABELS, summaryLineFa, tally, type AttendanceStatus } from "@/lib/attendance";
-import { formatNumberFa } from "@/lib/format";
+import { formatNumberFa, toFaDigits } from "@/lib/format";
 import { toAsciiDigits } from "@/lib/normalize";
 import { takeAttendanceAction } from "../actions";
 import type { SessionForTaking } from "../attendance";
@@ -97,7 +97,7 @@ export function AttendanceRoster({ data }: { data: SessionForTaking }) {
                 </p>
                 {r.studentNumber ? (
                   <bdi dir="ltr" className="tabular shrink-0 text-meta text-text-faint">
-                    {r.studentNumber}
+                    {toFaDigits(r.studentNumber)}
                   </bdi>
                 ) : null}
               </div>

@@ -37,10 +37,10 @@ export const SCHOOL_CODE_RE = /^[A-Za-z][A-Za-z0-9_-]{0,11}$/;
 
 export const MESSAGES = {
   /** Same text whether the id is unknown or belongs to another school — no cross-school existence oracle. */
-  yearNotForBranch: "سال تحصیلی انتخاب‌شده برای این شعبه معتبر نیست.",
+  yearNotForBranch: "سال تحصیلی انتخاب‌شده برای این مدرسه معتبر نیست.",
   termNotForClass: "نوبت انتخاب‌شده برای این کلاس معتبر نیست.",
   /** Case-insensitive: `G` and `g` would generate the same usernames. */
-  schoolCodeTaken: "مدرسه‌ای با این کد (بدون توجه به بزرگی/کوچکی حروف) وجود دارد.",
+  schoolCodeTaken: "مدرسه‌ای با این کد وجود دارد.",
 } as const;
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -313,7 +313,7 @@ export async function deleteTerm(tx: Tx, ctx: ServiceCtx, termId: string): Promi
   const [before] = await tx.select({ id: term.id, name: term.name, academicYearId: term.academicYearId }).from(term).where(eq(term.id, termId)).limit(1);
   if (!before) throw notFound();
   const used = await tx.select({ id: classOffering.id }).from(classOffering).where(eq(classOffering.termId, termId)).limit(1);
-  if (used[0]) throw conflict("این نوبت در ارائهٴ درس‌ها استفاده شده و حذف‌شدنی نیست.");
+  if (used[0]) throw conflict("این نوبت در درس‌های کلاس‌ها استفاده شده و حذف‌شدنی نیست.");
   await tx.delete(term).where(eq(term.id, termId));
   await audit(ctx, "tenancy.term.deleted", { schema: "tenancy", table: "term", id: termId }, before, null, tx);
 }
@@ -450,7 +450,7 @@ export async function deleteSubject(tx: Tx, ctx: ServiceCtx, id: string): Promis
   const [before] = await tx.select({ id: subject.id, name: subject.name }).from(subject).where(eq(subject.id, id)).limit(1);
   if (!before) throw notFound();
   const inOffering = await tx.select({ id: classOffering.id }).from(classOffering).where(eq(classOffering.subjectId, id)).limit(1);
-  if (inOffering[0]) throw conflict("این درس در ارائهٴ درس‌ها استفاده شده و حذف‌شدنی نیست.");
+  if (inOffering[0]) throw conflict("این درس در کلاس‌ها استفاده شده و حذف‌شدنی نیست.");
   const child = await tx.select({ id: subject.id }).from(subject).where(eq(subject.parentSubjectId, id)).limit(1);
   if (child[0]) throw conflict("این درس زیرشاخه دارد و حذف‌شدنی نیست.");
   await tx.delete(subject).where(eq(subject.id, id));
@@ -488,13 +488,13 @@ export interface CreateClassGroupInput {
 export async function createClassGroup(tx: Tx, ctx: ServiceCtx, input: CreateClassGroupInput): Promise<{ classGroupId: string }> {
   const name = normalizeFa(input.name);
   const [br] = await tx.select({ schoolId: branch.schoolId }).from(branch).where(eq(branch.id, input.branchId)).limit(1);
-  if (!br) throw invalidReference("شعبه یافت نشد.");
+  if (!br) throw invalidReference("مدرسه یافت نشد.");
   // One message for "unknown year" and "year of another school": the id must not act as an existence oracle.
   const [yr] = await tx.select({ schoolId: academicYear.schoolId }).from(academicYear).where(eq(academicYear.id, input.academicYearId)).limit(1);
   if (!yr || br.schoolId !== yr.schoolId) throw fieldError("academicYearId", MESSAGES.yearNotForBranch);
   const [gr] = await tx.select({ id: gradeLevel.id }).from(gradeLevel).where(eq(gradeLevel.id, input.gradeLevelId)).limit(1);
   if (!gr) throw invalidReference("پایه یافت نشد.");
-  if (await findClassGroupByName(tx, input.academicYearId, input.branchId, name)) throw fieldError("name", "کلاسی با این نام در این سال و شعبه وجود دارد.");
+  if (await findClassGroupByName(tx, input.academicYearId, input.branchId, name)) throw fieldError("name", "در این سال تحصیلی، کلاسی با همین نام در این مدرسه هست.");
   const [row] = await tx
     .insert(classGroup)
     .values({
@@ -525,7 +525,7 @@ export async function updateClassGroup(tx: Tx, ctx: ServiceCtx, classGroupId: st
   if (input.name !== undefined) {
     const name = normalizeFa(input.name);
     const dup = await findClassGroupByName(tx, before.academicYearId, before.branchId, name);
-    if (dup && dup.id !== classGroupId) throw fieldError("name", "کلاسی با این نام در این سال و شعبه وجود دارد.");
+    if (dup && dup.id !== classGroupId) throw fieldError("name", "در این سال تحصیلی، کلاسی با همین نام در این مدرسه هست.");
   }
   await tx
     .update(classGroup)

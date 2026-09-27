@@ -137,7 +137,7 @@ export async function endTeacherAssignment(tx: Tx, ctx: ServiceCtx, input: EndTe
     .set({ validTo })
     .where(and(eq(teacherAssignment.id, input.teacherAssignmentId), isNull(teacherAssignment.validTo)))
     .returning({ id: teacherAssignment.id, validTo: teacherAssignment.validTo, staffProfileId: teacherAssignment.staffProfileId, classOfferingId: teacherAssignment.classOfferingId });
-  if (!ta) throw invalidReference("تخصیص فعالی با این شناسه یافت نشد.");
+  if (!ta) throw invalidReference("این تدریس پیدا نشد یا قبلاً پایان یافته است.");
 
   const revoked = await tx
     .update(roleAssignment)
@@ -276,7 +276,7 @@ export async function moveEnrollment(tx: Tx, ctx: ServiceCtx, input: MoveEnrollm
     .innerJoin(classGroup, eq(classGroup.id, classEnrollment.classGroupId))
     .where(and(eq(classEnrollment.id, input.classEnrollmentId), eq(classEnrollment.status, "active")))
     .limit(1);
-  if (!current) throw invalidReference("ثبت‌نام فعالی با این شناسه یافت نشد.");
+  if (!current) throw invalidReference("ثبت‌نام فعالی برای این دانش‌آموز پیدا نشد.");
   if (current.classGroupId === input.newClassGroupId) throw validation(undefined, "دانش‌آموز هم‌اکنون در همین کلاس است.");
 
   const target = await loadClassGroup(tx, input.newClassGroupId);

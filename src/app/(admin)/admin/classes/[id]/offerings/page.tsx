@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ResourceListPage, type SearchParams } from "@/components/admin/ResourceListPage";
 import { offeringResource } from "@/lib/admin/resources";
 
-export const metadata: Metadata = { title: "ارائهٴ درس‌ها | مدیریت" };
+export const metadata: Metadata = { title: "درس‌ها و دبیران | مدیریت" };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** /admin/classes/[id]/offerings — subject × term × main teacher of one class. */

@@ -12,7 +12,7 @@ import { NewWorkItemForm } from "@/modules/workspace/ui/NewWorkItemForm";
 // Role-neutral in the tab title: the page word («تکلیف جدید» / «تسک جدید») needs the viewer, and a
 // `generateMetadata` would pay a second query for a string nobody reads twice. A student lands here too
 // (round 6): with no class and no persons to pick, the form opens on «خودم» and writes a personal «تسک».
-export const metadata: Metadata = { title: "کار جدید" };
+export const metadata: Metadata = { title: "مورد تازه | پنل من" };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

@@ -11,7 +11,7 @@ export const MutateInput = z
   .object({
     resource: z.enum(RESOURCE_KEYS),
     op: z.enum(["create", "update", "archive"]),
-    id: z.uuid("شناسه نامعتبر است.").optional(),
+    id: z.uuid("گزینهٴ انتخاب‌شده نامعتبر است.").optional(),
     data: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();

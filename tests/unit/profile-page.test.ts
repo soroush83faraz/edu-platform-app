@@ -66,7 +66,7 @@ describe("«حساب من» (/more)", () => {
     expect(html).toContain(">دانش‌آموز</li>");
     expect(html).toContain("دبستان نمونه");
     expect(html).toMatch(/<bdi dir="ltr" class="tabular truncate">[۰-۹ ]+<\/bdi>/); // Persian digits, LTR
-    expect(html).toContain("شناسهٴ ورود:");
+    expect(html).toContain("نام‌کاربری:");
     expect(html).toContain("<circle"); // the faint water rings of the greeting card
     // Every text line pure white (contrast ≥ 4.5:1 on the gradient); only the decorative mark is faint.
     expect(html.match(/<(p|li|span|bdi|div)\b[^>]*class="[^"]*text-white\/\d/g)).toBeNull();
@@ -109,7 +109,7 @@ describe("«حساب من» (/more)", () => {
   it("no hat: «عضو»; no login identifier: no identifier line", () => {
     const html = renderToStaticMarkup(createElement(ProfileCard, { firstName: "سارا", lastName: "احمدی", hats: [], teaching: 0, place: "دبستان نمونه", loginIdentifier: null }));
     expect(html).toContain(">عضو</li>");
-    expect(html).not.toContain("شناسهٴ ورود");
+    expect(html).not.toContain("نام‌کاربری:");
   });
 
   it("the rows in titled groups — «حساب کاربری», «راهنما و اطلاعات» — each one work card of whole-row links", async () => {

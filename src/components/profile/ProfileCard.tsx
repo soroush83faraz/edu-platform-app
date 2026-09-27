@@ -63,7 +63,7 @@ export function ProfileCard({
             {loginIdentifier ? (
               <p className="flex min-w-0 items-center gap-2">
                 <IdGlyph className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
-                <span className="sr-only">شناسهٴ ورود:</span>
+                <span className="sr-only">نام‌کاربری:</span>
                 <bdi dir="ltr" className="tabular truncate">
                   {formatLoginIdentifierFa(loginIdentifier)}
                 </bdi>

@@ -14,7 +14,7 @@ const HINTS: Record<AdminSectionKey, string> = {
   schools: "مدرسهٴ جدید، درس‌ها و صفحهٴ مدیریت هر مدرسه",
   students: "ثبت، حساب کاربری، انتقال کلاس",
   staff: "دبیران و کادر؛ حساب کاربری و مدرسهٴ اصلی",
-  classes: "دانش‌آموزان کلاس، ارائهٴ درس‌ها، برنامهٴ هفتگی",
+  classes: "دانش‌آموزان، درس‌ها و دبیران، برنامهٴ هفتگی",
   // The one door for manager roles (owner, 2026-09-27): the staff pages show roles, this section gives and revokes them.
   roles: "دادن و لغو نقش مدیر و معاون هر مدرسه",
 };
@@ -73,12 +73,12 @@ export function AdminOverview({ data, items, children }: { data: AdminOverviewDa
   );
 }
 
-/** «دامنهٴ شما: …» — an organization admin sees the whole organization, a school admin every school they hold. */
+/** The schools the numbers below cover — an organization admin sees the whole organization, a school admin every school they hold. */
 function scopeLine(data: AdminOverviewData, schools: readonly SchoolCounts[]): string {
   const names = schools.map((s) => s.name).join("، ");
-  if (data.scope.kind === "organization") return schools.length > 1 ? `دامنهٴ شما: همهٴ مدرسه‌های سازمان — ${names}.` : "دامنهٴ شما: همهٴ مدرسه‌های سازمان.";
-  if (data.scope.schoolIds.length === 1) return "دامنهٴ شما: مدرسهٴ خودتان.";
-  return `دامنهٴ شما: ${formatNumberFa(data.scope.schoolIds.length)} مدرسه${names ? ` — ${names}` : ""}.`;
+  if (data.scope.kind === "organization") return schools.length > 1 ? `همهٴ مدرسه‌های سازمان: ${names}.` : "همهٴ مدرسه‌های سازمان.";
+  if (data.scope.schoolIds.length === 1) return schools[0]?.name ?? "";
+  return `${formatNumberFa(data.scope.schoolIds.length)} مدرسهٴ شما${names ? `: ${names}` : ""}.`;
 }
 
 /**

@@ -60,7 +60,7 @@ export function zodIssueFa(issue: z.core.$ZodRawIssue): string | undefined {
     case "not_multiple_of":
       return `مقدار باید مضربی از ${num(issue.divisor)} باشد.`;
     case "invalid_format":
-      if (issue.format === "uuid" || issue.format === "guid") return "شناسه نامعتبر است.";
+      if (issue.format === "uuid" || issue.format === "guid") return "گزینهٴ انتخاب‌شده نامعتبر است.";
       if (issue.format === "email") return "نشانی ایمیل نامعتبر است.";
       if (issue.format === "url") return "نشانی وب نامعتبر است.";
       return "قالب مقدار نامعتبر است.";

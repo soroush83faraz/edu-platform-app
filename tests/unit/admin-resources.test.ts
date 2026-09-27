@@ -9,9 +9,9 @@ describe("flatten (admin forms)", () => {
   it("errors on rendered fields stay per field; errors on hidden fields become one form-level line", () => {
     expect(flatten({ name: ["نام را وارد کنید."] }, "x", ["name"])).toEqual({ name: "نام را وارد کنید." });
     expect(flatten({ subjectId: ["درس را انتخاب کنید."], termId: ["نوبت را انتخاب کنید."] }, "x", ["status"])).toEqual({
-      form: "خطای اعتبارسنجی: درس را انتخاب کنید. نوبت را انتخاب کنید.",
+      form: "درس را انتخاب کنید. نوبت را انتخاب کنید.",
     });
-    expect(flatten({ status: ["وضعیت را انتخاب کنید."], termId: ["نوبت را انتخاب کنید."] }, "x", ["status"])).toEqual({ status: "وضعیت را انتخاب کنید.", form: "خطای اعتبارسنجی: نوبت را انتخاب کنید." });
+    expect(flatten({ status: ["وضعیت را انتخاب کنید."], termId: ["نوبت را انتخاب کنید."] }, "x", ["status"])).toEqual({ status: "وضعیت را انتخاب کنید.", form: "نوبت را انتخاب کنید." });
     expect(flatten(undefined, "پیام کلی")).toEqual({ form: "پیام کلی" });
     expect(flatten({ "a.0": ["x"] }, "m")).toEqual({ a: "x" });
   });

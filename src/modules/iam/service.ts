@@ -50,10 +50,10 @@ export const MESSAGES = {
   schoolRequired: "برای ساخت نام‌کاربری، مدرسهٴ دانش‌آموز مشخص نیست.",
   studentSchoolRequired: "مدرسه یا کلاس دانش‌آموز را انتخاب کنید.",
   staffSchoolRequired: "مدرسهٴ همکار را انتخاب کنید.",
-  noCurrentYear: "این مدرسه سال تحصیلی جاری ندارد؛ اول سال جاری را در بخش «سال‌ها» تعریف کنید.",
+  noCurrentYear: "سال تحصیلی جاری این مدرسه هنوز ثبت نشده است؛ با مدیر سازمان هماهنگ کنید.",
   schoolNotFound: "مدرسه یافت نشد.",
   roleNotManual: "این نقش به‌صورت دستی داده نمی‌شود.",
-  roleScopeNotAllowed: "این نقش در این دامنه قابل تخصیص نیست.",
+  roleScopeNotAllowed: "این نقش را نمی‌توان در این بخش داد.",
   roleSchoolRequired: "برای این نقش، مدرسه را انتخاب کنید.",
   /**
    * Owner's rule (round 7): an organization has EXACTLY ONE مدیر سازمان and no screen hands that role out. This
@@ -61,14 +61,14 @@ export const MESSAGES = {
    * and now nobody can.
    */
   orgRoleNotGrantable: "نقش مدیر سازمان از این بخش داده نمی‌شود.",
-  orgRoleRevokeForbidden: "فقط مدیر سازمان می‌تواند نقش سطح سازمان را لغو کند.",
-  orgAdminRoleNotRevocable: "نقش مدیر سازمان از رابط کاربری لغو نمی‌شود؛ فقط با کد تعریف و حذف می‌شود.",
+  orgRoleRevokeForbidden: "فقط مدیر سازمان می‌تواند نقش‌های سازمانی را لغو کند.",
+  orgAdminRoleNotRevocable: "نقش مدیر سازمان از این بخش لغو نمی‌شود.",
   principalRoleForbidden: "فقط مدیر سازمان می‌تواند نقش مدیر مدرسه بدهد.",
   principalRoleRevokeForbidden: "فقط مدیر سازمان می‌تواند نقش مدیر مدرسه را لغو کند.",
   roleGrantForbidden: "شما اجازهٴ دادن نقش مدیریتی در این مدرسه را ندارید.",
   roleRevokeForbidden: "شما اجازهٴ لغو این نقش را ندارید.",
-  derivedRoleNotRevocable: "این نقش از تخصیص درس مشتق شده و از این‌جا لغو نمی‌شود.",
-  studentProfileMismatch: "پروفایل دانش‌آموز به این فرد تعلق ندارد.",
+  derivedRoleNotRevocable: "این نقش از درس‌هایی که به این فرد سپرده شده می‌آید و از این‌جا لغو نمی‌شود.",
+  studentProfileMismatch: "پروندهٴ دانش‌آموزی به این فرد تعلق ندارد.",
   /** A manager role (مدیر مدرسه / معاون / مدیر سازمان) goes to an active colleague only — never a student (verifier, 2026-09-27). */
   managerRoleNeedsStaff: "نقش مدیریتی فقط به کارکنان فعال داده می‌شود.",
   changed: "— تغییر داده شده",

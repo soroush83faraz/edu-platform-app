@@ -54,7 +54,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
         title="دانش‌آموزان"
         count={`${formatNumberFa(total)} نفر`}
         back={school ? { href: `/admin/schools/${school.id}`, label: school.name } : undefined}
-        description="ثبت دانش‌آموز با حساب کاربری و کلاس در یک فرم؛ رمز اولیه فقط یک‌بار نمایش داده می‌شود و بعداً از صفحهٴ کلاس چاپ می‌شود."
+        description="ثبت دانش‌آموز با حساب کاربری و کلاس در یک فرم؛ رمز اولیه فقط یک‌بار نمایش داده می‌شود؛ اگر گم شد، از پروندهٴ دانش‌آموز «تعیین رمز موقت» را بزنید."
         actions={
           canWrite ? (
             <Button asChild>
@@ -79,7 +79,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
       {rows.length === 0 ? (
         <EmptyState
           title={q || narrowed ? "دانش‌آموزی با این شرط پیدا نشد" : "هنوز دانش‌آموزی ثبت نشده"}
-          description={canWrite && !(q || narrowed) ? "با «دانش‌آموز جدید» یا ورود از اکسل شروع کنید." : undefined}
+          description={canWrite && !(q || narrowed) ? "با «دانش‌آموز جدید» شروع کنید." : undefined}
           className="surface-work py-10"
         />
       ) : (

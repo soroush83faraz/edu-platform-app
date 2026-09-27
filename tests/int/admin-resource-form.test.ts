@@ -142,7 +142,7 @@ describe("every admin resource: edit payload ⊆ schema (no required key the edi
   it("QA round 2: every required select on an edit form names itself when left empty — «پایه را انتخاب کنید.»", () => {
     expect(issuesFor("classes", { gradeLevelId: "", name: "۱۰/۳", capacity: null })).toEqual({ gradeLevelId: "پایه را انتخاب کنید." });
     expect(issuesFor("classes", { gradeLevelId: null, name: "۱۰/۳", capacity: null })).toEqual({ gradeLevelId: "پایه را انتخاب کنید." });
-    expect(issuesFor("classes", { gradeLevelId: "not-a-uuid", name: "۱۰/۳", capacity: null })).toEqual({ gradeLevelId: "شناسه نامعتبر است." });
+    expect(issuesFor("classes", { gradeLevelId: "not-a-uuid", name: "۱۰/۳", capacity: null })).toEqual({ gradeLevelId: "گزینهٴ انتخاب‌شده نامعتبر است." });
     // Every required select that the schema itself validates (not create-only) refuses "" with a «… را انتخاب کنید.» message.
     for (const def of Object.values(RESOURCES)) {
       for (const field of def.formFields.filter((x) => x.type === "select" && x.required && !x.createOnly && !x.options)) {

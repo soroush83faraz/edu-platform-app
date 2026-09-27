@@ -67,15 +67,15 @@ export function StudentForm({ classes, schools, detail }: Props) {
   const hint = String(v.identifier ?? "").trim()
     ? undefined
     : phone
-      ? "خالی = همان شمارهٴ موبایل دانش‌آموز."
+      ? "اگر خالی بماند، همان شمارهٴ موبایل دانش‌آموز است."
       : schoolCode
-        ? `خالی = نام‌کاربری تولیدی «${schoolCode.toLowerCase()}-${String(v.studentNumber ?? "").trim() || "شماره"}».`
+        ? `اگر خالی بماند، نام‌کاربری «${schoolCode.toLowerCase()}-${String(v.studentNumber ?? "").trim() || "شماره"}» ساخته می‌شود.`
         : schools.some((s) => s.code)
           ? "بدون موبایل، نام‌کاربری از کد مدرسه و شمارهٴ دانش‌آموزی ساخته می‌شود."
           : "بدون موبایل، نام‌کاربری خودکار ساخته می‌شود.";
 
   // Fields on screen right now; an error on anything else is folded into the form-level line by `flatten`.
-  const rendered = ["firstName", "lastName", "studentNumber", "gender", "contactPhone", "guardianPhone", "externalRef", ...(detail ? [] : ["classGroupId", "createAccount", "identifier", ...(schoolFieldShown ? ["schoolId"] : [])])];
+  const rendered = ["firstName", "lastName", "studentNumber", "gender", "contactPhone", "guardianPhone", ...(detail ? [] : ["classGroupId", "createAccount", "identifier", ...(schoolFieldShown ? ["schoolId"] : [])])];
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,7 +137,6 @@ export function StudentForm({ classes, schools, detail }: Props) {
         <Field field={{ name: "gender", labelFa: "جنسیت", type: "select", options: GENDER }} options={GENDER} {...f("gender")} />
         <Field field={{ name: "contactPhone", labelFa: "موبایل دانش‌آموز", type: "text", numeric: true, ltr: true, placeholder: "09121234567" }} options={[]} {...f("contactPhone")} />
         <Field field={{ name: "guardianPhone", labelFa: "شمارهٴ ولی", type: "text", numeric: true, ltr: true, placeholder: "09121234567" }} options={[]} {...f("guardianPhone")} />
-        <Field field={{ name: "externalRef", labelFa: "کد یکتا (سامانهٴ قبلی)", type: "text", ltr: true }} options={[]} {...f("externalRef")} />
       </div>
 
       {!detail ? (
@@ -152,7 +151,7 @@ export function StudentForm({ classes, schools, detail }: Props) {
           <fieldset className="flex flex-col gap-4 surface-work p-4">
             <legend className="px-1 text-sm font-semibold text-text-muted">حساب کاربری</legend>
             <Field field={{ name: "createAccount", labelFa: "حساب کاربری بساز (رمز اولیه یک‌بار نمایش داده می‌شود)", type: "toggle" }} options={[]} {...f("createAccount")} />
-            {v.createAccount === true ? <Field field={{ name: "identifier", labelFa: "شناسهٴ ورود", type: "text", ltr: true, hint }} options={[]} {...f("identifier")} /> : null}
+            {v.createAccount === true ? <Field field={{ name: "identifier", labelFa: "نام‌کاربری", type: "text", ltr: true, hint }} options={[]} {...f("identifier")} /> : null}
           </fieldset>
         </>
       ) : null}

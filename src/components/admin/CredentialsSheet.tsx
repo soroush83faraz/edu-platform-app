@@ -56,7 +56,7 @@ function Slip({ row, schoolName }: { row: CredentialRow; schoolName: string }) {
         ) : null}
       </p>
       <dl className="mt-auto grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-        <dt className="text-text-muted">شناسهٴ ورود</dt>
+        <dt className="text-text-muted">نام‌کاربری</dt>
         <dd>
           <bdi dir="ltr" className="tabular font-semibold">
             {formatLoginIdentifierFa(row.loginIdentifier)}

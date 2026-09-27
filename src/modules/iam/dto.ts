@@ -5,7 +5,7 @@ import { NEXT_PATH_MAX_LENGTH } from "./next-path";
 
 export const LoginInput = z
   .object({
-    identifier: z.string().trim().min(1, "شمارهٴ موبایل یا نام‌کاربری را وارد کنید.").max(64, "شناسه بیش از حد طولانی است."),
+    identifier: z.string().trim().min(1, "شمارهٴ موبایل یا نام‌کاربری را وارد کنید.").max(64, "نام‌کاربری بیش از حد طولانی است."),
     password: z.string().min(1, "رمز را وارد کنید.").max(128, "رمز بیش از حد طولانی است."),
     publicDevice: zFormBoolean(),
     /** Deep link to return to after login; validated by `safeNextPath` (anything unsafe silently → /home). */

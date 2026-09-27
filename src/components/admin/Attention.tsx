@@ -16,8 +16,8 @@ interface AttentionRow {
 export function attentionRows(c: AdminCounts): AttentionRow[] {
   return [
     { href: "/admin/students?pending=1", label: "حساب‌های فعال‌نشده", count: c.accountsPending, fix: "رمز اولیه هنوز عوض نشده؛ به این افراد یادآوری کنید وارد شوند." },
-    { href: "/admin/classes", label: "ارائه‌های بدون دبیر", count: c.offeringsWithoutTeacher, fix: "از صفحهٴ کلاس، «ارائهٴ درس‌ها» → دبیر را انتخاب کنید." },
-    { href: "/admin/classes", label: "کلاس‌های بدون ارائهٴ درس", count: c.classesWithoutOfferings, fix: "برای هر کلاس درس‌ها و دبیرها را تعریف کنید." },
+    { href: "/admin/classes", label: "درس‌های بدون دبیر", count: c.offeringsWithoutTeacher, fix: "از صفحهٴ کلاس، «درس‌ها و دبیران»، دبیر را انتخاب کنید." },
+    { href: "/admin/classes", label: "کلاس‌های بدون درس", count: c.classesWithoutOfferings, fix: "برای هر کلاس درس‌ها و دبیرها را تعریف کنید." },
     { href: "/admin/classes", label: "کلاس‌های بدون برنامهٴ هفتگی", count: c.classesWithoutTimetable, fix: "از صفحهٴ کلاس، «برنامهٴ هفتگی» را پر کنید." },
     { href: "/admin/students?noclass=1", label: "دانش‌آموزان بدون کلاس", count: c.studentsWithoutClass, fix: "از صفحهٴ هر دانش‌آموز، کلاس را ثبت کنید." },
   ].filter((r) => r.count > 0);
