@@ -35,9 +35,9 @@ import type { Permission } from "@/modules/iam/permissions";
 
 /**
  * The product map: what is live now and what each later phase brings, with the client's own vocabulary
- * (`competitorTerm`) in parentheses so principals recognise it. Drives /roadmap and the «به‌زودی» hint on «بیشتر ←
- * نقشهٴ راه» — the only doors to what is coming (Home carries live destinations only, UX review 2026-09-27).
- * Phase 1 entries are links.
+ * (`competitorTerm`) in parentheses so principals recognise it. Drives /roadmap, the «به‌زودی» hint on «بیشتر ←
+ * نقشهٴ راه» and, in the hub layout, Home's own «به‌زودی» section (owner, 2026-09-27: grey, non-interactive tiles
+ * under the live ones, per `soonFor` — never a door; `upcomingTilesFor`). Phase 1 entries are links.
  */
 export interface ModuleEntry {
   code: string;
@@ -53,6 +53,11 @@ export interface ModuleEntry {
   competitorTerm?: string;
   /** One line of what the module does — shown on /roadmap. */
   descriptionFa: string;
+  /**
+   * Upcoming modules only: whose hub Home shows it as a grey «به‌زودی» tile (owner, 2026-09-27) — the hats that
+   * will actually use it. Omitted = nobody's Home (the roadmap still lists it).
+   */
+  soonFor?: TileAudience;
 }
 
 export const PHASES: Record<
@@ -156,6 +161,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "مهر",
     competitorTerm: "دفتر کلاسی",
     descriptionFa: "نمرهٴ مستمر و یادداشت جلسه به جلسه برای هر درس.",
+    soonFor: ["teacher", "admin"],
   },
   {
     code: "discipline",
@@ -166,6 +172,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "آبان",
     competitorTerm: "موارد انضباطی",
     descriptionFa: "ثبت مورد، اطلاع به خانواده، پیگیری معاون.",
+    soonFor: ["teacher", "admin"],
   },
   {
     code: "guardians",
@@ -176,6 +183,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "آبان",
     competitorTerm: "والدین",
     descriptionFa: "حساب ولی با دیدِ فقط‌خواندنی به تکالیف، حضور و نمره‌ها.",
+    soonFor: "admin",
   },
   {
     code: "board",
@@ -186,6 +194,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "آبان",
     competitorTerm: "تابلو اعلانات",
     descriptionFa: "اطلاعیهٴ مدرسه برای کلاس، پایه یا همه.",
+    soonFor: "everyone",
   },
   {
     code: "reports",
@@ -196,6 +205,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "آبان",
     competitorTerm: "گزارش‌ها",
     descriptionFa: "خروجی اکسل و چاپ از حضور، نمره و تکالیف.",
+    soonFor: ["teacher", "admin"],
   },
   {
     code: "requests",
@@ -206,6 +216,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "آبان تا آذر",
     competitorTerm: "تیکت‌ها",
     descriptionFa: "درخواستِ دانش‌آموز یا ولی به دفتر، با وضعیت و پاسخ.",
+    soonFor: "everyone",
   },
 
   {
@@ -217,6 +228,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "آذر",
     competitorTerm: "آزمون",
     descriptionFa: "آزمون آنلاین و برگه‌ای، کارنامه.",
+    soonFor: ["student", "teacher"],
   },
   {
     code: "exam-schedule",
@@ -227,6 +239,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "آذر",
     competitorTerm: "برنامهٴ امتحانی",
     descriptionFa: "تقویم آزمون‌های هر کلاس، با یادآوری در پنل من.",
+    soonFor: "everyone",
   },
   {
     code: "content",
@@ -237,6 +250,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "آذر",
     competitorTerm: "محتوای آموزشی",
     descriptionFa: "جزوه، فیلم و لینک درس، درس به درس، از دبیر برای کلاس.",
+    soonFor: ["student", "teacher"],
   },
   {
     code: "messages",
@@ -247,6 +261,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "آذر",
     competitorTerm: "همکلاسی",
     descriptionFa: "گفت‌وگوی دبیر با کلاس و با خانواده، زیر نظر مدرسه.",
+    soonFor: "everyone",
   },
   {
     code: "counseling",
@@ -257,6 +272,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "دی",
     competitorTerm: "مشاوره",
     descriptionFa: "نوبت و پروندهٴ مشاوره، محرمانه.",
+    soonFor: ["student", "admin"],
   },
   {
     code: "points",
@@ -267,6 +283,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "دی",
     competitorTerm: "دانش‌آموزان ممتاز",
     descriptionFa: "امتیاز و تشویق برای رفتار و پیشرفت.",
+    soonFor: ["student", "teacher"],
   },
   {
     code: "grade-appeal",
@@ -277,6 +294,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "دی",
     competitorTerm: "اعتراض نمره",
     descriptionFa: "درخواست بازبینی نمره با پاسخ دبیر.",
+    soonFor: ["student", "teacher"],
   },
 
   {
@@ -288,6 +306,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "بهمن",
     competitorTerm: "حساب مالی",
     descriptionFa: "شهریه، اقساط و پرداخت آنلاین.",
+    soonFor: ["student", "admin"],
   },
   {
     code: "online-class",
@@ -298,6 +317,7 @@ export const MODULES: readonly ModuleEntry[] = [
     month: "اسفند",
     competitorTerm: "جلسات آنلاین",
     descriptionFa: "کلاس زندهٴ درون برنامه با ضبط جلسه.",
+    soonFor: ["student", "teacher"],
   },
 ];
 
@@ -571,4 +591,28 @@ export function homeTilesFor(
       ...(t.altIcon && others.some((o) => o.icon === t.icon) ? { icon: t.altIcon } : {}),
     };
   });
+}
+
+/** A grey «به‌زودی» tile of the hub Home: a module that is not built yet — a label and a glyph, never an href. */
+export interface UpcomingTile {
+  code: string;
+  labelFa: string;
+  icon: LucideIcon;
+}
+
+/**
+ * The «به‌زودی» tiles a person with these hats sees on the hub Home, in the product map's order (owner,
+ * 2026-09-27): every upcoming module whose `soonFor` names a hat the person wears. They are NOT doors — no href,
+ * nothing to open — and they sit in their own section under the live tiles, so live and upcoming never mix.
+ * No hat, no tiles. Glyphs come from the product map, so /roadmap and Home draw the same one.
+ */
+export function upcomingTilesFor(hats: Pick<TileHats, "isStudent" | "isTeacher" | "isAdmin">): UpcomingTile[] {
+  const wearsOne = (role: TileRole) =>
+    (role === "student" && hats.isStudent) || (role === "teacher" && hats.isTeacher) || (role === "admin" && hats.isAdmin);
+  const anyHat = hats.isStudent || hats.isTeacher || hats.isAdmin;
+  return UPCOMING_MODULES.filter((m) => {
+    const a = m.soonFor;
+    if (!a || !anyHat) return false;
+    return a === "everyone" || (Array.isArray(a) ? a.some(wearsOne) : wearsOne(a as TileRole));
+  }).map((m) => ({ code: m.code, labelFa: m.labelFa, icon: m.icon }));
 }

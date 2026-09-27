@@ -4,7 +4,7 @@
 // the management overview belongs to /admin.
 import { cache } from "react";
 import type { Ctx } from "@/lib/ctx";
-import { homeTilesFor, type HomeTile } from "@/lib/modules-registry";
+import { homeTilesFor, upcomingTilesFor, type HomeTile, type UpcomingTile } from "@/lib/modules-registry";
 import { getUiVariant, type UiVariant } from "@/lib/ui-variant";
 import { myTimetableQuery } from "@/modules/academic/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
@@ -30,6 +30,8 @@ export const getNearbyItems = cache(async () => {
 
 export interface HomeTiles {
   tiles: HomeTile[];
+  /** The hub Home's grey «به‌زودی» tiles for this person (`upcomingTilesFor`) — none in the classic layout. */
+  upcoming: UpcomingTile[];
   hats: Hats | null;
   /** The person's own hats — what the desktop board renders (the admin hat picks no board: /admin is the hub). */
   isStudent: boolean;
@@ -48,5 +50,6 @@ export const resolveHomeTiles = cache(async (ctx: Ctx): Promise<HomeTiles> => {
   // The experimental «hub» layout (no nav) turns every former nav destination into a tile; classic is unchanged.
   const variant = await getUiVariant();
   const tiles = homeTilesFor({ isStudent, isTeacher, isAdmin: adminScope !== null, adminScope, singleSchoolId: hats?.adminSingleSchoolId ?? null }, has, { variant });
-  return { tiles, hats, isStudent, isTeacher, variant };
+  const upcoming = variant === "hub" ? upcomingTilesFor({ isStudent, isTeacher, isAdmin: adminScope !== null }) : [];
+  return { tiles, upcoming, hats, isStudent, isTeacher, variant };
 });

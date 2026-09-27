@@ -37,11 +37,34 @@ const { SchoolBanner } = await import("@/components/home/SchoolBanner");
 const { NotificationsBell } = await import("@/components/home/NotificationsBell");
 const { PageHeader } = await import("@/components/layout/PageHeader");
 const { TwoColumn } = await import("@/components/layout/TwoColumn");
+const { UpcomingTiles } = await import("@/components/home/UpcomingTiles");
 const { formatJalaliWeekdayDate } = await import("@/lib/format");
+const { upcomingTilesFor } = await import("@/lib/modules-registry");
 type Ctx = import("@/lib/ctx").Ctx;
 
 const TILE = { code: "placeholder", labelFa: "نمونه", href: "/placeholder", icon: () => null, role: "everyone" };
-const homeFor = (hat: "teacher" | "student" | "admin") => ({ tiles: [TILE], hats: { teachingOfferings: [] }, isTeacher: hat === "teacher", isStudent: hat === "student", variant: "hub" });
+const hatsOf = (hat: "teacher" | "student" | "admin") => ({ isStudent: hat === "student", isTeacher: hat === "teacher", isAdmin: hat === "admin" });
+const homeFor = (hat: "teacher" | "student" | "admin") => ({
+  tiles: [TILE],
+  upcoming: upcomingTilesFor(hatsOf(hat)),
+  hats: { teachingOfferings: [] },
+  isTeacher: hat === "teacher",
+  isStudent: hat === "student",
+  variant: "hub",
+});
+
+/** The elements of one component type in a tree (same walk as `types`). */
+function elementsOf(node: ReactNode, type: unknown, out: ReactElement<Record<string, unknown>>[] = []): ReactElement<Record<string, unknown>>[] {
+  if (Array.isArray(node)) {
+    for (const n of node) elementsOf(n, type, out);
+    return out;
+  }
+  if (!isValidElement(node)) return out;
+  const el = node as ReactElement<Record<string, ReactNode>>;
+  if (el.type === type) out.push(el as ReactElement<Record<string, unknown>>);
+  for (const key of ["main", "aside", "children"]) elementsOf(el.props[key], type, out);
+  return out;
+}
 
 /** Component types in tree order; host elements by tag. Walks `children`, and TwoColumn's `main` / `aside`. */
 function types(node: ReactNode, out: unknown[] = []): unknown[] {
@@ -87,12 +110,21 @@ describe("hub Home (the default)", () => {
 });
 
 describe("the hub greeting card", () => {
-  it("one white card: «سلام، <name>», today's weekday and date, and the school as a muted meta line", async () => {
+  it("one blue brand card: the hero gradient, the hero radius, white text — «سلام، <name>», today's date, the school", async () => {
     const html = renderToStaticMarkup(await HubGreeting({ firstName: "سارا", schoolName: "دبستان نمونه", orgName: "سازمان نمونه" }));
-    expect(html.match(/^<header class="([^"]*)"/)?.[1].split(" ")).toContain("surface-work");
-    expect(html).toContain("سلام، <bdi>سارا</bdi>");
+    const header = html.match(/^<header class="([^"]*)"/)?.[1].split(" ") ?? [];
+    for (const c of ["bg-hero", "rounded-hero", "text-white", "overflow-hidden"]) expect(header).toContain(c);
+    expect(header).not.toContain("surface-work");
+    expect(html).toMatch(/<h2 class="text-title font-bold text-white">سلام، <bdi>سارا<\/bdi><\/h2>/);
     expect(html).toContain(formatJalaliWeekdayDate());
-    expect(html).toMatch(/<p class="text-meta text-text-muted"><bdi>دبستان نمونه<\/bdi><\/p>/);
+    expect(html).toMatch(/<p class="text-meta text-white"><bdi>دبستان نمونه<\/bdi><\/p>/);
+    // Contrast: every text line is PURE white — white/80 (or the muted on-hero tint) falls under 4.5:1 on the
+    // gradient's light end (#0B6FD1), where the RTL text sits.
+    expect(html).not.toMatch(/text-white\/(?!20)|text-on-hero-muted|text-text-muted/);
+    // The decoration: the faint «دانینو» mark in still rings, hidden from assistive tech, white only — no glow.
+    expect(html).toMatch(/<div aria-hidden="true" class="pointer-events-none absolute/);
+    expect(html).toContain("<circle");
+    expect(html).not.toMatch(/glow|blur|drop-shadow|shadow-(?!1)/);
     // Static: not a link, no hover.
     expect(html).not.toContain("<a");
     expect(html).not.toContain("hover:");
@@ -108,5 +140,39 @@ describe("the hub greeting card", () => {
   it("no school on the session falls back to the organization", async () => {
     const html = renderToStaticMarkup(await HubGreeting({ firstName: "سارا", schoolName: null, orgName: "سازمان نمونه" }));
     expect(html).toContain("<bdi>سازمان نمونه</bdi>");
+  });
+});
+
+describe("the hub Home's «به‌زودی» section (owner, 2026-09-27)", () => {
+  it("follows the live tiles on phones and on the desktop board, with that person's upcoming modules", async () => {
+    for (const hat of ["teacher", "student", "admin"] as const) {
+      resolveHomeTiles.mockResolvedValue(homeFor(hat));
+      const grid = await HomeGrid({ ctx: ctx as unknown as Ctx });
+      const order = types(grid);
+      expect(order.indexOf(UpcomingTiles)).toBeGreaterThan(order.indexOf("nav"));
+      expect(elementsOf(grid, UpcomingTiles)[0]?.props.tiles).toEqual(upcomingTilesFor(hatsOf(hat)));
+      const board = DashboardTiles({ home: homeFor(hat) as never });
+      expect(elementsOf(board, UpcomingTiles)[0]?.props).toMatchObject({ tiles: upcomingTilesFor(hatsOf(hat)), compact: true });
+    }
+  });
+
+  it("per role: grey marks, a «به‌زودی» heading and pill — and no link to an unbuilt route", () => {
+    for (const hat of ["teacher", "student", "admin"] as const) {
+      const tiles = upcomingTilesFor(hatsOf(hat));
+      expect(tiles.length).toBeGreaterThan(0);
+      const html = renderToStaticMarkup(UpcomingTiles({ tiles, gridClassName: "grid" }));
+      expect(html).toContain('<h2 class="text-section font-bold text-text">به‌زودی</h2>');
+      for (const t of tiles) expect(html).toContain(`>${t.labelFa}</span>`);
+      expect(html.match(/data-shade="grey"/g)).toHaveLength(tiles.length);
+      expect(html.match(/aria-disabled="true"/g)).toHaveLength(tiles.length);
+      expect(html.match(/<span class="[^"]*text-xs[^"]*">به‌زودی<\/span>/g)).toHaveLength(tiles.length);
+      expect(html).not.toContain("<a");
+      expect(html).not.toContain("href");
+      expect(html).not.toContain("data-shade=\"blue\"");
+    }
+  });
+
+  it("nothing to show, no section", () => {
+    expect(UpcomingTiles({ tiles: [], gridClassName: "grid" })).toBeNull();
   });
 });

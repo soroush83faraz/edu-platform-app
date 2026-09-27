@@ -12,7 +12,7 @@ import { AlarmClock, ClipboardList, Lectern, Presentation, UserCheck } from "luc
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { SYSTEM_ROLES } from "../../scripts/catalog";
-import { HOME_TILES, MODULES, UPCOMING_MODULES, homeTilesFor, type TileHats } from "@/lib/modules-registry";
+import { HOME_TILES, MODULES, UPCOMING_MODULES, homeTilesFor, upcomingTilesFor, type TileHats } from "@/lib/modules-registry";
 import { isOrganizationAdmin, navRoleFor, type Assignment } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
 
@@ -345,14 +345,15 @@ describe("product map", () => {
     expect(UPCOMING_MODULES.every((m) => m.phase > 1)).toBe(true);
   });
 
-  it("Home carries live destinations only: no tile points at the roadmap (UX review 2026-09-27)", () => {
-    // What is coming is reached from «بیشتر ← نقشهٴ راه», never from a muted tile on Home.
+  it("no Home DOOR points at the roadmap: the «به‌زودی» tiles are not links (owner, 2026-09-27)", () => {
+    // What each coming module will do is read on «بیشتر ← نقشهٴ راه»; Home shows the modules, never a door to them.
     expect(HOME_TILES.filter((t) => t.href.startsWith("/roadmap"))).toEqual([]);
-    for (const file of ["HomeGrid.tsx", "dashboard/DashboardTiles.tsx"]) {
+    for (const file of ["HomeGrid.tsx", "dashboard/DashboardTiles.tsx", "UpcomingTiles.tsx"]) {
       const src = readFileSync(new URL(`../../src/components/home/${file}`, import.meta.url), "utf8");
       expect(src).not.toContain("/roadmap");
-      expect(src).not.toContain("UPCOMING");
     }
+    const soon = readFileSync(new URL("../../src/components/home/UpcomingTiles.tsx", import.meta.url), "utf8");
+    expect(soon).not.toMatch(/next\/link|<Link|<a |href=/);
   });
 
   it("«حضور و غیاب» is delivered too, and its ONE tile serves both the student and the teacher", () => {
@@ -373,3 +374,79 @@ describe("product map", () => {
   });
 });
 
+
+// The hub Home's «به‌زودی» section (owner, 2026-09-27): the modules the product map lists as coming, as grey tiles
+// under the live ones — per role (`soonFor`), with a glyph of their own, and never a door.
+describe("upcomingTilesFor", () => {
+  const soon = (hats: TileHats) => upcomingTilesFor(hats).map((t) => t.labelFa);
+
+  it("student, teacher and admin each see the modules they will use, in the product map's order", () => {
+    expect(soon(student)).toEqual([
+      "تابلو اعلانات",
+      "درخواست‌ها",
+      "آزمون",
+      "برنامهٴ امتحانی",
+      "محتوای آموزشی",
+      "پیام‌ها",
+      "مشاوره",
+      "کیف امتیازی",
+      "اعتراض نمره",
+      "حساب مالی",
+      "جلسات آنلاین",
+    ]);
+    expect(soon(teacher)).toEqual([
+      "دفتر کلاسی",
+      "موارد انضباطی",
+      "تابلو اعلانات",
+      "گزارش‌ها",
+      "درخواست‌ها",
+      "آزمون",
+      "برنامهٴ امتحانی",
+      "محتوای آموزشی",
+      "پیام‌ها",
+      "کیف امتیازی",
+      "اعتراض نمره",
+      "جلسات آنلاین",
+    ]);
+    for (const admin of [orgAdmin, principal]) {
+      expect(soon(admin)).toEqual([
+        "دفتر کلاسی",
+        "موارد انضباطی",
+        "والدین",
+        "تابلو اعلانات",
+        "گزارش‌ها",
+        "درخواست‌ها",
+        "برنامهٴ امتحانی",
+        "پیام‌ها",
+        "مشاوره",
+        "حساب مالی",
+      ]);
+    }
+  });
+
+  it("a person with several hats gets the union once; no hat, no tiles", () => {
+    const all = upcomingTilesFor({ isStudent: true, isTeacher: true, isAdmin: true });
+    expect(all.map((t) => t.code)).toEqual(UPCOMING_MODULES.map((m) => m.code));
+    expect(upcomingTilesFor({ isStudent: false, isTeacher: false, isAdmin: false })).toEqual([]);
+  });
+
+  it("only upcoming modules, each with a distinct glyph that no live hub tile of that person draws — and no href", () => {
+    const live = new Set(MODULES.filter((m) => m.phase === 1).map((m) => m.code));
+    const personas: [TileHats, Permission[]][] = [
+      [student, catalogPerms("student")],
+      [teacher, catalogPerms("teacher")],
+      [orgAdmin, catalogPerms("org_admin")],
+      [principal, PRINCIPAL_PERMS],
+    ];
+    for (const [hats, perms] of personas) {
+      const up = upcomingTilesFor(hats);
+      for (const t of up) {
+        expect(live.has(t.code)).toBe(false);
+        expect(t).not.toHaveProperty("href");
+      }
+      const liveIcons = new Set(homeTilesFor(hats, has(perms), { variant: "hub" }).map((t) => t.icon));
+      expect(new Set(up.map((t) => t.icon)).size).toBe(up.length);
+      for (const t of up) expect(liveIcons.has(t.icon)).toBe(false);
+    }
+  });
+});
