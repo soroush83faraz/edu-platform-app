@@ -3,6 +3,8 @@ import type { Weekday } from "@/lib/timetable";
 
 export interface SessionView {
   offeringId: string;
+  /** The subject's id — the key of its «مُهر درس» hue (`SubjectStamp`). */
+  subjectId: string;
   subjectName: string;
   teacherName: string | null;
   classGroupName: string;

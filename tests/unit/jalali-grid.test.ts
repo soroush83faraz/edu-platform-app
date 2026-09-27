@@ -10,6 +10,7 @@ import {
   parseHm,
   parseJalaliDay,
   quickDates,
+  schoolWeekOf,
   snapMinutes,
   tehranToday,
   weekColumn,
@@ -105,3 +106,17 @@ describe("time wheel", () => {
     expect(formatHm(defaultTimeMinutes(new Date("2026-09-20T20:28:00Z")))).toBe("23:55");
   });
 });
+
+describe("schoolWeekOf", () => {
+  it("spans شنبه–پنج‌شنبه of the day's week, naming both months across a boundary", () => {
+    // Sunday ۲۹ شهریور ۱۴۰۵ → شنبه ۲۸ شهریور … پنج‌شنبه ۲ مهر.
+    expect(schoolWeekOf(new Date(2026, 8, 20, 12))).toEqual({ label: "۲۸ شهریور تا ۲ مهر", days: ["۲۸", "۲۹", "۳۰", "۳۱", "۱", "۲"] });
+  });
+  it("names the month once inside one month, and on جمعه shows the week that starts tomorrow", () => {
+    const week = { label: "۴ تا ۹ مهر", days: ["۴", "۵", "۶", "۷", "۸", "۹"] };
+    expect(schoolWeekOf(new Date(2026, 8, 26, 9))).toEqual(week); // شنبه ۴ مهر
+    expect(schoolWeekOf(new Date(2026, 9, 1, 9))).toEqual(week); // پنج‌شنبه ۹ مهر
+    expect(schoolWeekOf(new Date(2026, 8, 25, 9))).toEqual(week); // جمعه ۳ مهر → next week
+  });
+});
+

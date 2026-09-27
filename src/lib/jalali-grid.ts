@@ -161,3 +161,26 @@ export function defaultTimeMinutes(now = new Date(), step = MINUTE_STEP): number
   const minutes = t.getHours() * 60 + t.getMinutes();
   return Math.min(Math.ceil(minutes / step) * step, 24 * 60 - step);
 }
+
+export interface SchoolWeek {
+  /** «۵ تا ۱۰ مهر», or «۳۰ شهریور تا ۴ مهر» across a month boundary — شنبه to پنج‌شنبه. */
+  label: string;
+  /** Day of the month of شنبه … پنج‌شنبه, Persian digits (the grid's column headers). */
+  days: string[];
+}
+
+/**
+ * The school week (شنبه–پنج‌شنبه) a wall-clock `date` belongs to; on جمعه the week that starts tomorrow — the
+ * timetable is what comes next, not the week that just ended.
+ */
+export function schoolWeekOf(date: Date): SchoolWeek {
+  const col = weekColumn(date);
+  const saturday = addDays(date, col === 6 ? 1 : -col);
+  const dates = Array.from({ length: 6 }, (_, i) => addDays(saturday, i));
+  const first = dates[0]!;
+  const last = dates[5]!;
+  const sameMonth = getMonth(first) === getMonth(last);
+  const start = sameMonth ? format(first, "d") : format(first, "d MMMM", { locale: faIR });
+  const label = toFaDigits(`${start} تا ${format(last, "d MMMM", { locale: faIR })}`);
+  return { label, days: dates.map((d) => toFaDigits(String(getDate(d)))) };
+}

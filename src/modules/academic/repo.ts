@@ -90,6 +90,8 @@ export interface SlotRow {
   weekday: number;
   periodNo: number;
   offeringId: string;
+  /** The subject of the offering — the key of its «مُهر درس» hue. */
+  subjectId: string;
   subjectName: string;
   /** Current main (else assistant/substitute) teacher of the offering; null when nobody teaches it yet. */
   teacherName: string | null;
@@ -104,6 +106,7 @@ type SlotRaw = {
   weekday: number;
   period_no: number;
   offering_id: string;
+  subject_id: string;
   subject_name: string;
   teacher_name: string | null;
   teacher_person_id: string | null;
@@ -118,6 +121,7 @@ const SLOT_SELECT = sql`
     ts.weekday,
     ts.period_no,
     o.id as offering_id,
+    subj.id as subject_id,
     subj.name as subject_name,
     t.teacher_name,
     t.teacher_person_id,
@@ -143,6 +147,7 @@ const toSlot = (r: SlotRaw): SlotRow => ({
   weekday: Number(r.weekday),
   periodNo: Number(r.period_no),
   offeringId: r.offering_id,
+  subjectId: r.subject_id,
   subjectName: r.subject_name,
   teacherName: r.teacher_name,
   teacherPersonId: r.teacher_person_id,

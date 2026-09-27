@@ -6,6 +6,8 @@ import {
   DEFAULT_PERIODS,
   SCHOOL_WEEKDAYS,
   dayAgenda,
+  defaultWeekCell,
+  weekRows,
   periodProgress,
   tehranMinutesPrecise,
   WEEKDAY_LABELS,
@@ -188,3 +190,39 @@ describe("dayAgenda", () => {
     expect(rows).toEqual([{ kind: "session", periodNo: 7, label: "زنگ هفتم", startsAt: "14:00", endsAt: "14:45", sessions: [expect.objectContaining({ subjectName: "x" })] }]);
   });
 });
+
+describe("weekRows / defaultWeekCell (the phone week grid)", () => {
+  const bells = [
+    { periodNo: 1, label: "زنگ اول", startsAt: "08:00", endsAt: "08:45" },
+    { periodNo: 2, label: "زنگ دوم", startsAt: "08:50", endsAt: "09:35" },
+    { periodNo: 3, label: "زنگ سوم", startsAt: "10:00", endsAt: "10:45" },
+    { periodNo: 4, label: "زنگ چهارم", startsAt: "10:50", endsAt: "11:35" },
+    { periodNo: 5, label: "زنگ پنجم", startsAt: "11:40", endsAt: "12:25" },
+  ];
+  const at = (weekday: 0 | 1 | 2 | 3 | 4 | 5, periodNo: number) => ({ ...bells[periodNo - 1]!, weekday });
+  const sessions = [at(0, 2), at(1, 3), at(3, 4)];
+  const days = SCHOOL_WEEKDAYS.map((weekday) => ({ weekday, sessions: sessions.filter((s) => s.weekday === weekday) }));
+
+  it("trims to the first and last used زنگ and marks the row after a زنگ تفریح", () => {
+    const rows = weekRows(bells, sessions);
+    expect(rows.map((r) => r.periodNo)).toEqual([2, 3, 4]);
+    expect(rows.map((r) => r.afterBreak)).toEqual([false, true, false]);
+    expect(weekRows(bells, [])).toEqual([]);
+  });
+
+  it("keeps a session's own bell when the school's list lacks it (another school)", () => {
+    const rows = weekRows(bells.slice(0, 2), [at(0, 1), { periodNo: 7, label: "زنگ هفتم", startsAt: "13:00", endsAt: "13:45" }]);
+    expect(rows.map((r) => [r.periodNo, r.startsAt])).toEqual([[1, "08:00"], [2, "08:50"], [7, "13:00"]]);
+  });
+
+  it("opens on today's ringing or next session, else the next school day's first, wrapping round the week", () => {
+    const rows = weekRows(bells, sessions);
+    expect(defaultWeekCell(days, rows, 1, timeToMinutes("10:20"))).toEqual({ weekday: 1, periodNo: 3 }); // ringing
+    expect(defaultWeekCell(days, rows, 1, timeToMinutes("07:30"))).toEqual({ weekday: 1, periodNo: 3 }); // next today
+    expect(defaultWeekCell(days, rows, 1, timeToMinutes("12:00"))).toEqual({ weekday: 3, periodNo: 4 }); // day over → سه‌شنبه
+    expect(defaultWeekCell(days, rows, 4, timeToMinutes("09:00"))).toEqual({ weekday: 0, periodNo: 2 }); // wraps to شنبه
+    expect(defaultWeekCell(days, rows, 6, timeToMinutes("09:00"))).toEqual({ weekday: 0, periodNo: 2 }); // جمعه → شنبه
+    expect(defaultWeekCell([], [], 0, 0)).toBeNull();
+  });
+});
+

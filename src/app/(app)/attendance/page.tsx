@@ -2,13 +2,12 @@ import { CalendarCheck, CircleCheck, ClipboardList, UserCheck } from "lucide-rea
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cn } from "@/lib/cn";
 import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
 import { RowMark } from "@/components/RowMark";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { ATTENDANCE_LABELS, ATTENDANCE_TONES, absencePercent, formatPercentFa, presencePercent, totalOf, type AttendanceStatus } from "@/lib/attendance";
+import { ATTENDANCE_LABELS, ATTENDANCE_TONES, totalOf, type AttendanceStatus } from "@/lib/attendance";
 import { requireContext } from "@/lib/ctx";
 import { formatNumberFa, isoDateToJalali } from "@/lib/format";
 import { formatTimeRangeFa, WEEKDAY_LABELS } from "@/lib/timetable";
@@ -109,26 +108,15 @@ export default async function AttendancePage() {
             {total === 0 ? (
               <EmptyState title="هنوز حضور و غیابی برای شما ثبت نشده" description="وقتی دبیر کلاس حضور و غیاب بزند، همین‌جا می‌بینید." className="surface-work py-10" />
             ) : (
-              <>
-                <div className="surface-work flex items-center justify-between gap-3 px-4 py-4">
-                  <div className="flex flex-col">
-                    <span className="text-meta text-text-muted">درصد حضور</span>
-                    <span className="tabular text-2xl leading-8 font-bold text-primary-800">{formatPercentFa(presencePercent(counts))}</span>
+              // Counts only — no presence / absence percentage for the student (owner 2026-09-27).
+              <dl className="grid grid-cols-4 gap-1.5">
+                {(Object.keys(ATTENDANCE_LABELS) as AttendanceStatus[]).map((s) => (
+                  <div key={s} className="surface-panel flex flex-col items-center gap-0.5 px-1 py-3 text-center">
+                    <dt className="text-meta text-text-muted">{ATTENDANCE_LABELS[s]}</dt>
+                    <dd className="tabular text-lg font-semibold text-text">{formatNumberFa(counts[s])}</dd>
                   </div>
-                  <div className="flex flex-col text-end">
-                    <span className="text-meta text-text-muted">درصد غیبت</span>
-                    <span className={cn("tabular text-2xl leading-8 font-bold", absencePercent(counts) > 10 ? "text-danger" : "text-text")}>{formatPercentFa(absencePercent(counts))}</span>
-                  </div>
-                </div>
-                <dl className="grid grid-cols-4 gap-1.5">
-                  {(Object.keys(ATTENDANCE_LABELS) as AttendanceStatus[]).map((s) => (
-                    <div key={s} className="surface-panel flex flex-col items-center gap-0.5 px-1 py-3 text-center">
-                      <dt className="text-meta text-text-muted">{ATTENDANCE_LABELS[s]}</dt>
-                      <dd className="tabular text-lg font-semibold text-text">{formatNumberFa(counts[s])}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </>
+                ))}
+              </dl>
             )}
           </section>
 

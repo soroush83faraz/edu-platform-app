@@ -9,7 +9,8 @@ import { SchoolClay } from "@/components/illustrations";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { WeekTimetable } from "@/components/timetable/WeekTimetable";
-import { formatNumberFa } from "@/lib/format";
+import { formatNumberFa, tehranNow } from "@/lib/format";
+import { schoolWeekOf } from "@/lib/jalali-grid";
 import { myClassQuery, myTimetableQuery } from "@/modules/academic/queries";
 
 export const metadata: Metadata = { title: "کلاس من" };
@@ -30,6 +31,7 @@ export default async function MyClassPage() {
   const tt = timetable?.ok ? timetable.data : null;
   const student = tt?.student ?? null;
   const hasSlots = student ? student.days.some((d) => d.sessions.length > 0) : false;
+  const week = schoolWeekOf(tehranNow());
 
   return (
     <ContentWidth className="reveal-stagger">
@@ -61,12 +63,15 @@ export default async function MyClassPage() {
           </section>
 
           <section aria-labelledby="timetable-heading" className="flex flex-col gap-2.5">
-            <h3 id="timetable-heading" className="flex items-center gap-1.5 px-1 text-section font-semibold text-text">
-              <CalendarDays className="size-4" strokeWidth={1.75} aria-hidden />
-              برنامهٴ هفتگی
-            </h3>
+            <div className="flex items-baseline justify-between gap-2 px-1">
+              <h3 id="timetable-heading" className="flex items-center gap-1.5 text-section font-semibold text-text">
+                <CalendarDays className="size-4 self-center" strokeWidth={1.75} aria-hidden />
+                برنامهٴ هفتگی
+              </h3>
+              {hasSlots ? <p className="tabular text-meta text-text-muted">{week.label}</p> : null}
+            </div>
             {student && tt && hasSlots ? (
-              <WeekTimetable days={student.days} periods={student.periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="teacher" perspective="student" />
+              <WeekTimetable days={student.days} periods={student.periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="teacher" perspective="student" weekDays={week.days} />
             ) : (
               <EmptyState
                 title="برنامهٴ هفتگی هنوز تنظیم نشده"

@@ -15,6 +15,14 @@ const HUE_CLASSES = [
 ] as const;
 
 /**
+ * The hue classes of a درس (bg + ink + the 9 % ink ring) for a surface that wears the stamp's colour without being
+ * the 36/48 px stamp — the cells of the phone timetable grid. Same key, same colour everywhere.
+ */
+export function subjectHueClasses(subjectId: string): string {
+  return HUE_CLASSES[subjectHue(subjectId)];
+}
+
+/**
  * «مُهر درس» — the subject stamp: the first letters of the درس name (src/lib/subject-stamp `stampText`) in bold ink
  * on one of eight muted subject hues, picked from the subject id so a درس has the same colour everywhere. It
  * replaces the row glyph on rows that belong to a subject (homework rows, the subject page header); rows without a

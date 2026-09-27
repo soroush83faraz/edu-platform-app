@@ -256,3 +256,64 @@ export function validatePeriods(periods: readonly PeriodInput[]): string | null 
   }
   return null;
 }
+
+export interface WeekRow {
+  periodNo: number;
+  label: string;
+  startsAt: string;
+  endsAt: string;
+  /** A زنگ تفریح (≥ `BREAK_MIN_MINUTES`) ends right before this row: the phone grid draws a wider gap above it. */
+  afterBreak: boolean;
+}
+
+/**
+ * The زنگ rows of the phone week grid: every bell of the school plus any period a session brings (a دبیر's other
+ * school keeps its own times), trimmed to the first and last زنگ that holds a session on SOME day — a week that ends
+ * at زنگ پنجم is not two empty rows longer. Empty when the week has no session.
+ */
+export function weekRows(periods: readonly (PeriodLike & { label: string })[], sessions: readonly (PeriodLike & { label: string })[]): WeekRow[] {
+  const bells = new Map<number, PeriodLike & { label: string }>(periods.map((p) => [p.periodNo, p]));
+  for (const s of sessions) if (!bells.has(s.periodNo)) bells.set(s.periodNo, s);
+  const numbers = [...bells.keys()].sort((a, b) => a - b);
+  const used = new Set(sessions.map((s) => s.periodNo));
+  const first = numbers.findIndex((n) => used.has(n));
+  const last = numbers.findLastIndex((n) => used.has(n));
+  if (first < 0) return [];
+  const rows: WeekRow[] = [];
+  let prevEnd: string | null = null;
+  for (const n of numbers.slice(first, last + 1)) {
+    const { label, startsAt, endsAt } = bells.get(n)!;
+    rows.push({ periodNo: n, label, startsAt, endsAt, afterBreak: prevEnd !== null && timeToMinutes(startsAt) - timeToMinutes(prevEnd) >= BREAK_MIN_MINUTES });
+    prevEnd = endsAt;
+  }
+  return rows;
+}
+
+/** One cell of the week grid. */
+export interface WeekCell {
+  weekday: Weekday;
+  periodNo: number;
+}
+
+/**
+ * The cell the phone grid's details card opens on: today's ringing session, else today's next one, else the first
+ * session of the following school days (wrapping round the week); null only for an empty week.
+ */
+export function defaultWeekCell(
+  days: readonly { weekday: Weekday; sessions: readonly { periodNo: number }[] }[],
+  rows: readonly WeekRow[],
+  today: Weekday,
+  nowMinutes: number,
+): WeekCell | null {
+  const has = (d: Weekday, periodNo: number) => days.some((x) => x.weekday === d && x.sessions.some((s) => s.periodNo === periodNo));
+  const live = rows.find((r) => has(today, r.periodNo) && timeToMinutes(r.endsAt) > nowMinutes);
+  if (live) return { weekday: today, periodNo: live.periodNo };
+  // -1 on جمعه: the search then starts at شنبه.
+  const start = SCHOOL_WEEKDAYS.indexOf(today);
+  for (let i = 1; i <= SCHOOL_WEEKDAYS.length; i++) {
+    const d = SCHOOL_WEEKDAYS[(start + i) % SCHOOL_WEEKDAYS.length]!;
+    const first = rows.find((r) => has(d, r.periodNo));
+    if (first) return { weekday: d, periodNo: first.periodNo };
+  }
+  return null;
+}

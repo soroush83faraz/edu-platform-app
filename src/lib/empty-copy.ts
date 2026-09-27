@@ -72,7 +72,7 @@ export function emptyNotificationsCopy(audience: Audience): EmptyCopy {
 }
 
 /**
- * A school day with no زنگ on the phone timetable (`DayAgenda`). `student` — the student's own week, «تو»;
+ * A school day with no زنگ on the phone timetable (`WeekGrid` details card). `student` — the student's own week, «تو»;
  * `staff` — a دبیر's own week, «شما»; `class` — an admin reading a class's week, impersonal.
  */
 export type TimetablePerspective = "student" | "staff" | "class";

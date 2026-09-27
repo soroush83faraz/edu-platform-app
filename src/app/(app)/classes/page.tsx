@@ -9,7 +9,8 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { WeekTimetable } from "@/components/timetable/WeekTimetable";
 import { Button } from "@/components/ui/button";
 import { requireContext } from "@/lib/ctx";
-import { formatNumberFa } from "@/lib/format";
+import { formatNumberFa, tehranNow } from "@/lib/format";
+import { schoolWeekOf } from "@/lib/jalali-grid";
 import { myTimetableQuery } from "@/modules/academic/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 import { hatsQuery } from "@/modules/iam/hats";
@@ -35,6 +36,7 @@ export default async function ClassesPage() {
   const timetable = offerings.length > 0 ? await myTimetableQuery() : null;
   const tt = timetable?.ok ? timetable.data : null;
   const teaching = tt?.teacher ?? null;
+  const week = schoolWeekOf(tehranNow());
   // A teacher's classes may sit in different schools: the period rows of the week table come from the sessions themselves.
   const periods = teaching
     ? [...new Map(teaching.days.flatMap((d) => d.sessions).map((s) => [s.periodNo, { periodNo: s.periodNo, label: s.label, startsAt: s.startsAt, endsAt: s.endsAt }])).values()].sort((a, b) => a.periodNo - b.periodNo)
@@ -69,12 +71,15 @@ export default async function ClassesPage() {
 
       {offerings.length > 0 ? (
         <section aria-labelledby="my-timetable-heading" className="flex flex-col gap-2.5">
-          <h3 id="my-timetable-heading" className="flex items-center gap-1.5 px-1 text-section font-semibold text-text">
-            <CalendarDays className="size-4" strokeWidth={1.75} aria-hidden />
-            برنامهٴ هفتگی من
-          </h3>
+          <div className="flex items-baseline justify-between gap-2 px-1">
+            <h3 id="my-timetable-heading" className="flex items-center gap-1.5 text-section font-semibold text-text">
+              <CalendarDays className="size-4 self-center" strokeWidth={1.75} aria-hidden />
+              برنامهٴ هفتگی من
+            </h3>
+            {teaching && tt ? <p className="tabular text-meta text-text-muted">{week.label}</p> : null}
+          </div>
           {teaching && tt ? (
-            <WeekTimetable days={teaching.days} periods={periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="class" perspective="staff" />
+            <WeekTimetable days={teaching.days} periods={periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="class" perspective="staff" weekDays={week.days} />
           ) : (
             <EmptyState title="برنامهٴ هفتگی هنوز تنظیم نشده" description="وقتی مدرسه برنامهٴ کلاس‌ها را ثبت کند، زنگ‌های شما همین‌جا می‌آیند." className="surface-work py-10" />
           )}
