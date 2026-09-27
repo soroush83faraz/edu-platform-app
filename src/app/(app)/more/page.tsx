@@ -73,7 +73,7 @@ export default async function MorePage() {
         <ul className="surface-work divide-y divide-line/70">
           <MoreLink href="/change-password" icon={LockKeyhole} label="تغییر رمز" />
           <MoreLink href="/help" icon={LifeBuoy} label="راهنما" hint="ورود، پنل من، مدیریت" />
-          <MoreLink href="/privacy" icon={ShieldCheck} label="حریم خصوصی" hint="چه داده‌ای، چرا، کجا" />
+          <MoreLink href="/privacy" icon={ShieldCheck} label="حریم خصوصی" hint="چه داده‌ای، چه کسی می‌بیند" />
           <MoreLink href="/roadmap" icon={Map} label="نقشهٴ راه" hint={UPCOMING_HINT} />
         </ul>
       </nav>
