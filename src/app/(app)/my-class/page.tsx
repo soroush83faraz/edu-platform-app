@@ -35,16 +35,9 @@ export default async function MyClassPage() {
 
   return (
     <ContentWidth className="reveal-stagger">
-      <PageHeader
-        title="کلاس من"
-        description={
-          cls ? (
-            <>
-              <bdi>{cls.schoolName}</bdi> · کلاس <bdi>{cls.classGroupName}</bdi>
-            </>
-          ) : undefined
-        }
-      />
+      {/* No visible title (owner 2026-09-27): the bottom nav already reads «کلاس من» and the class card under it names
+          the class; the title stays for screen readers, and from lg: the context bar (school · year · term · date). */}
+      <PageHeader title="کلاس من" hideTitle />
 
       {cls === null ? (
         <EmptyState title="هنوز در کلاسی ثبت نشده‌ای." description="وقتی مدرسه تو را در کلاسی ثبت کند، برنامه و درس‌هایت همین‌جا می‌آید." />
@@ -71,7 +64,7 @@ export default async function MyClassPage() {
               {hasSlots ? <p className="tabular text-meta text-text-muted">{week.label}</p> : null}
             </div>
             {student && tt && hasSlots ? (
-              <WeekTimetable days={student.days} periods={student.periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="teacher" perspective="student" weekDays={week.days} />
+              <WeekTimetable days={student.days} periods={student.periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="teacher" perspective="student" weekDays={week.days} comingWeek={week.comingWeek} />
             ) : (
               <EmptyState
                 title="برنامهٴ هفتگی هنوز تنظیم نشده"

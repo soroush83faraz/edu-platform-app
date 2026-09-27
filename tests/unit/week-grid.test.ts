@@ -1,5 +1,6 @@
 // The phone week grid (src/components/timetable/WeekGrid): a lesson cell reads the درس's NAME (`cellSubjectLabel`,
-// owner 2026-09-27), not the stamp's three letters; a دبیر's cell adds the class under it.
+// owner 2026-09-27), not the stamp's three letters; a دبیر's cell adds the class under it. The columns are the full
+// day names شنبه … جمعه, and جمعه is a tinted holiday column unless the school has lessons on it.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -46,5 +47,51 @@ describe("WeekGrid cells", () => {
 
   it("add the class under the name in a دبیر's week", () => {
     expect(cellsText("class").filter(Boolean)).toEqual(["ریاضی|۱۰/۱", "دین و|زندگی|۱۰/۱", "زبان|انگلیسی|۱۰/۱"]);
+  });
+});
+
+const render = (props: Partial<Parameters<typeof WeekGrid>[0]> = {}) =>
+  renderToStaticMarkup(createElement(WeekGrid, { days, periods, today: 3, nowMinutes: 600, secondary: "teacher", perspective: "student", ...props }));
+/** The header row: each day's name and date, and whether it is the holiday / today. */
+const headers = (html: string) => {
+  const head = html.slice(html.indexOf('<div aria-hidden="true" class="contents">'), html.indexOf("<button"));
+  return [...head.matchAll(/<span( data-holiday="")? class="([^"]*)"><span[^>]*>([^<]*)<\/span>(?:<span[^>]*>([^<]*)<\/span>)?<\/span>/g)].map((m) => ({
+    name: m[3],
+    date: m[4] ?? null,
+    holiday: Boolean(m[1]),
+    today: m[2].includes("bg-primary-600"),
+  }));
+};
+const WEEK = ["۴", "۵", "۶", "۷", "۸", "۹", "۱۰"];
+
+describe("WeekGrid columns", () => {
+  it("name every day in full, شنبه … جمعه, with the date under it", () => {
+    const h = headers(render({ weekDays: WEEK }));
+    expect(h.map((x) => x.name)).toEqual(["شنبه", "یک‌شنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه", "جمعه"]);
+    expect(h.map((x) => x.date)).toEqual(WEEK);
+    expect(h.map((x) => x.today)).toEqual([false, false, false, true, false, false, false]);
+  });
+
+  it("draw جمعه as a narrower holiday column: one tinted «تعطیل» cell per زنگ", () => {
+    const html = render();
+    expect(html).toContain("grid-cols-[1rem_repeat(6,minmax(0,1fr))_minmax(0,0.625fr)]");
+    expect(headers(html).map((x) => x.holiday)).toEqual([false, false, false, false, false, false, true]);
+    const holidayCells = [...html.matchAll(/<button[^>]*data-holiday=""[^>]*aria-label="([^"]*)"[^>]*><\/button>/g)].map((m) => m[1]);
+    expect(holidayCells).toEqual(["جمعه، زنگ اول، تعطیل", "جمعه، زنگ دوم، تعطیل"]);
+  });
+
+  it("render a school's جمعه lessons like any other day, in seven equal columns", () => {
+    const withFriday = [...days, { weekday: 6 as const, sessions: [session({ offeringId: "o9", subjectName: "شیمی", weekday: 6 })] }];
+    const html = render({ days: withFriday });
+    expect(html).toContain("grid-cols-[1rem_repeat(7,minmax(0,1fr))]");
+    expect(html).not.toContain("data-holiday");
+    expect(html).toContain('aria-label="جمعه، زنگ اول، شیمی"');
+  });
+
+  it("mark جمعه as today, except when the dates are already the coming week", () => {
+    expect(headers(render({ today: 6 })).map((x) => x.today)).toEqual([false, false, false, false, false, false, true]);
+    expect(headers(render({ today: 6, weekDays: WEEK, comingWeek: true })).some((x) => x.today)).toBe(false);
+    // On the coming week the week's شنبه is still today once جمعه is over.
+    expect(headers(render({ today: 0, weekDays: WEEK, comingWeek: true }))[0]!.today).toBe(true);
   });
 });

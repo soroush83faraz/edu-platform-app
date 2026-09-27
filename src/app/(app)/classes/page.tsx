@@ -79,7 +79,7 @@ export default async function ClassesPage() {
             {teaching && tt ? <p className="tabular text-meta text-text-muted">{week.label}</p> : null}
           </div>
           {teaching && tt ? (
-            <WeekTimetable days={teaching.days} periods={periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="class" perspective="staff" weekDays={week.days} />
+            <WeekTimetable days={teaching.days} periods={periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="class" perspective="staff" weekDays={week.days} comingWeek={week.comingWeek} />
           ) : (
             <EmptyState title="برنامهٴ هفتگی هنوز تنظیم نشده" description="وقتی مدرسه برنامهٴ کلاس‌ها را ثبت کند، زنگ‌های شما همین‌جا می‌آیند." className="surface-work py-10" />
           )}

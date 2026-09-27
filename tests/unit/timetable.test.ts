@@ -3,7 +3,9 @@
 // per-session states of the student/teacher day view — all pinned to fixed instants (Asia/Tehran = UTC+03:30).
 import { describe, expect, it } from "vitest";
 import {
+  CALENDAR_WEEKDAYS,
   DEFAULT_PERIODS,
+  FRIDAY,
   SCHOOL_WEEKDAYS,
   dayAgenda,
   defaultWeekCell,
@@ -77,6 +79,9 @@ describe("nextSessionOf", () => {
 describe("labels", () => {
   it("day chips read شنبه…پنج‌شنبه in Saturday-start order", () => {
     expect(SCHOOL_WEEKDAYS.map((d) => WEEKDAY_LABELS[d])).toEqual(["شنبه", "یک‌شنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه"]);
+    // The phone grid's calendar week adds the holiday جمعه at the end.
+    expect(CALENDAR_WEEKDAYS.map((d) => WEEKDAY_LABELS[d])).toEqual(["شنبه", "یک‌شنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنج‌شنبه", "جمعه"]);
+    expect(WEEKDAY_LABELS[FRIDAY]).toBe("جمعه");
     // نیم‌فاصله in یک‌شنبه / سه‌شنبه / پنج‌شنبه — the same spelling as the date picker and the faIR locale.
     expect([...WEEKDAY_LABELS]).toEqual([...WEEKDAY_NAMES_FA]);
   });
@@ -223,6 +228,14 @@ describe("weekRows / defaultWeekCell (the phone week grid)", () => {
     expect(defaultWeekCell(days, rows, 4, timeToMinutes("09:00"))).toEqual({ weekday: 0, periodNo: 2 }); // wraps to شنبه
     expect(defaultWeekCell(days, rows, 6, timeToMinutes("09:00"))).toEqual({ weekday: 0, periodNo: 2 }); // جمعه → شنبه
     expect(defaultWeekCell([], [], 0, 0)).toBeNull();
+  });
+
+  it("passes over an empty جمعه, but a school's جمعه lesson is a day like any other", () => {
+    const rows = weekRows(bells, sessions);
+    expect(defaultWeekCell(days, rows, 4, timeToMinutes("13:00"))).toEqual({ weekday: 0, periodNo: 2 }); // پنج‌شنبه → شنبه
+    const withFriday = [...days, { weekday: FRIDAY, sessions: [{ periodNo: 5 }] }];
+    expect(defaultWeekCell(withFriday, weekRows(bells, [...sessions, bells[4]!]), 4, timeToMinutes("13:00"))).toEqual({ weekday: FRIDAY, periodNo: 5 });
+    expect(defaultWeekCell(withFriday, weekRows(bells, [...sessions, bells[4]!]), FRIDAY, timeToMinutes("09:00"))).toEqual({ weekday: FRIDAY, periodNo: 5 });
   });
 });
 

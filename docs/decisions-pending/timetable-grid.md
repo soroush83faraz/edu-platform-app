@@ -31,3 +31,35 @@ no horizontal scroll. Also: no «الان» / «امروز» legend under the ti
 - The `?day=` URL state of the old day strip is gone (nothing to pick per day any more).
 - Student «حضور و غیاب من» (/attendance) shows the four counts only; the «درصد حضور / درصد غیبت» card is removed.
   The student «کلاس من» page never showed a percentage. The admin report keeps its percentages.
+
+## Follow-up (owner 2026-09-27): جمعه column, full day names
+
+**Ask.** "Why doesn't the weekly schedule have Friday?" (reference: a Persian calendar month view whose جمعه column
+is tinted as the holiday) and "I want the weekday names full, not just the first letter".
+
+**Decision.**
+- The phone grid has seven columns شنبه … جمعه (`CALENDAR_WEEKDAYS`, `FRIDAY` in src/lib/timetable.ts). The header
+  reads the FULL name (`WEEKDAY_LABELS`) in `text-cell` (11 px, 600, one line) with the day of the month under it
+  (`text-meta`); today stays filled in `primary-600`.
+- جمعه is the holiday: a narrower column (0.625 fr) whose header and cells wear the holiday tint
+  **`bg-warning-soft/60`** (soft sand — the existing `warning-soft` at 60 %, no new token or hue) with the header
+  text in `warning-text`; its cells are empty buttons («جمعه، زنگ …، تعطیل») and tapping one reads «جمعه تعطیل
+  است.» in the details card (no زنگ / time on its top line). A school whose data has lessons on جمعه gets an
+  ordinary day column instead (seven equal columns, normal cells).
+- Width at 360 px (Vazirmatn, measured): card padding 6 → 4 px, the زنگ-number column 26 → 16 px (its «زنگ» header
+  label dropped), gaps 4 → 3 px: 320 − 16 − 7 × 3 = 283 px → day columns 42.7 px, جمعه 26.7 px (45.0 / 28.1 px at
+  375). Header names: «چهارشنبه» 41.1 px, «پنج‌شنبه» 37.0, «جمعه» 25.9 at 11 px — one line each (12 px would need
+  44.8 px). With lessons on جمعه: 40.4 px columns («چهارشنبه» overhangs 0.7 px into the gap, no clipping).
+- Lesson cells lose their 1 px side padding, so a name line keeps ~42 px (was 42.3): `cellSubjectLabel` keeps its
+  seven-letter budget and no name is cut that was not cut before (widest kept lines: «هدیه‌های» 41.6, «آزمایشگاه»
+  41.5, «جغرافیای» 40.1 px).
+- `schoolWeekOf` returns seven dates (شنبه … جمعه) and `comingWeek` (true on جمعه, when the dates are next week's):
+  then no column is today — the جمعه header is not filled with next Friday's date.
+- The desktop table (md+) is unchanged (شنبه … پنج‌شنبه).
+
+## «کلاس من» without its page title (owner 2026-09-27)
+
+The student «کلاس من» page drops its visible title and the «مدرسه · کلاس …» line under it: the bottom nav already
+reads «کلاس من» and the class card right under it names the class and the school. `PageHeader hideTitle` keeps the
+title for screen readers (sr-only heading) and, from `lg:`, only the context bar «مدرسه · سال · نوبت · date» — it
+carries the year, the term and today's date, which the page shows nowhere else.

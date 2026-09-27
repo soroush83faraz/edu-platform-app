@@ -11,6 +11,8 @@ import { getShellContext } from "@/lib/shell-context";
  * end, a hairline under it — with the title (`text-display`) and description beneath. The action node moves
  * between the two rows through `grid-area`, so nothing is rendered twice and nothing is portalled after hydration.
  * `count` sits beside the title as a quiet tabular number (list pages). Context is read once per request.
+ * `hideTitle` keeps the title for assistive tech only: on phones the whole header is then visually gone (a page
+ * the bottom nav already names, e.g. «کلاس من»), from `lg:` only the context bar shows.
  */
 export async function PageHeader({
   title,
@@ -20,6 +22,7 @@ export async function PageHeader({
   actions,
   className,
   titleAs: TitleTag = "h2",
+  hideTitle = false,
 }: {
   title: React.ReactNode;
   description?: React.ReactNode;
@@ -28,6 +31,7 @@ export async function PageHeader({
   actions?: React.ReactNode;
   className?: string;
   titleAs?: "h1" | "h2";
+  hideTitle?: boolean;
 }) {
   const shell = await getShellContext();
   // More than one school in the caller's scope: the chip replaces the name and opens the list (`SchoolsMenu`).
@@ -38,6 +42,7 @@ export async function PageHeader({
         "grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 pt-4",
         "[grid-template-areas:'back_back'_'title_actions'_'desc_desc']",
         "lg:pt-0 lg:[grid-template-areas:'context_actions'_'back_back'_'title_title'_'desc_desc']",
+        hideTitle && "max-lg:sr-only",
         className,
       )}
     >
@@ -57,7 +62,7 @@ export async function PageHeader({
         </span>
       </p>
       {back ? <BackLink href={back.href} label={back.label} className="justify-self-start [grid-area:back] lg:mt-4" /> : null}
-      <div className={cn("flex min-w-0 items-baseline gap-2 self-center [grid-area:title]", !back && "lg:mt-5")}>
+      <div className={cn("flex min-w-0 items-baseline gap-2 self-center [grid-area:title]", !back && "lg:mt-5", hideTitle && "sr-only")}>
         <TitleTag className="min-w-0 text-title font-bold text-text lg:text-display">{title}</TitleTag>
         {count !== undefined ? <span className="tabular shrink-0 text-meta text-text-muted">{count}</span> : null}
       </div>

@@ -19,21 +19,23 @@ export interface WeekTimetableProps {
   secondary: SessionSecondary;
   /** Whose week (the empty-day wording, `emptyDayCopy`): a student's own («تو»), a دبیر's own («شما»), or a class's. */
   perspective: TimetablePerspective;
-  /** Day of the month of شنبه … پنج‌شنبه this week (`schoolWeekOf`), under the phone grid's day letters. */
+  /** Day of the month of شنبه … جمعه this week (`schoolWeekOf`), under the phone grid's day names. */
   weekDays?: readonly string[];
+  /** `schoolWeekOf(...).comingWeek`: on جمعه the dates are next week's, so the phone grid marks no column as today. */
+  comingWeek?: boolean;
   className?: string;
 }
 
 /**
  * The one timetable of the product, two faces from one clock. Phones (< md): `WeekGrid` — the week as a calendar
- * grid (school days × زنگ‌ها) of cells in their «مُهر درس» hue, each reading the درس name, that fits 360 px, with a details card for the tapped cell (owner
+ * grid (شنبه … جمعه × زنگ‌ها, جمعه a tinted holiday column) of cells in their «مُهر درس» hue, each reading the درس name, that fits 360 px, with a details card for the tapped cell (owner
  * 2026-09-27: the day strip + list did not read at a glance). From `md:` the whole week as a table: one column per
  * school day, one row per زنگ with its times in a sticky start column; each lesson wears its درس's stamp hue and
  * reads the subject on line 1 and the teacher (student view) or the class (teacher view) on line 2, today's column
  * is tinted, the ringing cell carries the brand ring and the live progress bar (no legend under it, owner 2026-09-27). Every lesson opens
  * its subject page. «now» comes from `useLiveClock`, so a page left open follows the bell.
  */
-export function WeekTimetable({ days, periods, today: serverToday, nowMinutes: serverMinutes, secondary, perspective, weekDays, className }: WeekTimetableProps) {
+export function WeekTimetable({ days, periods, today: serverToday, nowMinutes: serverMinutes, secondary, perspective, weekDays, comingWeek, className }: WeekTimetableProps) {
   const clock = useLiveClock({ weekday: serverToday, minutes: serverMinutes });
   const today = clock.weekday;
   const { currentPeriodNo } = currentPeriodOf(periods, clock.minutes);
@@ -42,7 +44,7 @@ export function WeekTimetable({ days, periods, today: serverToday, nowMinutes: s
   return (
     <div className={className}>
       <div className="md:hidden">
-        <WeekGrid days={days} periods={periods} today={today} nowMinutes={clock.minutes} secondary={secondary} perspective={perspective} weekDays={weekDays} />
+        <WeekGrid days={days} periods={periods} today={today} nowMinutes={clock.minutes} secondary={secondary} perspective={perspective} weekDays={weekDays} comingWeek={comingWeek} />
       </div>
       <div className="hidden md:block">
         <div className="surface-work overflow-x-auto overscroll-x-contain">

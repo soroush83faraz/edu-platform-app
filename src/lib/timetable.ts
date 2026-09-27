@@ -11,6 +11,10 @@ export const WEEKDAY_LABELS: readonly string[] = ["شنبه", "یک‌شنبه",
 export const WEEKDAY_SHORT: readonly string[] = ["ش", "ی", "د", "س", "چ", "پ", "ج"];
 /** The school week the product shows: شنبه…پنج‌شنبه. */
 export const SCHOOL_WEEKDAYS: readonly Weekday[] = [0, 1, 2, 3, 4, 5];
+/** جمعه — the weekly holiday: the phone grid draws it as a narrow tinted column unless the school has lessons on it. */
+export const FRIDAY: Weekday = 6;
+/** The calendar week the phone grid draws (owner 2026-09-27): شنبه…جمعه. */
+export const CALENDAR_WEEKDAYS: readonly Weekday[] = [...SCHOOL_WEEKDAYS, FRIDAY];
 
 const ORDINALS = ["اول", "دوم", "سوم", "چهارم", "پنجم", "ششم", "هفتم", "هشتم", "نهم", "دهم", "یازدهم", "دوازدهم"];
 
@@ -297,7 +301,8 @@ export interface WeekCell {
 
 /**
  * The cell the phone grid's details card opens on: today's ringing session, else today's next one, else the first
- * session of the following school days (wrapping round the week); null only for an empty week.
+ * session of the following days (wrapping round the week — a جمعه with no lessons is simply passed over); null
+ * only for an empty week.
  */
 export function defaultWeekCell(
   days: readonly { weekday: Weekday; sessions: readonly { periodNo: number }[] }[],
@@ -308,10 +313,9 @@ export function defaultWeekCell(
   const has = (d: Weekday, periodNo: number) => days.some((x) => x.weekday === d && x.sessions.some((s) => s.periodNo === periodNo));
   const live = rows.find((r) => has(today, r.periodNo) && timeToMinutes(r.endsAt) > nowMinutes);
   if (live) return { weekday: today, periodNo: live.periodNo };
-  // -1 on جمعه: the search then starts at شنبه.
-  const start = SCHOOL_WEEKDAYS.indexOf(today);
-  for (let i = 1; i <= SCHOOL_WEEKDAYS.length; i++) {
-    const d = SCHOOL_WEEKDAYS[(start + i) % SCHOOL_WEEKDAYS.length]!;
+  const start = CALENDAR_WEEKDAYS.indexOf(today);
+  for (let i = 1; i <= CALENDAR_WEEKDAYS.length; i++) {
+    const d = CALENDAR_WEEKDAYS[(start + i) % CALENDAR_WEEKDAYS.length]!;
     const first = rows.find((r) => has(d, r.periodNo));
     if (first) return { weekday: d, periodNo: first.periodNo };
   }

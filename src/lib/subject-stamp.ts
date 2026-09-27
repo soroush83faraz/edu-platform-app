@@ -44,8 +44,9 @@ function normalizeName(name: string): string {
 }
 
 /**
- * Letters one line of a phone timetable cell holds: a 44 px column (360 px phone) less 1 px padding each side, at
- * `text-cell` (11 px, weight 600) — the widest seven-letter words («مطالعات» 38.7 px, «جغرافیای» 40.1 px) still fit.
+ * Letters one line of a phone timetable cell holds: a 42.7 px day column of the seven-column grid (360 px phone,
+ * no side padding), at `text-cell` (11 px, weight 600) — the widest lines measured in Vazirmatn («جغرافیای» 40.1,
+ * «هدیه‌های» 41.6, «آزمایشگاه» 41.5 px) still fit, as they did in the six-column grid (42.3 px).
  */
 const CELL_LINE_LETTERS = 7;
 const ZWNJ = "\u200c";

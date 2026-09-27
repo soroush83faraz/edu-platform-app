@@ -165,22 +165,24 @@ export function defaultTimeMinutes(now = new Date(), step = MINUTE_STEP): number
 export interface SchoolWeek {
   /** «۵ تا ۱۰ مهر», or «۳۰ شهریور تا ۴ مهر» across a month boundary — شنبه to پنج‌شنبه. */
   label: string;
-  /** Day of the month of شنبه … پنج‌شنبه, Persian digits (the grid's column headers). */
+  /** Day of the month of شنبه … جمعه, Persian digits (the phone grid's column headers). */
   days: string[];
+  /** True on جمعه: the week shown starts tomorrow, so none of its columns is today. */
+  comingWeek: boolean;
 }
 
 /**
- * The school week (شنبه–پنج‌شنبه) a wall-clock `date` belongs to; on جمعه the week that starts tomorrow — the
- * timetable is what comes next, not the week that just ended.
+ * The school week (شنبه–پنج‌شنبه in the label, شنبه–جمعه in `days`) a wall-clock `date` belongs to; on جمعه the
+ * week that starts tomorrow — the timetable is what comes next, not the week that just ended.
  */
 export function schoolWeekOf(date: Date): SchoolWeek {
   const col = weekColumn(date);
   const saturday = addDays(date, col === 6 ? 1 : -col);
-  const dates = Array.from({ length: 6 }, (_, i) => addDays(saturday, i));
+  const dates = Array.from({ length: 7 }, (_, i) => addDays(saturday, i));
   const first = dates[0]!;
   const last = dates[5]!;
   const sameMonth = getMonth(first) === getMonth(last);
   const start = sameMonth ? format(first, "d") : format(first, "d MMMM", { locale: faIR });
   const label = toFaDigits(`${start} تا ${format(last, "d MMMM", { locale: faIR })}`);
-  return { label, days: dates.map((d) => toFaDigits(String(getDate(d)))) };
+  return { label, days: dates.map((d) => toFaDigits(String(getDate(d)))), comingWeek: col === 6 };
 }

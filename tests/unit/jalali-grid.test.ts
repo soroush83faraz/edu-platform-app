@@ -108,15 +108,15 @@ describe("time wheel", () => {
 });
 
 describe("schoolWeekOf", () => {
-  it("spans شنبه–پنج‌شنبه of the day's week, naming both months across a boundary", () => {
-    // Sunday ۲۹ شهریور ۱۴۰۵ → شنبه ۲۸ شهریور … پنج‌شنبه ۲ مهر.
-    expect(schoolWeekOf(new Date(2026, 8, 20, 12))).toEqual({ label: "۲۸ شهریور تا ۲ مهر", days: ["۲۸", "۲۹", "۳۰", "۳۱", "۱", "۲"] });
+  it("spans شنبه–پنج‌شنبه of the day's week (dates through جمعه), naming both months across a boundary", () => {
+    // Sunday ۲۹ شهریور ۱۴۰۵ → شنبه ۲۸ شهریور … پنج‌شنبه ۲ مهر (جمعه ۳ مهر in the grid).
+    expect(schoolWeekOf(new Date(2026, 8, 20, 12))).toEqual({ label: "۲۸ شهریور تا ۲ مهر", days: ["۲۸", "۲۹", "۳۰", "۳۱", "۱", "۲", "۳"], comingWeek: false });
   });
   it("names the month once inside one month, and on جمعه shows the week that starts tomorrow", () => {
-    const week = { label: "۴ تا ۹ مهر", days: ["۴", "۵", "۶", "۷", "۸", "۹"] };
+    const week = { label: "۴ تا ۹ مهر", days: ["۴", "۵", "۶", "۷", "۸", "۹", "۱۰"], comingWeek: false };
     expect(schoolWeekOf(new Date(2026, 8, 26, 9))).toEqual(week); // شنبه ۴ مهر
     expect(schoolWeekOf(new Date(2026, 9, 1, 9))).toEqual(week); // پنج‌شنبه ۹ مهر
-    expect(schoolWeekOf(new Date(2026, 8, 25, 9))).toEqual(week); // جمعه ۳ مهر → next week
+    expect(schoolWeekOf(new Date(2026, 8, 25, 9))).toEqual({ ...week, comingWeek: true }); // جمعه ۳ مهر → next week
   });
 });
 
