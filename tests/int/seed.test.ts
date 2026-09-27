@@ -9,7 +9,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "@/db/schema";
-import { PERMISSIONS } from "@/modules/iam/permissions";
+import { IMPLICIT_PERMISSIONS, PERMISSIONS } from "@/modules/iam/permissions";
 import { buildSeedCatalog } from "../../scripts/build-seed-catalog";
 import { formatCatalogSummary } from "../../scripts/catalog";
 import { runMigrations } from "../../scripts/migrate";
@@ -17,6 +17,15 @@ import { DANESH, NOTIFICATION_TYPES, SYSTEM_ROLES, SYSTEM_WORK_ITEM_TYPES, catal
 import { OWNER_URL } from "./env";
 import { dropAppSchemas, seed } from "./global-setup";
 import * as f from "./fixtures";
+
+/** The permission codes a SYSTEM role holds in the database, sorted in JS (no collation surprises). */
+async function permsOf(pool: Pool, code: string): Promise<string[]> {
+  const res = await pool.query<{ permission_code: string }>(
+    "select rp.permission_code from iam.role_permission rp join iam.role r on r.id = rp.role_id where r.organization_id is null and r.code = $1",
+    [code],
+  );
+  return res.rows.map((r) => r.permission_code).sort();
+}
 
 describe("seed --catalog", () => {
   afterAll(async () => {
@@ -52,6 +61,59 @@ describe("seed --catalog", () => {
       expect(todo.rows).toEqual([{ id: f.WIT_TEMPLATE, requires_assignee: false }]);
       const todoStatuses = await pool.query<{ code: string }>("select code from workspace.work_item_status where work_item_type_id = $1 order by sequence", [f.WIT_TEMPLATE]);
       expect(todoStatuses.rows.map((r) => r.code)).toEqual(["open", "in_progress", "done", "cancelled"]);
+
+      // Owner, 2026-09-27: the seeded «معاون» holds exactly the permissions of «مدیر مدرسه» — every permission a
+      // role can carry — while the other roles stay narrower.
+      const roleCarried = PERMISSIONS.map((p) => p.code as string).filter((c) => !(IMPLICIT_PERMISSIONS as readonly string[]).includes(c)).sort();
+      expect(await permsOf(pool, "school_principal")).toEqual(roleCarried);
+      expect(await permsOf(pool, "vice_principal")).toEqual(roleCarried);
+      for (const code of ["teacher", "student", "guardian_full"]) {
+        const held = await permsOf(pool, code);
+        for (const p of ["iam.admin.access", "iam.role_assignment.write", "tenancy.structure.write", "integ.import.write"]) expect(held, `${code} ${p}`).not.toContain(p);
+      }
+    } finally {
+      await pool.end();
+    }
+  });
+
+  it("a database seeded with the OLD vice principal matrix reaches the principal's permissions on the next catalog seed (what the deploy's `seed` service runs) — and a further run changes nothing", async () => {
+    const pool = new Pool({ connectionString: OWNER_URL, max: 1 });
+    try {
+      const db = drizzle({ client: pool, schema });
+      const roleIds = await seedCatalog(db);
+      // The vice principal's role_permission rows as they were before 2026-09-27: no structure, role, import write.
+      const OLD_VICE = [
+        "iam.admin.access",
+        "tenancy.structure.read",
+        "iam.person.read",
+        "iam.person.write",
+        "academic.enrollment.write",
+        "academic.teacher_assignment.write",
+        "academic.timetable.read",
+        "academic.timetable.write",
+        "academic.attendance.read",
+        "academic.attendance.write",
+        "academic.attendance.report",
+        "iam.account.reset_password",
+        "iam.account.unlock",
+        "workspace.work_item.read",
+        "workspace.work_item.create",
+        "workspace.work_item.update",
+        "workspace.work_item.comment",
+        "workspace.work_item.assign_class",
+        "notif.notification.read",
+      ];
+      await pool.query("delete from iam.role_permission where role_id = $1 and permission_code <> all($2::text[])", [roleIds.vice_principal, OLD_VICE]);
+      expect(await permsOf(pool, "vice_principal")).toEqual([...OLD_VICE].sort());
+      expect(await permsOf(pool, "vice_principal")).not.toContain("iam.role_assignment.write");
+
+      const again = await seedCatalog(db);
+      expect(again.vice_principal).toBe(roleIds.vice_principal); // updated in place: every existing assignment follows
+      const principal = await permsOf(pool, "school_principal");
+      expect(await permsOf(pool, "vice_principal")).toEqual(principal);
+      const snapshot = await permsOf(pool, "vice_principal");
+      await seedCatalog(db);
+      expect(await permsOf(pool, "vice_principal")).toEqual(snapshot);
     } finally {
       await pool.end();
     }

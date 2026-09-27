@@ -1,8 +1,10 @@
 // QA round 1 blocker (B1): editing an existing «ارائهٴ درس» did nothing for every role — the edit form omits the
 // `createOnly` fields (`subjectId`, `termId`), the strict schema required them, and the errors landed on fields
 // nobody could see. These tests drive `mutateResource` (the body of `adminResourceMutate`, minus the session gate)
-// with the EXACT payload the edit form sends, for a vice principal and a principal of the fixture school, and assert
-// the main-teacher assignment changes. A structural guard checks every resource's schema against its edit form.
+// with the EXACT payload the edit form sends — for an admin who holds only the teacher-assignment permission, and for
+// the principal and the vice principal of the fixture school (the catalog's own permission sets: since 2026-09-27
+// the vice principal holds the principal's) — and assert the main-teacher assignment changes. A structural guard
+// checks every resource's schema against its edit form.
 // Everything runs in withTenant transactions that end with Rollback; nothing is committed.
 import { and, eq, isNull } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
@@ -15,13 +17,17 @@ import { mutateResource } from "@/lib/admin/mutate";
 import { ADMIN_NAV, RESOURCES, adminNavFor } from "@/lib/admin/resources";
 import type { Assignment } from "@/modules/iam/can";
 import { PERMISSIONS } from "@/modules/iam/permissions";
+import { SYSTEM_ROLES } from "../../scripts/catalog";
 import * as f from "./fixtures";
 import { Rollback } from "./helpers";
 
 const ALL = PERMISSIONS.map((p) => p.code);
-const VICE_PERMS = ["iam.admin.access", "tenancy.structure.read", "iam.person.read", "iam.person.write", "academic.enrollment.write", "academic.teacher_assignment.write", "iam.account.reset_password", "iam.account.unlock", "notif.notification.read"];
-const principalOf = (schoolId: string): Assignment => ({ roleCode: "school_principal", roleId: "r-principal", scopeType: "school", scopeId: schoolId, permissions: ALL });
-const viceOf = (schoolId: string): Assignment => ({ roleCode: "vice_principal", roleId: "r-vice", scopeType: "school", scopeId: schoolId, permissions: VICE_PERMS });
+const catalogPerms = (code: string): string[] => [...(SYSTEM_ROLES.find((r) => r.code === code)?.permissions ?? [])];
+/** An admin with the teacher-assignment permission WITHOUT the structure write — no seeded role since 2026-09-27, but the offering form still splits the two. */
+const ASSIGNER_PERMS = ["iam.admin.access", "tenancy.structure.read", "iam.person.read", "academic.teacher_assignment.write"];
+const principalOf = (schoolId: string): Assignment => ({ roleCode: "school_principal", roleId: "r-principal", scopeType: "school", scopeId: schoolId, permissions: catalogPerms("school_principal") });
+const viceOf = (schoolId: string): Assignment => ({ roleCode: "vice_principal", roleId: "r-vice", scopeType: "school", scopeId: schoolId, permissions: catalogPerms("vice_principal") });
+const assignerOf = (schoolId: string): Assignment => ({ roleCode: "x_teacher_assigner", roleId: "r-assigner", scopeType: "school", scopeId: schoolId, permissions: ASSIGNER_PERMS });
 const ctxOf = (...assignments: Assignment[]): ResourceCtx => ({ orgId: f.ORG_A, personId: f.PERSON_A2, userId: "00000000-0000-7000-8000-000000000000", requestId: "int-form", ip: "127.0.0.1", userAgent: null, assignments });
 
 const tenant = { orgId: f.ORG_A, personId: f.PERSON_A2 };
@@ -38,38 +44,45 @@ const mainTeacher = (tx: Tx) =>
     .where(and(eq(teacherAssignment.classOfferingId, f.OFFERING_A1), eq(teacherAssignment.role, "main"), isNull(teacherAssignment.validTo)));
 
 describe("B1 — offering edit through the mutation path", () => {
-  it("vice principal: the edit form's payload sets, then clears, the main teacher; the derived assignment follows", async () => {
+  it("teacher-assignment-only admin: the edit form's payload sets, then clears, the main teacher; the derived assignment follows; hours stay structure (FORBIDDEN)", async () => {
     await rolledBack(async (tx) => {
-      // Anchor the fixture staff member in school A so the school-scoped vice may pick them (staffAssignableSql).
+      // Anchor the fixture staff member in school A so the school-scoped admin may pick them (staffAssignableSql).
       await tx.update(staffProfile).set({ schoolId: f.SCHOOL_A }).where(eq(staffProfile.id, f.STAFF_A2));
-      const vice = ctxOf(viceOf(f.SCHOOL_A));
+      const assigner = ctxOf(assignerOf(f.SCHOOL_A));
       expect(await mainTeacher(tx)).toEqual([]);
-      await mutateResource(tx, vice, { resource: "offerings", op: "update", id: f.OFFERING_A1, data: editPayload(f.STAFF_A2) });
+      await mutateResource(tx, assigner, { resource: "offerings", op: "update", id: f.OFFERING_A1, data: editPayload(f.STAFF_A2) });
       expect(await mainTeacher(tx)).toEqual([{ staffProfileId: f.STAFF_A2 }]);
       // Unchanged resubmit is a no-op; clearing ends the assignment.
-      await mutateResource(tx, vice, { resource: "offerings", op: "update", id: f.OFFERING_A1, data: editPayload(f.STAFF_A2) });
+      await mutateResource(tx, assigner, { resource: "offerings", op: "update", id: f.OFFERING_A1, data: editPayload(f.STAFF_A2) });
       expect(await mainTeacher(tx)).toHaveLength(1);
-      await mutateResource(tx, vice, { resource: "offerings", op: "update", id: f.OFFERING_A1, data: editPayload(null) });
+      await mutateResource(tx, assigner, { resource: "offerings", op: "update", id: f.OFFERING_A1, data: editPayload(null) });
       expect(await mainTeacher(tx)).toEqual([]);
-      // Structure stays with the principal: hours change → FORBIDDEN for the vice, fine for the principal.
-      await expect(mutateResource(tx, vice, { resource: "offerings", op: "update", id: f.OFFERING_A1, data: { ...editPayload(null), weeklyHours: 3 } })).rejects.toSatisfy(isError("FORBIDDEN"));
+      // Structure needs `tenancy.structure.write`: an hours change is FORBIDDEN without it.
+      await expect(mutateResource(tx, assigner, { resource: "offerings", op: "update", id: f.OFFERING_A1, data: { ...editPayload(null), weeklyHours: 3 } })).rejects.toSatisfy(isError("FORBIDDEN"));
       throw new Rollback();
     });
   });
 
-  it("principal: the same payload assigns the teacher and changes hours; an empty create names the missing selects", async () => {
-    await rolledBack(async (tx) => {
-      await tx.update(staffProfile).set({ schoolId: f.SCHOOL_A }).where(eq(staffProfile.id, f.STAFF_A2));
-      const principal = ctxOf(principalOf(f.SCHOOL_A));
-      await mutateResource(tx, principal, { resource: "offerings", op: "update", id: f.OFFERING_A1, data: { ...editPayload(f.STAFF_A2), weeklyHours: 3 } });
-      expect(await mainTeacher(tx)).toEqual([{ staffProfileId: f.STAFF_A2 }]);
-      // m10: the empty create form («انتخاب کنید…» sends "") gets the Persian field messages, not a hidden uuid error.
-      await expect(mutateResource(tx, principal, { resource: "offerings", op: "create", data: { classGroupId: f.CLASS_GROUP_A1, subjectId: "", termId: "", mainTeacherStaffProfileId: null, weeklyHours: null, status: "active" } })).rejects.toSatisfy(
-        (e: unknown) => AppError.is(e) && e.code === "VALIDATION" && JSON.stringify(e.details) === JSON.stringify({ fieldErrors: { subjectId: ["درس را انتخاب کنید."], termId: ["نوبت را انتخاب کنید."] } }),
-      );
-      throw new Rollback();
+  for (const [who, assignment] of [
+    ["principal", principalOf],
+    ["vice principal", viceOf],
+  ] as const) {
+    it(`${who}: the same payload assigns the teacher and changes hours; an empty create names the missing selects`, async () => {
+      await rolledBack(async (tx) => {
+        await tx.update(staffProfile).set({ schoolId: f.SCHOOL_A }).where(eq(staffProfile.id, f.STAFF_A2));
+        const manager = ctxOf(assignment(f.SCHOOL_A));
+        await mutateResource(tx, manager, { resource: "offerings", op: "update", id: f.OFFERING_A1, data: { ...editPayload(f.STAFF_A2), weeklyHours: 3 } });
+        expect(await mainTeacher(tx)).toEqual([{ staffProfileId: f.STAFF_A2 }]);
+        // m10: the empty create form («انتخاب کنید…» sends "") gets the Persian field messages, not a hidden uuid error.
+        await expect(mutateResource(tx, manager, { resource: "offerings", op: "create", data: { classGroupId: f.CLASS_GROUP_A1, subjectId: "", termId: "", mainTeacherStaffProfileId: null, weeklyHours: null, status: "active" } })).rejects.toSatisfy(
+          (e: unknown) => AppError.is(e) && e.code === "VALIDATION" && JSON.stringify(e.details) === JSON.stringify({ fieldErrors: { subjectId: ["درس را انتخاب کنید."], termId: ["نوبت را انتخاب کنید."] } }),
+        );
+        // NEGATIVE: the other organization's school B is not theirs — the same edit on its offering is NOT_FOUND.
+        await expect(mutateResource(tx, manager, { resource: "offerings", op: "update", id: f.OFFERING_B1, data: { ...editPayload(null), classGroupId: f.CLASS_GROUP_B1 } })).rejects.toSatisfy(isError("NOT_FOUND"));
+        throw new Rollback();
+      });
     });
-  });
+  }
 });
 
 describe("admin sub-navigation (owner's rule, QA round 2): «مدرسه‌ها» is for the organization admin only", () => {

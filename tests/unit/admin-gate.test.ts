@@ -12,8 +12,10 @@ const schoolScope: AdminScope = { kind: "school", schoolIds: [SCHOOL] };
 
 const assignment = (scopeType: Assignment["scopeType"], permissions: string[]): Assignment => ({ roleCode: "x", roleId: "r", scopeType, scopeId: scopeType === "organization" ? "org" : SCHOOL, permissions });
 const orgAdmin = [assignment("organization", ["iam.admin.access", "tenancy.structure.write", "academic.teacher_assignment.write"])];
+/** A school manager — principal or vice principal alike since 2026-09-27 (tests/unit/role-catalog.test.ts). */
 const principal = [assignment("school", ["iam.admin.access", "tenancy.structure.write", "academic.teacher_assignment.write"])];
-const vice = [assignment("school", ["iam.admin.access", "academic.teacher_assignment.write"])];
+/** An admin holding the teacher-assignment permission WITHOUT the structure write — no seeded role any more, but the gate must still split them. */
+const assigner = [assignment("school", ["iam.admin.access", "academic.teacher_assignment.write"])];
 
 /** Only the fields the gate reads. */
 const def = (over: Partial<AnyResourceDef>): AnyResourceDef => ({ key: "x", labelFa: "مدرسه", labelFaPlural: "x", permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" }, columns: [], schema: undefined as never, formFields: [], list: undefined as never, create: undefined as never, update: undefined as never, ...over });
@@ -24,7 +26,7 @@ describe("resourceOpGate", () => {
     for (const op of ["create", "update", "archive"] as const) {
       expect(resourceOpGate(classes, op, orgAdmin, orgScope)).toEqual({ ok: true });
       expect(resourceOpGate(classes, op, principal, schoolScope)).toEqual({ ok: true });
-      expect(resourceOpGate(classes, op, vice, schoolScope)).toEqual({ ok: false });
+      expect(resourceOpGate(classes, op, assigner, schoolScope)).toEqual({ ok: false });
     }
   });
 
@@ -41,15 +43,15 @@ describe("resourceOpGate", () => {
     expect(resourceOpGate(schools, "create", principal, schoolScope)).toEqual({ ok: false, message: "ساختن مدرسهٴ جدید فقط با مدیر سازمان است." });
     expect(resourceOpGate(schools, "create", orgAdmin, orgScope)).toEqual({ ok: true });
     // No permission at all wins over the scope message (nothing to explain to someone who cannot write).
-    expect(resourceOpGate(schools, "create", vice, schoolScope)).toEqual({ ok: false });
+    expect(resourceOpGate(schools, "create", assigner, schoolScope)).toEqual({ ok: false });
     expect(GATE_MESSAGES.createNeedsOrgScope("کلاس")).toBe("ساختن کلاس جدید فقط با مدیر سازمان است.");
   });
 
-  it("permission.create (offerings): the vice principal edits existing rows, only structure.write holders create", () => {
+  it("permission.create (offerings): a teacher-assignment-only holder edits existing rows, only structure.write holders create", () => {
     const offerings = def({ permission: { read: "tenancy.structure.read", write: "academic.teacher_assignment.write", create: "tenancy.structure.write" } });
-    expect(resourceOpGate(offerings, "update", vice, schoolScope)).toEqual({ ok: true });
-    expect(resourceOpGate(offerings, "archive", vice, schoolScope)).toEqual({ ok: true });
-    expect(resourceOpGate(offerings, "create", vice, schoolScope)).toEqual({ ok: false });
+    expect(resourceOpGate(offerings, "update", assigner, schoolScope)).toEqual({ ok: true });
+    expect(resourceOpGate(offerings, "archive", assigner, schoolScope)).toEqual({ ok: true });
+    expect(resourceOpGate(offerings, "create", assigner, schoolScope)).toEqual({ ok: false });
     expect(resourceOpGate(offerings, "create", principal, schoolScope)).toEqual({ ok: true });
     expect(resourceOpGate(offerings, "create", orgAdmin, orgScope)).toEqual({ ok: true });
   });

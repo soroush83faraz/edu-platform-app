@@ -29,8 +29,9 @@ const bare = (p: PeriodInput): PeriodInput => ({ periodNo: p.periodNo, label: p.
  * the service, and the primary action is ALWAYS enabled: a new school is seeded with the six default زنگ‌ها, and
  * the operator whose day already matches them must be able to save them unchanged (`tests/int/timetable.test.ts`).
  *
- * Permission is the page's, unchanged: `canEdit` is `tenancy.structure.write` at the school (org admin,
- * principal). A vice principal gets the read view and no «ویرایش» — and therefore no form control at all.
+ * Permission is the page's, unchanged: `canEdit` is `tenancy.structure.write` at the school (org admin, principal,
+ * vice principal — the two school managers hold the same permissions since 2026-09-27). A reader without it gets
+ * the read view and no «ویرایش» — and therefore no form control at all.
  */
 export function PeriodsEditor({ schoolId, initial, canEdit }: { schoolId: string; initial: PeriodInput[]; canEdit: boolean }) {
   const router = useRouter();
@@ -124,7 +125,7 @@ export function PeriodsEditor({ schoolId, initial, canEdit }: { schoolId: string
             {initial.length > 0 ? "ویرایش" : "تعریف زنگ‌بندی"}
           </Button>
         ) : (
-          <p className="px-1 text-meta text-text-muted">زنگ‌بندی را فقط مدیر مدرسه یا مدیر سازمان تغییر می‌دهد.</p>
+          <p className="px-1 text-meta text-text-muted">شما این زنگ‌بندی را فقط می‌بینید؛ تغییر آن با مدیر یا معاون همین مدرسه است.</p>
         )}
       </div>
     );

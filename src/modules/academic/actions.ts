@@ -15,7 +15,7 @@ export const setTimetableSlotAction = defineAction({ schema: SetTimetableSlotInp
   setTimetableSlot(tx, ctx, { classGroupId: input.classGroupId, weekday: input.weekday, periodNo: input.periodNo, classOfferingId: input.classOfferingId, room: input.room ?? null }),
 );
 
-/** زنگ‌بندی is structure: `tenancy.structure.write` at the school (org admin, principal); the vice principal reads only. */
+/** زنگ‌بندی is structure: `tenancy.structure.write` at the school (org admin, principal, vice principal of that school). */
 export const setSchoolPeriodsAction = defineAction({ schema: SetSchoolPeriodsInput, permission: "tenancy.structure.write", scope: "any" }, async (tx, input, ctx) => {
   assertSchoolInScope(await getAdminScope(tx, ctx), input.schoolId);
   if (!(await can(tx, ctx, "tenancy.structure.write", { scopeType: "school", id: input.schoolId }))) throw notFound();

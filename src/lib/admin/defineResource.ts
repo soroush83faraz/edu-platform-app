@@ -77,7 +77,7 @@ export interface ResourceDef<TRow extends { id: string }, TInput> {
   descriptionFa?: string;
   /**
    * `write` gates update/archive (and create unless `create` is set). `create` lets a resource demand a stronger
-   * permission for NEW rows than for edits — offerings: a vice principal (`academic.teacher_assignment.write`) edits
+   * permission for NEW rows than for edits — offerings: a holder of `academic.teacher_assignment.write` alone edits
    * the main teacher of existing rows, only `tenancy.structure.write` defines new ones.
    */
   permission: { read: Permission; write: Permission; create?: Permission };

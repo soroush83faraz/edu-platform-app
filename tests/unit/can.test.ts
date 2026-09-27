@@ -3,7 +3,8 @@
 //   B  Karimi teaches ریاضی in two offerings
 //   C  a counselor assigned to 40 students
 //   D  a principal of ONE school (not the other one)
-//   E  Mousavi wears three hats (vice principal @ boys school, teacher @ one offering, guardian of one student)
+//   E  Mousavi wears three hats (vice principal @ boys school — the principal's permission set since 2026-09-27 —,
+//      teacher @ one offering of the girls school, guardian of one student)
 import { describe, expect, it } from "vitest";
 import { canAtAnyScope, canBroadly, canPure, organizationChain, type Assignment, type ScopeChain } from "@/modules/iam/can";
 
@@ -33,8 +34,9 @@ const TEACHER_PERMS = [
 ];
 const GUARDIAN_PERMS = ["workspace.work_item.read", "workspace.work_item.comment", "notif.notification.read"];
 const STUDENT_PERMS = ["workspace.work_item.read", "workspace.work_item.update", "workspace.work_item.comment", "notif.notification.read"];
-const VICE_PERMS = ["tenancy.structure.read", "iam.person.read", ...TEACHER_PERMS.filter((p) => p.startsWith("workspace."))];
-const PRINCIPAL_PERMS = [...VICE_PERMS, "tenancy.structure.write", "iam.person.write", "iam.role_assignment.write"];
+const SCHOOL_READ_PERMS = ["tenancy.structure.read", "iam.person.read", ...TEACHER_PERMS.filter((p) => p.startsWith("workspace."))];
+/** Principal AND vice principal (owner, 2026-09-27): one permission set, bounded by the school of the assignment. */
+const SCHOOL_MANAGER_PERMS = [...SCHOOL_READ_PERMS, "tenancy.structure.write", "iam.person.write", "iam.role_assignment.write"];
 const COUNSELOR_PERMS = ["workspace.work_item.read", "workspace.work_item.create", "workspace.work_item.comment", "iam.person.read"];
 
 const a = (roleCode: string, scopeType: Assignment["scopeType"], scopeId: string, permissions: string[]): Assignment => ({
@@ -119,7 +121,7 @@ describe("canPure — scenario C: counselor with 40 students", () => {
 });
 
 describe("canPure — scenario D: principal of one school", () => {
-  const rezaei = [a("school_principal", "school", SCHOOL_G, PRINCIPAL_PERMS)];
+  const rezaei = [a("school_principal", "school", SCHOOL_G, SCHOOL_MANAGER_PERMS)];
   it("covers everything under the girls school through the chain", () => {
     expect(canPure(rezaei, chainSchool(SCHOOL_G), "tenancy.structure.write")).toBe(true);
     expect(canPure(rezaei, chainBranch(BRANCH_G, SCHOOL_G), "iam.person.write")).toBe(true);
@@ -135,19 +137,26 @@ describe("canPure — scenario D: principal of one school", () => {
 
 describe("canPure — scenario E: Mousavi, three hats", () => {
   const mousavi = [
-    a("vice_principal", "school", SCHOOL_B, VICE_PERMS),
+    // The vice principal holds the principal's permission set (owner, 2026-09-27) — bounded by the boys school.
+    a("vice_principal", "school", SCHOOL_B, SCHOOL_MANAGER_PERMS),
     a("teacher", "class_offering", OFF_MATH_10_1, TEACHER_PERMS),
     a("guardian_full", "student", SARA, GUARDIAN_PERMS),
   ];
   it("each hat works only in its own scope", () => {
     expect(canPure(mousavi, chainBranch(BRANCH_B, SCHOOL_B), "iam.person.read")).toBe(true); // vice principal
+    expect(canPure(mousavi, chainSchool(SCHOOL_B), "tenancy.structure.write")).toBe(true); // … with the principal's reach there
+    expect(canPure(mousavi, chainSchool(SCHOOL_B), "iam.role_assignment.write")).toBe(true);
     expect(canPure(mousavi, chainOffering(OFF_MATH_10_1, CG_10_1, BRANCH_G, SCHOOL_G), "workspace.work_item.create")).toBe(true); // teacher
     expect(canPure(mousavi, chainStudent(SARA), "workspace.work_item.comment")).toBe(true); // guardian
   });
-  it("hats do not blend: teacher perms don't leak into the girls school, guardian perms don't grant create", () => {
+  it("hats do not blend: the vice principal's reach stops at the boys school, teacher perms don't leak into the girls school, guardian perms don't grant create", () => {
     expect(canPure(mousavi, chainSchool(SCHOOL_G), "iam.person.read")).toBe(false);
     expect(canPure(mousavi, chainStudent(SARA), "workspace.work_item.create")).toBe(false);
-    expect(canPure(mousavi, chainSchool(SCHOOL_B), "tenancy.structure.write")).toBe(false);
+    expect(canPure(mousavi, chainSchool(SCHOOL_G), "tenancy.structure.write")).toBe(false);
+    expect(canPure(mousavi, chainSchool(SCHOOL_G), "iam.role_assignment.write")).toBe(false);
+    // Teaching one درس of the girls school does not carry the vice principal's permissions there either.
+    expect(canPure(mousavi, chainOffering(OFF_MATH_10_1, CG_10_1, BRANCH_G, SCHOOL_G), "tenancy.structure.write")).toBe(false);
+    expect(canPure(mousavi, organizationChain(ORG), "iam.role_assignment.write")).toBe(false);
   });
 });
 
@@ -179,7 +188,7 @@ describe("canPure — negatives and edge cases", () => {
 describe("canAtAnyScope / canBroadly — personal-inbox checks", () => {
   const karimi = [a("teacher", "class_offering", OFF_MATH_10_1, TEACHER_PERMS)];
   const saraScoped = [a("student", "student", SARA, STUDENT_PERMS)];
-  const rezaei = [a("school_principal", "school", SCHOOL_G, PRINCIPAL_PERMS)];
+  const rezaei = [a("school_principal", "school", SCHOOL_G, SCHOOL_MANAGER_PERMS)];
   it("a teacher (offering scope) and a student (profile scope) hold inbox permissions at some scope but not broadly", () => {
     expect(canAtAnyScope(karimi, "workspace.work_item.read")).toBe(true);
     expect(canAtAnyScope(saraScoped, "workspace.work_item.read")).toBe(true);

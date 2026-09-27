@@ -27,9 +27,10 @@ export type RoleHatSource = Pick<Assignment, "roleCode" | "scopeType" | "permiss
 /**
  * Every hat the person wears, highest first. The admin hats are told apart the way the rest of the product does:
  * an ORGANIZATION-scoped `iam.admin.access` is «مدیر سازمان» (`isOrganizationAdmin`), `school_principal` — or any
- * other narrower assignment carrying admin access — is «مدیر مدرسه», and `vice_principal` is «معاون», which the
- * role matrix already keeps distinct. «ولی» has no assignments before phase 2; the code is here so the mapping is
- * complete and testable. Returns `[]` for an account with no hat (the nav shows «راهنما» in that case).
+ * other narrower assignment carrying admin access — is «مدیر مدرسه», and `vice_principal` is «معاون». That last
+ * split is the person's TITLE only: the two school managers hold the same permissions (owner, 2026-09-27), so
+ * nothing but this label (and its glyph) may branch on it. «ولی» has no assignments before phase 2; the code is
+ * here so the mapping is complete and testable. Returns `[]` for an account with no hat (the nav shows «راهنما»).
  */
 export function roleHatsFor(assignments: readonly RoleHatSource[]): RoleKey[] {
   const hats = new Set<RoleKey>();

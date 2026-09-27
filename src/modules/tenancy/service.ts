@@ -87,7 +87,7 @@ export async function createSchool(tx: Tx, ctx: ServiceCtx, input: CreateSchoolI
  * `validatePeriods`). Rows are matched by `period_no`: existing ones are updated in place, missing ones inserted,
  * surplus ones deleted — a timetable slot keeps its `period_no`, so shortening the day hides those slots from the
  * grid until a period with that number exists again (they are not deleted). Structure permission
- * (`tenancy.structure.write`): organization admin + principal; the vice principal reads only.
+ * (`tenancy.structure.write`): organization admin, principal and vice principal of the school.
  */
 export async function setSchoolPeriods(tx: Tx, ctx: ServiceCtx, schoolId: string, periods: PeriodInput[]): Promise<{ count: number }> {
   if (!(await findSchoolById(tx, schoolId))) throw notFound();

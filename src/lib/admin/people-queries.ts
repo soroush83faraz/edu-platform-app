@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { defineQuery } from "@/lib/actions";
 import { audit } from "@/lib/audit";
-import { assertSchoolInScope, getAdminScope, roleGrantOptions } from "@/modules/iam/service";
+import { assertSchoolInScope, getAdminScope } from "@/modules/iam/service";
 import { findSchoolById, listSchools } from "@/modules/tenancy/repo";
 import { PAGE_SIZE } from "./defineResource";
 import { classOptionsInScope, getPersonDetail, listClassCredentials, listStaff, listStudents, personCredential } from "./people";
@@ -29,8 +29,8 @@ export const staffListQuery = defineQuery({ schema: PeopleListInput, permission:
 });
 
 /**
- * What the student/staff forms need: classes and schools of the scope, plus the roles the caller may grant and where
- * (`roleGrantOptions` — computed server-side from the caller's assignments; the service enforces the same rule).
+ * What the student/staff forms need: classes and schools of the scope. No role options any more — the staff forms
+ * grant no manager role (owner, 2026-09-27); «نقش جدید» on /admin/roles does (`rolesPageQuery`).
  */
 export const peopleFormOptionsQuery = defineQuery({ permission: "iam.person.read", scope: "any" }, async (tx, _input, ctx) => {
   const scope = await getAdminScope(tx, ctx);
@@ -39,15 +39,14 @@ export const peopleFormOptionsQuery = defineQuery({ permission: "iam.person.read
     scope,
     classes: await classOptionsInScope(tx, scope),
     schools,
-    roleGrant: roleGrantOptions(ctx.assignments, schools),
   };
 });
 
 export const personDetailQuery = defineQuery({ schema: PersonIdInput, permission: "iam.person.read", scope: "any" }, async (tx, input, ctx) => {
   const scope = await getAdminScope(tx, ctx);
-  const detail = await getPersonDetail(tx, scope, input.personId, ctx.assignments);
+  const detail = await getPersonDetail(tx, scope, input.personId);
   const schools = (await listSchools(tx)).filter((s) => scope.kind === "organization" || scope.schoolIds.includes(s.id)).map((s) => ({ value: s.id, label: s.name }));
-  return { detail, scope, classes: detail.student ? await classOptionsInScope(tx, scope) : [], schools, roleGrant: roleGrantOptions(ctx.assignments, schools) };
+  return { detail, scope, classes: detail.student ? await classOptionsInScope(tx, scope) : [], schools };
 });
 
 export const classCredentialsQuery = defineQuery({ schema: ClassIdInput, permission: "iam.account.reset_password", scope: "any" }, async (tx, input, ctx) => {

@@ -327,17 +327,25 @@ describe("excel import", () => {
     ).rejects.toBeInstanceOf(Rollback);
   });
 
-  it("a school-scoped admin of another school cannot import into this one (RLS + can); the same file into school B needs its own year", async () => {
+  it("a school-scoped admin of another school cannot import into this one (RLS + can); their own school they can — the vice principal like the principal", async () => {
     const orgId = demoId("org:danesh");
     const mousavi = demoId("danesh:person:mousavi");
     await expect(
       withTenant({ orgId, personId: mousavi }, async (tx) => {
-        // The import CLI checks `can(integ.import.write, school)`; mousavi (vice principal of B) lacks import.write entirely.
+        // The import CLI checks `can(integ.import.write, school)`. mousavi is the SEEDED vice principal of B (her
+        // assignments read back from the database, as `--as` does): since 2026-09-27 she holds the principal's
+        // permissions — import included — at B, and nothing at G.
         const { can } = await import("@/modules/iam/can");
         const { listValidAssignments } = await import("@/modules/iam/repo");
         const assignments = await listValidAssignments(tx, mousavi);
+        expect(assignments.map((a) => a.roleCode)).toContain("vice_principal");
         expect(await can(tx, { orgId, assignments }, "integ.import.write", { scopeType: "school", id: demoId("danesh:school:G") })).toBe(false);
-        expect(await can(tx, { orgId, assignments }, "integ.import.write", { scopeType: "school", id: demoId("danesh:school:B") })).toBe(false);
+        expect(await can(tx, { orgId, assignments }, "integ.import.write", { scopeType: "school", id: demoId("danesh:school:B") })).toBe(true);
+        // …and never at the organization level: `--create-subjects` asks `tenancy.structure.write` there
+        // (scripts/import.ts), a principal's appointment asks `iam.role_assignment.write` there.
+        expect(await can(tx, { orgId, assignments }, "tenancy.structure.write")).toBe(false);
+        expect(await can(tx, { orgId, assignments }, "integ.import.write")).toBe(false);
+        expect(await can(tx, { orgId, assignments }, "iam.role_assignment.write")).toBe(false);
         throw new Rollback();
       }),
     ).rejects.toBeInstanceOf(Rollback);

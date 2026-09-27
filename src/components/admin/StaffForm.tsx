@@ -1,14 +1,11 @@
 "use client";
 
-import { X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { createStaffAction, updateStaffAction } from "@/lib/admin/people-actions";
 import type { PersonDetail } from "@/lib/admin/people";
-import { roleLabel } from "@/lib/admin/labels";
-import type { AssignableRole, RoleGrantOptions } from "@/modules/iam/service";
 import { CredentialsDialog, type Credentials } from "./CredentialsDialog";
 import { Field, FieldError, flatten, type FormValue } from "./ResourceForm";
 import type { SchoolOption } from "./StudentForm";
@@ -23,25 +20,18 @@ const GENDER = [
   { value: "male", label: "مرد" },
 ];
 
-interface RoleGrant {
-  roleCode: AssignableRole;
-  schoolId: string | null;
-}
-
 /**
- * Staff form: person + phone account (+ optional manager roles). Teachers get their role from class offerings.
- * `roleGrant` (server-computed from the caller's assignments, `roleGrantOptions`) lists the roles the caller may
- * grant and the schools where; empty → no role picker (a vice principal registers staff but grants nothing).
+ * Staff form: person + phone account + primary school. Teachers get their role from class offerings; a manager role
+ * («مدیر مدرسه» / «معاون») is NEVER set here — neither for a new colleague nor on the person page (owner, 2026-09-27:
+ * roles are shown on the staff pages, granted and revoked on /admin/roles only).
  */
-export function StaffForm({ schools, detail, roleGrant }: { schools: SchoolOption[]; detail?: PersonDetail; roleGrant: RoleGrantOptions<SchoolOption> }) {
+export function StaffForm({ schools, detail }: { schools: SchoolOption[]; detail?: PersonDetail }) {
   const router = useRouter();
   const ids = useId();
   const [pending, start] = useTransition();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [creds, setCreds] = useState<Credentials | null>(null);
   const [createdId, setCreatedId] = useState<string | null>(null);
-  const [roles, setRoles] = useState<RoleGrant[]>([]);
-  const [roleDraft, setRoleDraft] = useState<{ roleCode: string; schoolId: string }>({ roleCode: "", schoolId: roleGrant.schools[0]?.value ?? "" });
   const [v, setV] = useState<Record<string, FormValue>>({
     firstName: detail?.firstName ?? "",
     lastName: detail?.lastName ?? "",
@@ -53,25 +43,9 @@ export function StaffForm({ schools, detail, roleGrant }: { schools: SchoolOptio
   });
   const set = (name: string) => (val: FormValue) => setV((p) => ({ ...p, [name]: val }));
   const f = (name: string) => ({ id: `${ids}-${name}`, value: v[name], error: errors[name], onChange: set(name) });
-  const roleOptions = [{ value: "", label: "بدون نقش مدیریتی" }, ...roleGrant.roles.map((code) => ({ value: code, label: roleLabel(code) }))];
-
-  // Every role this picker can offer is school-scoped: «مدیر سازمان» is granted by nobody (round 7), so
-  // `roleGrantOptions` never returns it and the form has no organization-scoped case to handle.
-  const addRole = () => {
-    if (!roleDraft.roleCode) return;
-    const code = roleDraft.roleCode as AssignableRole;
-    const schoolId = roleDraft.schoolId || null;
-    if (!schoolId) {
-      setErrors((p) => ({ ...p, roles: "برای این نقش، مدرسه را انتخاب کنید." }));
-      return;
-    }
-    if (roles.some((r) => r.roleCode === code && r.schoolId === schoolId)) return;
-    setRoles((p) => [...p, { roleCode: code, schoolId }]);
-    setErrors((p) => ({ ...p, roles: "" }));
-  };
 
   // Fields on screen right now; an error on anything else is folded into the form-level line by `flatten`.
-  const rendered = ["firstName", "lastName", "gender", "employeeNumber", "employmentType", "roles", ...(detail ? [] : ["phone"]), ...((detail && schools.length > 0) || (!detail && schools.length > 1) ? ["schoolId"] : [])];
+  const rendered = ["firstName", "lastName", "gender", "employeeNumber", "employmentType", ...(detail ? [] : ["phone"]), ...((detail && schools.length > 0) || (!detail && schools.length > 1) ? ["schoolId"] : [])];
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,7 +77,6 @@ export function StaffForm({ schools, detail, roleGrant }: { schools: SchoolOptio
         employeeNumber: opt("employeeNumber"),
         employmentType: s("employmentType") as "full_time" | "part_time" | "contractor",
         schoolId: opt("schoolId"),
-        roles,
       });
       if (!r.ok) {
         setErrors(flatten(r.fieldErrors, r.message, rendered));
@@ -133,46 +106,6 @@ export function StaffForm({ schools, detail, roleGrant }: { schools: SchoolOptio
           />
         ) : null}
       </div>
-
-      {!detail && roleGrant.roles.length > 0 ? (
-        <fieldset className="flex flex-col gap-3 surface-work p-4">
-          <legend className="px-1 text-sm font-semibold text-text-muted">نقش مدیریتی (اختیاری)</legend>
-          <p className="text-meta text-text-muted">نقش «معلم» این‌جا داده نمی‌شود؛ با تخصیص دبیر به ارائهٴ درس در صفحهٴ کلاس ساخته می‌شود.</p>
-          {roles.length > 0 ? (
-            <ul className="flex flex-wrap gap-2">
-              {roles.map((r, i) => (
-                <li key={i}>
-                  <button type="button" onClick={() => setRoles((p) => p.filter((_, j) => j !== i))} className="inline-flex h-9 items-center gap-1 rounded-full bg-primary-50 ps-3 pe-2 text-sm text-primary-700" aria-label="حذف نقش">
-                    {roleLabel(r.roleCode)}
-                    {r.schoolId ? ` — ${schools.find((s) => s.value === r.schoolId)?.label ?? ""}` : ""}
-                    <X className="size-3.5" aria-hidden />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-            <select aria-label="نقش" value={roleDraft.roleCode} onChange={(e) => setRoleDraft((p) => ({ ...p, roleCode: e.target.value }))} className="h-11 rounded-lg border border-line bg-surface px-3 text-base">
-              {roleOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <select aria-label="مدرسهٴ نقش" value={roleDraft.schoolId} onChange={(e) => setRoleDraft((p) => ({ ...p, schoolId: e.target.value }))} disabled={!roleDraft.roleCode} className="h-11 rounded-lg border border-line bg-surface px-3 text-base disabled:opacity-50">
-              {roleGrant.schools.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-            <Button type="button" variant="outline" className="h-11" onClick={addRole} disabled={!roleDraft.roleCode}>
-              افزودن نقش
-            </Button>
-          </div>
-          <FieldError id={`${ids}-roles`} text={errors.roles} />
-        </fieldset>
-      ) : null}
 
       <FieldError id={`${ids}-form`} text={errors.form} />
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

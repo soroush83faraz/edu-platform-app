@@ -1,6 +1,7 @@
 // The bell schedule opens READ-ONLY (owner, QA round 5) and only becomes editable on demand. Rendered
 // statically and inspected as a string: what matters is that the default state carries no form control at all,
-// and that a vice principal — who may read the structure but not write it — is never offered one.
+// and that a reader without `tenancy.structure.write` at the school is never offered one. (The vice principal
+// holds it since 2026-09-27 — the principal's permissions — so every seeded school manager gets «ویرایش».)
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -37,12 +38,12 @@ describe("PeriodsEditor (زنگ‌بندی)", () => {
     expect(html).not.toContain("انصراف");
   });
 
-  it("a vice principal gets the read view with NO form control and no way into one", () => {
+  it("a reader without the structure write gets the read view with NO form control and no way into one", () => {
     const html = render(false);
     expect(html).not.toContain("<input");
     expect(html).not.toContain("<button");
     expect(html).not.toContain("ویرایش");
-    expect(html).toContain("زنگ‌بندی را فقط مدیر مدرسه یا مدیر سازمان تغییر می‌دهد.");
+    expect(html).toContain("شما این زنگ‌بندی را فقط می‌بینید؛ تغییر آن با مدیر یا معاون همین مدرسه است.");
     // The schedule itself is still readable.
     expect(html).toContain("زنگ اول");
     expect(html).toContain("۰۸:۴۵");

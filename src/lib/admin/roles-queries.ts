@@ -1,13 +1,21 @@
-// /admin/roles: the system role templates (read-only) and who holds a manual manager role in the caller's scope.
-// `revocable` mirrors `revokeRoleAssignment`'s permission step for the «لغو» button (the server re-checks).
+// /admin/roles: the system role templates (read-only), who holds a manual manager role in the caller's scope, and —
+// since the owner made this page the ONE door for manager roles (2026-09-27; the staff pages only show them) — what
+// the caller may grant here: `roleGrant` (`roleGrantOptions`: which roles, at which of the scope's schools) and the
+// colleagues to pick from (`roleGrantCandidates`, only when there is something to grant). `revocable` mirrors
+// `revokeRoleAssignment`'s permission step for the «لغو» button. The server re-checks both on every submit.
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { defineQuery } from "@/lib/actions";
 import { person, role, roleAssignment, rolePermission } from "@/modules/iam/schema";
-import { canManageRole, getAdminScope } from "@/modules/iam/service";
+import { canManageRole, getAdminScope, isInScope, roleGrantOptions } from "@/modules/iam/service";
+import { listSchools } from "@/modules/tenancy/repo";
 import { branch, school } from "@/modules/tenancy/schema";
+import { roleGrantCandidates } from "./people";
 
 export const rolesPageQuery = defineQuery({ permission: "iam.person.read", scope: "any" }, async (tx, _input, ctx) => {
   const scope = await getAdminScope(tx, ctx);
+  const schools = (await listSchools(tx)).filter((s) => isInScope(scope, s.id)).map((s) => ({ value: s.id, label: s.name }));
+  const roleGrant = roleGrantOptions(ctx.assignments, schools);
+  const candidates = roleGrant.roles.length > 0 ? await roleGrantCandidates(tx, scope) : [];
   const templates = await tx
     .select({
       code: role.code,
@@ -54,5 +62,11 @@ export const rolesPageQuery = defineQuery({ permission: "iam.person.read", scope
       ),
     )
     .orderBy(asc(role.code), asc(person.lastName));
-  return { scope, templates, assignments: assignments.map((a) => ({ ...a, revocable: canManageRole(ctx.assignments, a.roleCode, a.schoolId) })) };
+  return {
+    scope,
+    templates,
+    assignments: assignments.map((a) => ({ ...a, revocable: canManageRole(ctx.assignments, a.roleCode, a.schoolId) })),
+    roleGrant,
+    candidates,
+  };
 });
