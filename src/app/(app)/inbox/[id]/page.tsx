@@ -12,7 +12,6 @@ import { formatDueLongFa, formatNumberFa } from "@/lib/format";
 import { personalItemLabel, workItemStatusLabel, workItemWords } from "@/lib/work-item-words";
 import { workItemDetailQuery } from "@/modules/workspace/queries";
 import type { StatusCategory } from "@/modules/workspace/repo";
-import { CommentForm } from "@/modules/workspace/ui/CommentForm";
 import { CompletableTitle, CompletionProvider } from "@/modules/workspace/ui/Completion";
 import { WorkItemActions } from "@/modules/workspace/ui/WorkItemActions";
 
@@ -36,8 +35,11 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     notFound(); // NOT_FOUND and FORBIDDEN alike: the page never distinguishes "not yours" from "does not exist"
   }
-  const { item, creatorName, assignees, watchers, comments, transitions, myInbox, myAssigneeState, viewer } = result.data;
+  const { item, creatorName, assignees, watchers, transitions, myInbox, myAssigneeState, viewer } = result.data;
   const words = workItemWords(viewer.voice);
+  // The item's own name for this reader: a personal کار is the student's «تسک» or the catalog name, anything
+  // given to someone is «تکلیف» / «تسک» (the chip below and the action row's dialogs say the same word).
+  const noun = item.typeCode === "todo" ? personalItemLabel(viewer.createVoice, item.typeName) : words.singular;
   const done = assignees.filter((a) => a.state === "done").length;
   // Managers see per-person progress; a personal todo (the only assignee is the creator) needs none.
   const showProgress = viewer.isManager && assignees.length > 0 && !(assignees.length === 1 && assignees[0].personId === item.createdByPersonId);
@@ -46,7 +48,8 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
   // Status is said by the action row (an open item offers «انجام شد» / «اتمام»); only a state the buttons do not
   // show gets a small muted line — my own «انجام‌شده» / «در حال انجام», or the item's closed / started status.
   const status: { category: StatusCategory; label: string } | null =
-    myAssigneeState && !viewer.isManager
+    // A «حذف»-ed item says «حذف‌شده» to everyone, whatever my own part was.
+    myAssigneeState && !viewer.isManager && item.statusCategory !== "cancelled"
       ? myAssigneeState === "pending"
         ? null
         : { category: myAssigneeState === "done" ? "done" : "doing", label: ASSIGNEE_STATE[myAssigneeState].label }
@@ -69,7 +72,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
             {/* The type in the READER's word: a personal کار is the student's «تسک» or the catalog name,
                 «تکلیف» / «تسک» for a task given to someone. */}
             <Chip tone={item.typeCode === "todo" ? "neutral" : "primary"} className="me-1.5 align-middle">
-              {item.typeCode === "todo" ? personalItemLabel(viewer.createVoice, item.typeName) : words.singular}
+              {noun}
             </Chip>
             از <bdi className="text-text">{creatorName}</bdi>
             <span aria-hidden> · </span>
@@ -122,6 +125,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
           isManager={viewer.isManager}
           canUpdate={viewer.canUpdate}
           words={words}
+          noun={noun}
           inboxState={myInbox?.state ?? null}
         />
       </header>
@@ -162,32 +166,8 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
         </section>
       ) : null}
 
-      <section aria-labelledby="comments-heading" className="flex flex-col gap-3">
-        <h3 id="comments-heading" className="text-section font-semibold text-text">
-          گفت‌وگو {comments.length > 0 ? <span className="tabular text-meta font-normal text-text-muted">{formatNumberFa(comments.length)}</span> : null}
-        </h3>
-        {comments.length === 0 ? <p className="text-sm text-text-faint">هنوز نظری ثبت نشده.</p> : null}
-        <ul className="flex flex-col gap-2">
-          {comments.map((c) => (
-            <li key={c.id} className={cn("surface-work px-4 py-3", c.visibility === "staff_only" && "bg-warning-soft/50 ring-1 ring-warning/50")}>
-              <div className="flex flex-wrap items-baseline justify-between gap-2 text-meta text-text-muted">
-                <span className="font-medium text-text">
-                  <bdi>{c.authorName}</bdi>
-                </span>
-                <span className="flex items-center gap-2">
-                  {c.visibility === "staff_only" ? <Chip tone="warning">فقط کادر</Chip> : null}
-                  <RelativeTime at={c.createdAt} mode="time" />
-                </span>
-              </div>
-              <p className="mt-1 whitespace-pre-wrap text-base leading-7 text-text">
-                <bdi>{c.body}</bdi>
-              </p>
-            </li>
-          ))}
-        </ul>
-        {viewer.canComment && !item.archivedAt ? <CommentForm workItemId={item.id} canStaffOnly={viewer.isStaff} privateToStaff={myAssigneeState !== null && !viewer.isCreator && assignees.length > 1} /> : null}
-      </section>
-
+      {/* No «گفت‌وگو» (owner, round 7: «no comments and no conversation for now» — a communication channel comes
+          later). Stored comments stay in the database and in the read model; nothing here shows or adds one. */}
       {watchers.length > 0 ? (
         <p className="text-sm text-text-muted">
           در جریان: {watchers.map((w, i) => (

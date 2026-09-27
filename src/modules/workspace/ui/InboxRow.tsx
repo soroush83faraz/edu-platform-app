@@ -1,4 +1,4 @@
-import { ClipboardList, ListTodo, MessageSquare } from "lucide-react";
+import { ClipboardList, ListTodo } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { RelativeTime } from "@/components/RelativeTime";
@@ -36,14 +36,7 @@ export function InboxRow({
   const showProgress = row.createdByMe && row.assigneesTotal > 0 && !(row.assigneesTotal === 1 && row.myAssigneeState);
   const meta = rowMeta(row, { inSubject });
   if (row.category === "cancelled") meta.push(<span key="cancelled">حذف‌شده</span>);
-  if (row.commentsCount > 0) {
-    meta.push(
-      <span key="comments" className="inline-flex items-center gap-1">
-        <MessageSquare className="size-3.5" aria-hidden />
-        <span className="tabular">{formatNumberFa(row.commentsCount)}</span>
-      </span>,
-    );
-  }
+  // No comment count: comments left the UI (owner, round 7); `commentsCount` stays in the read model.
   return (
     <li data-row-id={row.id}>
       <Link

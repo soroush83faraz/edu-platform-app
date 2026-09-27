@@ -18,6 +18,7 @@ import { type WorkItemVoice, type WorkItemWords, createVoice, workItemStatusLabe
 import { staffProfile } from "@/modules/iam/schema";
 import { notifyMany } from "@/modules/notif/service";
 import type { Recipients } from "./dto";
+import { creationNotifiable, notifiable } from "./notify-policy";
 import {
   type AssigneeRow,
   type CommentRow,
@@ -137,7 +138,8 @@ async function resolveRecipients(tx: Tx, ctx: WorkspaceCtx, recipients: Recipien
 
 /**
  * Creates the item, N assignee rows, N unread inbox entries, the creator's watcher + read inbox entry
- * («کارهایی که دادم»), the first transition and N `work_item.assigned` notifications (deduped per person).
+ * («کارهایی که دادم»), the first transition and N `work_item.assigned` notifications (deduped per person) —
+ * none for a personal item or a student's (`creationNotifiable`, ./notify-policy).
  */
 export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWorkItemInput): Promise<CreateWorkItemResult> {
   if (input.idempotencyKey) {
@@ -196,7 +198,7 @@ export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWor
   });
   await tx.insert(workItemTransition).values({ organizationId: ctx.orgId, workItemId: wi.id, fromStatusId: null, toStatusId: type.initialStatusId, byPersonId: ctx.personId });
 
-  const notified = await notifyMany(tx, ctx, others, {
+  const notified = await notifyMany(tx, ctx, creationNotifiable(ctx.assignments, input.recipients.kind, others), {
     typeCode: "work_item.assigned",
     title: `${nouns(ctx).new}: ${input.title}`,
     body: creatorName,
@@ -266,7 +268,9 @@ export async function addComment(tx: Tx, ctx: WorkspaceCtx, input: AddCommentInp
     .values({ organizationId: ctx.orgId, workItemId: item.id, authorPersonId: ctx.personId, body, visibility })
     .returning({ id: workItemComment.id });
 
-  const recipients = await commentRecipients(tx, item, ctx.personId, { staffOnly: visibility === "staff_only" && !assigneeOnMulti, assigneeOnMulti, assignees });
+  // A student's comment is silent for everyone (./notify-policy). No UI adds comments any more (owner, round 7:
+  // «no comments and no conversation for now»); the service stays for the channel that will replace them.
+  const recipients = notifiable(ctx.assignments, await commentRecipients(tx, item, ctx.personId, { staffOnly: visibility === "staff_only" && !assigneeOnMulti, assigneeOnMulti, assignees }));
   if (recipients.length > 0) {
     const authorName = (await findPersonName(tx, ctx.personId)) ?? "";
     const excerpt = body.length > 80 ? `${body.slice(0, 80)}…` : body;
@@ -315,7 +319,8 @@ async function setItemStatus(tx: Tx, ctx: WorkspaceCtx, item: WorkItemCore, to: 
 /**
  * Assignees: open → in_progress (own state `accepted`), → done (own state `done`; the item flips to done only
  * when EVERY assignee is done). Creator / broad `update` holders: any status; done marks all assignees done,
- * open (reopen) resets them to pending. The creator is notified on each assignee completion.
+ * open («بازیابی») resets them to pending, cancelled is the UI's «حذف» (soft: nothing is deleted, «بازیابی»
+ * brings it back). The creator is notified on each assignee completion — except a student's (./notify-policy).
  */
 export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatusInput): Promise<ChangeStatusResult> {
   const item = await canViewWorkItem(tx, ctx, input.workItemId);
@@ -344,7 +349,8 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
       await tx.update(workItemAssignee).set({ state: "pending", respondedAt: null }).where(and(eq(workItemAssignee.workItemId, item.id), eq(workItemAssignee.role, "assignee")));
     }
     itemChanged = true;
-    recipients = (await listAssignees(tx, item.id)).map((a) => a.personId).filter((id) => id !== ctx.personId);
+    // A student is a «manager» only of their own تسک, whose sole assignee is themselves — silent either way.
+    recipients = notifiable(ctx.assignments, (await listAssignees(tx, item.id)).map((a) => a.personId).filter((id) => id !== ctx.personId));
   } else {
     if (!mine) throw forbidden();
     if (item.statusCategory === "cancelled" || item.statusCategory === "done") throw validation(undefined, `این ${nouns(ctx).singular} بسته شده است.`);
@@ -372,9 +378,10 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
         await setItemStatus(tx, ctx, item, target, note);
         itemChanged = true;
       }
-      if (item.createdByPersonId !== ctx.personId) recipients = [item.createdByPersonId];
+      // A student's «انجام شد» is silent (./notify-policy): the teacher reads the class's n/m on the item.
+      if (item.createdByPersonId !== ctx.personId) recipients = notifiable(ctx.assignments, [item.createdByPersonId]);
     } else {
-      throw forbidden(`فقط دهندهٴ ${nouns(ctx).singular} می‌تواند آن را بازگشایی یا حذف کند.`);
+      throw forbidden(`فقط دهندهٴ ${nouns(ctx).singular} می‌تواند آن را بازیابی یا حذف کند.`);
     }
   }
 
@@ -430,13 +437,13 @@ export async function extendDueAt(tx: Tx, ctx: WorkspaceCtx, input: ExtendDueAtI
   if (!canAtAnyScope(ctx.assignments, "workspace.work_item.update")) throw forbidden();
   const manager = item.createdByPersonId === ctx.personId || canBroadly(ctx.assignments, "workspace.work_item.update");
   if (!manager) throw forbidden(`فقط دهندهٴ ${nouns(ctx).singular} می‌تواند مهلت را تمدید کند.`);
-  if (item.statusCategory === "done" || item.statusCategory === "cancelled") throw validation(undefined, `این ${nouns(ctx).singular} بسته شده است؛ برای تمدید اول بازگشایی کنید.`);
+  if (item.statusCategory === "done" || item.statusCategory === "cancelled") throw validation(undefined, `این ${nouns(ctx).singular} بسته شده است؛ برای تمدید اول بازیابی کنید.`);
   if (input.dueAt.getTime() <= Date.now()) throw validation({ fieldErrors: { dueDate: ["مهلت جدید باید بعد از اکنون باشد."] } });
   if (item.dueAt && input.dueAt.getTime() === item.dueAt.getTime()) throw validation({ fieldErrors: { dueDate: ["مهلت تغییری نکرده است."] } });
 
   await tx.update(workItem).set({ dueAt: input.dueAt }).where(eq(workItem.id, item.id));
 
-  const recipients = (await listAssignees(tx, item.id)).map((a) => a.personId).filter((id) => id !== ctx.personId);
+  const recipients = notifiable(ctx.assignments, (await listAssignees(tx, item.id)).map((a) => a.personId).filter((id) => id !== ctx.personId));
   let notified = 0;
   if (recipients.length > 0) {
     const when = formatJalaliDateTime(input.dueAt);

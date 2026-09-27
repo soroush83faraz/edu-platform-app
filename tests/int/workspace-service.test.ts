@@ -10,8 +10,9 @@ import { auditLog, inboxEntry, notification, workItem, workItemAssignee } from "
 import { AppError } from "@/lib/errors";
 import { tehranDayBounds, toFaDigits } from "@/lib/format";
 import type { Assignment } from "@/modules/iam/can";
+import { listNotifications, unreadCount } from "@/modules/notif/repo";
 import { notifyMany } from "@/modules/notif/service";
-import { inboxCounts, inboxTabCounts, listComments, listInbox } from "@/modules/workspace/repo";
+import { inboxCounts, inboxTabCounts, listComments, listInbox, searchPersons } from "@/modules/workspace/repo";
 import { addComment, canViewWorkItem, changeStatus, createWorkItem, extendDueAt, getWorkItemDetail, markInboxRead, type WorkspaceCtx } from "@/modules/workspace/service";
 import * as f from "./fixtures";
 import { Rollback, asAppOwner } from "./helpers";
@@ -310,13 +311,14 @@ describe("changeStatus — per-assignee completion", () => {
       await expect(changeStatus(tx, s1.ctx, { workItemId: res.id, toStatusCode: "done" })).rejects.toSatisfy(isCode("VALIDATION"));
       await expect(changeStatus(tx, s2.ctx, { workItemId: res.id, toStatusCode: "cancelled" })).rejects.toSatisfy(isCode("FORBIDDEN"));
 
-      // The creator was notified about s1's completion with the progress; her inbox row went back to unread.
+      // A student's «انجام شد» is silent (round 7, notify-policy): no notification for the creator and her inbox row
+      // stays read — she reads the class's n/m on the item itself.
       const toCreator = await tx.select({ title: notification.title, type: notification.typeCode }).from(notification).where(eq(notification.recipientPersonId, f.PERSON_A2));
-      expect(toCreator).toEqual([{ title: "دانش‌آموز شمارهٴ ۱ «تمرین» را انجام‌شده کرد (۱/۳)", type: "work_item.status_changed" }]);
+      expect(toCreator).toEqual([]);
       const creatorEntry = (await tx.select({ personId: inboxEntry.personId, state: inboxEntry.state }).from(inboxEntry).where(eq(inboxEntry.workItemId, res.id))).find(
         (e) => e.personId === f.PERSON_A2,
       );
-      expect(creatorEntry?.state).toBe("unread");
+      expect(creatorEntry?.state).toBe("read");
 
       // Student's own list shows the item under «انجام‌شده» although the item itself is still in progress.
       const mine = await listInbox(tx, s1.personId, { tab: "done" });
@@ -425,6 +427,112 @@ describe("creator actions — «اتمام» and «تمدید»", () => {
   });
 });
 
+describe("«حذف» after «انجام شد» and «بازیابی» (round 7) — the `cancelled` transition", () => {
+  it("the creator removes a finished class item: cancelled, audited, every row reads «حذف‌شده»; a student may not; «بازیابی» brings it back", async () => {
+    await rolledBack(async (tx) => {
+      const [s1, s2] = await enrollStudents(tx, 2);
+      const res = await createWorkItem(tx, teacher, { typeCode: "task", title: "انشا", priority: "normal", recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: [] } });
+      await changeStatus(tx, s1.ctx, { workItemId: res.id, toStatusCode: "done" });
+      await changeStatus(tx, teacher, { workItemId: res.id, toStatusCode: "done" });
+
+      // A student cannot remove the class homework they were given — not even once it is finished (the assignee
+      // path refuses a closed item outright; on an open one it is FORBIDDEN, see «per-assignee completion»).
+      await expect(changeStatus(tx, s2.ctx, { workItemId: res.id, toStatusCode: "cancelled" })).rejects.toSatisfy(isCode("VALIDATION"));
+
+      const removed = await changeStatus(tx, teacher, { workItemId: res.id, toStatusCode: "cancelled" });
+      expect(removed).toMatchObject({ statusCode: "cancelled", itemChanged: true });
+      const [wi] = await tx.select({ completedAt: workItem.completedAt, archivedAt: workItem.archivedAt }).from(workItem).where(eq(workItem.id, res.id));
+      expect(wi).toEqual({ completedAt: null, archivedAt: null }); // soft: the row stays, only its status moved
+      const trail = await tx.select({ action: auditLog.action, after: auditLog.after }).from(auditLog).where(eq(auditLog.entityId, res.id));
+      expect(trail.at(-1)).toMatchObject({ action: "workspace.work_item.status_changed", after: expect.objectContaining({ statusCode: "cancelled" }) });
+
+      // The student who had finished it reads «حذف‌شده» (cancelled wins over their own done), in the «انجام‌شده» tab.
+      for (const s of [s1, s2]) {
+        const row = (await listInbox(tx, s.personId, { tab: "done" })).rows.find((r) => r.id === res.id);
+        expect(row).toMatchObject({ category: "cancelled", myAssigneeState: "done" });
+        expect(await inboxTabCounts(tx, s.personId)).toEqual({ todo: 0, done: 1 });
+      }
+
+      // «بازیابی» — the creator's reopen — works from «حذف‌شده» too.
+      expect(await changeStatus(tx, teacher, { workItemId: res.id, toStatusCode: "open" })).toMatchObject({ statusCode: "open", itemChanged: true, assigneesDone: 0 });
+    });
+  });
+
+  it("a student removes their OWN finished «تسک»: cancelled, audited, nobody notified", async () => {
+    await rolledBack(async (tx) => {
+      const [s] = await enrollStudents(tx, 1);
+      const res = await createWorkItem(tx, s.ctx, { typeCode: "todo", title: "مرور فصل ۴", priority: "normal", recipients: { kind: "self" } });
+      await changeStatus(tx, s.ctx, { workItemId: res.id, toStatusCode: "done" });
+      expect(await changeStatus(tx, s.ctx, { workItemId: res.id, toStatusCode: "cancelled" })).toMatchObject({ statusCode: "cancelled", itemChanged: true });
+      expect((await listInbox(tx, s.personId, { tab: "done" })).rows.find((r) => r.id === res.id)).toMatchObject({ category: "cancelled" });
+      const trail = await tx.select({ action: auditLog.action }).from(auditLog).where(eq(auditLog.entityId, res.id));
+      expect(trail.map((t) => t.action)).toEqual(["workspace.work_item.created", "workspace.work_item.status_changed", "workspace.work_item.status_changed"]);
+      expect(await tx.select({ id: notification.id }).from(notification).where(eq(notification.sourceId, res.id))).toEqual([]);
+      // …and brings it back.
+      expect(await changeStatus(tx, s.ctx, { workItemId: res.id, toStatusCode: "open" })).toMatchObject({ statusCode: "open" });
+    });
+  });
+});
+
+describe("notification policy (round 7)", () => {
+  it("students notify nobody: «انجام شد» on class homework and on a single-assignee item, and a comment", async () => {
+    await rolledBack(async (tx) => {
+      const [s1] = await enrollStudents(tx, 1);
+      const res = await createWorkItem(tx, teacher, { typeCode: "task", title: "تک‌نفره", priority: "normal", recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: [] } });
+      expect(res.notified).toBe(1); // the teacher's homework still reaches the class
+      await addComment(tx, s1.ctx, { workItemId: res.id, body: "سؤال دارم" });
+      await changeStatus(tx, s1.ctx, { workItemId: res.id, toStatusCode: "done" }); // closes the item (the only assignee)
+      const toTeacher = await tx.select({ id: notification.id }).from(notification).where(eq(notification.recipientPersonId, f.PERSON_A2));
+      expect(toTeacher).toEqual([]);
+    });
+  });
+
+  it("the creator's own status change still tells the assignees; an admin's task to named people notifies them", async () => {
+    await rolledBack(async (tx) => {
+      const [s1, s2] = await enrollStudents(tx, 2);
+      const admin = ctxOf(f.PERSON_A1, [adminRole]);
+      const res = await createWorkItem(tx, admin, { typeCode: "task", title: "گزارش ماهانه", priority: "normal", recipients: { kind: "persons", ids: [f.PERSON_A2, s1.personId] } });
+      expect(res.notified).toBe(2);
+      const cancelled = await changeStatus(tx, admin, { workItemId: res.id, toStatusCode: "cancelled" });
+      expect(cancelled.statusCode).toBe("cancelled");
+      const toStaff = await tx.select({ type: notification.typeCode }).from(notification).where(eq(notification.recipientPersonId, f.PERSON_A2));
+      expect(toStaff.map((n) => n.type)).toEqual(["work_item.assigned", "work_item.status_changed"]);
+      expect(await tx.select({ id: notification.id }).from(notification).where(eq(notification.recipientPersonId, s2.personId))).toEqual([]);
+    });
+  });
+});
+
+describe("comment notifications are stored but never shown (round 7)", () => {
+  it("a comment notification stays in the table, out of the list and the bell's count", async () => {
+    await rolledBack(async (tx) => {
+      const [s1] = await enrollStudents(tx, 1);
+      const res = await createWorkItem(tx, teacher, { typeCode: "task", title: "بی‌گفت‌وگو", priority: "normal", recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: [] } });
+      await addComment(tx, teacher, { workItemId: res.id, body: "یادداشت قدیمی" });
+      const stored = await tx.select({ type: notification.typeCode }).from(notification).where(eq(notification.recipientPersonId, s1.personId));
+      expect(stored.map((n) => n.type).sort()).toEqual(["work_item.assigned", "work_item.comment"]);
+      expect((await listNotifications(tx, s1.personId)).rows.map((n) => n.typeCode)).toEqual(["work_item.assigned"]);
+      expect(await unreadCount(tx, s1.personId)).toBe(1);
+    });
+  });
+});
+
+describe("searchPersons — the «اشخاص» picker from 0 characters", () => {
+  it("an empty query lists active people alphabetically; typing narrows it", async () => {
+    await rolledBack(async (tx) => {
+      const students = await enrollStudents(tx, 3);
+      const all = await searchPersons(tx, "");
+      const ids = all.map((p) => p.id);
+      expect(ids).toEqual(expect.arrayContaining([f.PERSON_A2, ...students.map((s) => s.personId)]));
+      // Same first name, last names «شمارهٴ ۱/۲/۳»: they come in that order.
+      expect(students.map((s) => ids.indexOf(s.personId))).toEqual([...students.map((s) => ids.indexOf(s.personId))].sort((a, b) => a - b));
+      expect(all.length).toBeLessThanOrEqual(20);
+      const narrowed = await searchPersons(tx, "کریمی");
+      expect(narrowed.map((p) => p.id)).toContain(f.PERSON_A2);
+      expect(narrowed.map((p) => p.id)).not.toContain(students[0].personId);
+    });
+  });
+});
+
 describe("comments", () => {
   it("staff_only comments are hidden from students (and a student's staff_only request is downgraded to all)", async () => {
     await rolledBack(async (tx) => {
@@ -455,7 +563,7 @@ describe("comments", () => {
 });
 
 describe("comments on a multi-assignee item (QA round 1, M3)", () => {
-  it("a student's comment reaches the teacher only: stored staff_only, visible to staff and its author, classmates get no notification and no unread flip", async () => {
+  it("a student's comment is stored staff_only, visible to staff and its author; it notifies nobody (round 7) and flips no one's row", async () => {
     await rolledBack(async (tx) => {
       const [s1, s2, s3] = await enrollStudents(tx, 3);
       const res = await createWorkItem(tx, teacher, { typeCode: "task", title: "تمرین کلاسی", priority: "normal", recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: [] } });
@@ -465,11 +573,11 @@ describe("comments on a multi-assignee item (QA round 1, M3)", () => {
       const mine = await addComment(tx, s1.ctx, { workItemId: res.id, body: "انجام دادم" });
       expect(mine.visibility).toBe("staff_only");
 
-      // Teacher: notified once, inbox row back to unread, sees the comment.
+      // Teacher: no notification, inbox row still read (a student's action is silent), but she sees the comment.
       const toTeacher = await tx.select({ title: notification.title, body: notification.body }).from(notification).where(eq(notification.recipientPersonId, f.PERSON_A2));
-      expect(toTeacher).toEqual([{ title: "نظر جدید: تمرین کلاسی", body: "دانش‌آموز شمارهٴ ۱: انجام دادم" }]);
+      expect(toTeacher).toEqual([]);
       const entries = await tx.select({ personId: inboxEntry.personId, state: inboxEntry.state }).from(inboxEntry).where(eq(inboxEntry.workItemId, res.id));
-      expect(entries.find((e) => e.personId === f.PERSON_A2)?.state).toBe("unread");
+      expect(entries.find((e) => e.personId === f.PERSON_A2)?.state).toBe("read");
       expect((await getWorkItemDetail(tx, teacher, res.id)).comments.map((c) => c.id)).toEqual([mine.id]);
 
       // Classmates: no notification beyond the assignment, still read, and the comment is not in their view or count.

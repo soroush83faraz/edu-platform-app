@@ -174,7 +174,8 @@ export async function searchPersons(tx: Tx, q: string, limit = 20): Promise<Pers
     .from(person)
     .leftJoin(studentProfile, eq(studentProfile.personId, person.id))
     .leftJoin(staffProfile, eq(staffProfile.personId, person.id))
-    .where(and(eq(person.status, "active"), sql`${person.searchText} ilike '%' || app.fa_norm(${q}) || '%'`))
+    // An empty query lists everyone (the first `limit`, alphabetically) — the picker filters as the name is typed.
+    .where(and(eq(person.status, "active"), q.trim() ? sql`${person.searchText} ilike '%' || app.fa_norm(${q}) || '%'` : undefined))
     .orderBy(asc(person.lastName), asc(person.firstName))
     .limit(limit);
   return rows.map((r) => ({ ...r, kind: r.kind as PersonHit["kind"] }));
@@ -344,7 +345,10 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
         where c.work_item_id = wi.id and c.deleted_at is null and (${opts.viewerIsStaff ?? false} or c.visibility = 'all' or c.author_person_id = ie.person_id)
       ) cm
       cross join lateral (
+        -- A «حذف»-ed item (cancelled) reads «حذف‌شده» even for an assignee who had finished it (round 7: «حذف»
+        -- after «انجام شد»); otherwise my own done wins over the item's status.
         select case
+          when s.category = 'cancelled' then 'cancelled'
           when wa.state = 'done' then 'done'
           when wa.state = 'accepted' and s.category = 'todo' then 'doing'
           else s.category

@@ -7,9 +7,9 @@ import { defineAction, defineQuery } from "@/lib/actions";
 import { forbidden, validation } from "@/lib/errors";
 import { canBroadly } from "@/modules/iam/can";
 import { parseJalaliToInstant } from "@/lib/format";
-import { AddCommentInput, ChangeStatusInput, CreateWorkItemInput, ExtendDueInput, OfferingIdInput, SearchPersonsInput, SetPinnedInput, WorkItemIdInput } from "./dto";
+import { ChangeStatusInput, CreateWorkItemInput, ExtendDueInput, OfferingIdInput, SearchPersonsInput, SetPinnedInput, WorkItemIdInput } from "./dto";
 import { listOfferingRoster, searchPersons } from "./repo";
-import { addComment, archiveInbox, changeStatus, createWorkItem, extendDueAt, markInboxRead, setPinned } from "./service";
+import { archiveInbox, changeStatus, createWorkItem, extendDueAt, markInboxRead, setPinned } from "./service";
 
 /** The pickers' strings («۱۴۰۵/۰۷/۰۵», `HH:mm` or empty = end of day) → the UTC instant; field errors point at the right control. */
 function parseDue(dueDate: string | undefined, dueTime: string | undefined): Date | null {
@@ -39,9 +39,9 @@ export const createWorkItemAction = defineAction({ schema: CreateWorkItemInput, 
   });
 });
 
-export const addCommentAction = defineAction({ schema: AddCommentInput, permission: "workspace.work_item.comment", scope: "any" }, async (tx, input, ctx) =>
-  addComment(tx, ctx, { workItemId: input.workItemId, body: input.body, visibility: input.visibility }),
-);
+// No `addCommentAction` (owner, round 7: «no comments and no conversation for now»): with no Server Action there is
+// no way to add a comment from any client. `addComment`, `AddCommentInput` and the `work_item_comment` table stay
+// for the communication channel that will replace them — re-exporting the action is all it takes to bring it back.
 
 export const changeStatusAction = defineAction({ schema: ChangeStatusInput, permission: "workspace.work_item.update", scope: "any" }, async (tx, input, ctx) =>
   changeStatus(tx, ctx, { workItemId: input.workItemId, toStatusCode: input.toStatusCode, note: input.note ?? null }),

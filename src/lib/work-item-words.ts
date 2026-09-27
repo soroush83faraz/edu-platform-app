@@ -181,7 +181,7 @@ export const GIVEN_TILE_ROLES = ["teacher", "admin"] as const;
 /**
  * The visible name of a status row. The catalog's «کنسل‌شده» reads «حذف‌شده» in the UI (owner, round 4): the
  * creator action is «حذف» now. Nothing is deleted — the stored status code is still `cancelled`, the transition
- * and the audit row are unchanged, and «بازگشایی» brings the item back.
+ * and the audit row are unchanged, and «بازیابی» (the reopen, round 7) brings the item back.
  */
 export function workItemStatusLabel(name: string): string {
   return name === "کنسل‌شده" ? "حذف‌شده" : name;
