@@ -33,16 +33,21 @@ export interface WorkItemActionsProps {
   inboxState: string | null;
   /** The reader's noun set: «تکلیف» for a teacher, «تسک» for مدیر/معاون (src/lib/work-item-words). */
   words: WorkItemWords;
+  /** THIS item's name for the reader — `words.singular`, or a personal item's «تسک» / catalog name (`personalItemLabel`). */
+  noun: string;
 }
 
 /**
  * The action row of a کار — named «تکلیف» or «تسک» by the reader's hats. An assignee gets «انجام شد». Its creator
  * (or a broad admin) gets the three creator actions — «اتمام» (primary: closes it for everyone), «تمدید»
- * (secondary: a later due date), «حذف» (ghost, red) — or «بازگشایی» once it is closed. «حذف» is a LABEL: the
- * stored status is still `cancelled`, nothing leaves the database and «بازگشایی» brings the item back (owner,
- * round 4). There is no overflow menu: سنجاق / بایگانی left the UI (owner, round 5 — «if the teacher wants, they
- * can delete it»); `setPinned` / `archiveInbox` stay in the service, unwired. Full-width and stacked on phones,
- * one inline row from `sm:`, every target 44 px. Marks my inbox row read once on mount.
+ * (secondary: a later due date), «حذف» (ghost, red) — or, once it is closed, «بازیابی» (outline) and, on a
+ * finished one, «حذف» beside it (destructive tint; owner, round 7). «حذف» is a LABEL: the stored status is still
+ * `cancelled`, nothing leaves the database and «بازیابی» brings the item back (owner, round 4); after it the reader
+ * goes back to the list. Who sees «حذف» is exactly who may cancel — the creator (a student only on their own
+ * «تسک») or a broad `update` holder; the service enforces the same rule. There is no overflow menu: سنجاق / بایگانی
+ * left the UI (owner, round 5 — «if the teacher wants, they can delete it»); `setPinned` / `archiveInbox` stay in
+ * the service, unwired. Full-width and stacked on phones, one inline row from `sm:`, every target 44 px. Marks my
+ * inbox row read once on mount.
  *
  * Finishing is answered at once (optimistic, docs/decisions «حرکت در پاسخ به کار کاربر»): the title is struck
  * (`CompletionProvider`), «انجام شد» turns into its quiet outline twin whose check draws itself, and once the
@@ -50,7 +55,7 @@ export interface WorkItemActionsProps {
  * refusal un-strikes the title and brings the button back. The finish is noted for the کارتابل and Home
  * (`src/lib/completion-moment.ts`).
  */
-export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assigneeCount, myAssigneeState, isManager, canUpdate, inboxState, words }: WorkItemActionsProps) {
+export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assigneeCount, myAssigneeState, isManager, canUpdate, inboxState, words, noun }: WorkItemActionsProps) {
   const router = useRouter();
   const [pending, start] = useTransition();
   // `"cancel"` is the `cancelled` transition — the button that used to read «کنسل» and now reads «حذف».
@@ -95,6 +100,16 @@ export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assi
     });
   };
 
+  /** «حذف»: the `cancelled` transition, then back to the list — the item is gone from the reader's work. */
+  const remove = () =>
+    start(async () => {
+      const r = await changeStatusAction({ workItemId, toStatusCode: "cancelled" });
+      if (r.ok) {
+        toast.success(`${noun} حذف شد`);
+        router.push("/inbox");
+      } else toast.error(r.message ?? "خطایی رخ داد.");
+    });
+
   const closed = statusCategory === "done" || statusCategory === "cancelled";
   const isAssignee = myAssigneeState !== null;
   const manager = canUpdate && isManager;
@@ -138,13 +153,22 @@ export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assi
         onClick={() => {
           setJustDone(false);
           markDone?.(false);
-          run("بازگشایی شد", () => changeStatusAction({ workItemId, toStatusCode: "open" }));
+          run(`${noun} بازیابی شد`, () => changeStatusAction({ workItemId, toStatusCode: "open" }));
         }}
       >
         <RotateCcw aria-hidden />
-        بازگشایی
+        بازیابی
       </Button>,
     );
+    // A finished item can also be removed; an already removed one only comes back.
+    if (statusCategory === "done") {
+      buttons.push(
+        <Button key="remove" variant="destructive" className={buttonClass} disabled={pending} onClick={() => setConfirm("cancel")}>
+          <Trash2 aria-hidden />
+          حذف
+        </Button>,
+      );
+    }
   }
   if (manager && !closed) {
     // A creator who is also the (only) assignee already has «انجام شد» above — «اتمام» would be the same click twice.
@@ -176,8 +200,8 @@ export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assi
       <ResponsiveModal
         open={confirm === "done"}
         onOpenChange={(o) => setConfirm(o ? "done" : null)}
-        title={`اتمام ${words.singular}`}
-description={assigneeCount > 1 ? `همهٴ ${words.recipients} انجام‌شده ثبت می‌شوند؟ ${words.singular} برای همه بسته می‌شود و بعداً می‌توانید آن را بازگشایی کنید.` : `گیرنده انجام‌شده ثبت می‌شود و ${words.singular} بسته می‌شود. بعداً می‌توانید آن را بازگشایی کنید.`}
+        title={`اتمام ${noun}`}
+        description={assigneeCount > 1 ? `همهٴ ${words.recipients} انجام‌شده ثبت می‌شوند؟ ${noun} برای همه بسته می‌شود و بعداً می‌توانید آن را بازیابی کنید.` : `گیرنده انجام‌شده ثبت می‌شود و ${noun} بسته می‌شود. بعداً می‌توانید آن را بازیابی کنید.`}
       >
         <ConfirmRow
           pending={pending}
@@ -189,22 +213,22 @@ description={assigneeCount > 1 ? `همهٴ ${words.recipients} انجام‌شد
               disabled={pending}
               onClick={() => {
                 setConfirm(null);
-                finish(`${words.singular} تمام شد`);
+                finish(`${noun} تمام شد`);
               }}
             >
               <CheckCheck aria-hidden />
-              اتمام {words.singular}
+              اتمام {noun}
             </Button>
           }
         />
       </ResponsiveModal>
 
-      {/* «حذف» — the same `cancelled` transition as before, under the word the owner asked for. */}
+      {/* «حذف» — the `cancelled` transition (open or finished), under the word the owner asked for. */}
       <ResponsiveModal
         open={confirm === "cancel"}
         onOpenChange={(o) => setConfirm(o ? "cancel" : null)}
-        title={`حذف ${words.singular}`}
-description={`این ${words.singular} حذف شود؟ ${words.recipients} دیگر آن را در فهرست خود نمی‌بینند. بعداً می‌توانید آن را بازگشایی کنید.`}
+        title={`حذف ${noun}`}
+        description={`این ${noun} حذف شود؟ بعداً می‌توانید آن را بازیابی کنید.`}
       >
         <ConfirmRow
           pending={pending}
@@ -217,11 +241,11 @@ description={`این ${words.singular} حذف شود؟ ${words.recipients} دی�
               disabled={pending}
               onClick={() => {
                 setConfirm(null);
-                run(`${words.singular} حذف شد`, () => changeStatusAction({ workItemId, toStatusCode: "cancelled" }));
+                remove();
               }}
             >
               <Trash2 aria-hidden />
-              حذف {words.singular}
+              حذف {noun}
             </Button>
           }
         />

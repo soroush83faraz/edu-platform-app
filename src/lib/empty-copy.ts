@@ -61,13 +61,14 @@ export function emptyDoneCopy(audience: Audience): EmptyCopy {
 export function emptyNotificationsCopy(audience: Audience): EmptyCopy {
   switch (audience) {
     case "student":
-      return { title: "هنوز اعلانی نداری.", description: "هر وقت دبیر تکلیف تازه‌ای بدهد یا برایت نظری بنویسد، همین‌جا خبرت می‌کنیم." };
+      return { title: "هنوز اعلانی نداری.", description: "هر وقت دبیر تکلیف تازه‌ای بدهد یا مهلتی را تمدید کند، همین‌جا خبرت می‌کنیم." };
+    // Round 7: a student's «انجام شد» notifies nobody — the دبیر reads the class's progress on the تکلیف itself.
     case "teacher":
-      return { title: "هنوز اعلانی ندارید.", description: "هر وقت دانش‌آموزی تکلیفی را انجام بدهد یا نظری بنویسد، همین‌جا خبرتان می‌کنیم." };
+      return { title: "هنوز اعلانی ندارید.", description: "هر وقت کاری از طرف مدرسه به شما سپرده شود، همین‌جا خبرتان می‌کنیم. پیشرفت کلاس را روی خود هر تکلیف می‌بینید." };
     case "admin":
-      return { title: "هنوز اعلانی ندارید.", description: "هر وقت تسکی به شما داده شود یا کسی روی تسک‌هایتان نظری بنویسد، همین‌جا خبرتان می‌کنیم." };
+      return { title: "هنوز اعلانی ندارید.", description: "هر وقت تسکی به شما داده شود یا مهلتش تمدید شود، همین‌جا خبرتان می‌کنیم." };
     case "member":
-      return { title: "هنوز اعلانی ندارید.", description: "هر وقت تکلیفی به شما داده شود یا نظر تازه‌ای برسد، همین‌جا خبرتان می‌کنیم." };
+      return { title: "هنوز اعلانی ندارید.", description: "هر وقت تکلیفی به شما داده شود یا مهلتش تمدید شود، همین‌جا خبرتان می‌کنیم." };
   }
 }
 

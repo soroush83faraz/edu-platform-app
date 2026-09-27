@@ -90,6 +90,7 @@ export type ListInboxInput = z.output<typeof ListInboxInput>;
 
 export const OfferingIdInput = z.object({ classOfferingId: uuid }).strict();
 
-export const SearchPersonsInput = z.object({ q: z.string().trim().min(1).max(60) }).strict();
+/** Empty `q` = the first people alphabetically (the picker lists from 0 characters and narrows as one types). */
+export const SearchPersonsInput = z.object({ q: z.string().trim().max(60) }).strict();
 
 export const EmptyInput = z.object({}).strict();

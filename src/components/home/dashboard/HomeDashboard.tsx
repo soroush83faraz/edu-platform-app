@@ -9,7 +9,6 @@ import { CardSkeleton } from "../HomeSkeletons";
 import { NearbyCard } from "../NearbyCard";
 import { DashboardAside, MyClassesCompact } from "./DashboardAside";
 import { FollowUp } from "./FollowUp";
-import { FreshComments } from "./FreshComments";
 import { TodaySessions } from "./TodaySessions";
 import { UrgentItems } from "./UrgentItems";
 import { WeekProgress } from "./WeekProgress";
@@ -22,7 +21,8 @@ import { WeekProgress } from "./WeekProgress";
  * (hats, tiles, timetable) are cached per request in `home-data.ts`.
  *
  * - Teacher — main: «نیاز به پیگیری» (the tasks I gave, least complete first, n/m), «امروز تدریس دارم» (today's
- *   sessions across classes), «نظرهای تازه» (unread comment notifications); aside: tiles, «کلاس‌های من» compact.
+ *   sessions across classes); aside: tiles, «کلاس‌های من» compact. («نظرهای تازه» left with the comments —
+ *   owner, round 7: no conversation for now.)
  * - Student — main: «امروز» (today's زنگ‌ها, the ringing one live), «فوری‌ها» (overdue + due today), «این هفته»
  *   (done/total of the week's due items); aside: the tiles (4 columns, 56 px marks).
  * - Everyone else, admins included: «کارهای نزدیک» and the tiles — the «مدیریت» tile opens the hub.
@@ -43,9 +43,6 @@ export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
             </Suspense>
             <Suspense fallback={<CardSkeleton rows={3} />}>
               <TeacherToday />
-            </Suspense>
-            <Suspense fallback={<CardSkeleton rows={3} />}>
-              <FreshComments />
             </Suspense>
           </>
         }

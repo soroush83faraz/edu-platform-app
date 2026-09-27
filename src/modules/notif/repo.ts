@@ -1,8 +1,14 @@
 // notif/repo — read model + personal read state of notif.notification. Every function filters by the recipient
 // (`ctx.personId`): a notification is only ever visible to the person it was sent to.
-import { and, count, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { notification } from "./schema";
+
+/**
+ * Types that are stored but never shown (owner, round 7 — «no comments and no conversation for now»): comment
+ * notifications written before comments left the UI stay in the table, out of the list and the bell's count.
+ */
+const HIDDEN_TYPE = "work_item.comment";
 
 export interface NotificationRow {
   id: string;
@@ -33,12 +39,13 @@ export function decodeCursor(cursor: string | undefined | null): { createdAt: Da
   return { createdAt: new Date(t), id };
 }
 
-/** Newest first; keyset on (created_at desc, id desc). Expired rows are hidden. */
+/** Newest first; keyset on (created_at desc, id desc). Expired rows and `HIDDEN_TYPE` are hidden. */
 export async function listNotifications(tx: Tx, personId: string, opts: { cursor?: string | null; limit?: number } = {}): Promise<NotificationPage> {
   const limit = Math.min(Math.max(opts.limit ?? 30, 1), 100);
   const after = decodeCursor(opts.cursor);
   const where = and(
     eq(notification.recipientPersonId, personId),
+    ne(notification.typeCode, HIDDEN_TYPE),
     or(isNull(notification.expiresAt), sql`${notification.expiresAt} > now()`),
     after ? or(lt(notification.createdAt, after.createdAt), and(eq(notification.createdAt, after.createdAt), lt(notification.id, after.id))) : undefined,
   );
@@ -61,7 +68,7 @@ export async function listNotifications(tx: Tx, personId: string, opts: { cursor
   return { rows: page, nextCursor: rows.length > limit && last ? encodeCursor(last.createdAt, last.id) : null };
 }
 
-/** The newest unread notifications of one type — the teacher dashboard's «نظرهای تازه» (`work_item.comment`). */
+/** The newest unread notifications of one type (it fed the teacher dashboard's «نظرهای تازه», gone in round 7). */
 export async function listUnreadOfType(tx: Tx, personId: string, typeCode: string, limit = 5): Promise<NotificationRow[]> {
   return tx
     .select({
@@ -83,7 +90,7 @@ export async function unreadCount(tx: Tx, personId: string): Promise<number> {
   const [row] = await tx
     .select({ n: count() })
     .from(notification)
-    .where(and(eq(notification.recipientPersonId, personId), isNull(notification.readAt)));
+    .where(and(eq(notification.recipientPersonId, personId), isNull(notification.readAt), ne(notification.typeCode, HIDDEN_TYPE)));
   return row?.n ?? 0;
 }
 

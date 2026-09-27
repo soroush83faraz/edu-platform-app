@@ -84,12 +84,9 @@ export function NewWorkItemForm({ offerings, canPickPersons, words, initialOffer
   const [chosen, setChosen] = useState<PersonHit[]>([]);
   useEffect(() => {
     if (mode !== "persons") return;
+    // From the first keystroke — and before it: an empty box lists the first people alphabetically.
     const q = personQuery.trim();
     const t = window.setTimeout(() => {
-      if (q.length < 2) {
-        setHits([]);
-        return;
-      }
       void searchPersonsQuery({ q }).then((r) => {
         if (r.ok) setHits(r.data.filter((h) => !chosen.some((c) => c.id === h.id)));
       });
@@ -308,10 +305,10 @@ export function NewWorkItemForm({ offerings, canPickPersons, words, initialOffer
             ) : null}
             <div className="relative">
               <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-text-faint" aria-hidden />
-              <Input value={personQuery} onChange={(e) => setPersonQuery(e.target.value)} placeholder="نام شخص (دست‌کم دو حرف)" aria-label="جست‌وجوی اشخاص" className="ps-9" />
+              <Input value={personQuery} onChange={(e) => setPersonQuery(e.target.value)} placeholder="نام شخص" aria-label="جست‌وجوی اشخاص" className="ps-9" />
             </div>
             {hits.length > 0 ? (
-              <ul className="divide-y divide-line rounded-lg border border-line">
+              <ul className="max-h-72 overflow-y-auto divide-y divide-line rounded-lg border border-line">
                 {hits.map((h) => (
                   <li key={h.id}>
                     <button
