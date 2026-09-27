@@ -16,7 +16,7 @@
 // edits (src/modules/tenancy/fixed-catalog.ts) and درس‌ها moved under «مدرسه‌ها». «مدرسه‌ها» is now the FIRST
 // section (the top management option), then دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها. «نمای کلی» stays the /admin
 // landing — the rail's «مدیریت» parent and the phone's role item — never a row of its own (`adminNavItems`).
-import { GraduationCap, LayoutGrid, type LucideIcon, School, ShieldCheck, Users, UsersRound } from "lucide-react";
+import { GraduationCap, LayoutGrid, type LucideIcon, Presentation, School, ShieldCheck, UsersRound } from "lucide-react";
 
 export type AdminSectionKey = "overview" | "schools" | "students" | "staff" | "classes" | "roles";
 
@@ -34,7 +34,8 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
   { key: "schools", href: "/admin/schools", labelFa: "مدرسه‌ها", icon: School, orgOnly: true },
   { key: "students", href: "/admin/students", labelFa: "دانش‌آموزان", icon: GraduationCap },
   { key: "staff", href: "/admin/staff", labelFa: "کارکنان", icon: UsersRound },
-  { key: "classes", href: "/admin/classes", labelFa: "کلاس‌ها", icon: Users },
+  // The classroom board (owner, 2026-09-27: «کلاس‌ها» reads as a class, not as a crowd of people).
+  { key: "classes", href: "/admin/classes", labelFa: "کلاس‌ها", icon: Presentation },
   { key: "roles", href: "/admin/roles", labelFa: "نقش‌ها", icon: ShieldCheck },
 ];
 

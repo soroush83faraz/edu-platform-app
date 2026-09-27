@@ -8,6 +8,7 @@ import { formatJalaliWeekdayDate } from "@/lib/format";
  * UX review 2026-09-27 (owner): no gradient block, no blue glow, no centred emblem — a school app says good morning
  * and the date, the way a notebook page does. From `lg:` the page draws the `PageHeader` instead, whose
  * context bar already carries the school and the date. Rendered synchronously from the request context.
+ * Classic layout only: the «hub» Home draws `HubGreeting` instead (docs/decisions-pending/home-hub.md).
  */
 export function SchoolBanner({ firstName }: { firstName: string }) {
   return (

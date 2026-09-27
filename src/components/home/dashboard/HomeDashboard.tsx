@@ -23,6 +23,8 @@ import { WeekProgress } from "./WeekProgress";
  * «تسک‌های نزدیک» card, full width of that column — the card's «همهٴ …» link is the کارتابل's one door now that
  * the nav has no «پنل من», so every role that reads work items gets it, on phones (`HomeGrid`) and here alike.
  * That work column is the main one (7 tracks, the start/right side); the role panels sit in the wide aside (5).
+ * In the «hub» layout (everyone's since 2026-09-27) the card is left out: «پنل من» is a tile there, and Home is the
+ * greeting card and the tiles (the role panels stay beside them).
  *
  * - Teacher — main: tiles, «تکالیف نزدیک», «نیاز به پیگیری» (the tasks I gave, least complete first, n/m);
  *   aside: «امروز تدریس دارم» (today's sessions across classes), «کلاس‌های من» compact.
@@ -35,7 +37,8 @@ export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
   const home = await resolveHomeTiles(ctx);
   const canReadWork = canAtAnyScope(ctx.assignments, "workspace.work_item.read");
   const words = workItemWords(workItemVoice(ctx.assignments));
-  const nearby = canReadWork ? (
+  // Classic only: in the hub layout «پنل من» is a tile, and the board opens with the tiles alone (owner, 2026-09-27).
+  const nearby = canReadWork && home.variant !== "hub" ? (
     <Suspense fallback={<CardSkeleton rows={5} />}>
       <NearbyCard words={words} empty={emptyOpenCopy(audienceOf(ctx.assignments), canAtAnyScope(ctx.assignments, "workspace.work_item.create"))} />
     </Suspense>
@@ -57,9 +60,9 @@ export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
         aside={
           <>
             <Suspense fallback={<CardSkeleton rows={3} />}>
-              <TeacherToday />
+              <TeacherToday weekHref={home.variant === "hub" ? "/classes/timetable" : "/classes"} />
             </Suspense>
-            <MyClassesCompact offerings={home.hats?.teachingOfferings ?? []} />
+            <MyClassesCompact offerings={home.hats?.teachingOfferings ?? []} allHref={home.variant === "hub" ? "/classes/offerings" : "/classes"} />
           </>
         }
       />
@@ -79,7 +82,7 @@ export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
         aside={
           <>
             <Suspense fallback={<CardSkeleton rows={4} />}>
-              <StudentToday />
+              <StudentToday weekHref={home.variant === "hub" ? "/my-class/timetable" : "/my-class"} />
             </Suspense>
             <Suspense fallback={<CardSkeleton rows={1} />}>
               <WeekProgress />
@@ -98,20 +101,20 @@ export async function HomeDashboard({ ctx }: { ctx: Ctx }) {
   );
 }
 
-/** The student's today, from the cached personal timetable read. */
-async function StudentToday() {
+/** The student's today, from the cached personal timetable read. `weekHref`: «کلاس من», or the hub's own week page. */
+async function StudentToday({ weekHref }: { weekHref: string }) {
   const tt = await getMyTimetable();
   const student = tt?.student ?? null;
   const sessions = student?.days.find((d) => d.weekday === tt?.today)?.sessions ?? [];
   const hasTimetable = student ? student.days.some((d) => d.sessions.length > 0) : false;
-  return <TodaySessions sessions={sessions} today={tt?.today ?? 0} nowMinutes={tt?.nowMinutes ?? 0} secondary="teacher" weekHref="/my-class" hasTimetable={hasTimetable} />;
+  return <TodaySessions sessions={sessions} today={tt?.today ?? 0} nowMinutes={tt?.nowMinutes ?? 0} secondary="teacher" weekHref={weekHref} hasTimetable={hasTimetable} />;
 }
 
-/** «امروز تدریس دارم»: the teacher's sessions across classes today. */
-async function TeacherToday() {
+/** «امروز تدریس دارم»: the teacher's sessions across classes today. `weekHref`: «کلاس‌ها», or the hub's own week page. */
+async function TeacherToday({ weekHref }: { weekHref: string }) {
   const tt = await getMyTimetable();
   const teacher = tt?.teacher ?? null;
   const sessions = teacher?.days.find((d) => d.weekday === tt?.today)?.sessions ?? [];
   const hasTimetable = (teacher?.sessions ?? 0) > 0;
-  return <TodaySessions title="امروز تدریس دارم" sessions={sessions} today={tt?.today ?? 0} nowMinutes={tt?.nowMinutes ?? 0} secondary="class" weekHref="/classes" hasTimetable={hasTimetable} />;
+  return <TodaySessions title="امروز تدریس دارم" sessions={sessions} today={tt?.today ?? 0} nowMinutes={tt?.nowMinutes ?? 0} secondary="class" weekHref={weekHref} hasTimetable={hasTimetable} />;
 }

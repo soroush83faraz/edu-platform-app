@@ -1,19 +1,23 @@
 import {
+  AlarmClock,
   Bell,
+  BookOpen,
   BookOpenCheck,
   CalendarCheck,
   CalendarDays,
   ClipboardCheck,
-  Clock,
+  ClipboardList,
   FileSpreadsheet,
   Handshake,
   HeartHandshake,
   Inbox,
+  Lectern,
   Library,
   type LucideIcon,
   Megaphone,
   MessagesSquare,
   NotebookPen,
+  Presentation,
   Scale,
   School,
   Settings2,
@@ -25,7 +29,8 @@ import {
   Wallet,
 } from "lucide-react";
 import type { ClayShade } from "@/components/ClayIcon";
-import { schoolsLabelFa } from "@/lib/admin/nav";
+import { ADMIN_SECTIONS, type AdminSectionKey, schoolsLabelFa } from "@/lib/admin/nav";
+import type { UiVariant } from "@/lib/ui-variant";
 import type { Permission } from "@/modules/iam/permissions";
 
 /**
@@ -336,6 +341,11 @@ export interface HomeTile {
    * a place gets ONE tile, not one per role.
    */
   role: TileAudience;
+  /**
+   * Hidden when the person ALSO wears this hat — for a place two hats reach on different pages under one name
+   * (hub layout: a teaching student's «برنامهٴ هفتگی» is the teaching week, so the class week steps aside).
+   */
+  exceptRole?: TileRole;
   /** Shown only when the person holds it at any scope (the hat alone is not enough for admin tiles). */
   permission?: Permission;
   /**
@@ -353,6 +363,16 @@ export interface HomeTile {
   oneSchool?: { href: (schoolId: string) => string; only?: boolean; label?: boolean };
   /** The glyph implies a direction (send, arrows) and must flip in RTL. */
   mirror?: boolean;
+  /**
+   * The label to use when another tile the SAME person sees already reads `labelFa` — two destinations never share
+   * a name (hub layout: a teaching principal's roll call and the admin report are both «حضور و غیاب»).
+   */
+  altLabelFa?: string;
+  /**
+   * The glyph to use when another tile the SAME person sees already draws `icon` — no two tiles share a glyph (hub
+   * layout: a teaching principal's «کلاس‌های من» beside the admin «کلاس‌ها», the roll call beside the report).
+   */
+  altIcon?: LucideIcon;
 }
 
 /**
@@ -432,7 +452,8 @@ export const HOME_TILES: readonly HomeTile[] = [
     // Empty on purpose: `oneSchool.only` drops this tile unless `homeTilesFor` rewrites the href with the school
     // it belongs to, so the placeholder is never rendered (`tests/unit/home-tiles.test.ts` guards it).
     href: "",
-    icon: Clock,
+    // A bell schedule: the alarm clock is time AND bell, without echoing the notifications bell in the top bar.
+    icon: AlarmClock,
     role: "admin",
     permission: "tenancy.structure.write",
     oneSchool: { href: (id) => `/admin/schools/${id}/periods`, only: true },
@@ -441,14 +462,87 @@ export const HOME_TILES: readonly HomeTile[] = [
   // one door, and it is inside /admin where the rest of the organization admin's setup work already is.
 ];
 
+function homeTile(code: string): HomeTile {
+  const t = HOME_TILES.find((x) => x.code === code);
+  if (!t) throw new Error(`HOME_TILES has no "${code}"`);
+  return t;
+}
+
+/** An admin SECTION as a hub tile: the section's own label, glyph and href (`src/lib/admin/nav.ts`), gated as /admin is. */
+function sectionTile(key: AdminSectionKey): HomeTile {
+  const s = ADMIN_SECTIONS.find((x) => x.key === key);
+  if (!s) throw new Error(`ADMIN_SECTIONS has no "${key}"`);
+  return { code: `admin-${key}`, labelFa: s.labelFa, href: s.href, icon: s.icon, role: "admin", permission: "iam.admin.access" };
+}
+
+/**
+ * The tiles of the «hub» layout — THE layout since the owner adopted it (2026-09-27, `src/lib/ui-variant.ts`,
+ * docs/decisions-pending/home-hub.md, home-hub-tiles.md). The hub has no bottom nav and no rail, so the role item
+ * that used to sit at the bottom right — a student's «کلاس من», a teacher's «کلاس‌ها», an admin's «مدیریت» — is
+ * gone, and each thing it held is its own Home tile: Home IS the nav, the tiles are the doors. One door per
+ * destination still holds per person: every href below is distinct, no person gets two tiles with one label
+ * (`altLabelFa`) or one glyph (`altIcon`).
+ *
+ * Order (owner, 2026-09-27): «پنل من» first; then the student's tiles (the week, «درس‌ها و دبیران»), the
+ * teacher's («کلاس‌های من», the teaching week), the admin's («مدرسه»/«مدرسه‌ها», دانش‌آموزان · کارکنان · کلاس‌ها ·
+ * نقش‌ها, «برنامهٴ کلاسی»); «حضور و غیاب» is the LAST tile for every role (the admin's report after the roll call
+ * for a person who has both). A multi-hat person gets the union in this order. No «کلاس من» tile (the class card
+ * lives on /my-class/info, unlinked from Home) and no «نمای کلی» tile (the /admin overview) — owner, same day.
+ * A section-shaped place (the week, «درس‌ها و دبیران», …) opens its own small page that draws that one section of
+ * the full page (`/my-class/*`, `/classes/*`); the full pages stay for the classic layout (`HOME_TILES`).
+ */
+export const HUB_TILES: readonly HomeTile[] = [
+  homeTile("inbox"),
+
+  // Student — what «کلاس من» held: the week and the درس list.
+  {
+    code: "my-week",
+    labelFa: "برنامهٴ هفتگی",
+    href: "/my-class/timetable",
+    icon: CalendarDays,
+    role: "student",
+    // A student who also teaches reads «برنامهٴ هفتگی» as the teaching week below — one tile per label.
+    exceptRole: "teacher",
+    permission: "academic.timetable.read",
+  },
+  { code: "my-subjects", labelFa: "درس‌ها و دبیران", href: "/my-class/subjects", icon: BookOpen, role: "student", permission: "workspace.work_item.read" },
+
+  // Teacher — what «کلاس‌ها» held: the درس cards and the teaching week. «کلاس‌های من» is the classroom board, as
+  // the admin «کلاس‌ها» is; a person who sees both reads their own teaching as the lectern.
+  { code: "my-offerings", labelFa: "کلاس‌های من", href: "/classes/offerings", icon: Presentation, altIcon: Lectern, role: "teacher" },
+  { code: "teaching-week", labelFa: "برنامهٴ هفتگی", href: "/classes/timetable", icon: CalendarDays, role: "teacher", permission: "academic.timetable.read" },
+
+  // Admin — what «مدیریت» held: the school first, then people and classes, then the bell schedule.
+  // «مدرسه‌ها» for EVERY admin scope here: the organization admin's section and a school admin's «مدرسه» tile
+  // become the one tile (the one-school rewrite still points a principal at their own school's hub).
+  { ...homeTile("schools"), adminScope: undefined },
+  sectionTile("students"),
+  sectionTile("staff"),
+  sectionTile("classes"),
+  sectionTile("roles"),
+  homeTile("periods"),
+
+  // «حضور و غیاب» last, for every role. The admin's report reads «گزارش حضور و غیاب», on a report glyph, for an
+  // admin who also takes or reads a roll call (the teacher/student tile before it keeps the name and the glyph).
+  homeTile("attendance"),
+  { ...homeTile("admin-attendance"), altLabelFa: "گزارش حضور و غیاب", altIcon: ClipboardList },
+];
+
+/** Options of `homeTilesFor`: which layout the viewer runs (`getUiVariant()`); classic when omitted. */
+export interface HomeTileOptions {
+  variant?: UiVariant;
+}
+
 /**
  * The tiles a person with these hats sees, in grid order. `has` answers «holds this permission at any scope?»;
  * a tile with `adminScope` additionally needs the admin hat to reach that far (`hats.adminScope`), and a tile
- * with `oneSchool` is rewritten (or dropped) by whether the admin holds exactly one school.
+ * with `oneSchool` is rewritten (or dropped) by whether the admin holds exactly one school. `variant: "hub"`
+ * picks the hub layout's list (`HUB_TILES`); anything else is the classic list, exactly as before.
  */
 export function homeTilesFor(
   hats: TileHats,
   has: (p: Permission) => boolean,
+  opts: HomeTileOptions = {},
 ): HomeTile[] {
   const wearsOne = (role: TileRole) =>
     (role === "student" && hats.isStudent) ||
@@ -456,9 +550,11 @@ export function homeTilesFor(
     (role === "admin" && hats.isAdmin);
   const wears = (role: TileAudience) => role === "everyone" || (Array.isArray(role) ? role.some(wearsOne) : wearsOne(role as TileRole));
   const schoolId = hats.singleSchoolId ?? null;
-  return HOME_TILES.filter(
+  const list = opts.variant === "hub" ? HUB_TILES : HOME_TILES;
+  const shown = list.filter(
     (t) =>
       wears(t.role) &&
+      (!t.exceptRole || !wearsOne(t.exceptRole)) &&
       (!t.permission || has(t.permission)) &&
       (!t.adminScope || hats.adminScope === t.adminScope) &&
       (!t.oneSchool?.only || schoolId !== null),
@@ -466,5 +562,13 @@ export function homeTilesFor(
     return t.oneSchool && schoolId
       ? { ...t, href: t.oneSchool.href(schoolId), ...(t.oneSchool.label ? { labelFa: schoolsLabelFa({ kind: "school", schoolIds: [schoolId] }) } : {}) }
       : t;
+  });
+  return shown.map((t) => {
+    const others = shown.filter((o) => o !== t);
+    return {
+      ...t,
+      ...(t.altLabelFa && others.some((o) => o.labelFa === t.labelFa) ? { labelFa: t.altLabelFa } : {}),
+      ...(t.altIcon && others.some((o) => o.icon === t.icon) ? { icon: t.altIcon } : {}),
+    };
   });
 }

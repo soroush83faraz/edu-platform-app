@@ -9,6 +9,7 @@ import { requireContext } from "@/lib/ctx";
 import { formatLoginIdentifierFa, formatNumberFa } from "@/lib/format";
 import { UPCOMING_MODULES } from "@/lib/modules-registry";
 import { myLoginIdentifierQuery } from "@/lib/profile-queries";
+import { getUiVariant } from "@/lib/ui-variant";
 import { logoutAction } from "@/modules/iam/actions";
 
 export const metadata: Metadata = { title: "بیشتر" };
@@ -35,10 +36,13 @@ export default async function MorePage() {
   const login = await myLoginIdentifierQuery();
   const loginIdentifier = login.ok ? login.data : null;
   const teaching = ctx.assignments.filter((a) => a.roleCode === "teacher").length;
+  // In the «hub» layout «بیشتر» is the profile page, opened from the top bar's profile icon: it leads back to Home
+  // with «بازگشت» (docs/decisions-pending/home-hub.md). In «classic» the nav cell names it; no back link.
+  const variant = await getUiVariant();
 
   return (
     <ContentWidth className="reveal-stagger gap-6">
-      <PageHeader title="بیشتر" />
+      <PageHeader title="بیشتر" back={variant === "hub" ? { href: "/home", label: "بازگشت" } : false} />
       <section className="surface-work flex items-center gap-4 p-4">
         <RowMark icon={UserRound} size="lg" />
         <div className="flex min-w-0 flex-col">
