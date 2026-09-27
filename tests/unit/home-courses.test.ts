@@ -3,6 +3,7 @@
 // read) — each a whole-surface link into /subjects/[offeringId], topped by a patterned cover in the درس's hue
 // (`CourseCover`). A non-teaching admin gets no section. And the «به‌زودی» section is hidden for now
 // (`SHOW_UPCOMING_ON_HOME`). The Home reads run for real over mocked queries; the Server Components are rendered to markup.
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,7 +21,7 @@ vi.mock("@/modules/workspace/queries", () => ({ homeOpenItemsQuery: vi.fn(async 
 
 const { HomeCourses, CourseCards, homeCourses } = await import("@/components/home/HomeCourses");
 const { resolveHomeTiles } = await import("@/components/home/home-data");
-const { CourseCover, COVER_FAMILIES, coverFamily } = await import("@/components/illustrations/CourseCover");
+const { CourseCover, COVER_FAMILIES, COVER_PALETTES, coverFamily } = await import("@/components/illustrations/CourseCover");
 const { SHOW_UPCOMING_ON_HOME } = await import("@/lib/modules-registry");
 const { subjectHue } = await import("@/lib/subject-stamp");
 type Ctx = import("@/lib/ctx").Ctx;
@@ -109,7 +110,18 @@ describe("CourseCover — the card's patterned cover", () => {
       const b = renderToStaticMarkup(CourseCover({ subjectId: id, name: "شیمی ۲" }));
       expect(a).toBe(b);
       expect(a).toContain(`data-family="${coverFamily(id)}"`);
-      expect(a).toContain(`data-hue="${subjectHue(id)}"`);
+      expect(a).toContain(`data-palette="${subjectHue(id)}"`);
+    }
+  });
+
+  it("`palette` and `variantKey` override the subject's set and pattern; the glyph stays the درس's", () => {
+    const subj = ids[0];
+    for (let p = 0; p < COVER_PALETTES; p++) {
+      const html = renderToStaticMarkup(CourseCover({ subjectId: subj, name: "ریاضی ۱", palette: p, variantKey: `off-${p}` }));
+      expect(html).toContain(`data-palette="${p}"`);
+      expect(html).toContain(`--cv-0:var(--color-cover-${p}-base)`);
+      expect(html).toContain(`data-family="${coverFamily(`off-${p}`)}"`);
+      expect(html).toContain("lucide-sigma");
     }
   });
 
@@ -118,19 +130,73 @@ describe("CourseCover — the card's patterned cover", () => {
     expect(COVER_FAMILIES.length).toBeGreaterThanOrEqual(5);
   });
 
-  it("stays inside the subject palette, fills any box, is decorative, and carries the درس's own glyph", () => {
+  it("draws from its own vivid cover palette (not the muted stamps), fills any box, is decorative, and carries the درس's own glyph", () => {
     for (const id of ids.slice(0, 12)) {
       const html = renderToStaticMarkup(CourseCover({ subjectId: id, name: "فیزیک ۱" }));
       const hue = subjectHue(id);
       expect(html).toMatch(/^<div aria-hidden="true"/);
       expect(html).toContain('preserveAspectRatio="xMidYMid slice"');
-      expect(html).toContain(`--cv-0:var(--color-subject-${hue}-bg)`);
-      expect(html).toContain(`--cv-ink:var(--color-subject-${hue}-ink)`);
+      expect(html).toContain(`--cv-0:var(--color-cover-${hue}-base)`);
+      expect(html).toContain(`--cv-1:var(--color-cover-${hue}-light)`);
+      expect(html).toContain(`--cv-3:var(--color-cover-${hue}-dark)`);
+      expect(html).toContain(`--cv-ink:var(--color-cover-${hue}-ink)`);
+      expect(html).not.toContain("--color-subject-");
       // No raw colour, no raster, no network.
       expect(html.replace(' xmlns="http://www.w3.org/2000/svg"', "")).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|hsl\(|<image|https?:/i);
       // The glyph of the درس (atom for فیزیک), not a generic one.
       expect(html).toContain("lucide-atom");
     }
+  });
+
+  it("globals.css defines the eight vivid cover sets (light / base / dark / ink) in OKLCH, apart from the stamp hues", () => {
+    const css = readFileSync(new URL("../../src/app/globals.css", import.meta.url), "utf8");
+    for (let i = 0; i < COVER_PALETTES; i++) {
+      for (const t of ["light", "base", "dark", "ink"]) {
+        const m = css.match(new RegExp(`--color-cover-${i}-${t}: oklch\\(([\\d.]+) ([\\d.]+) ([\\d.]+)\\);`));
+        expect(m, `cover-${i}-${t}`).not.toBeNull();
+        // Vivid, not washed out: the ground and the dark tone carry chroma ≥ 0.09.
+        if (t === "base" || t === "dark") expect(Number(m![2])).toBeGreaterThanOrEqual(0.09);
+      }
+    }
+  });
+});
+
+describe("course covers across a person's list (owner 2026-09-27)", () => {
+  const FIVE_MATH = ["۱۰/۱", "۱۰/۲", "۱۱/۱", "۱۲/۱", "۱۲/۲"].map((cls, i) => ({
+    offeringId: `t-math-${i}`,
+    subjectId: "sub-math",
+    subjectName: "ریاضی ۱",
+    classGroupName: cls,
+    activeStudents: 20,
+    openItems: 0,
+  }));
+
+  it("a teacher's five same-subject cards get five distinct colour sets, in order, and each its own pattern seed", () => {
+    const cards = homeCourses({ teachingOfferings: FIVE_MATH, myClass: null });
+    expect(new Set(cards.map((c) => c.palette)).size).toBe(5);
+    const start = subjectHue("sub-math");
+    expect(cards.map((c) => c.palette)).toEqual([0, 1, 2, 3, 4].map((k) => (start + k) % COVER_PALETTES));
+    expect(cards.map((c) => c.variantKey)).toEqual(FIVE_MATH.map((o) => o.offeringId));
+    const html = renderToStaticMarkup(CourseCards({ courses: cards }));
+    const drawn = [...html.matchAll(/data-palette="(\d)"/g)].map((m) => m[1]);
+    expect(new Set(drawn).size).toBe(5);
+    // Every card still carries the درس's own glyph.
+    expect(html.match(/lucide-sigma/g)?.length).toBe(5);
+  });
+
+  it("neighbours never repeat a colour until all eight are used", () => {
+    const many = Array.from({ length: 11 }, (_, i) => ({ ...FIVE_MATH[0], offeringId: `t-${i}`, subjectId: `sub-${i % 3}` }));
+    const p = homeCourses({ teachingOfferings: many, myClass: null }).map((c) => c.palette);
+    expect(new Set(p.slice(0, 8)).size).toBe(8);
+    for (let i = 1; i < p.length; i++) expect(p[i]).not.toBe(p[i - 1]);
+  });
+
+  it("a student's cards keep the subject's own set and pattern — one درس, one stable look", () => {
+    const cards = homeCourses({ teachingOfferings: [], myClass: STUDENT_CLASS });
+    expect(cards.map((c) => c.palette)).toEqual(STUDENT_CLASS.teachers.map((t) => subjectHue(t.subjectId)));
+    expect(cards.map((c) => c.variantKey)).toEqual(STUDENT_CLASS.teachers.map((t) => t.subjectId));
+    const html = renderToStaticMarkup(CourseCards({ courses: cards }));
+    expect(html).toContain(`data-family="${coverFamily("sub-math")}"`);
   });
 });
 

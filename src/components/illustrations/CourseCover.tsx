@@ -5,15 +5,23 @@ import { fnv1a, subjectHue } from "@/lib/subject-stamp";
 
 /**
  * «جلد درس» — the cover on top of a Home course card (owner 2026-09-27, after the university LMS's course grid): a
- * geometric pattern in the درس's own hue with the درس's glyph on a soft disc in the middle. Inline SVG, no raster, no
- * network, no JS; decorative (`aria-hidden`) — the card prints the name.
+ * geometric pattern in one vivid colour set with the درس's glyph on a white disc in the middle. Inline SVG, no raster,
+ * no network, no JS; decorative (`aria-hidden`) — the card prints the name.
  *
- * Deterministic per subject: the HUE is the subject's stamp hue (`subjectHue`, fnv1a(id) % 8 — the same colour as its
- * `SubjectIcon` everywhere); the pattern FAMILY is taken from higher bits of the same hash (`coverFamily`), so two
- * درس‌ها on one hue still differ; the remaining bits seed the tone layout inside the pattern. Tones stay inside the
- * subject palette: the hue's `bg`, and its `ink` mixed into that bg at 10 / 20 / 32 % (`color-mix`, oklab) — soft,
- * never a new colour. The pattern is authored on a 320×180 (16:9) board and drawn `xMidYMid slice`, so it fills any
- * box crisply and the centred glyph always stays in view.
+ * Colour: covers have their OWN vivid palette (owner: the muted stamp hues read «بی‌روح» at this size) — eight sets
+ * `--color-cover-{0..7}-{light,base,dark,ink}` in globals.css, mapped 1:1 to the stamp index, so by default a درس's
+ * cover set is its stamp hue (`subjectHue`, fnv1a(id) % 8) and it keeps its identity; stamps / SubjectIcon stay muted.
+ * The ground is the set's `base`; the pattern tones are `light`, `base`↔`dark` (50 % oklab mix) and `dark` — three
+ * clearly separated steps (L 0.87 / ~0.65 / 0.57 on a 0.72 ground); the glyph is the set's `ink` on a white disc at
+ * 85 % (≥ 8.8:1).
+ *
+ * Variation: the pattern FAMILY and tone layout come from a hash of `variantKey` (default: the subject id) — the
+ * family from bits above the hue's (`h >>> 3`), the rest seeding the per-cell tones and a mirror. A teacher's list
+ * passes the OFFERING id as `variantKey` and an explicit `palette` per card (owner 2026-09-27: «ریاضی» in five classes
+ * must not look alike — `homeCourses` hands the sets out in order, so neighbours never repeat until all eight are
+ * used); a student's list leaves both unset, so one درس keeps one stable look. The glyph is always the درس's own.
+ * The pattern is authored on a 320×180 (16:9) board and drawn `xMidYMid slice`, so it fills any box crisply and the
+ * centred glyph always stays in view.
  */
 
 export const COVER_FAMILIES = ["circles", "hexagons", "triangles", "waves", "plaid", "squares"] as const;
@@ -22,9 +30,12 @@ export type CoverFamily = (typeof COVER_FAMILIES)[number];
 const W = 320;
 const H = 180;
 
-/** The pattern family of a درس: bits above the hue's (`h >>> 3`), so hue and family vary independently. */
-export function coverFamily(subjectId: string): CoverFamily {
-  return COVER_FAMILIES[(fnv1a(subjectId) >>> 3) % COVER_FAMILIES.length];
+/** The number of cover colour sets (`--color-cover-{0..7}-*`), one per stamp hue. */
+export const COVER_PALETTES = 8;
+
+/** The pattern family for a key (a subject or an offering id): bits above the hue's (`h >>> 3`), so hue and family vary independently. */
+export function coverFamily(key: string): CoverFamily {
+  return COVER_FAMILIES[(fnv1a(key) >>> 3) % COVER_FAMILIES.length];
 }
 
 /** Small deterministic PRNG (mulberry32) seeded from the subject hash — picks each cell's tone. */
@@ -145,32 +156,49 @@ function squares(r: () => number): ReactNode {
 
 const DRAW: Record<CoverFamily, (r: () => number) => ReactNode> = { circles, hexagons, triangles, waves, plaid, squares };
 
-/** The cover's tone variables for hue `i` — only the subject palette tokens and mixes of them. */
+/** The cover's tone variables for colour set `i` — only the cover palette tokens and one mix of two of them. */
 function tones(i: number): CSSProperties {
-  const bg = `var(--color-subject-${i}-bg)`;
-  const ink = `var(--color-subject-${i}-ink)`;
-  const mix = (p: number) => `color-mix(in oklab, ${ink} ${p}%, ${bg})`;
-  return { "--cv-0": bg, "--cv-1": mix(10), "--cv-2": mix(20), "--cv-3": mix(32), "--cv-ink": ink } as CSSProperties;
+  const set = (t: "light" | "base" | "dark" | "ink") => `var(--color-cover-${i}-${t})`;
+  return {
+    "--cv-0": set("base"),
+    "--cv-1": set("light"),
+    "--cv-2": `color-mix(in oklab, ${set("dark")} 50%, ${set("base")})`,
+    "--cv-3": set("dark"),
+    "--cv-ink": set("ink"),
+  } as CSSProperties;
 }
 
 /**
  * The cover of one درس. `className` sizes the box (the card gives it a height / aspect); the SVG fills it.
- * `data-family` / `data-hue` expose the pick for tests.
+ * `variantKey` seeds the pattern (default `subjectId`); `palette` picks the colour set 0–7 (default the subject's
+ * stamp hue). `data-family` / `data-palette` expose the pick for tests.
  */
-export function CourseCover({ subjectId, name, className }: { subjectId: string; name: string; className?: string }) {
-  const hue = subjectHue(subjectId);
-  const family = coverFamily(subjectId);
-  const h = fnv1a(subjectId);
+export function CourseCover({
+  subjectId,
+  name,
+  variantKey = subjectId,
+  palette,
+  className,
+}: {
+  subjectId: string;
+  name: string;
+  variantKey?: string;
+  palette?: number;
+  className?: string;
+}) {
+  const set = (((palette ?? subjectHue(subjectId)) % COVER_PALETTES) + COVER_PALETTES) % COVER_PALETTES;
+  const family = coverFamily(variantKey);
+  const h = fnv1a(variantKey);
   const r = rng(h);
   const mirror = ((h >>> 11) & 1) === 1;
   return (
-    <div aria-hidden className={cn("relative overflow-hidden bg-(--cv-0)", className)} style={tones(hue)} data-family={family} data-hue={hue}>
+    <div aria-hidden className={cn("relative overflow-hidden bg-(--cv-0)", className)} style={tones(set)} data-family={family} data-palette={set}>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid slice" className="absolute inset-0 size-full" focusable="false">
         <g transform={mirror ? `matrix(-1 0 0 1 ${W} 0)` : undefined}>{DRAW[family](r)}</g>
       </svg>
       <span className="absolute inset-0 grid place-items-center">
-        <span className="grid size-16 place-items-center rounded-full bg-(--cv-0)/85 text-(--cv-ink) ring-1 ring-(--cv-ink)/10 ring-inset">
-          {createElement(subjectIcon(name), { className: "size-8 opacity-80", strokeWidth: 1.5, "aria-hidden": true })}
+        <span className="grid size-16 place-items-center rounded-full bg-white/85 text-(--cv-ink) shadow-1">
+          {createElement(subjectIcon(name), { className: "size-8", strokeWidth: 1.75, "aria-hidden": true })}
         </span>
       </span>
     </div>
