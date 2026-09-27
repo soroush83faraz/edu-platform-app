@@ -26,7 +26,7 @@ export interface WeekTimetableProps {
 
 /**
  * The one timetable of the product, two faces from one clock. Phones (< md): `WeekGrid` — the week as a calendar
- * grid (school days × زنگ‌ها) of «مُهر درس» squares that fits 360 px, with a details card for the tapped cell (owner
+ * grid (school days × زنگ‌ها) of cells in their «مُهر درس» hue, each reading the درس name, that fits 360 px, with a details card for the tapped cell (owner
  * 2026-09-27: the day strip + list did not read at a glance). From `md:` the whole week as a table: one column per
  * school day, one row per زنگ with its times in a sticky start column; each lesson wears its درس's stamp hue and
  * reads the subject on line 1 and the teacher (student view) or the class (teacher view) on line 2, today's column

@@ -9,7 +9,7 @@ import { SubjectStamp, subjectHueClasses } from "@/components/SubjectStamp";
 import { CrossFade } from "@/components/motion/CrossFade";
 import { emptyDayCopy, type TimetablePerspective } from "@/lib/empty-copy";
 import { formatNumberFa } from "@/lib/format";
-import { stampText } from "@/lib/subject-stamp";
+import { cellSubjectLabel } from "@/lib/subject-stamp";
 import { currentPeriodOf, defaultWeekCell, formatTimeRangeFa, SCHOOL_WEEKDAYS, timeToMinutes, WEEKDAY_LABELS, WEEKDAY_SHORT, weekRows, type PeriodLike, type WeekCell, type Weekday } from "@/lib/timetable";
 import { PeriodProgress } from "./PeriodProgress";
 import type { DayView, SessionSecondary } from "./types";
@@ -31,13 +31,15 @@ export interface WeekGridProps {
  * The phone face of the timetable (< md), drawn like a calendar month (owner 2026-09-27): six columns for the
  * school days (the one-letter name, the day of the month under it, today filled in the brand blue) and one row per
  * زنگ with its number in a narrow start column — the whole week at once, no sideways scroll at 360 px. Each lesson
- * is a rounded square in its درس's «مُهر درس» hue with the stamp's letters (a دبیر's cell adds the class); an empty
+ * is a rounded square in its درس's «مُهر درس» hue with the درس's NAME on one or two lines (`cellSubjectLabel`, owner
+ * 2026-09-27: not the stamp's letters; a دبیر's cell adds the class under it); an empty
  * زنگ is a faint outline; a زنگ تفریح is a wider gap between two rows. The ringing cell wears the brand ring and the
  * live progress bar; today's finished cells dim. Tapping a cell selects it (ink ring) and the card under the grid
  * reads it in full — the درس, the دبیر or the class, the day, the زنگ, the time — and opens the درس page.
  *
  * Width at 360 px: 328 px content − 2 × 6 px padding = 316 px; 26 px start column + 6 gaps × 4 px leaves 44.3 px
- * per column (46.8 px at 375), each cell 48 px tall — every cell is a ≥ 44 px target.
+ * per column (46.8 px at 375), each cell 56 px tall — every cell is a ≥ 44 px target, and holds two 14 px lines of
+ * the name (`text-cell`, 11 px, seven letters a line) plus the class line of a دبیر's cell.
  */
 export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspective, weekDays }: WeekGridProps) {
   const byDay = new Map(days.map((d) => [d.weekday, d.sessions]));
@@ -100,7 +102,7 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
                   aria-label={`${WEEKDAY_LABELS[d]}${d === today ? " (امروز)" : ""}، ${r.label}، ${s ? names : "آزاد"}`}
                   onClick={() => setPicked({ weekday: d, periodNo: r.periodNo })}
                   className={cn(
-                    "pressable relative flex h-12 min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-stamp-lg px-0.5 outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                    "pressable relative flex h-14 min-w-0 flex-col items-center justify-center overflow-hidden rounded-stamp-lg px-px text-center outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
                     s ? cn(subjectHueClasses(s.subjectId), "ring-1 ring-inset") : "ring-1 ring-inset ring-line/70",
                     s && past && !selected && "opacity-60",
                     selected && (s ? "shadow-1 ring-2 ring-current" : "ring-2 ring-text-faint"),
@@ -109,9 +111,13 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
                 >
                   {s ? (
                     <>
-                      <span className={cn("font-bold whitespace-nowrap", secondary === "class" ? "text-meta leading-4" : "text-stamp")}>{stampText(s.subjectName)}</span>
+                      {cellSubjectLabel(s.subjectName).map((line, i) => (
+                        <span key={i} className="block max-w-full truncate text-cell font-semibold">
+                          {line}
+                        </span>
+                      ))}
                       {secondary === "class" ? (
-                        <bdi className="block max-w-full truncate text-meta leading-4 opacity-80">{here.length > 1 ? `${formatNumberFa(here.length)} کلاس` : s.classGroupName}</bdi>
+                        <bdi className="block max-w-full truncate text-cell opacity-80">{here.length > 1 ? `${formatNumberFa(here.length)} کلاس` : s.classGroupName}</bdi>
                       ) : null}
                     </>
                   ) : null}

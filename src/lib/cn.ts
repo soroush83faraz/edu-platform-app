@@ -14,7 +14,7 @@ import { createCn } from "cn/config";
  */
 export const THEME_TOKENS = {
   /** `--text-*` font-size roles (Tailwind's own xs…3xl are known already). */
-  text: ["meta", "row", "section", "title", "display", "stamp"],
+  text: ["meta", "row", "section", "title", "display", "stamp", "cell"],
   /** `--radius-*` beyond Tailwind's t-shirt sizes. */
   radius: ["card", "hero", "stamp", "stamp-lg"],
   /** `--shadow-*`. */

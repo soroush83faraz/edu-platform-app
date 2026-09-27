@@ -1,10 +1,11 @@
 // «مُهر درس» (src/lib/subject-stamp): the abbreviation of the 26 subject names on the owner-approved swatch page,
-// the normalisation it applies, and the colour index — stable per id, 0–7, and spread over all eight hues.
+// the normalisation it applies, the colour index — stable per id, 0–7, and spread over all eight hues — and the
+// one-or-two-line درس name of a phone timetable cell (`cellSubjectLabel`).
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SubjectStamp } from "@/components/SubjectStamp";
-import { SUBJECT_HUES, fnv1a, stampText, subjectHue } from "@/lib/subject-stamp";
+import { SUBJECT_HUES, cellSubjectLabel, fnv1a, stampText, subjectHue } from "@/lib/subject-stamp";
 
 describe("stampText", () => {
   it.each([
@@ -49,6 +50,70 @@ describe("stampText", () => {
     expect(stampText("  ۱۲ فیزیک")).toBe("فیز");
     expect(stampText("زبان")).toBe("زبا");
     expect(stampText("")).toBe("");
+  });
+});
+
+describe("cellSubjectLabel", () => {
+  const Z = "‌";
+  it.each<[string, string[]]>([
+    // One word: the whole word, never the stamp's letters.
+    ["ریاضی", ["ریاضی"]],
+    ["فیزیک", ["فیزیک"]],
+    ["شیمی", ["شیمی"]],
+    ["عربی", ["عربی"]],
+    ["تاریخ", ["تاریخ"]],
+    ["هندسه", ["هندسه"]],
+    ["قرآن", ["قرآن"]],
+    // A trailing book number is dropped (the class / details card carry it).
+    ["ریاضی ۱", ["ریاضی"]],
+    ["فیزیک 2", ["فیزیک"]],
+    // Two words that do not share a line: one per line — «زبان» never stands alone.
+    ["ادبیات فارسی", ["ادبیات", "فارسی"]],
+    ["زبان انگلیسی", ["زبان", "انگلیسی"]],
+    ["زبان انگلیسی ۱", ["زبان", "انگلیسی"]],
+    ["علوم تجربی", ["علوم", "تجربی"]],
+    ["تربیت بدنی", ["تربیت", "بدنی"]],
+    ["مطالعات اجتماعی", ["مطالعات", "اجتماعی"]],
+    ["جغرافیای ایران", ["جغرافیای", "ایران"]],
+    [`پیام${Z}های آسمان`, [`پیام${Z}های`, "آسمان"]],
+    // «و» stays with the word before it.
+    ["دین و زندگی", ["دین و", "زندگی"]],
+    ["کار و فناوری", ["کار و", "فناوری"]],
+    ["آمار و احتمال", ["آمار و", "احتمال"]],
+    // Short words share line 1.
+    ["هنر ملی", ["هنر ملی"]],
+    // A long ZWNJ compound breaks at the joint.
+    [`زیست${Z}شناسی`, ["زیست", "شناسی"]],
+    [`زیست${Z}شناسی ۲`, ["زیست", "شناسی"]],
+    // A subtitle after «،» / «:» / «(» / a dash is not the name.
+    ["عربی، زبان قرآن ۱", ["عربی"]],
+    ["ریاضی (پایه)", ["ریاضی"]],
+    ["فیزیک - آزمایشگاه", ["فیزیک"]],
+    // Longer than two lines: line 2 carries the rest (the cell cuts it with an ellipsis).
+    ["علوم و فنون ادبی", ["علوم و", "فنون ادبی"]],
+    [`تفکر و سواد رسانه${Z}ای`, ["تفکر و", `سواد رسانه${Z}ای`]],
+  ])("%s → %j", (name, lines) => {
+    expect(cellSubjectLabel(name)).toEqual(lines);
+  });
+
+  it("never returns more than two lines, and normalises like the stamp", () => {
+    for (const n of ["ا ب پ ت ث ج چ ح خ", "یک دو سه چهار پنج", `الف${Z}ب${Z}پ${Z}ت${Z}ث${Z}ج${Z}چ`]) {
+      expect(cellSubjectLabel(n).length).toBeLessThanOrEqual(2);
+    }
+    expect(cellSubjectLabel("رياضي")).toEqual(["ریاضی"]);
+    expect(cellSubjectLabel("  كار  و   فناوری ")).toEqual(["کار و", "فناوری"]);
+    expect(cellSubjectLabel("عَرَبی")).toEqual(["عربی"]);
+  });
+
+  it("keeps a lone number or a leading «و», and an empty name is no lines", () => {
+    expect(cellSubjectLabel("۱۲")).toEqual(["۱۲"]);
+    expect(cellSubjectLabel("و")).toEqual(["و"]);
+    expect(cellSubjectLabel("")).toEqual([]);
+    expect(cellSubjectLabel("، فرعی")).toEqual([]);
+  });
+
+  it("balances a many-joint compound", () => {
+    expect(cellSubjectLabel(`الفبا${Z}ب${Z}پیپیپی`)).toEqual([`الفبا${Z}ب`, "پیپیپی"]);
   });
 });
 

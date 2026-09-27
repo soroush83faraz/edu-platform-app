@@ -107,6 +107,10 @@
     --text-base--line-height: 1.75rem;
     --text-stamp: 1rem;
     --text-stamp--line-height: 1;
+    /* The درس name inside a cell of the phone week grid (WeekGrid): 44 px columns at 360 px hold seven letters a
+       line at 11 px, two lines + the class line in a 56 px cell. Only there. */
+    --text-cell: 0.6875rem;
+    --text-cell--line-height: 0.875rem;
     --text-section: 1.125rem;
     --text-section--line-height: 1.75rem;
     --text-lg: 1.125rem;
