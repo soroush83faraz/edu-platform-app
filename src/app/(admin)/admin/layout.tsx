@@ -5,6 +5,7 @@ import { ContentWidth } from "@/components/layout/ContentWidth";
 import { AppShell } from "@/components/shell/AppShell";
 import { adminNavItems, getAdminShell } from "@/lib/admin/admin-shell";
 import { getRequestContext, loginRedirectHref } from "@/lib/ctx";
+import { getUiVariant } from "@/lib/ui-variant";
 import { canAtAnyScope } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "مدیریت" };
@@ -15,6 +16,7 @@ export const metadata: Metadata = { title: "مدیریت" };
  * vice principal) — everyone else gets the not-found page, and every admin action and query re-checks the
  * permission and the scope rule on its own (the layout is not a security boundary). A present-but-dead cookie
  * lands on /login with the requested page as `?next=` (the same rule as the proxy's cookie-less redirect).
+ * In the experimental «hub» layout there is no rail, so the pill row stays on desktop too.
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const ctx = await getRequestContext();
@@ -26,7 +28,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <AppShell ctx={ctx} adminItems={items}>
       <ContentWidth className="gap-4 pt-3 lg:pt-0">
-        <AdminNav items={items} />
+        <AdminNav items={items} everywhere={(await getUiVariant()) === "hub"} />
         {children}
       </ContentWidth>
     </AppShell>

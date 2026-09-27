@@ -11,9 +11,10 @@ import { formatNumberFa } from "@/lib/format";
  * The admin sections on phones and tablets: one horizontally scrollable, snap-scrolled row of 44 px pills — a
  * lucide glyph at 18 px and a 13 px label, the current pill `primary-50` with `primary-700` text and kept in view.
  * Not shown on the /admin landing page (its section list IS the navigation there) and not from `lg:` (the rail
- * nests the same links under «مدیریت»). Active = exact match or a sub-path.
+ * nests the same links under «مدیریت»). Active = exact match or a sub-path. In the experimental «hub» layout there is
+ * no rail, so `everywhere` keeps the row on desktop too (docs/decisions-pending/home-hub.md).
  */
-export function AdminNav({ items }: { items: readonly AdminNavItem[] }) {
+export function AdminNav({ items, everywhere = false }: { items: readonly AdminNavItem[]; everywhere?: boolean }) {
   const pathname = usePathname();
   const scroller = useRef<HTMLUListElement>(null);
   const active = (href: string) => (href === "/admin" ? pathname === "/admin" : pathname === href || pathname.startsWith(`${href}/`) || pathname.startsWith(`${href}?`));
@@ -31,8 +32,8 @@ export function AdminNav({ items }: { items: readonly AdminNavItem[] }) {
 
   if (landing) return null;
   return (
-    <nav aria-label="بخش‌های مدیریت" className="-mx-4 lg:hidden">
-      <ul ref={scroller} className="flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <nav aria-label="بخش‌های مدیریت" className={everywhere ? "-mx-4 lg:mx-0" : "-mx-4 lg:hidden"}>
+      <ul ref={scroller} className={cn("flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", everywhere && "lg:px-0")}>
         {items.map((it) => {
           const current = active(it.href);
           const Glyph = ADMIN_SECTION_ICONS[it.key];

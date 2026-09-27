@@ -10,6 +10,7 @@ import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { InstallPrompt } from "@/components/shell/InstallPrompt";
 import { requireContext } from "@/lib/ctx";
+import { getUiVariant } from "@/lib/ui-variant";
 import { isStudentOnly, workItemVoice, workItemWords } from "@/lib/work-item-words";
 import { canAtAnyScope } from "@/modules/iam/can";
 
@@ -25,6 +26,9 @@ export const metadata: Metadata = { title: "خانه" };
  */
 export default async function HomePage() {
   const ctx = await requireContext(); // the (app) layout already redirected anonymous visitors
+  // The experimental «hub» layout's top bar already carries the bell (docs/decisions-pending/home-hub.md): Home
+  // does not draw a second one, and — being Home — takes no «خانه» back link.
+  const hub = (await getUiVariant()) === "hub";
   return (
     <ContentWidth className="reveal-stagger pt-4 lg:pt-0">
       <PageHeader
@@ -37,9 +41,10 @@ export default async function HomePage() {
         // From `lg:` this header IS the greeting row (the banner is hidden), so «اعلان‌ها» — the one door that
         // left the navigation and stayed a control — rides here; the phone banner carries the other rendering.
         // The کارتابل is neither a control nor a nav cell: it opens from the «تکالیف نزدیک» card below.
-        actions={<NotificationsBell />}
+        actions={hub ? undefined : <NotificationsBell />}
+        back={false}
       />
-      <SchoolBanner firstName={ctx.firstName} />
+      <SchoolBanner firstName={ctx.firstName} bell={!hub} />
       {canAtAnyScope(ctx.assignments, "workspace.work_item.read") ? <TodayStrip noun={workItemWords(workItemVoice(ctx.assignments)).singular} student={isStudentOnly(ctx.assignments)} /> : null}
       {/* Phones and tablets: the tile grid, exactly as decided. From lg: the per-role dashboard (the reads are shared). */}
       <div className="flex flex-col gap-5 lg:hidden">
