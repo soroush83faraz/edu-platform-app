@@ -320,7 +320,7 @@ async function setItemStatus(tx: Tx, ctx: WorkspaceCtx, item: WorkItemCore, to: 
  * Assignees: open → in_progress (own state `accepted`), → done (own state `done`; the item flips to done only
  * when EVERY assignee is done). Creator / broad `update` holders: any status; done marks all assignees done,
  * open («بازیابی») resets them to pending, cancelled is the UI's «حذف» (soft: nothing is deleted, «بازیابی»
- * brings it back). The creator is notified on each assignee completion — except a student's (./notify-policy).
+ * brings it back). An assignee's own completion notifies no one (owner, round 7); the giver reads the n/m on the item.
  */
 export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatusInput): Promise<ChangeStatusResult> {
   const item = await canViewWorkItem(tx, ctx, input.workItemId);
@@ -378,8 +378,7 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
         await setItemStatus(tx, ctx, item, target, note);
         itemChanged = true;
       }
-      // A student's «انجام شد» is silent (./notify-policy): the teacher reads the class's n/m on the item.
-      if (item.createdByPersonId !== ctx.personId) recipients = notifiable(ctx.assignments, [item.createdByPersonId]);
+      // An assignee's «انجام شد» is silent for everyone (owner, round 7): the giver reads the n/m on the item.
     } else {
       throw forbidden(`فقط دهندهٴ ${nouns(ctx).singular} می‌تواند آن را بازیابی یا حذف کند.`);
     }

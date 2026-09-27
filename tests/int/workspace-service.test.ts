@@ -487,6 +487,17 @@ describe("notification policy (round 7)", () => {
     });
   });
 
+  it("a staff assignee's «انجام شد» notifies nobody (owner, round 7) — the giver reads n/m on the item", async () => {
+    await rolledBack(async (tx) => {
+      const admin = ctxOf(f.PERSON_A1, [adminRole]);
+      const res = await createWorkItem(tx, admin, { typeCode: "task", title: "گزارش هفتگی", priority: "normal", recipients: { kind: "persons", ids: [f.PERSON_A2] } });
+      expect(res.notified).toBe(1);
+      await changeStatus(tx, teacher, { workItemId: res.id, toStatusCode: "done" });
+      const toCreator = await tx.select({ type: notification.typeCode }).from(notification).where(eq(notification.recipientPersonId, f.PERSON_A1));
+      expect(toCreator).toEqual([]);
+    });
+  });
+
   it("the creator's own status change still tells the assignees; an admin's task to named people notifies them", async () => {
     await rolledBack(async (tx) => {
       const [s1, s2] = await enrollStudents(tx, 2);
