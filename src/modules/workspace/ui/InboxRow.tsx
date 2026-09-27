@@ -1,5 +1,6 @@
 import { ClipboardList, ListTodo } from "lucide-react";
 import Link from "next/link";
+import { isValidElement } from "react";
 import { cn } from "@/lib/cn";
 import { RelativeTime } from "@/components/RelativeTime";
 import { PriorityDot, RowMark } from "@/components/RowMark";
@@ -67,10 +68,53 @@ export function InboxRow({
  * The lead of a work-item row: the مُهر درس when the item belongs to a درس, else the quiet type glyph. A closed
  * row's mark is faded with its title.
  */
-export function WorkItemMark({ row, label }: { row: Row; label?: string }) {
+export function WorkItemMark({ row, label, className }: { row: Row; label?: string; className?: string }) {
   const closed = row.category === "done" || row.category === "cancelled";
-  if (row.subjectId && row.subjectName) return <SubjectStamp subjectId={row.subjectId} name={row.subjectName} className={cn(closed && "opacity-60")} />;
-  return <RowMark icon={row.typeCode === "todo" ? ListTodo : ClipboardList} label={label} className={cn(closed && "opacity-60")} />;
+  if (row.subjectId && row.subjectName) return <SubjectStamp subjectId={row.subjectId} name={row.subjectName} className={cn(closed && "opacity-60", className)} />;
+  return <RowMark icon={row.typeCode === "todo" ? ListTodo : ClipboardList} label={label} className={cn(closed && "opacity-60", className)} />;
+}
+
+/**
+ * One open کار inside a bucket box of «پنل من» (`InboxBuckets`). A phone column is ~160 px, so the row keeps only
+ * what reads there: a 28 px مُهر درس (36 px from `md:`), the title clamped to two lines with its priority dot, and
+ * ONE meta part — the deadline (red when overdue) or, without one, the درس / sender. From `md:` the box is wide
+ * enough for the full meta line, my progress on what I gave and the unread dot, as in `InboxRow`. The whole row is
+ * the link, ≥ 44 px.
+ */
+export function InboxBoxRow({ row, words = workItemWords("assignment"), createVoice = "assignment" }: { row: Row; words?: WorkItemWords; createVoice?: WorkItemVoice }) {
+  const showProgress = row.createdByMe && row.assigneesTotal > 0 && !(row.assigneesTotal === 1 && row.myAssigneeState);
+  const meta = rowMeta(row);
+  const due = meta.filter((p) => isValidElement(p) && p.key === "due");
+  const short = due.length > 0 ? due : meta.slice(0, 1);
+  return (
+    <li data-row-id={row.id}>
+      <Link
+        prefetch={false}
+        href={`/inbox/${row.id}`}
+        className="pressable flex min-h-11 items-start gap-2 px-2.5 py-2 hover:bg-surface-sunken active:bg-surface-sunken md:min-h-16 md:items-center md:gap-3 md:px-3 md:py-2.5"
+      >
+        <WorkItemMark
+          row={row}
+          label={row.typeCode === "todo" ? personalItemLabel(createVoice, row.typeName) : words.singular}
+          className="mt-0.5 size-7 md:mt-0 md:size-9"
+        />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p className={cn("line-clamp-2 text-row text-text", row.unread ? "font-semibold" : "font-medium")}>
+            <PriorityDot priority={row.priority} className="me-1.5 align-middle" />
+            <bdi data-slot="row-title">{row.title}</bdi>
+          </p>
+          {short.length > 0 ? <MetaLine parts={short} className="md:hidden" /> : null}
+          {meta.length > 0 ? <MetaLine parts={meta} className="hidden md:block" /> : null}
+        </div>
+        {showProgress || row.unread ? (
+          <div className="hidden shrink-0 flex-col items-end gap-1 md:flex">
+            {showProgress ? <Progress done={row.assigneesDone} total={row.assigneesTotal} /> : null}
+            {row.unread ? <span className="size-2.5 rounded-full bg-sky" aria-label="خوانده‌نشده" /> : null}
+          </div>
+        ) : null}
+      </Link>
+    </li>
+  );
 }
 
 /**
