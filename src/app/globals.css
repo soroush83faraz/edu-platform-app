@@ -90,6 +90,46 @@
     --color-subject-7-bg: #F1E5F3;
     --color-subject-7-ink: #603F65;
 
+    /* «جلد درس» — the course-card covers' OWN vivid palette (owner 2026-09-27: the muted stamp hues read «بی‌روح» at
+       cover size). Eight LMS-like sets mapped 1:1 to the stamp index, so a درس keeps its identity: 0 rose, 1 amber-
+       orange, 2 lime, 3 emerald, 4 teal, 5 sky blue, 6 indigo, 7 violet — no pure red (danger) and no saturated
+       yellow (priority). Built in OKLCH at fixed lightness steps — light 0.87, base 0.72 (the cover ground), dark
+       0.57 (hue +6°), ink 0.40 (hue +8°, the glyph: ≥ 8.8:1 on white) — chroma 0.12–0.16 on base/dark, reduced only
+       where sRGB clips. Used ONLY by CourseCover (src/components/illustrations/CourseCover.tsx); stamps and
+       SubjectIcon stay on the muted subject palette above. */
+    --color-cover-0-light: oklch(0.87 0.07 8);
+    --color-cover-0-base: oklch(0.72 0.15 8);
+    --color-cover-0-dark: oklch(0.57 0.142 14);
+    --color-cover-0-ink: oklch(0.4 0.105 16);
+    --color-cover-1-light: oklch(0.87 0.081 55);
+    --color-cover-1-base: oklch(0.72 0.15 55);
+    --color-cover-1-dark: oklch(0.57 0.132 61);
+    --color-cover-1-ink: oklch(0.4 0.091 63);
+    --color-cover-2-light: oklch(0.87 0.088 130);
+    --color-cover-2-base: oklch(0.72 0.16 130);
+    --color-cover-2-dark: oklch(0.57 0.152 136);
+    --color-cover-2-ink: oklch(0.4 0.112 138);
+    --color-cover-3-light: oklch(0.87 0.077 160);
+    --color-cover-3-base: oklch(0.72 0.14 160);
+    --color-cover-3-dark: oklch(0.57 0.117 166);
+    --color-cover-3-ink: oklch(0.4 0.08 168);
+    --color-cover-4-light: oklch(0.87 0.066 192);
+    --color-cover-4-base: oklch(0.72 0.12 192);
+    --color-cover-4-dark: oklch(0.57 0.096 198);
+    --color-cover-4-ink: oklch(0.4 0.068 200);
+    --color-cover-5-light: oklch(0.87 0.07 240);
+    --color-cover-5-base: oklch(0.72 0.13 240);
+    --color-cover-5-dark: oklch(0.57 0.123 246);
+    --color-cover-5-ink: oklch(0.4 0.091 248);
+    --color-cover-6-light: oklch(0.87 0.062 272);
+    --color-cover-6-base: oklch(0.72 0.144 272);
+    --color-cover-6-dark: oklch(0.57 0.142 278);
+    --color-cover-6-ink: oklch(0.4 0.105 280);
+    --color-cover-7-light: oklch(0.87 0.079 305);
+    --color-cover-7-base: oklch(0.72 0.15 305);
+    --color-cover-7-dark: oklch(0.57 0.142 311);
+    --color-cover-7-ink: oklch(0.4 0.105 313);
+
     /* Type scale (Design v2). Six named roles carry the product — `text-display` 28/34 (desktop page titles, the
        school name), `text-title` 24/32 (page titles on phones, dashboard numbers), `text-section` 18/28 (section
        headings), `text-row` 15/24 (list-row titles, table cells), body = `text-sm` 14/24 (the default of `body`),

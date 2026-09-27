@@ -45,13 +45,10 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
   const items = await listInboxQuery({ tab, offeringId });
   const rows = items.ok ? items.data.rows : [];
   const tabCounts = items.ok ? items.data.tabCounts : { todo: 0, done: 0 };
-  const backHref = viewer.isStudent ? "/my-class" : viewer.isTeacher ? "/classes" : "/home";
-  const backLabel = viewer.isStudent ? "کلاس من" : viewer.isTeacher ? "کلاس‌های من" : "خانه";
-
   return (
     <ContentWidth className="reveal-stagger">
       <PageHeader
-        back={{ href: backHref, label: backLabel }}
+        back={{ href: "/home", label: "خانه" }}
         title={
           <span className="flex items-center gap-3">
             <SubjectIcon subjectId={offering.subjectId} name={offering.subjectName} size="lg" />

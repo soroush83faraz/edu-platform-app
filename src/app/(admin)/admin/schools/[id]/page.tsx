@@ -41,7 +41,7 @@ export default async function SchoolHubPage({ params }: { params: Promise<{ id: 
       <PageHeader
         title={<bdi>{d.school.name}</bdi>}
         description={<SchoolHubFacts code={d.school.code} genderLabel={GENDER_LABELS[d.school.genderPolicy ?? ""] ?? null} yearName={d.focusYear?.name ?? null} />}
-        back={{ href: "/admin/schools", label: d.backLabelFa }}
+        back={{ href: d.backHref, label: d.backLabelFa }}
         actions={
           d.can.school ? (
             <ResourceForm resource={schoolResource.key} labelFa="مشخصات" fields={schoolResource.formFields} options={{}} mode="edit" id={d.school.id} initial={{ name: d.school.name, genderPolicy: d.school.genderPolicy, isDefault: d.school.isDefault }} />

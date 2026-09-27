@@ -146,3 +146,79 @@ logout; the bell top-left → «اعلان‌ها»), and every answer that poin
 - **Open for the owner:** (1) a teacher who teaches one درس in five classes sees five identical covers (the cover is
   per درس, by design) — vary the tone layout per class if that reads as monotonous? (2) On the desktop teacher board
   the aside «کلاس‌های من» list now repeats the course cards below it — keep both, or drop the aside list?
+
+## Round 5 (owner, 2026-09-27): livelier covers, distinct teacher covers, the roadmap as icon tiles
+- **Covers get their OWN vivid palette** (owner: «خیلی بی‌روحه»). A cover is data colour at card size, so it no
+  longer borrows the muted stamp hues: eight LMS-like sets in `globals.css` `@theme`,
+  `--color-cover-{0..7}-{light,base,dark,ink}`, mapped 1:1 to the stamp index (a student's درس keeps its identity:
+  cover set = `subjectHue`). Built in OKLCH at fixed lightness steps — light 0.87, base 0.72, dark 0.57 (hue +6°),
+  ink 0.40 (hue +8°) — chroma 0.12–0.16 on base/dark, lowered only where sRGB clips:
+
+  | # | set | light | base | dark | ink |
+  |---|---|---|---|---|---|
+  | 0 | rose | `oklch(0.87 0.07 8)` #FEC2CB | `oklch(0.72 0.15 8)` #F17993 | `oklch(0.57 0.142 14)` #BC4D5D | `oklch(0.4 0.105 16)` #762B34 |
+  | 1 | amber-orange | `oklch(0.87 0.081 55)` #FFC7A2 | `oklch(0.72 0.15 55)` #EB883B | `oklch(0.57 0.132 61)` #AE6100 | `oklch(0.4 0.091 63)` #693B00 |
+  | 2 | lime | `oklch(0.87 0.088 130)` #C1E0A3 | `oklch(0.72 0.16 130)` #83B83F | `oklch(0.57 0.152 136)` #4A8A20 | `oklch(0.4 0.112 138)` #25550E |
+  | 3 | emerald | `oklch(0.87 0.077 160)` #A8E4C3 | `oklch(0.72 0.14 160)` #3FBF86 | `oklch(0.57 0.117 166)` #068D67 | `oklch(0.4 0.08 168)` #02553F |
+  | 4 | teal | `oklch(0.87 0.066 192)` #A1E3DF | `oklch(0.72 0.12 192)` #1ABCB8 | `oklch(0.57 0.096 198)` #06888C | `oklch(0.4 0.068 200)` #005256 |
+  | 5 | sky blue | `oklch(0.87 0.07 240)` #ABDBFE | `oklch(0.72 0.13 240)` #4BAEED | `oklch(0.57 0.123 246)` #2C7DBB | `oklch(0.4 0.091 248)` #174A76 |
+  | 6 | indigo | `oklch(0.87 0.062 272)` #C5D3FE | `oklch(0.72 0.144 272)` #859DFE | `oklch(0.57 0.142 278)` #656CC9 | `oklch(0.4 0.105 280)` #3E3F7E |
+  | 7 | violet | `oklch(0.87 0.079 305)` #E0C8FE | `oklch(0.72 0.15 305)` #BB8AEF | `oklch(0.57 0.142 311)` #925CB4 | `oklch(0.4 0.105 313)` #5B346F |
+
+  No pure red (danger) and no saturated yellow (priority) — rose and amber-orange instead. The cover ground is
+  `base`; pattern tones `light`, a 50 % oklab mix of `dark` into `base`, and `dark`; the درس glyph is `ink` (stroke
+  1.75) on a white disc at 85 % with `shadow-1` (ink on white ≥ 8.8:1 for every set). **Stamps, `SubjectIcon` and
+  timetable cells stay on the muted subject palette** — only `CourseCover` reads the cover tokens. `cn` needs no
+  registration (colour names resolve in the default colour groups; `cn.test.ts` covers the new tokens by parsing).
+- **A teacher's covers all differ** (owner, answering Round 4's open question 1): `CourseCover` takes `palette`
+  (colour set 0–7, default the subject's stamp index) and `variantKey` (pattern seed, default the subject id).
+  `homeCourses` gives a teacher's cards the sets IN ORDER starting at the first card's own subject set (a one-class
+  teacher still sees the درس's colour), seeded by the OFFERING id — «ریاضی» in ۱۰/۱, ۱۰/۲, ۱۱/۱, ۱۲/۱, ۱۲/۲ gets five
+  colours and its own pattern each, and neighbours never repeat before all eight are used. The glyph stays the
+  درس's. A student's cards keep the subject's set and pattern (one درس, one stable look); a person with both hats
+  may see a studied درس share a colour with a taught one.
+- **/roadmap as icon tiles** (`src/app/(app)/roadmap/page.tsx`): «فعال» (phase 1, its months at the heading's end,
+  the phase summary) as live-blue tiles, then «به‌زودی» with one block per phase 2–4 (`id="phase-N"` kept for the
+  registry's `/roadmap#phase-N` hrefs; title, months, summary) of grey tiles with the «به‌زودی» pill. The tile face is
+  the Home one, extracted to `src/components/home/ModuleTileFace.tsx` and shared with `UpcomingTiles` (markup
+  unchanged). Each tile is a `<details name="roadmap-module">` (one open at a time, no JS): a tap reveals the month,
+  the one-line description and the school's current term in parentheses under the tile; the header description says
+  «روی هر بخش بزنید…». Same grid as the Home tiles (3 columns on phones → 5 from `md:`, `items-start`). **No tile
+  is a link** — the page explains, Home's tiles are the doors (the old page linked the phase-1 rows even for hats
+  without the permission). Print: the tile grids are `print:hidden` and a plain list per group (label, term, month —
+  description) is `print:flex`, so paper keeps every description. Everything reads `MODULES` / `PHASES` — no second
+  list. The old per-phase stack of `surface-work` cards is gone (two quiet `PageSection`s).
+- Tests: `home-courses.test.ts` (cover tokens only, never `--color-subject-`; `palette` / `variantKey` override;
+  eight OKLCH sets with base/dark chroma ≥ 0.09 in globals.css; five same-subject teacher cards → five distinct sets
+  in order and five sigma glyphs; eleven cards → all eight before a repeat and no equal neighbours; student cards keep
+  subject set and pattern), new `roadmap.test.ts` (one tile per registry module in order; blue under «فعال», grey +
+  pill for every upcoming one; month and description inside each tile; phase anchors, titles, months; no `<a>` /
+  href at all; print lists carry every description).
+
+## «حساب من» — the profile page (/more) redesigned (owner, 2026-09-27: «remove the «بیشتر» title, make it prettier»)
+- **No visible title.** `/more` is «حساب من»: `metadata.title` and a screen-reader-only `PageHeader` title (`hideTitle`;
+  h2 — the shell already owns the page's sr-only h1). The header keeps the hub default back link «خانه» → /home (was
+  an explicit «بازگشت»). The route stays /more; the kept classic nav still labels it «بیشتر». The /help and /privacy
+  back link (`PublicBackLink`) now reads «حساب من». `ContentWidth size="reading"` — a column of rows never runs 1200 px.
+- **Profile card** (`src/components/profile/ProfileCard.tsx`): the Home greeting's language — `bg-hero`,
+  `rounded-hero`, `shadow-1`, white text — with the avatar (`UserRound` on a white/15 disc, as the top-bar profile
+  button draws it), the full name (`text-title` bold), one pill per hat from `roleHatsFor` / `ROLE_LABELS` (highest
+  first; «عضو» with none; a teacher of several offerings reads «دبیر · ۳ درس»), the school (the organization for an
+  organization admin) and the login identifier (phone in Persian digits or the username, `<bdi dir="ltr">`, with an
+  sr-only «شناسهٴ ورود:»). The pills DARKEN the ground (`primary-900/30` + white/20 hairline) so their 12 px white
+  text stays ≥ 5:1; a white/15 pill would fall to ≈ 3.9:1 at the gradient's light end.
+- **`BrandRipple`** (`src/components/brand/BrandRipple.tsx`): the faint «دانینو» mark in still water rings, extracted
+  from `HubGreeting` so both blue cards share one drawing (the greeting renders exactly as before).
+- **Rows in titled groups** (`PageSection surface="work" flush`, `text-section` headings): «حساب کاربری» (تغییر رمز)
+  and «راهنما و اطلاعات» (راهنما · حریم خصوصی · نقشهٴ راه), each ONE white card with hairline dividers. A row
+  (`ProfileRow`) is the whole link: `RowMark` glyph, title (`text-row`), hint under it (`text-meta` muted), end
+  chevron, ≥ 56 px. Rows tint on hover (`surface-sunken`) and settle on press (`pressable`) rather than lifting
+  (`surface-link`): they are rows OF a card, not cards, and a lifting row inside a divided list reads as broken.
+  «خروج» stays apart at the bottom in its own card — the unchanged `LogoutButton` (danger text, LogOut mark, caches
+  cleared before the action). Every destination and rule of the old page is kept; still nothing links into /admin.
+- Tests: `tests/unit/profile-page.test.ts` (no «بیشتر» anywhere in the page text, title «حساب من» sr-only with the
+  default back; the card's gradient, avatar, name, hats — principal + «دبیر · ۳ درس», org admin → organization,
+  «عضو» — Persian-digit phone, username as typed, no faint text; groups in order with the four hrefs; «خروج» last,
+  red, LogOut).
+- **Open for the owner:** (1) «حساب کاربری» holds one row (تغییر رمز) today — fold it into one group with the info rows,
+  or keep the room for future account rows? (2) Avatar is the glyph, not initials (matches the top-bar button).

@@ -81,9 +81,13 @@ markup), so classic renders exactly as before:
 - `tests/unit/hub-home.test.ts` — no card under the tiles in hub, on phones or the desktop board.
 
 ## Open questions / follow-ups
-- **Admin section pages have no «خانه» back link in hub mode**: `/admin/students`, `/staff`, `/classes`, `/roles`,
-  and `/admin/schools` for the organization admin rely on the admin pill row (`AdminNav`, `isAdminSectionFor` in
-  `ResourceListPage`). Whether they should get `back` is shell work.
+- **Correction (2026-09-27): admin section pages DO get a «خانه» back link in hub mode.** `ResourceListPage`
+  computes `back` as `undefined` for `/admin/students`, `/staff`, `/classes`, `/roles`, and `/admin/schools` (for
+  the organization admin) — relying on the admin pill row (`AdminNav`, `isAdminSectionFor`) as their way around in
+  classic. But `PageHeader` treats an `undefined` `back` as "give the hub default": in hub it draws its own «خانه»
+  → `/home` link whenever the caller passes no explicit `back` (see `PageHeader`'s own doc comment and
+  `tests/unit/hub-shell.test.ts`). So in hub every one of those pages already has a «خانه» door, on top of the
+  pill row — no shell work is needed here.
 - `/admin` («نمای کلی») and `/my-class/info` («کلاس من») lost their only Home door in H3; the pages still exist.
 - Classic has the same «حضور و غیاب» ×2 label clash for a teaching principal (pre-existing); `altLabelFa` /
   `altIcon` are only set in `HUB_TILES`, so classic is left exactly as it was (apart from the two glyph changes).

@@ -1,4 +1,4 @@
-// Read model of the «بیشتر» profile card: the caller's own login identifier (a phone or a generated username).
+// Read model of the «حساب من» (/more) profile card: the caller's own login identifier (a phone or a generated username).
 // `Ctx` carries display names only; the identifier is read here, for the session's own account, under the same
 // gate as every other query (any signed-in role holds `notif.notification.read`).
 import { eq } from "drizzle-orm";

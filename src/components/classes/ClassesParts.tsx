@@ -74,11 +74,11 @@ export function OfferingsGrid({ offerings }: { offerings: readonly TeachingOffer
               <SubjectIcon subjectId={o.subjectId} name={o.subjectName} />
               <ChevronLeft className="mt-1 size-4 shrink-0 text-text-faint" aria-hidden />
             </div>
-            <span className="-mt-1 flex min-w-0 flex-col">
-              <span className="truncate text-row font-semibold text-text">
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="line-clamp-2 text-row font-semibold text-text">
                 <bdi>{o.subjectName}</bdi>
               </span>
-              <span className="text-meta text-text-muted">
+              <span className="truncate text-meta text-text-muted">
                 کلاس <bdi>{o.classGroupName}</bdi>
               </span>
             </span>

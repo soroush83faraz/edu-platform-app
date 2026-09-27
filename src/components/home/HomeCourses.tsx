@@ -1,8 +1,9 @@
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
-import { CourseCover } from "@/components/illustrations/CourseCover";
+import { COVER_PALETTES, CourseCover } from "@/components/illustrations/CourseCover";
 import { PageSection } from "@/components/layout/PageSection";
 import type { Ctx } from "@/lib/ctx";
+import { subjectHue } from "@/lib/subject-stamp";
 import type { MyClass } from "@/modules/academic/repo";
 import type { TeachingOffering } from "@/modules/iam/hats";
 import { getMyClass, resolveHomeTiles } from "./home-data";
@@ -16,20 +17,49 @@ export interface HomeCourse {
   kind: "teach" | "study";
   /** The class name (`teach`) or the دبیر's name (`study`; null while none is assigned). */
   metaName: string | null;
+  /** The cover's colour set 0–7 (`CourseCover` `palette`). */
+  palette: number;
+  /** The cover's pattern seed (`CourseCover` `variantKey`): the offering for `teach`, the subject for `study`. */
+  variantKey: string;
 }
 
 /**
  * The person's course cards, in order: the offerings they teach (from the hats read — no extra query), then the
  * درس‌ها of the class they study in (the «درس‌ها و دبیران» read, `getMyClass`). One card per offering; a person
  * with neither hat (an admin who does not teach) gets none.
+ *
+ * Covers (owner 2026-09-27): a teacher's cards must all look different, even one درس in five classes — so the
+ * teaching cards take the colour sets IN ORDER, starting at the first card's own subject set (a one-class teacher
+ * still sees the درس's colour), and seed the pattern from the offering; neighbours never repeat a colour before all
+ * eight are used. A student's cards keep the subject's own set and pattern — one درس, one stable look.
  */
 export function homeCourses({ teachingOfferings, myClass }: { teachingOfferings: readonly TeachingOffering[]; myClass: MyClass | null }): HomeCourse[] {
   const out = new Map<string, HomeCourse>();
+  const start = teachingOfferings.length > 0 ? subjectHue(teachingOfferings[0].subjectId) : 0;
   for (const o of teachingOfferings) {
-    out.set(o.offeringId, { offeringId: o.offeringId, subjectId: o.subjectId, subjectName: o.subjectName, kind: "teach", metaName: o.classGroupName });
+    if (out.has(o.offeringId)) continue;
+    out.set(o.offeringId, {
+      offeringId: o.offeringId,
+      subjectId: o.subjectId,
+      subjectName: o.subjectName,
+      kind: "teach",
+      metaName: o.classGroupName,
+      palette: (start + out.size) % COVER_PALETTES,
+      variantKey: o.offeringId,
+    });
   }
   for (const t of myClass?.teachers ?? []) {
-    if (!out.has(t.offeringId)) out.set(t.offeringId, { offeringId: t.offeringId, subjectId: t.subjectId, subjectName: t.subjectName, kind: "study", metaName: t.teacherName });
+    if (!out.has(t.offeringId)) {
+      out.set(t.offeringId, {
+        offeringId: t.offeringId,
+        subjectId: t.subjectId,
+        subjectName: t.subjectName,
+        kind: "study",
+        metaName: t.teacherName,
+        palette: subjectHue(t.subjectId),
+        variantKey: t.subjectId,
+      });
+    }
   }
   return [...out.values()];
 }
@@ -37,7 +67,7 @@ export function homeCourses({ teachingOfferings, myClass }: { teachingOfferings:
 /**
  * «درس‌های من» — the hub Home's course cards (owner, 2026-09-27, after the university LMS dashboard): under the
  * tiles, one card per درس, each a whole-surface link into its subject page. The card is the LMS shape: a patterned
- * cover in the درس's own hue with its glyph (`CourseCover`), then the name and one meta line. 2 columns on phones,
+ * cover in a vivid colour set with the درس's glyph (`CourseCover`; set and pattern per `homeCourses`), then the name and one meta line. 2 columns on phones,
  * 3 from `md:`, 4 from `lg:`. Reads are the cached Home reads (`home-data.ts`): the student's class only for a
  * student.
  */
@@ -61,7 +91,7 @@ export function CourseCards({ courses }: { courses: readonly HomeCourse[] }) {
               href={`/subjects/${c.offeringId}`}
               className="surface-work surface-link pressable flex w-full flex-col overflow-hidden rounded-card"
             >
-              <CourseCover subjectId={c.subjectId} name={c.subjectName} className="h-30 md:aspect-video md:h-auto" />
+              <CourseCover subjectId={c.subjectId} name={c.subjectName} palette={c.palette} variantKey={c.variantKey} className="h-30 md:aspect-video md:h-auto" />
               <span className="flex flex-1 items-end gap-1 px-3 pt-2.5 pb-3">
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="line-clamp-2 text-row font-semibold text-text">
