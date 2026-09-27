@@ -1,0 +1,19 @@
+# Keeps the Render free instance (https://donino.onrender.com) awake: Render sleeps a free web service after 15
+# minutes without traffic, and a cold start takes ~50 s. GitHub runs scheduled workflows on a best-effort basis
+# (a run can be a few minutes late), so the interval is 10 minutes to stay inside the 15-minute window.
+name: keep-alive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping the health endpoint
+        run: curl -fsS --max-time 90 --retry 2 --retry-delay 10 -o /dev/null -w "%{http_code}\n" https://donino.onrender.com/api/health || true
