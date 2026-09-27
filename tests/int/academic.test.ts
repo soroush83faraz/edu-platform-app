@@ -215,7 +215,7 @@ describe("getMyClass («کلاس من» read model)", () => {
         await enrollStudent(tx, svcA, { studentProfileId: f.STUDENT_A1, classGroupId: f.CLASS_GROUP_A1 });
         // No teacher yet: the offering row is there with a null teacher.
         const alone = await getMyClass(tx, f.PERSON_A1);
-        expect(alone).toEqual({ classGroupName: "اول 1", schoolName: "دبستان", classmates: 0, teachers: [{ offeringId: f.OFFERING_A1, subjectName: "ریاضی", teacherName: null }] });
+        expect(alone).toEqual({ classGroupName: "اول 1", schoolName: "دبستان", classmates: 0, teachers: [{ offeringId: f.OFFERING_A1, subjectId: expect.any(String), subjectName: "ریاضی", teacherName: null }] });
 
         // A classmate (written directly) and the teacher assignment of the class's one offering.
         const classmatePerson = "0199a000-00f3-7000-8000-000000000001";
@@ -226,7 +226,7 @@ describe("getMyClass («کلاس من» read model)", () => {
         await assignTeacher(tx, svcA, { staffProfileId: f.STAFF_A2, classOfferingId: f.OFFERING_A1 });
 
         const mine = await getMyClass(tx, f.PERSON_A1);
-        expect(mine).toEqual({ classGroupName: "اول 1", schoolName: "دبستان", classmates: 1, teachers: [{ offeringId: f.OFFERING_A1, subjectName: "ریاضی", teacherName: "زهرا کریمی" }] });
+        expect(mine).toEqual({ classGroupName: "اول 1", schoolName: "دبستان", classmates: 1, teachers: [{ offeringId: f.OFFERING_A1, subjectId: expect.any(String), subjectName: "ریاضی", teacherName: "زهرا کریمی" }] });
         // The classmate sees one classmate too (me), the same teacher.
         expect((await getMyClass(tx, classmatePerson))?.classmates).toBe(1);
         throw new Rollback();
