@@ -40,20 +40,20 @@ const shellContextQuery = defineQuery({ permission: "iam.account.self" }, async 
       .where(and(inArray(academicYear.schoolId, schools.map((s) => s.id)), eq(academicYear.isCurrent, true)));
     return { schoolName: null, yearName: years.length === 1 ? years[0].name : null, termName: null, schools };
   }
+  // The current year and its نوبت in one statement: the term containing today first, then the earliest.
+  const currentTerm = tx
+    .select({ name: term.name })
+    .from(term)
+    .where(eq(term.academicYearId, academicYear.id))
+    .orderBy(sql`(${term.startsOn} <= current_date and ${term.endsOn} >= current_date) desc`, asc(term.sequence))
+    .limit(1);
   const [year] = await tx
-    .select({ id: academicYear.id, name: academicYear.name })
+    .select({ name: academicYear.name, termName: sql<string | null>`(${currentTerm})` })
     .from(academicYear)
     .where(and(eq(academicYear.schoolId, primary.id), eq(academicYear.isCurrent, true)))
     .limit(1);
   if (!year) return { ...EMPTY, schoolName: primary.name };
-  const [current] = await tx
-    .select({ name: term.name })
-    .from(term)
-    .where(eq(term.academicYearId, year.id))
-    // The term containing today first, then the earliest — one row either way.
-    .orderBy(sql`(${term.startsOn} <= current_date and ${term.endsOn} >= current_date) desc`, asc(term.sequence))
-    .limit(1);
-  return { schoolName: primary.name, yearName: year.name, termName: current?.name ?? null, schools: [] };
+  return { schoolName: primary.name, yearName: year.name, termName: year.termName ?? null, schools: [] };
 });
 
 /** Cached per request: the header bar and the Home header share one read. Never throws — an error is an empty context. */

@@ -10,6 +10,7 @@ import { RowMark } from "@/components/RowMark";
 import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
+import { SchoolHubFacts } from "@/components/admin/SchoolHubFacts";
 import { GENDER_LABELS, schoolResource } from "@/lib/admin/resources";
 import { schoolHubQuery, type SchoolHubData } from "@/lib/admin/school-queries";
 import { formatNumberFa, isoDateToJalali } from "@/lib/format";
@@ -34,28 +35,12 @@ export default async function SchoolHubPage({ params }: { params: Promise<{ id: 
     notFound();
   }
   const d = result.data;
-  const facts = [
-    <bdi key="code" dir="ltr">
-      {d.school.code}
-    </bdi>,
-    GENDER_LABELS[d.school.genderPolicy ?? ""] ?? null,
-    d.focusYear?.name ?? null,
-  ].filter(Boolean);
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title={<bdi>{d.school.name}</bdi>}
-        description={
-          <span className="flex flex-wrap items-center gap-x-1.5">
-            {facts.map((f, i) => (
-              <span key={i}>
-                {i > 0 ? <span aria-hidden className="text-text-faint"> · </span> : null}
-                {f}
-              </span>
-            ))}
-          </span>
-        }
+        description={<SchoolHubFacts code={d.school.code} genderLabel={GENDER_LABELS[d.school.genderPolicy ?? ""] ?? null} yearName={d.focusYear?.name ?? null} />}
         back={{ href: "/admin/schools", label: d.backLabelFa }}
         actions={
           d.can.school ? (
@@ -114,7 +99,7 @@ function Classes({ d }: { d: SchoolHubData }) {
         <List>
           {d.classes.map((c) => (
             <li key={c.id}>
-              <Link href={`/admin/classes/${c.id}`} className="surface-link pressable flex min-h-12 items-center gap-3 px-4 py-2">
+              <Link prefetch={false} href={`/admin/classes/${c.id}`} className="surface-link pressable flex min-h-12 items-center gap-3 px-4 py-2">
                 <RowMark icon={GraduationCap} />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-row font-medium text-text">

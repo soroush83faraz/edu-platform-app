@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { RoleMark } from "@/components/brand/RoleMark";
 import type { RoleKey } from "@/components/brand/roles";
 import { formatNumberFa } from "@/lib/format";
+import { framePrefetch } from "@/lib/frame-prefetch";
 import { ADMIN_SECTION_ICONS, type AdminNavItem } from "@/lib/admin/nav";
 import type { NavRole } from "@/modules/iam/can";
 
@@ -74,7 +75,7 @@ export function AppNav({ schoolName, role, hats = [], adminItems }: { schoolName
             <span className="block h-full w-full rounded-lg bg-primary-50" />
           </li>
           {items.map((item) => (
-            <NavLink key={item.href} item={item} current={isCurrent(item.href)} layout="bottom" />
+            <NavLink key={item.href} item={item} current={isCurrent(item.href)} layout="bottom" prefetch={framePrefetch(pathname, item.href)} />
           ))}
         </ul>
       </nav>
@@ -94,6 +95,7 @@ export function AppNav({ schoolName, role, hats = [], adminItems }: { schoolName
                 // With the sections open, «مدیریت» itself is current only on the landing page.
                 current={nested && item.href === "/admin" ? pathname === "/admin" : isCurrent(item.href)}
                 layout="side"
+                prefetch={framePrefetch(pathname, item.href)}
               >
                 {nested && item.href === "/admin" ? (
                   <ul className="mt-1 mb-1 ms-4 flex flex-col gap-0.5 border-s border-line ps-2">
@@ -128,7 +130,8 @@ export function AppNav({ schoolName, role, hats = [], adminItems }: { schoolName
   );
 }
 
-function NavLink({ item, current, layout, children }: { item: Item; current: boolean; layout: "bottom" | "side"; children?: React.ReactNode }) {
+/** `prefetch`: the nav's cells are prefetched down to their `loading.tsx` inside the current frame only (`framePrefetch`). */
+function NavLink({ item, current, layout, prefetch, children }: { item: Item; current: boolean; layout: "bottom" | "side"; prefetch: false | undefined; children?: React.ReactNode }) {
   const Icon = item.icon;
   // The primary glyph is the only one that changes size; every glyph keeps the same 28 px box so every
   // label sits on one line.
@@ -148,6 +151,7 @@ function NavLink({ item, current, layout, children }: { item: Item; current: boo
       <li>
         <Link
           href={item.href}
+          prefetch={prefetch}
           aria-current={current ? "page" : undefined}
           className={cn("group pressable relative flex min-h-14 flex-col px-1 py-1 text-meta", current ? "font-semibold text-primary-700" : "text-text-muted hover:text-text")}
         >
@@ -171,6 +175,7 @@ function NavLink({ item, current, layout, children }: { item: Item; current: boo
     <li>
       <Link
         href={item.href}
+        prefetch={prefetch}
         aria-current={current ? "page" : undefined}
         className={cn(
           "pressable flex min-h-11 items-center gap-2 rounded-lg px-2 text-row",

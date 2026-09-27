@@ -27,6 +27,7 @@ import {
   updateSchool,
   updateSubject,
 } from "@/modules/tenancy/service";
+import { seesSchoolCode } from "./school-code";
 import { defineResource, type AnyResourceDef, type FormField, type ListOptions, type SelectOption } from "./defineResource";
 import { adminSectionsFor, type AdminNavItem } from "./nav";
 
@@ -96,7 +97,8 @@ function paginate(opts: ListOptions): { limit: number; offset: number } {
 interface SchoolRow {
   id: string;
   name: string;
-  code: string;
+  /** Only in an organization admin's rows (`seesSchoolCode`): a principal's list never carries it. */
+  code?: string;
   genderPolicy: string | null;
   isDefault: boolean;
 }
@@ -120,12 +122,13 @@ export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolIn
   key: "schools",
   labelFa: "مدرسه",
   labelFaPlural: "مدرسه‌ها",
-  descriptionFa: "کد مدرسه پیشوند نام‌کاربری دانش‌آموزان بدون موبایل است. روی هر مدرسه بزنید تا وارد صفحهٴ مدیریت همان مدرسه شوید.",
+  descriptionFa: "روی هر مدرسه بزنید تا وارد صفحهٴ مدیریت همان مدرسه شوید.",
+  orgDescriptionFa: "کد مدرسه پیشوند نام‌کاربری دانش‌آموزان بدون موبایل است. روی هر مدرسه بزنید تا وارد صفحهٴ مدیریت همان مدرسه شوید.",
   permission: { read: "tenancy.structure.read", write: "tenancy.structure.write" },
   createNeedsOrgScope: true,
   columns: [
     { key: "name", labelFa: "نام" },
-    { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, mobileMeta: 1 },
+    { key: "code", labelFa: "کد", render: (r) => <bdi dir="ltr">{r.code}</bdi>, mobileMeta: 1, orgOnly: true },
     { key: "genderPolicy", labelFa: "جنسیت", render: (r) => GENDER_LABELS[r.genderPolicy ?? ""] ?? "—", secondary: true, mobileMeta: 2 },
     { key: "isDefault", labelFa: "پیش‌فرض", render: (r) => (r.isDefault ? "✓" : ""), secondary: true, mobileMeta: 1 },
   ],
@@ -142,8 +145,9 @@ export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolIn
   links: [{ href: "/admin/subjects", labelFa: "درس‌ها", orgOnly: true }],
   async list(tx, _ctx, scope, opts) {
     const where = and(scopeSchoolIds(scope), faLike(school.name, opts.q));
-    const rows = await tx
-      .select({ id: school.id, name: school.name, code: school.code, genderPolicy: school.genderPolicy, isDefault: school.isDefault })
+    // The code is selected for the organization admin only — a principal's rows never carry it (owner, 2026-09-27).
+    const rows: SchoolRow[] = await tx
+      .select({ id: school.id, name: school.name, genderPolicy: school.genderPolicy, isDefault: school.isDefault, ...(seesSchoolCode(scope) ? { code: school.code } : {}) })
       .from(school)
       .where(where)
       .orderBy(desc(school.isDefault), asc(school.name))
@@ -160,6 +164,7 @@ export const schoolResource = defineResource<SchoolRow, z.output<typeof SchoolIn
     await ensureCatalogYears(tx, ctx, res.schoolId);
     return { id: res.schoolId };
   },
+  /** Explicit fields: `code` is never changed here — by anyone, and never by a crafted request from a principal. */
   async update(tx, ctx, scope, id, input) {
     assertSchoolInScope(scope, id);
     await updateSchool(tx, ctx, id, { name: input.name, genderPolicy: input.genderPolicy, isDefault: input.isDefault });

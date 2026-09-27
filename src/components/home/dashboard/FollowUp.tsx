@@ -41,7 +41,7 @@ export async function FollowUp() {
             const pct = Math.round(row.ratio * 100);
             return (
               <li key={row.id}>
-                <Link href={`/inbox/${row.id}`} className="pressable flex min-h-14 items-center gap-3 px-4 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
+                <Link prefetch={false} href={`/inbox/${row.id}`} className="pressable flex min-h-14 items-center gap-3 px-4 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
                   <WorkItemMark row={row} />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-row font-semibold text-text">

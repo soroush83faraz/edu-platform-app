@@ -104,7 +104,7 @@ function SchoolBreakdown({ schools, counts }: { schools: readonly SchoolCounts[]
       <ul className="divide-y divide-line/70">
         {schools.map((s) => (
           <li key={s.id}>
-            <Link href={`/admin/schools/${s.id}`} className="pressable flex min-h-14 items-center gap-3 px-4 py-2 hover:bg-surface-sunken">
+            <Link prefetch={false} href={`/admin/schools/${s.id}`} className="pressable flex min-h-14 items-center gap-3 px-4 py-2 hover:bg-surface-sunken">
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-row font-medium text-text">
                   <bdi>{s.name}</bdi>

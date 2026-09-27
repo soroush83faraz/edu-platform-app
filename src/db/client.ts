@@ -25,8 +25,19 @@ import * as schema from "./schema";
 
 const globalForDb = globalThis as unknown as { __eduPgPool?: Pool };
 
+// Warm connections. pg's default closes a client after 10 s idle, so a user who reads a page for longer than that
+// pays a fresh connect on the next click — on a hosted database (TLS + SCRAM through a pooler, on a fraction of a
+// CPU) that is the slowest part of the request, once per parallel transaction. Idle clients now live 5 minutes;
+// TCP keep-alive lets a dead peer surface as the pool's `error` below instead of a failed query; `allowExitOnIdle`
+// keeps short-lived processes (scripts, tests) from being held open by the idle clients.
 function createPool(): Pool {
-  const p = new Pool({ connectionString: env.DATABASE_URL, max: env.DB_POOL_MAX });
+  const p = new Pool({
+    connectionString: env.DATABASE_URL,
+    max: env.DB_POOL_MAX,
+    idleTimeoutMillis: 5 * 60_000,
+    keepAlive: true,
+    allowExitOnIdle: true,
+  });
   // An idle client dropped by the server (restart, failover) must never become an uncaught exception.
   p.on("error", (err) => logger.error({ err }, "pg pool: idle client error"));
   return p;

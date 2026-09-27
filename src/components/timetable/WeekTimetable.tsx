@@ -86,6 +86,7 @@ export function WeekTimetable({ days, periods, today: serverToday, nowMinutes: s
                             {cellSessions.map((s) => (
                               <li key={s.offeringId}>
                                 <Link
+                                  prefetch={false}
                                   href={`/subjects/${s.offeringId}`}
                                   aria-current={now ? "true" : undefined}
                                   className={cn(

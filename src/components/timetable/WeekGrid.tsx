@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { Chip } from "@/components/Chip";
-import { SubjectStamp, subjectHueClasses } from "@/components/SubjectStamp";
+import { SubjectIcon, subjectHueClasses } from "@/components/SubjectStamp";
 import { CrossFade } from "@/components/motion/CrossFade";
 import { emptyDayCopy, type TimetablePerspective } from "@/lib/empty-copy";
 import { formatNumberFa } from "@/lib/format";
@@ -41,7 +41,7 @@ export interface WeekGridProps {
  * (`cellSubjectLabel`, owner 2026-09-27: not the stamp's letters; a دبیر's cell adds the class under it); a زنگ
  * تفریح is a wider gap between two rows. The ringing cell wears the brand ring and the live progress bar; today's
  * finished cells dim. Tapping a cell selects it (ink ring) and the card under the grid reads it in full — the
- * درس, the دبیر or the class, the day, the زنگ, the time — and opens the درس page.
+ * درس (beside its `SubjectIcon`), the دبیر or the class, the day, the زنگ, the time — and opens the درس page.
  *
  * Width at 360 px (measured in Vazirmatn): 328 px content − 2 × 4 px padding = 320 px; a 16 px start column and
  * 7 gaps × 3 px leave 283 px for 7 equal columns → 40.4 px each (42.8 at 375). The names are `text-cell` (11 px,
@@ -177,8 +177,8 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
               <ul>
                 {pickedSessions.map((s) => (
                   <li key={s.offeringId}>
-                    <Link href={`/subjects/${s.offeringId}`} className="pressable flex min-h-16 items-center gap-3 rounded-xl px-2 py-2 hover:bg-surface-sunken">
-                      <SubjectStamp subjectId={s.subjectId} name={s.subjectName} />
+                    <Link prefetch={false} href={`/subjects/${s.offeringId}`} className="pressable flex min-h-16 items-center gap-3 rounded-xl px-2 py-2 hover:bg-surface-sunken">
+                      <SubjectIcon subjectId={s.subjectId} name={s.subjectName} />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-row font-semibold text-text">
                           <bdi>{s.subjectName}</bdi>

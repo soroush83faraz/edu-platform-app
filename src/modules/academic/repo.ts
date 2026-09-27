@@ -5,6 +5,8 @@ import { normalizeTime } from "@/lib/timetable";
 
 export interface MyClassTeacher {
   offeringId: string;
+  /** The subject of the offering — the key of its hue (`SubjectIcon`). */
+  subjectId: string;
   subjectName: string;
   teacherName: string | null;
 }
@@ -29,6 +31,7 @@ export async function getMyClass(tx: Tx, personId: string): Promise<MyClass | nu
     school_name: string;
     classmates: number;
     offering_id: string | null;
+    subject_id: string | null;
     subject_name: string | null;
     teacher_name: string | null;
   }>(sql`
@@ -53,6 +56,7 @@ export async function getMyClass(tx: Tx, personId: string): Promise<MyClass | nu
         where ce2.class_group_id = m.class_group_id and ce2.status = 'active' and sp2.person_id <> ${personId}::uuid
       ) as classmates,
       o.id as offering_id,
+      o.subject_id,
       subj.name as subject_name,
       (
         select p.first_name || ' ' || p.last_name
@@ -74,7 +78,7 @@ export async function getMyClass(tx: Tx, personId: string): Promise<MyClass | nu
     classGroupName: first.class_group_name,
     schoolName: first.school_name,
     classmates: Number(first.classmates),
-    teachers: res.rows.flatMap((r) => (r.offering_id ? [{ offeringId: r.offering_id, subjectName: r.subject_name ?? "", teacherName: r.teacher_name }] : [])),
+    teachers: res.rows.flatMap((r) => (r.offering_id ? [{ offeringId: r.offering_id, subjectId: r.subject_id ?? "", subjectName: r.subject_name ?? "", teacherName: r.teacher_name }] : [])),
   };
 }
 

@@ -64,7 +64,7 @@ export function ResourceTable({ def, rows, options, canWrite, fixed }: { def: An
           return (
             <li key={row.id} className="flex items-center gap-1 pe-1">
               {href ? (
-                <Link href={href} className="pressable flex min-h-16 min-w-0 flex-1 items-center gap-3 px-4 py-2 hover:bg-surface-sunken">
+                <Link prefetch={false} href={href} className="pressable flex min-h-16 min-w-0 flex-1 items-center gap-3 px-4 py-2 hover:bg-surface-sunken">
                   {body}
                 </Link>
               ) : (
@@ -102,7 +102,7 @@ export function ResourceTable({ def, rows, options, canWrite, fixed }: { def: An
                     return (
                       <td key={c.key} className={cn("px-3 py-2 align-middle text-text", i === 0 && "text-row", c.secondary && "hidden lg:table-cell", c.className)}>
                         {i === 0 && href ? (
-                          <Link href={href} className="flex min-h-11 items-center font-medium text-primary-700 hover:underline">
+                          <Link prefetch={false} href={href} className="flex min-h-11 items-center font-medium text-primary-700 hover:underline">
                             <bdi>{content}</bdi>
                           </Link>
                         ) : (
@@ -156,7 +156,8 @@ function formatCell(v: unknown): React.ReactNode {
 function initialOf(def: AnyResourceDef, row: Row): Record<string, FormValue> {
   if (def.formValues) return def.formValues(row);
   const out: Record<string, FormValue> = {};
-  for (const f of def.formFields) {
+  // The edit form never shows a `createOnly` field (natural keys such as the school code): its value is not sent to the client.
+  for (const f of def.formFields.filter((x) => !x.createOnly)) {
     const v = row[f.name];
     out[f.name] = v === undefined ? null : (v as FormValue);
   }

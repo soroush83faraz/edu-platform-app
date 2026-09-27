@@ -111,6 +111,7 @@ export default async function TakeAttendancePage({
               return (
                 <li key={p.periodNo}>
                   <Link
+                    prefetch={false}
                     href={hrefFor(classGroupId, date, p.periodNo)}
                     aria-current={current ? "page" : undefined}
                     className={cn(

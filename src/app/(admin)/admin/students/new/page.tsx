@@ -4,6 +4,7 @@ import { AdminHeader } from "@/components/admin/AdminPage";
 import { StudentForm } from "@/components/admin/StudentForm";
 import { requireContext } from "@/lib/ctx";
 import { peopleFormOptionsQuery } from "@/lib/admin/people-queries";
+import { seesSchoolCode } from "@/lib/admin/school-code";
 import { canAtAnyScope } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "دانش‌آموز جدید | مدیریت" };
@@ -18,7 +19,7 @@ export default async function NewStudentPage() {
   }
   return (
     <div className="flex flex-col gap-4">
-      <AdminHeader title="دانش‌آموز جدید" back={{ href: "/admin/students", label: "دانش‌آموزان" }} description="نام، شمارهٴ دانش‌آموزی و (اختیاری) موبایل؛ اگر موبایل ندارد، نام‌کاربری از کد مدرسه ساخته می‌شود." />
+      <AdminHeader title="دانش‌آموز جدید" back={{ href: "/admin/students", label: "دانش‌آموزان" }} description={`نام، شمارهٴ دانش‌آموزی و (اختیاری) موبایل؛ اگر موبایل ندارد، نام‌کاربری ${seesSchoolCode(opts.data.scope) ? "از کد مدرسه" : "خودکار"} ساخته می‌شود.`} />
       <div className="surface-work p-4">
         <StudentForm classes={opts.data.classes} schools={opts.data.schools} />
       </div>

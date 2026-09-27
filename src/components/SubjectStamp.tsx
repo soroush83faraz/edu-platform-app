@@ -1,4 +1,6 @@
+import { createElement } from "react";
 import { cn } from "@/lib/cn";
+import { subjectIcon } from "@/lib/subject-icon";
 import { stampText, subjectHue } from "@/lib/subject-stamp";
 
 // Full class strings per hue so Tailwind sees every one (no interpolated class names). The ring is the ink at 9 %
@@ -25,9 +27,9 @@ export function subjectHueClasses(subjectId: string): string {
 /**
  * «مُهر درس» — the subject stamp: the first letters of the درس name (src/lib/subject-stamp `stampText`) in bold ink
  * on one of eight muted subject hues, picked from the subject id so a درس has the same colour everywhere. It
- * replaces the row glyph on rows that belong to a subject (homework rows, the subject page header); rows without a
- * subject keep `RowMark`. 36 px / radius 10 (`rounded-stamp`) and 13 px letters (`text-meta`) in lists, `lg` 48 px / radius 13
- * (`rounded-stamp-lg`) and 16 px letters (`text-stamp`) for the subject page header — tokens in globals.css `@theme`.
+ * replaces the row glyph on rows that belong to a subject but are titled by something else (homework rows); a row or
+ * header whose title IS the درس name uses `SubjectIcon` below; rows without a subject keep `RowMark`. 36 px / radius 10 (`rounded-stamp`) and 13 px letters (`text-meta`) in lists, `lg` 48 px / radius 13
+ * (`rounded-stamp-lg`) and 16 px letters (`text-stamp`) for a header — tokens in globals.css `@theme`.
  * Decorative (`aria-hidden`): the subject name is always in the text beside it.
  */
 export function SubjectStamp({ subjectId, name, size = "md", className }: { subjectId: string; name: string; size?: "md" | "lg"; className?: string }) {
@@ -42,6 +44,26 @@ export function SubjectStamp({ subjectId, name, size = "md", className }: { subj
       aria-hidden
     >
       {stampText(name)}
+    </span>
+  );
+}
+
+/**
+ * «نشان درس» — the درس's own glyph (src/lib/subject-icon `subjectIcon`: an atom for فیزیک, a flask for شیمی, an open
+ * book for ادبیات…) in the subject's ink on its hue, in the stamp's shape: 36 px / `rounded-stamp` with a 20 px glyph
+ * in lists, `lg` 48 px / `rounded-stamp-lg` with a 24 px glyph for the subject page header. For subject LISTS and
+ * headers, where the full درس name is printed beside it (the stamp's letters would only repeat it), so a list of
+ * درس‌ها no longer repeats one grey mark. Decorative (`aria-hidden`).
+ */
+export function SubjectIcon({ subjectId, name, size = "md", className }: { subjectId: string; name: string; size?: "md" | "lg"; className?: string }) {
+  return (
+    <span
+      className={cn("inline-grid shrink-0 place-items-center ring-1 ring-inset", size === "lg" ? "size-12 rounded-stamp-lg" : "size-9 rounded-stamp", HUE_CLASSES[subjectHue(subjectId)], className)}
+      aria-hidden
+    >
+      {/* A lookup of a module-level lucide component, not a component made in render (createElement keeps the
+          static-components lint quiet about the variable tag). */}
+      {createElement(subjectIcon(name), { className: size === "lg" ? "size-6" : "size-5", strokeWidth: 1.75, "aria-hidden": true })}
     </span>
   );
 }

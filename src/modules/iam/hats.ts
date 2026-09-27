@@ -9,6 +9,8 @@ import { getAdminScope, type AdminScope } from "./service";
 
 export interface TeachingOffering {
   offeringId: string;
+  /** The subject of the offering — the key of its hue (`SubjectIcon`). */
+  subjectId: string;
   subjectName: string;
   classGroupName: string;
   activeStudents: number;
@@ -51,9 +53,10 @@ async function isStudent(tx: Tx, personId: string): Promise<boolean> {
 }
 
 async function teachingOfferingsOf(tx: Tx, personId: string): Promise<TeachingOffering[]> {
-  const res = await tx.execute<{ offering_id: string; subject_name: string; class_group_name: string; active_students: number; open_items: number }>(sql`
+  const res = await tx.execute<{ offering_id: string; subject_id: string; subject_name: string; class_group_name: string; active_students: number; open_items: number }>(sql`
     select
       o.id as offering_id,
+      subj.id as subject_id,
       subj.name as subject_name,
       cg.name as class_group_name,
       (select count(*)::int from academic.class_enrollment ce where ce.class_group_id = cg.id and ce.status = 'active') as active_students,
@@ -85,6 +88,7 @@ async function teachingOfferingsOf(tx: Tx, personId: string): Promise<TeachingOf
   `);
   return res.rows.map((r) => ({
     offeringId: r.offering_id,
+    subjectId: r.subject_id,
     subjectName: r.subject_name,
     classGroupName: r.class_group_name,
     activeStudents: Number(r.active_students),

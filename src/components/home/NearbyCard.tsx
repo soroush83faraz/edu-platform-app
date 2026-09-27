@@ -3,8 +3,8 @@ import Link from "next/link";
 import { Card } from "@/components/Card";
 import type { EmptyCopy } from "@/lib/empty-copy";
 import type { WorkItemWords } from "@/lib/work-item-words";
-import { homeOpenItemsQuery } from "@/modules/workspace/queries";
 import { CompactItemRow } from "./CompactItemRow";
+import { getNearbyItems } from "./home-data";
 
 /**
  * «تکالیف نزدیک»: the next five open items of my کارتابل (assigned to me or given by me), by due date. Empty, it is
@@ -14,8 +14,7 @@ import { CompactItemRow } from "./CompactItemRow";
  * phones (`HomeGrid`) and on the desktop dashboard (`HomeDashboard`) alike.
  */
 export async function NearbyCard({ words, empty }: { words: WorkItemWords; empty: EmptyCopy }) {
-  const items = await homeOpenItemsQuery({ limit: 5 });
-  const rows = items.ok ? items.data : [];
+  const rows = await getNearbyItems();
   return (
     <section aria-labelledby="nearby-heading" className="flex flex-col gap-2.5">
       <div className="flex items-baseline justify-between gap-3 px-1">

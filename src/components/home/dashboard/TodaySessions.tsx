@@ -56,6 +56,7 @@ export function TodaySessions({
             return (
               <li key={`${s.offeringId}-${s.periodNo}`}>
                 <Link
+                  prefetch={false}
                   href={`/subjects/${s.offeringId}`}
                   aria-current={current ? "true" : undefined}
                   className={cn(
