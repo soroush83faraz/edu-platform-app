@@ -53,14 +53,6 @@ export function LoginForm({ next }: LoginFormProps) {
 
       <PasswordInput name="password" label="رمز" autoComplete="current-password" error={passwordError} />
 
-      <label className="flex min-h-11 items-center gap-2.5 text-sm text-text">
-        <input type="checkbox" name="publicDevice" className="size-5 rounded accent-primary" />
-        <span>
-          این دستگاه عمومی است
-          <span className="block text-meta text-text-muted">ورود پس از ۸ ساعت خودبه‌خود پایان می‌گیرد.</span>
-        </span>
-      </label>
-
       <p role="alert" aria-live="polite" className="min-h-5 text-sm text-danger">
         {formError}
       </p>
