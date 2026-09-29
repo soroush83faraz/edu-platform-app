@@ -1544,3 +1544,9 @@ permission codes, DB values and type codes were never renamed).
   `global-error.tsx` — it would need its own `<html dir>`).
 - Fixed in passing: the new `--color-cover-*` cover tokens (above) were rendering black/grey because Tailwind
   pruned them — only referenced through runtime-built `var()` strings — moved into an `@theme static` block.
+
+## 2026-09-29 — owner: keep the current defaults
+- The organisation admin's bell stays empty under the current notification policy (no one assigns them work; completions are silent) — no special case.
+- Legacy «X … را انجام‌شده کرد» notifications on the hosted demo DB are kept (`seed:demo-extras --prune-legacy-status` not run).
+- «درس‌ها و دبیران» / «درس» stays the user-facing name for a class offering («ارائهٴ درس» retired).
+- The profile card avatar stays the `UserRound` glyph (no initials); شیمی keeps `FlaskConical` (not `Pipette`).
