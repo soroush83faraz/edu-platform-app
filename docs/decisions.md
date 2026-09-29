@@ -1371,8 +1371,8 @@ library.
 - Every ripple target becomes a containing block through one base-layer `:where()` rule, so any `absolute`/
   `fixed`/`sticky` utility elsewhere still wins. **Reduced motion:** no ink at all, and the press becomes an
   instant dim (`opacity: .72`) instead of a scale; keyboard activation shows the press state with no pointer event.
-- Test: `tests/unit/tap-ripple.test.ts`. Open for the owner: the ink also plays on desktop mouse clicks — keep, or
-  touch only?
+- Test: `tests/unit/tap-ripple.test.ts`. The ink plays on desktop mouse clicks too — owner confirmed (2026-09-28):
+  keep it for both touch and mouse.
 
 ## 2026-09-27 — desktop dashboard columns and the one `BackLink` pill
 
