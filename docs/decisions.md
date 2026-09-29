@@ -279,6 +279,7 @@ Verbatim QA findings plus three product-owner rules, every fix with a test (`tes
 - **Home is NOT a raised tab.** The first cut lifted a 56 px clay mark 12 px above the bar on a white plate (the classic centre tab); the owner, seeing it live: «it floats pointlessly and breaks the design». So «خانه» sits on the same level, in the same 60 px cell, with the same label size as the rest, and reads as the primary item only by its glyph sitting in the **36 px `sm` clay mark** (persian blue, white house) where the other four are bare 20 px glyphs — a touch larger than its neighbours (the owner's second ask), no notch, no lift, no extra shadow. Geometry: the Home link drops its 4 px vertical padding and the glyph box's 8 px of padding/gap, so 36 + the 20 px label = the others' 4 + 4 + 24 + 2 + 20 + 2 + 4; measured at 390 px: five 78 × 60 cells, mark 36 × 36, label within 2 px of its neighbours'. The rail wraps every glyph in a 36 px box so the labels line up with the Home row's mark.
 - **Active state.** Unchanged in kind — the one `primary-50` full-cell block (inset 4 px) slides between the five columns (`w-1/5`, `inset-inline-start` 0/20/40/60/80 %, 180 ms ease-in-out; reduced motion clamps it), glyph + label `primary-700`; Home included. While the indicator is hidden (off-tab routes such as `/change-password`) it transitions opacity only, so on return it fades in where it belongs instead of sliding across the bar. Badges, the `document.title` mirror and the one summary poller are untouched; `/admin` renders the same shell (its chip sub-nav sits in the content column).
 - **Verified** in the Browser pane at 390 px as the signed-in ALK admin (five cells, «مدیریت» as the role item, Home current with the tinted cell, no overflow, the badge pills in place). Student / teacher / desktop-rail checks were left to the owner: the pane's session was logged out for the account switch and the agent does not type credentials into login forms — the per-role item list is covered by the static-render test instead.
+- *(Superseded by the 2026-09-27 «hub» layout, below: no bottom bar and no rail for anyone.)*
 
 ## 2026-09-22 — برنامهٴ کلاسی: bell schedule, weekly timetable, subject pages (migration 0015)
 
@@ -473,6 +474,8 @@ rail under «مدیریت»), and Home carried the school counters that /admin c
   44 px targets at 390 px, the sliding indicator landing on the middle column, whether ±4 px of drift still reads
   right now that a cell is a third of the bar, and the two-glyph cluster on the banner's hero gradient. The 24 px
   «خانه» glyph above is the first thing that came back from that look.
+- *(Superseded by the 2026-09-27 «hub» layout, below: no bottom bar and no rail for anyone; «پنل من» ends up back as
+  a Home tile, not a nav cell or a header control.)*
 
 ## 2026-09-22 — حضور و غیاب: roll call by زنگ, the student's own month, the admin report (migration 0016)
 
@@ -626,6 +629,9 @@ structural destination becomes **its own tile on Home**, where an admin reaches 
   opens that school's bells. «زنگ‌بندی» exists ONLY for a one-school admin — a bell schedule belongs to a school
   and has no organization-wide page; an admin of several reaches it through each school's hub, which is what the
   «مدرسه‌ها» tile opens. This is the one tile whose `href` is a placeholder (`""`), never rendered.
+  *(This whole tile list (`HOME_TILES`) is superseded by the 2026-09-27 «hub» layout, below, for every account —
+  hub reads a different list, `HUB_TILES`, and renames this «زنگ‌بندی» tile «برنامهٴ کلاسی». `HOME_TILES` survives
+  only as the classic, code-only-revert path.)*
 - **«پنل من» is a TILE, not a header control** (owner: «I want to see an icon on Home and tap it»). `InboxDoor`
   is deleted; the کارتابل is the FIRST tile for every member — hat or no hat (`role: "everyone"`) — and carries
   the unread badge through `InboxTileBadge`, which reads the shell's single summary poller, so the badge costs no
@@ -1264,3 +1270,277 @@ targets statement count, background requests and perceived latency, not micro-op
   render plus 17–36 statements. At 0.1 CPU that CPU is ~0.2–0.4 s wall-clock and any concurrent request queues
   behind it; a 0.5–1 CPU instance removes most of it. Free instances also sleep after inactivity (the first request
   after a nap is a cold start of many seconds) — no code change addresses that.
+
+## 2026-09-27 — the «hub» layout: no bottom nav or rail, everyone's shell and Home rebuilt
+
+The owner tried a layout with no bottom nav — everything reachable from Home, the profile at the top start and the
+notifications bell at the top end — first as a per-viewer trial behind a «ظاهر آزمایشی» toggle in «بیشتر» (a
+`donino-ui` cookie), then **adopted it as THE layout for everyone**: `src/lib/ui-variant.ts`'s `getUiVariant()`
+now returns `"hub"` unconditionally, the cookie is never read and the toggle is deleted. *(This supersedes both
+2026-09-22 bottom-nav/rail entries above — «Navigation: five items…» and «Navigation round 4: three items…» — and
+the same-day nav-home.md round below: no bar or rail for anyone, and «پنل من», after being pulled off the nav onto
+Home as a header control, ends up back as a Home TILE.)* The classic code path (`AppShell`/`AppNav`, `PageHeader`'s
+no-default-back, `HOME_TILES`, the classic greeting, «امروز»/«تکالیف نزدیک») is kept on purpose, branching on the
+variant, so the whole change reverts by making `getUiVariant()` return `"classic"` again.
+
+- **Shell.** No `AppNav` anywhere — no bottom bar, no rail. One sticky top bar on every size: the **profile
+  button** (`UserRound` glyph, not an initial) at the START → `/more` (now «حساب من», below), the **bell** at the
+  END; both sit on the content column, not the window edge. No school-name box any more (the name moved into the
+  greeting card). Every inner page's `PageHeader` defaults to a «خانه» → `/home` back link unless the caller passes
+  an explicit `back` (or `back={false}`) — a `hideTitle` header stays visible so the back link shows. `/admin`'s
+  section pill row (`AdminNav`) now shows from `lg:` too, since there is no rail to hold it.
+- **Home.** The greeting is ONE `bg-hero` persian-blue card (`HubGreeting`) — «سلام، <name>», the Jalali weekday +
+  date, the school/organisation as a muted meta line, a faint «دانینو» ripple mark clipped at the end (`BrandRipple`)
+  — replacing the old banner + `PageHeader` row. No «امروز» sentence and no «تکالیف نزدیک» card: «پنل من» is a tile
+  that opens the list. The desktop board still keeps its role panels beside the tiles (teacher: «امروز تدریس دارم»,
+  «کلاس‌های من»; student: «امروز», «این هفته»).
+- **Every former nav destination became a Home tile** (`HUB_TILES`, `src/lib/modules-registry.ts`, gated by the
+  same permission/scope each page already checks): student «پنل من · برنامهٴ هفتگی (`/my-class/timetable`) · درس‌ها
+  و دبیران · حضور و غیاب»; teacher «پنل من · کلاس‌های من (`/classes/offerings`) · برنامهٴ هفتگی
+  (`/classes/timetable`) · حضور و غیاب»; a one-school principal/vice «پنل من · مدرسه · دانش‌آموزان · کارکنان ·
+  کلاس‌ها · نقش‌ها · برنامهٴ کلاسی (`/admin/schools/<id>/periods` — renamed from «زنگ‌بندی» for this tile only;
+  classic keeps «زنگ‌بندی») · حضور و غیاب»; an organisation admin / multi-school admin the same list but plural
+  «مدرسه‌ها» and **no «برنامهٴ کلاسی»** (a bell schedule belongs to one school — reached via «مدرسه‌ها» → the
+  school). A multi-hat person gets the union in order student → teacher → admin, «حضور و غیاب» last, never a
+  label/glyph/href twice (`altLabelFa` / `altIcon` / `exceptRole`). **Removed with no replacement tile:** the
+  student's «کلاس من» info page and the admin «نمای کلی» (`/admin`) — both still exist, reachable by URL only.
+  Pages that used to be full sections were split into shared parts (`MyClassParts`, `ClassesParts`) so the new small
+  hub pages and the old full pages render identically.
+- **«به‌زودی» tiles** (the product-map's coming modules) came back as a muted, non-interactive (`aria-disabled`,
+  no href/toast) section under the live tiles — first shown to every role, then hidden behind
+  `SHOW_UPCOMING_ON_HOME = false` once «درس‌های من» shipped (below), then finally given back **to admins only**
+  (`showUpcomingOnHome(hats) = hats.isAdmin`) alongside the organisation-context fix (below); teachers and students
+  still don't see it.
+- **«درس‌های من» course cards** (`HomeCourses`, under the tiles, hub only, after the university-LMS-dashboard
+  reference): one whole-surface-link card per offering — a teacher's own offerings, then (for a student) their
+  class's — each with an inline-SVG cover (`CourseCover`: six pattern families keyed off the subject's stamp hue).
+  The covers first reused the muted stamp palette and read «خیلی بی‌روحه» (owner), so they got their **own vivid
+  8-set OKLCH palette** (`--color-cover-{0..7}-{light,base,dark,ink}` in `globals.css`) mapped 1:1 to the stamp
+  index; stamps, `SubjectIcon` and the timetable stay on the muted subject palette — only `CourseCover` reads the
+  new tokens. A teacher's several offerings of the same درس get **distinct cover colours in a stable rotation**
+  seeded by the offering id, never repeating a neighbour's set before all eight are used. «درس‌ها و دبیران» left the
+  hub tile list (still reachable from the class/teaching pages).
+- **`/roadmap` as icon tiles**: the same tile face as Home (`ModuleTileFace`, shared with `UpcomingTiles`) — live
+  phase-1 modules as blue tiles under «فعال», phase 2–4 as grey «به‌زودی» tiles under it, each a `<details>` that
+  reveals its month and one-line description in place. **No tile is a link any more** — the page explains, Home's
+  tiles are the doors. Print keeps a plain per-phase list carrying every description.
+- **Organisation admin context** (owner: «Why does the box at the top say «علامه طباطبایی»? The organisation admin
+  is ABOVE the school»). One rule, `contextPlaceFa` / `contextLineFa` (`src/lib/context-place.ts`): the organisation
+  admin's «where am I» — the Home greeting, «حساب من», the shell title and the desktop context bar — is always the
+  ORGANISATION, even in a one-school organisation and even while they also teach; principals/vice
+  principals/teachers/students keep their own school (and a principal now reads THEIR scope school, not the
+  organisation's primary one — a latent mismatch fixed here). «حضور و غیاب» became `adminScope: "school"`: gone
+  from the organisation admin's Home (classic and hub), kept for principals/vice principals; the school hub
+  (`/admin/schools/[id]`) gained its own «حضور و غیاب» row (→ `/admin/attendance?school=<id>`, gated by
+  `academic.attendance.report`) beside «برنامهٴ کلاسی», with every read of that report narrowed server-side to the
+  named school for whichever admin opens it.
+- Tests: `ui-variant`, `hub-shell`, `hub-home`, `home-tiles`, `home-courses`, `org-context`, `roadmap`, `help-copy`
+  (unit); `attendance`, `school-hub-attendance` (int).
+
+## 2026-09-27 — «حساب من»: the profile page (/more) redesigned, no visible «بیشتر» title
+
+Owner: «remove the «بیشتر» title, make it prettier.» `/more` keeps its route and its classic nav label «بیشتر», but
+reads «حساب من» everywhere else: a screen-reader-only page title with the hub's default «خانه» back link (was an
+explicit «بازگشت»), and the same `bg-hero` gradient language as the Home greeting (`ProfileCard`: an avatar
+(`UserRound` on a white/15 disc, as the top-bar button draws it), the full name, one pill per hat from
+`roleHatsFor`/`ROLE_LABELS` darkened against the ground for contrast, the school (the organisation for an
+organisation admin) and the login identifier). Rows sit in two titled `surface-work` groups («حساب کاربری»: تغییر
+رمز; «راهنما و اطلاعات»: راهنما · حریم خصوصی · نقشهٴ راه) as hairline-divided rows that tint on hover and settle on
+press rather than lift — rows of a card, not cards; «خروج» stays apart in its own card, unchanged. `BrandRipple`
+was extracted from the Home greeting so both blue cards share one drawing. Test: `tests/unit/profile-page.test.ts`.
+
+## 2026-09-27 — press feedback everywhere a surface is tapped («اسپلش ریز»)
+
+Owner: «وقتی آیکون یا دکمه را می‌زنم، یک اسپلش ریز و کمی فرو برود، که حس کنم زده شد» — an answer to the user's own
+action (see «حرکت در پاسخ به کار کاربر» above), transform/opacity only, the house ease, no glow, no sound, no
+library.
+
+- **The sink** (CSS `:active`, 120 ms in / 180 ms out): `pressable` and `surface-link` keep their 98% scale on the
+  new timing; two new unlayered rules beat those utilities' `:active` in `globals.css` — `press-sink` (the Home
+  course cards sink to 96% with their shadow dropping to the hairline one) and `press-mark` (a Home/roadmap tile:
+  the cell stays put, the clay squircle sinks to 94% with a tighter outer shadow, like pressing an app icon).
+  `TapRipple` also adds a passive no-op `touchstart` listener so iOS Safari applies `:active` at all.
+- **The ink** (`src/lib/tap-ripple.ts`, mounted once as `TapRipple` in the root layout): one delegated
+  `pointerdown`/`pointerup`/`pointercancel` listener on the document — no component re-renders. It targets
+  `.pressable`, every `button` and `[data-ripple]` (a `[data-ripple-host]` inside takes the ink instead, e.g. a
+  tile's `ClayIcon`), skips `[data-ripple="off"]` subtrees and disabled/`aria-disabled` targets (the inert
+  «به‌زودی» tiles). The ink is a disc starting under the finger, spreading from 20% to full size over the first
+  55% of a 420 ms fade, clipped to the host's own radius (inserted as the host's FIRST child, capped at 140 px so
+  it stays a small splash on a wide row) in persian blue at 14% on light surfaces or white at 25% on dark ones
+  (read from the host's computed colour). A touch that turns into a scroll gets no ink.
+- Every ripple target becomes a containing block through one base-layer `:where()` rule, so any `absolute`/
+  `fixed`/`sticky` utility elsewhere still wins. **Reduced motion:** no ink at all, and the press becomes an
+  instant dim (`opacity: .72`) instead of a scale; keyboard activation shows the press state with no pointer event.
+- Test: `tests/unit/tap-ripple.test.ts`. Open for the owner: the ink also plays on desktop mouse clicks — keep, or
+  touch only?
+
+## 2026-09-27 — desktop dashboard columns and the one `BackLink` pill
+
+Two pieces of the same day's nav round that are NOT superseded by the hub layout above (hub keeps the same
+`DashboardTiles`/`DashboardAside` components beside its tiles):
+
+- **`HomeDashboard`** (`TwoColumn`, main 7 tracks / aside 5, `asideWidth="wide"`): teacher — main: tiles → «تکالیف
+  نزدیک» → «نیاز به پیگیری»; aside: «امروز تدریس دارم» → «کلاس‌های من». Student — main: tiles → «تکالیف نزدیک»;
+  aside: «امروز» (today's زنگ‌ها) → «این هفته». **«فوری‌ها» was removed**: it repeated the same overdue/due-today
+  rows the «تکالیف نزدیک» card already leads with, and its own trailing link was a second «پنل من» door. Admins —
+  one column, tiles → «تسک‌های نزدیک».
+- **One `BackLink`** (`src/components/layout/BackLink.tsx`) draws every `PageHeader.back` and `PublicBackLink`: a
+  quiet pill (`ChevronRight` + label, `bg-surface-sunken` with a hairline ring, `rounded-full`), 44 px on every
+  breakpoint (the old desktop-only shorter version is gone) — never a filled button, so it never competes with the
+  page's one primary action.
+
+## 2026-09-27 — organisation structure: no «تنظیمات زیرساختی», a fixed مقطع/پایه/سال catalog, «مدرسه‌ها» first, people on the school hub
+
+Owner, five asks for the organisation admin («مدیر سازمان») and the admin area.
+
+- **«تنظیمات زیرساختی» is gone.** `/admin/infrastructure` and its سال‌ها/نوبت‌ها/مقطع‌ها/پایه‌ها sub-pages are
+  deleted; the old URLs redirect to `/admin` rather than «پیدا نشد». The four resources are removed from
+  `RESOURCES`, so the write path is refused at the zod-enum level, not just hidden in the UI; the underlying
+  tenancy services stay for seeds/import/`ensureCatalogYears`.
+- **A fixed catalog** (`src/modules/tenancy/fixed-catalog.ts`, import-free data): مقطع‌ها ELEM/SEC1/SEC2, پایه‌ها
+  G1…G12 with their مقطع mapping, and two academic years with their دو نوبت — all using the codes the seeds/pilot
+  already relied on. `ensureOrgCatalogWith`/`seedOrgCatalogsWith` (every deploy, `pnpm seed`, and on
+  organisation/school creation) REUSES a row matched by code or a fuzzy name match (ezafe, ZWNJ, Arabic letter
+  folding — «ابتدایی» → «دبستان»), bringing it to the fixed name/sequence and never deleting anything extra. The
+  class form's «پایه» picker is now grouped by مقطع (`<optgroup>`).
+- **درس‌ها stay editable** but move under «مدرسه‌ها» — an `orgOnly` link in its header — instead of their own nav
+  entry; school-scoped admins keep read-only URL access.
+- **Admin order** (`ADMIN_SECTIONS`): نمای کلی · **مدرسه‌ها** (now first) · دانش‌آموزان · کارکنان · کلاس‌ها ·
+  نقش‌ها.
+- **The school hub** (`/admin/schools/[id]`) gained «کارکنان» and «دانش‌آموزان» sections — count, the first 8 rows,
+  a «همهٴ N نفر» link — beside «کلاس‌ها», using the SAME row components the full list pages now share, gated by
+  `iam.person.read`.
+- **Students list:** the three filter chips are gone; a student with no class reads a neutral «بدون کلاس» in the
+  row meta (was a warning-yellow chip); the narrowed `?pending=1`/`?noclass=1` views name themselves in one line
+  with a way back to the full list.
+- Tests: `admin-nav`, `admin-overview`, `home-tiles` (unit); new `org-catalog` (int), `seed`, `admin-resource-form`.
+
+## 2026-09-27 — roles: vice principal = principal's permissions inside their own school; roles display-only; «تدریس» moves to the person page
+
+- **The vice principal holds exactly the principal's permissions, inside their own school.** Owner: «معاون باید
+  دقیقاً همان توانایی‌های مدیر مدرسه را در مدرسهٴ خودش داشته باشد» — now that the organisation-level catalogs are
+  fixed for everyone, nothing was left that only a principal should do (this replaces the 2026-09-21 «Rule 3» and
+  the round-5 «a vice principal keeps what they can act on»). The catalog (`SCHOOL_MANAGER_PERMS`,
+  `scripts/catalog.ts`) gives both roles the SAME 22 permissions — a vice principal gains
+  `iam.role_assignment.write`, `tenancy.structure.write` and `integ.import.write` — with the role row updated in
+  place (no assignment moves). Reach still comes from the assignment's SCOPE, never the role code: a vice can
+  appoint/revoke a fellow vice at their own school only (never a principal, never `org_admin`, never another
+  school), edit their own school's structure and bell schedule, and import into their own school only. The only
+  remaining role-code branch is the label («معاون» vs «مدیر مدرسه»).
+- **Roles are DISPLAY-ONLY on the staff pages; «نقش‌ها» is the one door.** The staff list, the school hub's staff
+  rows and the person page's role picker/«لغو» are read-only now (a caller who can grant links to «نقش‌ها»
+  instead); the new-colleague form lost its role picker (`CreateStaffInput` refuses a `roles` key by `.strict()`).
+  «نقش‌ها» gained the primary action «معاون جدید» / «نقش جدید» with server-computed, scope-bounded candidates.
+- **Verifier round: a manager role can only go to an active colleague.** `assignRole` now refuses
+  `school_principal`/`vice_principal`/the `org_admin` bootstrap for anyone who is not an active staff profile (a
+  student, a guardian-only person or a colleague who has left gets a field error, nothing written) — exactly who
+  «نقش‌ها»'s own candidate list already offered. The admin help page was rewritten to match the fixed catalog (no
+  more «create years/levels/grades» instructions).
+- **«تدریس» moved onto a colleague's own page** (owner: «when the manager taps a staff member they should be able
+  to [assign a subject]» — teaching used to be set only per class). `/admin/people/[id]` of a staff member now has
+  its own «تدریس» card (کلاس → درس → نقش تدریس, with a confirm step before replacing another main teacher), reusing
+  exactly the offerings page's permission and scope checks — nothing new is reachable, just reached from one more
+  place. `RolesCard` is roles-only now.
+- Tests: `role-catalog`, `role-grant-ui`, `teaching-card`, `help-copy` (unit); `admin-scope` «N1/V/M1-3/R/T», `seed`,
+  `import`, `admin-resource-form` (int).
+
+## 2026-09-27 — «نشان درس»: a lucide glyph per subject, replacing the repeated grey school icon
+
+Owner: "use icons that match the subject (a pipette for chemistry, a book for literature), not one grey icon
+everywhere."
+
+- `subjectIcon(name)` (`src/lib/subject-icon.ts`): a pure, ordered keyword → lucide mapping over the normalised
+  درس name (specific keywords beat general ones — «علوم و فنون ادبی» before «علوم», «آمار»/«گسسته»/«هندسه» before
+  «ریاضی», and so on); unknown names get `BookMarked`. No religious symbols (دین/قرآن get a sparkle and a
+  book-with-heart); شیمی is `FlaskConical`, not the design-tool eyedropper `Pipette` — open for the owner to
+  reverse, one line in `RULES`.
+- `SubjectIcon` (`SubjectStamp.tsx`) draws it in the stamp's own shape and hue (the same eight approved subject
+  hues — no new colour), replacing the grey `School`/`UserCheck` `RowMark` on every subject LIST or header whose
+  title IS the درس name — «کلاس من»'s «درس‌ها و دبیران», the teacher's «کلاس‌های من» cards, the subject page
+  header, the phone timetable's details card, «زنگ‌های امروز» on `/attendance`. Homework rows and the timetable
+  GRID cells keep `SubjectStamp` (letters): the row's title is the item, not the درس, so a glyph there would ask
+  the reader to decode a picture for information the letters already give.
+
+## 2026-09-27 — the phone timetable rebuilt as a week grid (Persian-calendar reference)
+
+Owner: the phone timetable (day strip + day list, `DayAgenda`) "can't tell what's what"; reference given was a
+Persian calendar month view.
+
+- Phones (< md) now render `WeekGrid` (`src/components/timetable/WeekGrid.tsx`): a weekday header row (started as
+  6 columns of first letters, then — after the owner asked for a جمعه column and full weekday names — **seven
+  equal-width columns شنبه…جمعه with full names**; a first pass gave جمعه a narrower sand-tinted "holiday" column,
+  but the owner asked for it to be "there, but empty, the same size as the others", so that tint and narrowing were
+  dropped) and one row per زنگ (a زنگ تفریح is a gap between rows, not a row of its own). Cells wear the درس's
+  stamp hue and `stampText` letters (a دبیر's cell adds the class); today's header fills brand-blue; the ringing
+  cell keeps its live progress bar and ink ring; a تعطیل جمعه's cells render as ordinary empty cells (same hairline
+  outline as any free period, `data-holiday` kept for screen readers). `DayAgenda` and its `?day=` URL state are
+  deleted; there are no prev/next arrows — a fixed weekly template — the heading instead names the week's date
+  range.
+- A details card under the grid (day, زنگ, time range, subject/teacher/room, «الان»/«بعدی» chip) opens on tap,
+  defaulting to today's ringing or next session; an empty cell reads «زنگ … آزاد است», a تعطیل جمعه reads «جمعه
+  تعطیل است.» with no زنگ/time line.
+- **For a teacher**, the details card is replaced by `WeekClassList`: every one of their offerings that week as a
+  row (درس, class, sessions/week, next session), nothing selected by default. Tapping a grid cell or a row
+  highlights that class everywhere (fading every other class's cells to 40%) without navigating; navigation is a
+  separate end-side chevron link per row, kept apart so one control never has to mean both "select" and "go" under
+  the finger or to a screen reader.
+- Desktop (md+) keeps its table, its cells now wearing the same stamp hues. The student's «حضور و غیاب من» dropped
+  its attendance-percentage card (owner: no percentage for a student — the admin report keeps its own). «کلاس من»
+  dropped its visible page title: the class card right under it already names the class and the school
+  (`PageHeader hideTitle` keeps the sr-only heading and, from `lg:`, the context bar).
+- Test: `tests/unit/week-grid.test.ts` (+ existing timetable/attendance unit tests updated).
+
+## 2026-09-27 — work items round 7: comments paused, «بازیابی» + «حذف», a notification policy, manager-only actions, a narrower «اشخاص» reach, «پنل من» as boxes
+
+- **No comments for now** (owner: "later I'll build a communication channel"). The «گفت‌وگو» section, the comment
+  form and every comment count/panel are removed from the UI. `addCommentAction` is **unexported** — no client path
+  exists, stronger than just hiding the form — while the service, DTO, table, `workspace.work_item.comment`
+  permission and the read-model's comment fields all stay for the future channel. Existing `work_item.comment`
+  notifications are hidden from the bell/list, not deleted.
+- **«اشخاص» picker works from 0 characters**: it loads the first 20 active people on open and narrows as one types
+  (250 ms debounce), instead of requiring two letters first.
+- **Finished item: «بازیابی» (renamed from «بازگشایی») + «حذف».** «حذف» is the existing `cancelled` status
+  transition (same permission and service rule as removing an OPEN item) — a student may remove only their own
+  personal «تسک» (they are its creator); class homework given to them still refuses. The confirmation names the
+  item's own word for the reader («این تسک حذف شود؟…»); a removed item still shows in «انجام‌شده» as «حذف‌شده»
+  (a read-model fix makes cancelled win over the reader's own "done" state there, so a finished item that is later
+  removed does not keep reading as simply done).
+- **Notification policy** (`src/modules/workspace/notify-policy.ts`): students notify nobody (a student's «انجام
+  شد» no longer flips the teacher's row); creating a personal item notifies no one; class homework and «تمدید»
+  still notify as before; an admin assigning a تسک to named people still notifies them — kept as a judgement call
+  (flagged for the owner), one line in `creationNotifiable` to change it.
+- **Verifier round — who MANAGES an item.** A defect let ANY broad `workspace.work_item.update` holder who merely
+  happened to be an ASSIGNEE (e.g. an organisation admin who received a تسک) close, delete, restore or extend it
+  for everyone. Fixed with one predicate, `managesItem` (`src/modules/workspace/manage-policy.ts`): the manager is
+  the item's creator, or a broad holder who is NOT an assignee (the admin-override case, kept) — **never an
+  assignee who did not create it**, whatever their hats. Behaviour change: a manager who only RECEIVED a تسک can
+  now just «انجام شد» their own row, like anyone else.
+- **Verifier round — «اشخاص» and the class picker stay inside the caller's schools.** A school-scoped principal or
+  vice principal could previously search and assign to people of OTHER schools, and to the organisation admin,
+  because the check only required the broad `create` permission plus RLS. `personReach`/`searchPersons` now apply
+  the same scope rule the admin people lists use (organisation admin → everyone of the organisation; a school
+  manager → only people anchored in their own schools); the new-task class picker (`listOfferingsInScope`) is
+  narrowed to match exactly what the submit already accepted.
+- **«پنل من»'s «انجام‌نشده» buckets are now boxes** in a two-column grid (`InboxBuckets`): each non-empty deadline
+  bucket (سررسیده/امروز/این هفته/بعداً/بدون مهلت) is its own `surface-work` card with a compact row style on phones
+  — the one deliberate exception to «one `surface-work` per view», since each bucket is a primary list of its own.
+- Tests: `manage-policy`, `work-item-actions`, `inbox-buckets` (unit); `workspace-service`, `admin-scope` «W» (int).
+
+## 2026-09-27 — client-ready polish pass: no developer-looking text
+
+Before the owner shows the app to a school owner, every screen was swept for developer-looking text (routes,
+permission codes, DB values and type codes were never renamed).
+
+- Renamed in the UI only: «ارائهٴ درس» → «درس‌ها و دبیران» / «درس», «شناسهٴ ورود» → «نام‌کاربری», «دامنهٴ شما» →
+  the school's own name, «اعتبارنامه» pages → «برگهٴ ورود», «مدرسهٴ پیش‌فرض» → «مدرسهٴ اصلی».
+- Hidden internals: subject codes (LIT, MATH…) are gone from the subject form (an internal code is generated when
+  none is sent) and the list shows «در n کلاس» instead of «n ارائه»; the student form drops the importer's «کد
+  یکتا» field; the school's Latin code is organisation-admin-only now, relabelled «کد لاتین مدرسه» with what it is
+  for.
+- `/admin/roles` drops the role code chip, permission count and «دامنه» — just the name and a one-line description
+  in school language.
+- Generic validation and service error wording was cleaned up; `src/app/error.tsx` gives unexpected failures a
+  Persian page («مشکلی پیش آمد» / «تلاش دوباره» / «بازگشت به خانه») instead of the framework's English screen (no
+  `global-error.tsx` — it would need its own `<html dir>`).
+- Fixed in passing: the new `--color-cover-*` cover tokens (above) were rendering black/grey because Tailwind
+  pruned them — only referenced through runtime-built `var()` strings — moved into an `@theme static` block.
