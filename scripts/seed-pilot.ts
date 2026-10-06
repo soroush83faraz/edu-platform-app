@@ -1155,11 +1155,17 @@ async function main(): Promise<void> {
     await seedCatalog(db);
     const result = await seedPilot(db);
     printSummary(result);
-    const dir = path.resolve(process.cwd(), "backups");
-    fs.mkdirSync(dir, { recursive: true });
+    // PILOT_ACCOUNTS_DIR: where the sheet goes when cwd is not writable (the bundled run inside the image, /app).
+    const dir = path.resolve(process.cwd(), process.env.PILOT_ACCOUNTS_DIR ?? "backups");
     const out = path.join(dir, "pilot-accounts.md");
-    fs.writeFileSync(out, renderAccountsMarkdown(result), "utf8");
-    console.log(`[seed:pilot] accounts sheet → ${out}`);
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(out, renderAccountsMarkdown(result), { encoding: "utf8", mode: 0o600 });
+      console.log(`[seed:pilot] accounts sheet → ${out}`);
+    } catch (err) {
+      // The data is committed by now; a read-only cwd must not turn a good seed into a failed run.
+      console.warn(`[seed:pilot] accounts sheet NOT written (${err instanceof Error ? err.message : String(err)}) — set PILOT_ACCOUNTS_DIR to a writable directory`);
+    }
   } finally {
     await pool.end();
   }
