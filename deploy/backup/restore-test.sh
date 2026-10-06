@@ -32,7 +32,7 @@ cd "$APP_DIR"
 
 envget() {
   local key="$1" val=""
-  if [[ -f .env ]]; then val="$(grep -E "^${key}=" .env | tail -n1 | cut -d= -f2- || true)"; fi
+  if [[ -f .env ]]; then val="$(grep -E "^${key}=" .env | tail -n1 | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//' || true)"; fi
   printf '%s' "$val"
 }
 

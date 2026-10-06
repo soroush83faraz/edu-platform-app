@@ -41,7 +41,7 @@ cd "$APP_DIR"
 # Read ONE key from .env without sourcing it (values may contain $ or quotes). Caller env wins.
 envget() {
   local key="$1" val=""
-  if [[ -f .env ]]; then val="$(grep -E "^${key}=" .env | tail -n1 | cut -d= -f2- || true)"; fi
+  if [[ -f .env ]]; then val="$(grep -E "^${key}=" .env | tail -n1 | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//' || true)"; fi
   printf '%s' "$val"
 }
 
@@ -50,6 +50,7 @@ RCLONE_REMOTE="${RCLONE_REMOTE:-$(envget RCLONE_REMOTE)}"
 RCLONE_REMOTE="${RCLONE_REMOTE:-arvan:school-backups}"
 BACKUP_DIR="${BACKUP_DIR:-$APP_DIR/backups}"
 BACKUP_DB="${BACKUP_DB:-app}"
+BACKUP_SKIP_UPLOAD="${BACKUP_SKIP_UPLOAD:-$(envget BACKUP_SKIP_UPLOAD)}"
 BACKUP_SKIP_UPLOAD="${BACKUP_SKIP_UPLOAD:-0}"
 BACKUP_SKIP_FILES="${BACKUP_SKIP_FILES:-0}"
 HOST="${BACKUP_HOST:-$(hostname)}"
