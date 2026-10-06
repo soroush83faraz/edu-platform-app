@@ -30,7 +30,10 @@ chmod 600 "/home/${DEPLOY_USER}/.ssh/authorized_keys"
 chown -R "$DEPLOY_USER:$DEPLOY_USER" "/home/${DEPLOY_USER}/.ssh"
 
 log "sshd hardening (key-only, no root)"
-cat > /etc/ssh/sshd_config.d/90-hardening.conf <<'SSHD'
+# sshd keeps the FIRST value it reads and includes sshd_config.d/*.conf in lexical order, so this file must sort
+# before cloud-init's 50-cloud-init.conf (which ships "PasswordAuthentication yes" on password-provisioned VPSes).
+rm -f /etc/ssh/sshd_config.d/90-hardening.conf
+cat > /etc/ssh/sshd_config.d/01-hardening.conf <<'SSHD'
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 ChallengeResponseAuthentication no
