@@ -16,6 +16,7 @@ import { schoolEnrollment } from "@/modules/academic/schema";
 import { enrollStudent } from "@/modules/academic/service";
 import { findClassGroup, findCurrentAcademicYear, findSchoolById, schoolIdOfBranch } from "@/modules/tenancy/repo";
 import { can, canAtAnyScope, resolveScopeChain, type Assignment } from "./can";
+import { PERSON_REMOVED_MESSAGE } from "./messages";
 import { generateInitialPassword, hashPassword } from "./password";
 import type { Permission } from "./permissions";
 import { findAccountByIdentifier } from "./repo";
@@ -71,6 +72,8 @@ export const MESSAGES = {
   studentProfileMismatch: "پروندهٴ دانش‌آموزی به این فرد تعلق ندارد.",
   /** A manager role (مدیر مدرسه / معاون / مدیر سازمان) goes to an active colleague only — never a student (verifier, 2026-09-27). */
   managerRoleNeedsStaff: "نقش مدیریتی فقط به کارکنان فعال داده می‌شود.",
+  /** No new account, password or unlock for a removed person (src/modules/iam/removal.ts) — it would reopen their login. */
+  personRemoved: PERSON_REMOVED_MESSAGE,
   changed: "— تغییر داده شده",
 } as const;
 
@@ -252,9 +255,13 @@ export interface CreateAccountResult {
 /**
  * user_account + password identity (random initial password, must_change_password) + organization_membership.
  * A login identifier that already exists anywhere → CONFLICT with one message whether it belongs to this
- * organization or another (no enumeration of other tenants).
+ * organization or another (no enumeration of other tenants). The person must be ACTIVE: a removed person
+ * (`person.status = 'archived'`) never gets a login again through a fresh account (CONFLICT «این شخص حذف شده است.»).
  */
 export async function createAccountForPerson(tx: Tx, ctx: IamCtx, input: CreateAccountInput): Promise<CreateAccountResult> {
+  const [target] = await tx.select({ status: person.status }).from(person).where(eq(person.id, input.personId)).limit(1);
+  if (!target) throw notFound();
+  if (target.status !== "active") throw conflict(MESSAGES.personRemoved);
   const { loginIdentifier, phoneE164 } = input.identifier;
   const field = input.field ?? "identifier";
   if (await findAccountByIdentifier(tx, loginIdentifier)) throw conflict(phoneE164 ? MESSAGES.phoneTaken : MESSAGES.usernameTaken);
@@ -294,15 +301,22 @@ export async function findAccountOfPerson(tx: Tx, personId: string): Promise<{ u
   return rows[0] ?? null;
 }
 
-/** The membership row proves the account belongs to the caller's organization (RLS hides other tenants'). */
+/**
+ * The membership row proves the account belongs to the caller's organization (RLS hides other tenants'). The account
+ * of a REMOVED person (archived person or `left` membership — src/modules/iam/removal.ts) stays shut: no temporary
+ * password, no unlock (CONFLICT «این شخص حذف شده است.»). Callers check the person's scope first (NOT_FOUND before this).
+ */
 async function requireAccountInOrg(tx: Tx, userAccountId: string): Promise<{ personId: string }> {
   const rows = await tx
-    .select({ personId: organizationMembership.personId })
+    .select({ personId: organizationMembership.personId, membershipStatus: organizationMembership.status, personStatus: person.status })
     .from(organizationMembership)
+    .innerJoin(person, eq(person.id, organizationMembership.personId))
     .where(eq(organizationMembership.userAccountId, userAccountId))
     .limit(1);
-  if (!rows[0]) throw notFound();
-  return rows[0];
+  const row = rows[0];
+  if (!row) throw notFound();
+  if (row.personStatus !== "active" || row.membershipStatus === "left") throw conflict(MESSAGES.personRemoved);
+  return { personId: row.personId };
 }
 
 export interface SetPasswordInput {
@@ -372,10 +386,12 @@ export async function resetInitialPassword(tx: Tx, ctx: IamCtx, input: { userAcc
 }
 
 /**
- * «رفع قفل»: status active, failed_login_count 0, locked_until null — AND the identifier's recent failures in
- * iam.login_attempt are stamped `cleared_at`, so the throttle windows (5 / 15 min, 10 / 1 h, 20 / 24 h) stop
- * refusing the login too. Without that the unlock only reset the account row while the counters kept the user
- * out (QA round 1, B2). The rows stay for the audit trail; the count is recorded in the audit `after`.
+ * «رفع قفل»: a throttle-set `status = 'locked'` back to `active`, failed_login_count 0, locked_until null — AND the
+ * identifier's recent failures in iam.login_attempt are stamped `cleared_at`, so the throttle windows (5 / 15 min,
+ * 10 / 1 h, 20 / 24 h) stop refusing the login too. Without that the unlock only reset the account row while the
+ * counters kept the user out (QA round 1, B2). The rows stay for the audit trail; the count is recorded in the audit
+ * `after`. A `disabled` account stays disabled, exactly as in `resetInitialPassword`: that is an admin decision (a
+ * removed person, src/modules/iam/removal.ts), not a lock — unlocking it used to flip it back to `active`.
  */
 export async function unlockAccount(tx: Tx, ctx: IamCtx, input: { userAccountId: string }): Promise<{ clearedAttempts: number }> {
   const { personId } = await requireAccountInOrg(tx, input.userAccountId);
@@ -385,14 +401,15 @@ export async function unlockAccount(tx: Tx, ctx: IamCtx, input: { userAccountId:
     .where(eq(userAccount.id, input.userAccountId))
     .limit(1);
   if (!before) throw notFound();
-  await tx.update(userAccount).set({ status: "active", failedLoginCount: 0, lockedUntil: null }).where(eq(userAccount.id, input.userAccountId));
+  const status = before.status === "locked" ? "active" : before.status;
+  await tx.update(userAccount).set({ status, failedLoginCount: 0, lockedUntil: null }).where(eq(userAccount.id, input.userAccountId));
   const clearedAttempts = await clearRecentFailures(tx, before.loginIdentifier);
   await audit(
     ctx,
     "iam.account.unlocked",
     { schema: "iam", table: "user_account", id: input.userAccountId },
     { status: before.status, failedLoginCount: before.failedLoginCount, lockedUntil: before.lockedUntil },
-    { personId, status: "active", clearedAttempts },
+    { personId, status, clearedAttempts },
     tx,
   );
   return { clearedAttempts };
@@ -595,7 +612,7 @@ export async function assignRole(tx: Tx, ctx: IamCtx, input: AssignRoleInput): P
 }
 
 /** The school an existing role assignment lives under (null for organization/student scopes; NOT_FOUND for scopes phase 1 does not cover). */
-async function roleAssignmentSchoolId(
+export async function roleAssignmentSchoolId(
   tx: Tx,
   orgId: string,
   ra: { scopeType: string; schoolId: string | null; branchId: string | null; classGroupId: string | null; classOfferingId: string | null },

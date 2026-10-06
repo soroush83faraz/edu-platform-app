@@ -76,6 +76,10 @@ export type UpdateStaffInput = z.output<typeof UpdateStaffInput>;
 
 export const PersonIdInput = z.object({ personId: uuid }).strict();
 
+/** «حذف دانش‌آموز» / «حذف از کارکنان» on the person page: the person and which list they leave (the service checks it matches). */
+export const RemovePersonInput = z.object({ personId: uuid, kind: z.enum(["student", "staff"], "نوع حذف نامعتبر است.") }).strict();
+export type RemovePersonInput = z.output<typeof RemovePersonInput>;
+
 export const PlaceStudentInput = z.object({ personId: uuid, classGroupId: uuid }).strict();
 
 export const CreateAccountInput = z.object({ personId: uuid, identifier: optionalText(64) }).strict();

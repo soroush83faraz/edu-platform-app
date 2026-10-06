@@ -12,7 +12,8 @@ import { conflict, invalidReference, notFound, validation } from "@/lib/errors";
 import { normalizeFa } from "@/lib/normalize";
 import { SCHOOL_WEEKDAYS, currentPeriodOf, nextSessionOf, tehranClock, type Weekday } from "@/lib/timetable";
 import { can, canAtAnyScope, type CanContext } from "@/modules/iam/can";
-import { role, roleAssignment, staffProfile } from "@/modules/iam/schema";
+import { PERSON_REMOVED_MESSAGE } from "@/modules/iam/messages";
+import { person, role, roleAssignment, staffProfile, studentProfile } from "@/modules/iam/schema";
 import { branch, classGroup, classOffering, school } from "@/modules/tenancy/schema";
 import {
   findOfferingFacts,
@@ -53,16 +54,20 @@ export interface AssignTeacherResult {
 /**
  * Inserts academic.teacher_assignment AND the derived iam.role_assignment. The system `teacher` template is the
  * role (readable under any tenant via the tenant_isolation_select policy). Rejects with CONFLICT when the same
- * (offering, staff, role) is already active (partial unique `teacher_assignment_active_uq`).
+ * (offering, staff, role) is already active (partial unique `teacher_assignment_active_uq`), and when the colleague
+ * was removed (`left_on` set or the person archived — src/modules/iam/removal.ts): every caller (the offerings form,
+ * «افزودن تدریس», the importer, the seeds) goes through here, so a removed person never teaches again by a stale id.
  */
 export async function assignTeacher(tx: Tx, ctx: ServiceCtx, input: AssignTeacherInput): Promise<AssignTeacherResult> {
   const teacherRole = input.role ?? "main";
   const [staff] = await tx
-    .select({ id: staffProfile.id, personId: staffProfile.personId })
+    .select({ id: staffProfile.id, personId: staffProfile.personId, leftOn: staffProfile.leftOn, personStatus: person.status })
     .from(staffProfile)
+    .innerJoin(person, eq(person.id, staffProfile.personId))
     .where(eq(staffProfile.id, input.staffProfileId))
     .limit(1);
   if (!staff) throw invalidReference();
+  if (staff.leftOn !== null || staff.personStatus !== "active") throw conflict(PERSON_REMOVED_MESSAGE);
 
   const [tpl] = await tx
     .select({ id: role.id })
@@ -191,9 +196,19 @@ async function loadClassGroup(tx: Tx, classGroupId: string): Promise<ClassGroupF
 /**
  * Enrolls a student in a class: finds or creates the school_enrollment for the class's (school, academic year,
  * grade) and inserts an active class_enrollment. A second active class in the same period is rejected by the
- * exclusion constraint (`class_enrollment_active_excl`) — use moveEnrollment for a transfer.
+ * exclusion constraint (`class_enrollment_active_excl`) — use moveEnrollment for a transfer. A removed student
+ * (person archived or profile `withdrawn` — src/modules/iam/removal.ts) is refused (CONFLICT): placing them in a class
+ * again would put them back on rosters and head counts.
  */
 export async function enrollStudent(tx: Tx, ctx: ServiceCtx, input: EnrollStudentInput): Promise<EnrollStudentResult> {
+  const [student] = await tx
+    .select({ status: studentProfile.status, personStatus: person.status })
+    .from(studentProfile)
+    .innerJoin(person, eq(person.id, studentProfile.personId))
+    .where(eq(studentProfile.id, input.studentProfileId))
+    .limit(1);
+  if (!student) throw invalidReference();
+  if (student.personStatus !== "active" || student.status === "withdrawn") throw conflict(PERSON_REMOVED_MESSAGE);
   const cg = await loadClassGroup(tx, input.classGroupId);
   const startsOn = input.startsOn ? { startsOn: input.startsOn } : {};
 

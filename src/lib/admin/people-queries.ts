@@ -3,6 +3,8 @@
 import { z } from "zod";
 import { defineQuery } from "@/lib/actions";
 import { audit } from "@/lib/audit";
+import { canAtAnyScope } from "@/modules/iam/can";
+import { canRemovePerson } from "@/modules/iam/removal";
 import { assertSchoolInScope, getAdminScope } from "@/modules/iam/service";
 import { findSchoolById, listSchools } from "@/modules/tenancy/repo";
 import { PAGE_SIZE } from "./defineResource";
@@ -45,11 +47,20 @@ export const peopleFormOptionsQuery = defineQuery({ permission: "iam.person.read
   };
 });
 
+/**
+ * `removable`: «حذف دانش‌آموز» / «حذف از کارکنان» is offered only when the removal service itself would accept it
+ * (`canRemovePerson` runs the very guards of `removePerson` without writing) — never for yourself, the organization
+ * admin, a person tied to another school or holding a role the caller could not revoke, or someone already removed.
+ */
 export const personDetailQuery = defineQuery({ schema: PersonIdInput, permission: "iam.person.read", scope: "any" }, async (tx, input, ctx) => {
   const scope = await getAdminScope(tx, ctx);
   const detail = await getPersonDetail(tx, scope, input.personId);
   const schools = (await listSchools(tx)).filter((s) => scope.kind === "organization" || scope.schoolIds.includes(s.id)).map((s) => ({ value: s.id, label: s.name }));
-  return { detail, scope, classes: detail.student ? await classOptionsInScope(tx, scope) : [], schools };
+  const removable =
+    (detail.kind === "student" || detail.kind === "staff") && detail.status === "active" && detail.id !== ctx.personId && canAtAnyScope(ctx.assignments, "iam.person.write")
+      ? await canRemovePerson(tx, ctx, detail.id, detail.kind)
+      : false;
+  return { detail, scope, classes: detail.student ? await classOptionsInScope(tx, scope) : [], schools, removable };
 });
 
 /** What «افزودن تدریس» offers: the caller's current-year classes with their offerings, and the درس catalog. */

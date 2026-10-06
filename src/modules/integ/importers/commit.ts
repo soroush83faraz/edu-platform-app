@@ -159,7 +159,8 @@ export async function commitImport(tx: Tx, ctx: ImportCtx, ref: ImportReference,
   const scope = await getAdminScope(tx, ctx);
   const staffProfileByPhone = new Map<string, string>();
   const createdStaffProfiles = new Set<string>();
-  for (const [phone, s] of ref.staffByPhone) staffProfileByPhone.set(phone, s.staffProfileId);
+  // A removed colleague is never a teacher a file can name (the validator already refused such rows).
+  for (const [phone, s] of ref.staffByPhone) if (!s.removed) staffProfileByPhone.set(phone, s.staffProfileId);
   for (const s of validation.plan.staff) {
     if (s.existing) {
       inc(counts.skipped, "staff");

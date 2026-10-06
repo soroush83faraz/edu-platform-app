@@ -5,7 +5,7 @@ import type { Tx } from "@/lib/actions";
 import { organization, school } from "@/modules/tenancy/schema";
 import type { Assignment } from "./can";
 import type { ScopeType } from "./permissions";
-import { authIdentity, organizationMembership, person, role, roleAssignment, rolePermission, userAccount } from "./schema";
+import { authIdentity, organizationMembership, person, role, roleAssignment, rolePermission, userAccount, userSession } from "./schema";
 
 export interface AccountRow {
   id: string;
@@ -70,6 +70,26 @@ export async function recordLoginSuccess(tx: Tx, userAccountId: string): Promise
     .where(eq(userAccount.id, userAccountId));
 }
 
+/**
+ * Global. Revokes every live session of an account — «خروج از همهٴ دستگاه‌ها», after a password change
+ * (`exceptSessionId` keeps the current one) and when a person is removed (src/modules/iam/removal.ts). Lives here,
+ * not in ./session, so Next-free callers (the services the seed runs under tsx) can reuse it; ./session re-exports it.
+ */
+export async function revokeAllForUser(tx: Tx, userAccountId: string, exceptSessionId?: string): Promise<number> {
+  const rows = await tx
+    .update(userSession)
+    .set({ revokedAt: sql`now()` })
+    .where(
+      and(
+        eq(userSession.userAccountId, userAccountId),
+        isNull(userSession.revokedAt),
+        exceptSessionId ? sql`${userSession.id} <> ${exceptSessionId}` : undefined,
+      ),
+    )
+    .returning({ id: userSession.id });
+  return rows.length;
+}
+
 /** Global. Replaces the password hash and clears the forced-change flag in one go. */
 export async function setPassword(tx: Tx, userAccountId: string, secretHash: string): Promise<void> {
   await tx
@@ -123,9 +143,10 @@ export async function findActiveMembership(tx: Tx, userAccountId: string): Promi
 
 /**
  * Tenant-bound. The request context's tenant half in ONE statement (it runs on every request — `getRequestContext`):
- * the caller's active membership in the bound organization joined to its person row (no row when either is
- * missing or invisible under RLS), plus the organization's primary school name — the default school, else the
- * oldest one; null when the organization has no school yet.
+ * the caller's active membership in the bound organization joined to its ACTIVE person row (no row when either is
+ * missing, invisible under RLS or — defense in depth behind the disabled account and the `left` membership — the
+ * person was removed), plus the organization's primary school name — the default school, else the oldest one; null
+ * when the organization has no school yet.
  */
 export async function findMemberContext(
   tx: Tx,
@@ -141,7 +162,7 @@ export async function findMemberContext(
     })
     .from(organizationMembership)
     .innerJoin(person, eq(person.id, organizationMembership.personId))
-    .where(and(eq(organizationMembership.userAccountId, userAccountId), eq(organizationMembership.status, "active")))
+    .where(and(eq(organizationMembership.userAccountId, userAccountId), eq(organizationMembership.status, "active"), eq(person.status, "active")))
     .limit(1);
   return rows[0] ?? null;
 }

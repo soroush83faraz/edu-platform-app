@@ -120,21 +120,8 @@ export async function revokeSession(tx: Tx, sessionId: string): Promise<void> {
     .where(and(eq(userSession.id, sessionId), isNull(userSession.revokedAt)));
 }
 
-/** «خروج از همهٴ دستگاه‌ها» / after a password change (`exceptSessionId` keeps the current one). */
-export async function revokeAllForUser(tx: Tx, userAccountId: string, exceptSessionId?: string): Promise<number> {
-  const rows = await tx
-    .update(userSession)
-    .set({ revokedAt: sql`now()` })
-    .where(
-      and(
-        eq(userSession.userAccountId, userAccountId),
-        isNull(userSession.revokedAt),
-        exceptSessionId ? sql`${userSession.id} <> ${exceptSessionId}` : undefined,
-      ),
-    )
-    .returning({ id: userSession.id });
-  return rows.length;
-}
+/** «خروج از همهٴ دستگاه‌ها» / after a password change / a removed person — defined in ./repo (Next-free), re-exported here. */
+export { revokeAllForUser } from "./repo";
 
 // ---- cookie helpers (Next `cookies()` is async) ----
 

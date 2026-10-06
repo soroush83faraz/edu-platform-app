@@ -7,6 +7,7 @@ import { defineAction } from "@/lib/actions";
 import { notFound } from "@/lib/errors";
 import { endTeacherAssignment } from "@/modules/academic/service";
 import { adminCreateStaff, adminCreateStudent, adminPlaceStudent, adminResetInitialPassword, adminUnlockAccount, adminUpdatePerson } from "@/modules/iam/admin";
+import { removePerson } from "@/modules/iam/removal";
 import { assignRole, createAccountForPerson, getAdminScope, resolveIdentifier, revokeRoleAssignment, MESSAGES } from "@/modules/iam/service";
 import { findSchoolById } from "@/modules/tenancy/repo";
 import { getPersonDetail } from "./people";
@@ -20,6 +21,7 @@ import {
   EndTeachingInput,
   PersonIdInput,
   PlaceStudentInput,
+  RemovePersonInput,
   RevokeRoleInput,
   UpdateStaffInput,
   UpdateStudentInput,
@@ -89,6 +91,17 @@ export const resetPasswordAction = defineAction({ schema: PersonIdInput, permiss
 export const unlockAccountAction = defineAction({ schema: PersonIdInput, permission: "iam.account.unlock", scope: "any" }, async (tx, input, ctx) => {
   await adminUnlockAccount(tx, ctx, input.personId);
   return { personId: input.personId };
+});
+
+/**
+ * «حذف دانش‌آموز» / «حذف از کارکنان» — the SOFT removal (src/modules/iam/removal.ts): history stays; the person leaves
+ * every list, class and teaching, their roles end and their login dies. The service applies every guard (not
+ * yourself, `iam.person.write` scope → NOT_FOUND, never the organization admin, no other school's ties, only roles and
+ * teaching the caller could end themselves). Idempotent: a second tap answers `alreadyRemoved`.
+ */
+export const removePersonAction = defineAction({ schema: RemovePersonInput, permission: "iam.person.write", scope: "any" }, async (tx, input, ctx) => {
+  const res = await removePerson(tx, ctx, { personId: input.personId, kind: input.kind });
+  return { personId: res.personId, kind: res.kind, alreadyRemoved: res.alreadyRemoved };
 });
 
 /** Creates the login account of a person who was registered without one (students without a phone → username). */

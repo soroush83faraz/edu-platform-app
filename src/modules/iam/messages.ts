@@ -7,3 +7,8 @@ export const LOGGED_OUT_MESSAGE = "خارج شدید.";
 export const CURRENT_PASSWORD_REQUIRED_MESSAGE = "رمز فعلی را وارد کنید.";
 /** One message for a wrong current password AND for a throttled account (no hint which). */
 export const CURRENT_PASSWORD_WRONG_MESSAGE = "رمز فعلی اشتباه است.";
+/**
+ * A person removed by «حذف دانش‌آموز» / «حذف از کارکنان» (src/modules/iam/removal.ts): every path that would give them
+ * a login, a class or a teaching again refuses with this (reset, unlock, new account, enrollment, teacher assignment).
+ */
+export const PERSON_REMOVED_MESSAGE = "این شخص حذف شده است.";

@@ -9,6 +9,7 @@ import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { notFound } from "@/lib/errors";
 import { normalizeFa, toAsciiDigits } from "@/lib/normalize";
+import { PERSON_REMOVED_MESSAGE } from "@/modules/iam/messages";
 import { organizationMembership, person, staffProfile, studentProfile, userAccount } from "@/modules/iam/schema";
 import { assertSchoolInScope, personInScopeSql, STUDENT_NUMBER_RE, type AdminScope } from "@/modules/iam/service";
 import { findCurrentAcademicYear, findCurrentTerm, findSchoolByCode, listGradeLevels, listSubjects } from "@/modules/tenancy/repo";
@@ -28,6 +29,8 @@ export interface RefStaff {
   staffProfileId: string;
   firstName: string;
   lastName: string;
+  /** Removed («حذف از کارکنان»: person archived / `left_on` set) — a file row naming them is an error, never a teacher again. */
+  removed: boolean;
 }
 
 export interface RefStudent {
@@ -38,6 +41,8 @@ export interface RefStudent {
   externalRef: string | null;
   hasAccount: boolean;
   currentClassGroupId: string | null;
+  /** Removed («حذف دانش‌آموز»: person archived / profile withdrawn) — a file row naming them is an error, never re-enrolled. */
+  removed: boolean;
 }
 
 export interface ImportReference {
@@ -66,6 +71,8 @@ export interface ImportReference {
 export const IMPORT_MESSAGES = {
   studentOfOtherSchool: "این شمارهٴ دانش‌آموزی به مدرسهٴ دیگری تعلق دارد.",
   externalRefOfOtherSchool: "این کد یکتا به دانش‌آموزی در مدرسهٴ دیگری تعلق دارد.",
+  /** A row naming a person removed in the panel (src/modules/iam/removal.ts): never renamed, re-enrolled or handed a class. */
+  personRemoved: PERSON_REMOVED_MESSAGE,
 } as const;
 
 /** Matching key for names/codes: Persian letters, ASCII digits, ZWNJ → space, case-insensitive. */
@@ -107,13 +114,20 @@ export async function loadReference(tx: Tx, scope: AdminScope, schoolCode: strin
   const staffByPhone = new Map<string, RefStaff>();
   if (phones.size > 0) {
     const rows = await tx
-      .select({ personId: person.id, staffProfileId: staffProfile.id, firstName: person.firstName, lastName: person.lastName, phone: userAccount.loginIdentifier })
+      .select({
+        personId: person.id,
+        staffProfileId: staffProfile.id,
+        firstName: person.firstName,
+        lastName: person.lastName,
+        phone: userAccount.loginIdentifier,
+        removed: sql<boolean>`(${person.status} <> 'active' or ${staffProfile.leftOn} is not null)`,
+      })
       .from(staffProfile)
       .innerJoin(person, eq(person.id, staffProfile.personId))
       .innerJoin(organizationMembership, eq(organizationMembership.personId, person.id))
       .innerJoin(userAccount, eq(userAccount.id, organizationMembership.userAccountId))
       .where(inArray(userAccount.loginIdentifier, [...phones]));
-    for (const r of rows) staffByPhone.set(r.phone, r);
+    for (const r of rows) staffByPhone.set(r.phone, { personId: r.personId, staffProfileId: r.staffProfileId, firstName: r.firstName, lastName: r.lastName, removed: r.removed });
   }
 
   const numbers = parsed.sheets.students.map((r) => r.values.student_number).filter(Boolean);
@@ -136,6 +150,7 @@ export async function loadReference(tx: Tx, scope: AdminScope, schoolCode: strin
         inScope: sql<boolean>`${personInScopeSql(scope, "iam.person.id")}`,
         hasAccount: sql<boolean>`exists (select 1 from iam.organization_membership m where m.person_id = ${person.id})`,
         currentClassGroupId: sql<string | null>`(select ce.class_group_id from academic.class_enrollment ce where ce.student_profile_id = ${studentProfile.id} and ce.status = 'active' limit 1)`,
+        removed: sql<boolean>`(${person.status} <> 'active' or ${studentProfile.status} = 'withdrawn')`,
       })
       .from(studentProfile)
       .innerJoin(person, eq(person.id, studentProfile.personId))
@@ -146,7 +161,16 @@ export async function loadReference(tx: Tx, scope: AdminScope, schoolCode: strin
         if (r.externalRef) foreignExternalRefs.add(r.externalRef);
         continue;
       }
-      const s: RefStudent = { personId: r.personId, studentProfileId: r.studentProfileId, firstName: r.firstName, lastName: r.lastName, externalRef: r.externalRef, hasAccount: r.hasAccount, currentClassGroupId: r.currentClassGroupId };
+      const s: RefStudent = {
+        personId: r.personId,
+        studentProfileId: r.studentProfileId,
+        firstName: r.firstName,
+        lastName: r.lastName,
+        externalRef: r.externalRef,
+        hasAccount: r.hasAccount,
+        currentClassGroupId: r.currentClassGroupId,
+        removed: r.removed,
+      };
       studentsByNumber.set(r.studentNumber, s);
       if (r.externalRef) studentsByExternalRef.set(r.externalRef, s);
     }
@@ -292,13 +316,15 @@ export function validateImport(parsed: ParsedWorkbook, ref: ImportReference, opt
   /** `${branchId}|${norm(name)}` → class (DB or file). */
   const classByKey = new Map<string, { branchId: string; gradeLevelId: string; name: string; fromFile: boolean }>();
   for (const c of ref.classes) classByKey.set(`${c.branchId}|${norm(c.name)}`, { branchId: c.branchId, gradeLevelId: c.gradeLevelId, name: c.name, fromFile: false });
-  const staffPhones = new Set<string>(ref.staffByPhone.keys());
+  // A removed colleague is no teacher a file can name: neither by phone nor by name (their rows are errors below).
+  const removedStaffPhones = new Set<string>([...ref.staffByPhone].filter(([, s]) => s.removed).map(([phone]) => phone));
+  const staffPhones = new Set<string>([...ref.staffByPhone.keys()].filter((phone) => !removedStaffPhones.has(phone)));
   const staffNameByKey = new Map<string, string[]>(); // norm(full name) → phones
   const addStaffName = (first: string, last: string, phone: string) => {
     const k = norm(`${first} ${last}`);
     staffNameByKey.set(k, [...(staffNameByKey.get(k) ?? []), phone]);
   };
-  for (const [phone, s] of ref.staffByPhone) addStaffName(s.firstName, s.lastName, phone);
+  for (const [phone, s] of ref.staffByPhone) if (!s.removed) addStaffName(s.firstName, s.lastName, phone);
 
   const parserIssues = new Map<string, RowIssue[]>();
   for (const e of parsed.errors) {
@@ -358,7 +384,8 @@ export function validateImport(parsed: ParsedWorkbook, ref: ImportReference, opt
     if (phone) seenPhone.add(phone);
     const existing = phone ? ref.staffByPhone.get(phone) ?? null : null;
     if (phone && !existing && ref.takenIdentifiers.has(phone)) issues.push({ column: "phone", message: "این شماره قبلاً ثبت شده است.", level: "error" });
-    if (existing) issues.push({ column: null, message: `دبیر با این موبایل از قبل هست (${existing.firstName} ${existing.lastName})؛ دوباره ساخته نمی‌شود.`, level: "warning" });
+    if (existing?.removed) issues.push({ column: "phone", message: IMPORT_MESSAGES.personRemoved, level: "error" });
+    else if (existing) issues.push({ column: null, message: `دبیر با این موبایل از قبل هست (${existing.firstName} ${existing.lastName})؛ دوباره ساخته نمی‌شود.`, level: "warning" });
     const ok = finish(row, { firstName: v.first_name, lastName: v.last_name, phone, employeeNumber: v.employee_number || null, existingPersonId: existing?.personId ?? null }, issues);
     if (ok && phone) {
       staffPhones.add(phone);
@@ -382,6 +409,8 @@ export function validateImport(parsed: ParsedWorkbook, ref: ImportReference, opt
       else issues.push({ column: "teacher_phone", message: phones.length === 0 ? `دبیر «${teacherName}» در شیت دبیران یا سامانه پیدا نشد.` : `نام «${teacherName}» بین چند دبیر مشترک است؛ موبایل را بنویسید.`, level: "error" });
     } else if (!phone) {
       issues.push({ column: "teacher_phone", message: "«موبایل دبیر» خالی است.", level: "error" });
+    } else if (removedStaffPhones.has(phone)) {
+      issues.push({ column: "teacher_phone", message: IMPORT_MESSAGES.personRemoved, level: "error" });
     } else if (!staffPhones.has(phone)) {
       issues.push({ column: "teacher_phone", message: `دبیری با موبایل «${row.raw.teacher_phone?.trim() ?? phone}» در شیت دبیران یا سامانه نیست.`, level: "error" });
     }
@@ -447,7 +476,8 @@ export function validateImport(parsed: ParsedWorkbook, ref: ImportReference, opt
     if (existing && externalRef && existing.externalRef && existing.externalRef !== externalRef) {
       issues.push({ column: "external_ref", message: "کد یکتا با کد ثبت‌شدهٴ این دانش‌آموز فرق دارد؛ کد سامانه نگه داشته می‌شود.", level: "warning" });
     }
-    if (existing) issues.push({ column: null, message: `دانش‌آموز با این شماره از قبل هست (${existing.firstName} ${existing.lastName})؛ نام و کلاس به‌روز می‌شود، حساب دوباره ساخته نمی‌شود.`, level: "warning" });
+    if (existing?.removed) issues.push({ column: "student_number", message: IMPORT_MESSAGES.personRemoved, level: "error" });
+    else if (existing) issues.push({ column: null, message: `دانش‌آموز با این شماره از قبل هست (${existing.firstName} ${existing.lastName})؛ نام و کلاس به‌روز می‌شود، حساب دوباره ساخته نمی‌شود.`, level: "warning" });
     if (!existing && !foreign) {
       const identifier = phone ?? `${ref.school.code.toLowerCase()}-${number.toLowerCase()}`;
       if (ref.takenIdentifiers.has(identifier) || (phone && staffPhones.has(phone))) issues.push({ column: phone ? "phone" : "student_number", message: "این شماره قبلاً ثبت شده است.", level: "error" });

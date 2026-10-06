@@ -452,6 +452,16 @@ async function seedDemoOrg(db: Db, spec: DemoOrgSpec, opts: DemoOptions): Promis
       if (existingPerson) {
         personId = existingPerson.id;
         await updatePerson(tx, ctx, personId, { firstName: p.firstName, lastName: p.lastName, gender: p.gender, status: "active", ...(p.kind === "staff" ? { schoolId: staffSchoolId } : {}) });
+        // Re-seeding is the demo's reset: a demo person removed in the panel («حذف»; src/modules/iam/removal.ts) comes
+        // back whole — the by-hand restore of docs/admin.md: profile, the school enrollments the removal withdrew
+        // (`exit_reason = 'removed'`), the membership (the account is re-enabled by `setAccountPassword` below). The
+        // roles, the class and the teaching are re-applied further down through the services, which refuse removed people.
+        await tx.execute(sql`update iam.student_profile set status = 'active' where person_id = ${personId} and status = 'withdrawn'`);
+        await tx.execute(sql`update academic.school_enrollment se
+          set status = case when se.grade_level_id is null then 'registered' else 'active' end, ends_on = null, exit_reason = null
+          from iam.student_profile sp where sp.id = se.student_profile_id and sp.person_id = ${personId} and se.exit_reason = 'removed'`);
+        await tx.execute(sql`update iam.staff_profile set left_on = null where person_id = ${personId} and left_on is not null`);
+        await tx.execute(sql`update iam.organization_membership set status = 'active', left_at = null where person_id = ${personId} and status = 'left'`);
         if (p.kind === "student") {
           const [sp] = await tx.select({ id: studentProfile.id }).from(studentProfile).where(eq(studentProfile.personId, personId)).limit(1);
           studentProfileId = sp.id;

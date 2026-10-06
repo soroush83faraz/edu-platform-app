@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/AdminPage";
 import { AccountCard, EnrollmentCard, RolesCard } from "@/components/admin/PersonPanels";
+import { RemovePersonCard } from "@/components/admin/RemovePersonCard";
 import { StaffForm } from "@/components/admin/StaffForm";
 import { StudentForm } from "@/components/admin/StudentForm";
 import { TeachingCard } from "@/components/admin/TeachingCard";
@@ -15,7 +16,12 @@ export const metadata: Metadata = { title: "پروندهٴ فرد | مدیریت
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** /admin/people/[id] — the one page for a student or a staff member: edit, account, class, teaching (+ «افزودن تدریس»), roles (read-only). */
+/**
+ * /admin/people/[id] — the one page for a student or a staff member: edit, account, class, teaching (+ «افزودن تدریس»),
+ * roles (read-only) and, last and apart, «حذف دانش‌آموز» / «حذف از کارکنان» when the server says the caller may.
+ * A person already removed (reachable by organization admins and their primary school's managers) reads as history:
+ * a notice, the facts, no control — every write on them is refused server-side anyway («این شخص حذف شده است.»).
+ */
 export default async function PersonPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!UUID_RE.test(id)) notFound();
@@ -25,8 +31,9 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     notFound();
   }
-  const { detail, classes, schools } = result.data;
-  const has = (p: Parameters<typeof canAtAnyScope>[1]) => canAtAnyScope(ctx.assignments, p);
+  const { detail, classes, schools, removable } = result.data;
+  const removed = detail.status !== "active";
+  const has = (p: Parameters<typeof canAtAnyScope>[1]) => !removed && canAtAnyScope(ctx.assignments, p);
   const caps = {
     canReset: has("iam.account.reset_password"),
     canUnlock: has("iam.account.unlock"),
@@ -46,6 +53,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         actions={
           <>
             <Chip tone={isStudent ? "primary" : "neutral"}>{isStudent ? "دانش‌آموز" : detail.kind === "staff" ? "کادر" : "فرد"}</Chip>
+            {removed ? <Chip tone="neutral">حذف‌شده</Chip> : null}
             {detail.student ? (
               <Chip tone="neutral">
                 <bdi dir="ltr" className="tabular">
@@ -56,6 +64,11 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           </>
         }
       />
+      {removed ? (
+        <section className="surface-panel p-4 text-sm text-text">
+          این شخص حذف شده است: در فهرست‌ها و کلاس‌ها نیست و نمی‌تواند وارد سامانه شود. سوابق تکالیف و حضور و غیاب او نگه داشته شده است.
+        </section>
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-[1fr_minmax(0,22rem)]">
         <div className="flex flex-col gap-4">
           {caps.canWritePerson ? (
@@ -85,15 +98,19 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               </dl>
             </section>
           )}
-          {detail.kind === "staff" ? <TeachingCard detail={detail} canTeaching={caps.canTeaching} options={teachingOptions?.ok ? teachingOptions.data : null} /> : null}
+          {detail.kind === "staff" && !removed ? <TeachingCard detail={detail} canTeaching={caps.canTeaching} options={teachingOptions?.ok ? teachingOptions.data : null} /> : null}
         </div>
         <div className="flex flex-col gap-4">
           <AccountCard detail={detail} caps={caps} />
-          {isStudent ? <EnrollmentCard detail={detail} classes={classes} canEnroll={caps.canEnroll} /> : null}
+          {isStudent && !removed ? <EnrollmentCard detail={detail} classes={classes} canEnroll={caps.canEnroll} /> : null}
           {/* Roles are shown here, never changed here: /admin/roles is their one door (owner, 2026-09-27). */}
-          {detail.kind === "staff" ? <RolesCard detail={detail} caps={caps} /> : null}
+          {detail.kind === "staff" && !removed ? <RolesCard detail={detail} caps={caps} /> : null}
         </div>
       </div>
+      {/* Last and apart from everything else: only when the removal service would accept it (`removable`). */}
+      {removable && !removed && (detail.kind === "student" || detail.kind === "staff") ? (
+        <RemovePersonCard personId={detail.id} name={`${detail.firstName} ${detail.lastName}`} kind={detail.kind} />
+      ) : null}
     </div>
   );
 }
