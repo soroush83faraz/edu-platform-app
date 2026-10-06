@@ -1,4 +1,4 @@
-# Built on the developer machine (Windows) and shipped with `docker save | ssh docker load` (deploy/ship.ps1).
+# Built on the developer machine (Windows) and shipped as changed layers to a private registry on the VPS over an ssh tunnel (deploy/ship.ps1).
 # Nothing is installed or built on the VPS.
 
 # ---------- builder ----------

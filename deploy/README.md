@@ -1,6 +1,6 @@
 # استقرار (فاز ۱)
 
-مدل: **ایمیج روی ویندوز بیلد می‌شود و با `docker save | ssh docker load` به سرور می‌رود.** روی سرور هیچ `npm install` یا `docker build` اجرا نمی‌شود. فقط Caddy پورت ۸۰/۴۴۳ دارد؛ Postgres و اپ پورت عمومی ندارند.
+مدل: **ایمیج روی ویندوز بیلد می‌شود و فقط لایه‌های تغییرکرده‌اش از راه تونل ssh به رجیستری خصوصیِ روی سرور (`127.0.0.1:5000`) push می‌شود؛ سرور از همان رجیستری pull می‌کند** (پایین: «رجیستری خصوصی»). مسیر قدیمی `docker save | ssh docker load` با `-Mode save` باقی است. روی سرور هیچ `npm install` یا `docker build` اجرا نمی‌شود. فقط Caddy پورت ۸۰/۴۴۳ دارد؛ Postgres، اپ و رجیستری پورت عمومی ندارند.
 
 ## اولین استقرار (یک‌بار)
 
@@ -19,8 +19,13 @@ scp deploy/.env.example deploy@SERVER:/srv/school/.env
 ssh deploy@SERVER 'chmod 600 /srv/school/.env && chmod +x /srv/school/*.sh && nano /srv/school/.env'   # همهٴ CHANGE_ME ها را پر کنید
 ```
 
+```bash
+scp deploy/registry.compose.yml deploy/registry-gc.sh deploy@SERVER:/srv/school/
+ssh deploy@SERVER 'chmod +x /srv/school/registry-gc.sh && docker compose -f /srv/school/registry.compose.yml up -d'
+```
+
 ```powershell
-.\deploy\ship.ps1 -Server SERVER            # build → save|load → deploy.sh <sha>
+.\deploy\ship.ps1 -Server SERVER            # build → push لایه‌های تازه → pull روی سرور → deploy.sh <sha>
 ```
 
 بررسی: `ssh deploy@SERVER 'cd /srv/school && docker compose ps && docker compose logs --tail=50 caddy'` — باید «certificate obtained» دیده شود. `curl -I https://PUBLIC_HOST/api/health` باید 200 بدهد. `ss -tlnp` فقط 22/80/443.
@@ -28,8 +33,21 @@ ssh deploy@SERVER 'chmod 600 /srv/school/.env && chmod +x /srv/school/*.sh && na
 ## استقرار مجدد
 
 ```powershell
-.\deploy\ship.ps1 -Server SERVER
+.\deploy\ship.ps1                           # پیش‌فرض: -Server donino-vps (alias در ~/.ssh/config)، -Mode registry
+.\deploy\ship.ps1 -Mode save                # مسیر قدیمی: کل ایمیج با docker save | ssh docker load
 ```
+
+## رجیستری خصوصی (`registry.compose.yml`، `ship.ps1 -Mode registry`)
+
+هدف: هر استقرار فقط لایه‌هایی را بفرستد که سرور ندارد (معمولاً لایه‌های کد اپ) به‌جای کل ~۴۳۷ MB.
+
+- **سرور:** `registry:2` با `docker compose -f /srv/school/registry.compose.yml up -d` (پروژهٔ جدای `school-registry`، volume `school-registry_registry_data`، `restart: unless-stopped`). پورت فقط روی **`127.0.0.1:5000`** است — هرگز عمومی نشود؛ دیوارهٔ آتش همان ۲۲/۸۰/۴۴۳ می‌ماند. احراز هویت ندارد چون فقط از داخل سرور (یا تونل ssh) در دسترس است. daemon سرور `127.0.0.0/8` را به‌طور پیش‌فرض insecure-registry مجاز می‌داند (`docker info` → Insecure Registries)؛ `daemon.json` تغییری نمی‌خواهد. ایمیج `registry:2` از میرور آروان pull می‌شود.
+- **لپ‌تاپ:** `ship.ps1` یک تونل `ssh -N -L 127.0.0.1:5001:127.0.0.1:5000` باز می‌کند، یک کانتینر رله‌ی موقت (`edu-registry-relay`، از ایمیج `node:22-bookworm-slim` که پایهٔ Dockerfile است و همیشه محلی موجود است) روی `localhost:5000` بالا می‌آورد، `docker tag edu-app:<sha> localhost:5000/edu-app:<sha>` و `docker push` می‌کند و در پایان (حتی روی خطا) رله و تونل را می‌بندد. **چرا رله؟** daemon داکر دسکتاپ داخل VM اجرا می‌شود و `localhost` آن، `localhost` ویندوز نیست؛ پورت منتشرشدهٔ یک کانتینر اما از داخل VM روی `localhost` دیده می‌شود و رله از `host.docker.internal:5001` به تونل ویندوز می‌رسد. `localhost:5000` به‌طور پیش‌فرض insecure مجاز است؛ تنظیمی در Docker Desktop لازم نیست.
+- **اندازه‌گیری (۱۴۰۵/۰۷/۱۴):** push اول (پرکردن رجیستری با `32bb9b1c56ba`) ≈ ۱۰۵ MB فشرده در ~۸ دقیقه (به‌جای ~۴۳۷ MB خامِ `docker save`)؛ بیلد دوباره بعد از تغییر یک توضیح در کد ≈ ۲۵ MB (فقط ۶ لایهٔ runner + config؛ لایه‌های node و سیستم‌عامل «already exists»). بیشترِ همان ۲۵ MB لایهٔ `.next/standalone` است که node_modules ردیابی‌شده را هم در خود دارد.
+- **سرور بعد از push:** `docker pull 127.0.0.1:5000/edu-app:<sha>` → `docker tag … edu-app:<sha>` → حذف تگ رجیستری. `deploy.sh` و `rollback.sh` بدون تغییر با `edu-app:<sha>` کار می‌کنند.
+- پارامترها: `-RegistryPort 5000` (پورت رله روی لپ‌تاپ)، `-TunnelPort 5001` (پورت تونل روی لپ‌تاپ) — اگر اشغال‌اند عوضشان کنید. بقیه مثل قبل: `-Sha`، `-SkipBuild`، `-NoDeploy`، `-User`، `-RemoteDir`.
+- **پاک‌سازی:** `ssh deploy@SERVER 'bash /srv/school/registry-gc.sh'` (یا `registry-gc.sh 8`): از تگ‌های `edu-app` فقط ۵ تای جدیدتر (بر اساس زمان ساخت ایمیج) را هم در ایمیج‌های محلی سرور و هم در رجیستری نگه می‌دارد — به‌علاوهٔ `APP_IMAGE` جاری و `.last_tag` (هدف rollback) که هرگز حذف نمی‌شوند — و سپس `garbage-collect` رجیستری را اجرا می‌کند (رجیستری چند ثانیه متوقف می‌شود؛ **هم‌زمان با یک ship اجرا نکنید**). ماهی یک‌بار یا وقتی دیسک پر شد کافی است؛ لایه‌های پایه (node، سیستم‌عامل، node_modules) بین تگ‌ها مشترک‌اند و فضا را تکرار نمی‌کنند.
+- وضعیت: `ssh deploy@SERVER 'curl -s 127.0.0.1:5000/v2/edu-app/tags/list; ss -tln | grep 5000'` → باید فقط `127.0.0.1:5000` باشد.
 
 `deploy.sh` به ترتیب: تگ فعلی → `.last_tag`؛ `pg_dump -Fc -U app_backup` در `backups/pre-<ts>.dump` (اگر دیتابیس قبلاً migrate شده و dump شکست بخورد، استقرار **قبل از migrate متوقف می‌شود**)؛ به‌روزرسانی `APP_IMAGE` در `.env`؛ `compose run --rm migrate`؛ `compose run --rm --no-deps seed` (سید کاتالوگ، پایین)؛ `compose up -d app caddy`؛ ۶۰ ثانیه poll روی `/api/health`؛ در شکست خودکار `rollback.sh`.
 
@@ -177,7 +195,7 @@ AGE_IDENTITY=key.txt  APP_DIR=. COMPOSE_FILE=docker-compose.dev.yml bash deploy/
 | | VPS/Docker | cPanel/Passenger |
 |---|---|---|
 | بیلد | ویندوز (`docker build`) | GitHub Actions (`.github/workflows/deploy-cpanel.yml`) |
-| انتقال | `docker save \| ssh docker load` | FTPS (`lftp`) به `releases/<name>/` |
+| انتقال | push لایه‌های تازه به رجیستری خصوصی از تونل ssh (`-Mode save`: `docker save \| ssh docker load`) | FTPS (`lftp`) به `releases/<name>/` |
 | اجرا | کانتینر `app` پشت Caddy | `deploy/cpanel/app.js` (Passenger) با سوئیچ `current.txt` |
 | مهاجرت و سید | خودکار در `deploy.sh` | **دستی از ماشین توسعه** — خط لوله به دیتابیس دست نمی‌زند |
 | بازگشت | `rollback.sh` | بازنویسی `current.txt` + `tmp/restart.txt` (خودکار روی شکست health) |

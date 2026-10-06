@@ -1,0 +1,20 @@
+# Private image registry for ship.ps1 -Mode registry (layer-diff deploys). Lives at /srv/school/registry.compose.yml.
+#   docker compose -f /srv/school/registry.compose.yml up -d
+# Bound to 127.0.0.1 ONLY: never published publicly (firewall stays 22/80/443). The laptop reaches it through
+# `ssh -N -L 5000:127.0.0.1:5000 <server>`; the server's own daemon pulls 127.0.0.1:5000/... (127.0.0.0/8 is an
+# insecure-allowed registry by default, no daemon.json change). No auth: anyone who can reach it already has a shell.
+name: school-registry
+
+services:
+  registry:
+    image: registry:2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5000:5000"
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"   # registry-gc.sh deletes old manifests, then garbage-collects blobs
+    volumes:
+      - registry_data:/var/lib/registry
+
+volumes:
+  registry_data:

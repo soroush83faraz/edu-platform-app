@@ -20,7 +20,8 @@ df -h / ; free -m                                  # دیسک < ۸۰٪، RAM آ�
 از ویندوز (ریشهٴ ریپو، درخت کار تمیز، `pnpm verify` سبز):
 
 ```powershell
-.\deploy\ship.ps1 -Server SERVER            # docker build (ویندوز) → docker save | ssh docker load → deploy.sh <sha>
+.\deploy\ship.ps1                           # docker build (ویندوز) → push لایه‌های تازه به رجیستری سرور (تونل ssh) → pull → deploy.sh <sha>
+.\deploy\ship.ps1 -Mode save                # جایگزین: کل ایمیج با docker save | ssh docker load (deploy/README.md «رجیستری خصوصی»)
 ```
 
 `deploy.sh <sha>` روی سرور به ترتیب: تگ فعلی → `.last_tag` · `pg_dump -Fc -U app_backup` → `backups/pre-<ts>.dump` (شکست = توقف **قبل** از migrate) · `APP_IMAGE` در `.env` · `docker compose run --rm migrate` · `docker compose run --rm --no-deps seed` (سید کاتالوگ مجوزها/نقش‌ها؛ idempotent) · `docker compose up -d app caddy` · ۶۰ ثانیه poll روی `/api/health` · در شکست `rollback.sh` خودکار. بعد از پیام `healthy:` از ویندوز:
