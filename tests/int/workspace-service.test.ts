@@ -3,17 +3,17 @@
 // listInbox / inboxCounts. Every business write happens inside a withTenant transaction that ends with Rollback;
 // only the catalog rows (a system `task` type + statuses + notification types, written as app_owner) are committed
 // and removed again in afterAll, so the alphabetical neighbours keep their fixture counts.
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { withTenant, type Tx } from "@/db/client";
 import { auditLog, inboxEntry, notification, workItem, workItemAssignee } from "@/db/schema";
 import { AppError } from "@/lib/errors";
-import { tehranDayBounds, toFaDigits } from "@/lib/format";
+import { formatJalaliDateTime, tehranDayBounds, toFaDigits } from "@/lib/format";
 import type { Assignment } from "@/modules/iam/can";
 import { listNotifications, unreadCount } from "@/modules/notif/repo";
 import { notifyMany } from "@/modules/notif/service";
 import { inboxCounts, inboxTabCounts, listComments, listInbox, searchPersons } from "@/modules/workspace/repo";
-import { addComment, canViewWorkItem, changeStatus, createWorkItem, extendDueAt, getWorkItemDetail, markInboxRead, type WorkspaceCtx } from "@/modules/workspace/service";
+import { addComment, canViewWorkItem, changeStatus, createWorkItem, getWorkItemDetail, markInboxRead, updateWorkItem, type WorkspaceCtx } from "@/modules/workspace/service";
 import * as f from "./fixtures";
 import { Rollback, asAppOwner } from "./helpers";
 
@@ -35,7 +35,7 @@ const TODO_ST = {
   done: "0199a000-00f3-7000-8000-000000000003",
   cancelled: "0199a000-00f3-7000-8000-000000000004",
 };
-const NT = ["work_item.assigned", "work_item.comment", "work_item.status_changed", "work_item.due_extended"];
+const NT = ["work_item.assigned", "work_item.comment", "work_item.status_changed", "work_item.due_extended", "work_item.updated"];
 
 const WORK_PERMS = ["workspace.work_item.read", "workspace.work_item.create", "workspace.work_item.update", "workspace.work_item.comment", "workspace.work_item.assign_class"];
 // Since round 6 the catalog grants a student `workspace.work_item.create` too — for a PERSONAL «تسک» and
@@ -349,7 +349,7 @@ describe("changeStatus — per-assignee completion", () => {
   });
 });
 
-describe("creator actions — «اتمام» and «تمدید»", () => {
+describe("creator actions — «اتمام» and «ویرایش»", () => {
   it("«اتمام» by the creator marks every assignee done at once and closes the item", async () => {
     await rolledBack(async (tx) => {
       const [s1, s2, s3] = await enrollStudents(tx, 3);
@@ -368,63 +368,144 @@ describe("creator actions — «اتمام» and «تمدید»", () => {
         expect(notifs.map((n) => n.type)).toEqual(["work_item.assigned", "work_item.status_changed"]);
         expect(await inboxTabCounts(tx, s.personId)).toEqual({ todo: 0, done: 1 });
       }
-      // A closed item cannot be extended.
-      await expect(extendDueAt(tx, teacher, { workItemId: res.id, dueAt: new Date(Date.now() + 86_400_000) })).rejects.toSatisfy(isCode("VALIDATION"));
+      // A closed item cannot be edited — neither its deadline nor its title.
+      await expect(updateWorkItem(tx, teacher, { workItemId: res.id, dueAt: new Date(Date.now() + 86_400_000) })).rejects.toSatisfy(isCode("VALIDATION"));
+      await expect(updateWorkItem(tx, teacher, { workItemId: res.id, title: "املای دوم" })).rejects.toSatisfy(isCode("VALIDATION"));
     });
   });
 
-  it("extendDueAt: creator moves the due later; assignees notified (deduped) and flipped unread; one audit row", async () => {
+  it("«ویرایش» of the deadline: later reads «تمدید شد», earlier «تغییر کرد», none «برداشته شد»; assignees notified (deduped per due) and flipped unread", async () => {
     await rolledBack(async (tx) => {
       const [s1, s2] = await enrollStudents(tx, 2);
-      const original = new Date(Date.now() + 86_400_000);
+      const original = new Date(Date.now() + 3 * 86_400_000);
       const res = await createWorkItem(tx, teacher, { typeCode: "task", title: "تمرین ۷", priority: "normal", dueAt: original, recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: [] } });
       for (const s of [s1, s2]) await markInboxRead(tx, s.ctx, { workItemId: res.id });
+      const dueNotifs = () =>
+        tx
+          .select({ recipient: notification.recipientPersonId, title: notification.title, body: notification.body, dedupeKey: notification.dedupeKey, deepLink: notification.deepLink })
+          .from(notification)
+          .where(eq(notification.typeCode, "work_item.due_extended"));
 
-      // 2026-09-27 23:59 Tehran (a fixed instant so the notification title is deterministic).
-      const later = new Date("2026-09-27T20:29:00Z");
-      const out = await extendDueAt(tx, teacher, { workItemId: res.id, dueAt: later });
-      expect(out).toEqual({ dueAt: later, notified: 2 });
+      // Later: the familiar «تمدید».
+      const later = new Date(original.getTime() + 7 * 86_400_000);
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, dueAt: later })).toEqual({ changed: ["dueAt"], notified: 2 });
       const [wi] = await tx.select({ dueAt: workItem.dueAt }).from(workItem).where(eq(workItem.id, res.id));
       expect(wi.dueAt?.toISOString()).toBe(later.toISOString());
-
-      const notifs = await tx
-        .select({ recipient: notification.recipientPersonId, title: notification.title, type: notification.typeCode, dedupeKey: notification.dedupeKey, deepLink: notification.deepLink })
-        .from(notification)
-        .where(eq(notification.typeCode, "work_item.due_extended"));
+      let notifs = await dueNotifs();
       expect(notifs).toHaveLength(2);
       expect(notifs.map((n) => n.recipient).sort()).toEqual([s1.personId, s2.personId].sort());
-      expect(notifs[0]).toMatchObject({ title: "مهلت تکلیف «تمرین ۷» تا یک‌شنبه ۵ مهر ۱۴۰۵، ۲۳:۵۹ تمدید شد", deepLink: `/inbox/${res.id}` });
+      expect(notifs[0]).toMatchObject({ title: `مهلت تکلیف «تمرین ۷» تا ${formatJalaliDateTime(later)} تمدید شد`, body: null, deepLink: `/inbox/${res.id}` });
       expect(notifs.map((n) => n.dedupeKey)).toEqual(expect.arrayContaining([s1, s2].map((s) => `wi:${res.id}:due:${later.toISOString()}:${s.personId}`)));
       const entries = await tx.select({ personId: inboxEntry.personId, state: inboxEntry.state }).from(inboxEntry).where(eq(inboxEntry.workItemId, res.id));
       expect(entries.find((e) => e.personId === s1.personId)?.state).toBe("unread");
       expect(entries.find((e) => e.personId === s2.personId)?.state).toBe("unread");
       expect(entries.find((e) => e.personId === f.PERSON_A2)?.state).toBe("read");
 
-      const trail = await tx.select({ action: auditLog.action, before: auditLog.before, after: auditLog.after }).from(auditLog).where(eq(auditLog.entityId, res.id));
-      expect(trail.map((t) => t.action)).toEqual(["workspace.work_item.created", "workspace.work_item.due_extended"]);
-      expect(trail[1].before).toEqual({ dueAt: original.toISOString() });
-      expect(trail[1].after).toEqual({ dueAt: later.toISOString() });
+      // Earlier (still ahead of now): allowed, and it says «تغییر کرد», not «تمدید».
+      const earlier = new Date(Date.now() + 86_400_000);
+      expect((await updateWorkItem(tx, teacher, { workItemId: res.id, dueAt: earlier })).notified).toBe(2);
+      notifs = await dueNotifs();
+      expect(notifs.filter((n) => n.title === `مهلت تکلیف «تمرین ۷» به ${formatJalaliDateTime(earlier)} تغییر کرد`)).toHaveLength(2);
 
-      // The same new due again: no change, no second notification.
-      await expect(extendDueAt(tx, teacher, { workItemId: res.id, dueAt: later })).rejects.toSatisfy(isCode("VALIDATION"));
-      // A broad admin may extend too (the notification for a different due is a new row per person).
+      // Removed: an item may live without a deadline, as it may be created without one.
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, dueAt: null })).toEqual({ changed: ["dueAt"], notified: 2 });
+      const [cleared] = await tx.select({ dueAt: workItem.dueAt }).from(workItem).where(eq(workItem.id, res.id));
+      expect(cleared.dueAt).toBeNull();
+      notifs = await dueNotifs();
+      expect(notifs.filter((n) => n.title === "مهلت تکلیف «تمرین ۷» برداشته شد" && n.dedupeKey?.startsWith(`wi:${res.id}:due:none:`))).toHaveLength(2);
+
+      // Back to a due someone was already told about: written, but not told twice (deduped per due value).
+      expect((await updateWorkItem(tx, teacher, { workItemId: res.id, dueAt: later })).notified).toBe(0);
+      // A broad admin who is not an assignee may edit too.
       const admin = ctxOf(f.PERSON_A1, [adminRole]);
-      const evenLater = new Date(later.getTime() + 86_400_000);
-      expect((await extendDueAt(tx, admin, { workItemId: res.id, dueAt: evenLater })).notified).toBe(2);
+      expect((await updateWorkItem(tx, admin, { workItemId: res.id, dueAt: new Date(later.getTime() + 86_400_000) })).notified).toBe(2);
+
+      const trail = await tx.select({ action: auditLog.action, before: auditLog.before, after: auditLog.after }).from(auditLog).where(eq(auditLog.entityId, res.id));
+      expect(trail.map((t) => t.action)).toEqual(["workspace.work_item.created", ...Array(5).fill("workspace.work_item.updated")]);
+      expect(trail[1]).toMatchObject({ before: { dueAt: original.toISOString() }, after: { dueAt: later.toISOString() } });
+      expect(trail[3]).toMatchObject({ before: { dueAt: earlier.toISOString() }, after: { dueAt: null } });
     });
   });
 
-  it("extendDueAt: a student is FORBIDDEN, an outsider NOT_FOUND, a past date VALIDATION", async () => {
+  it("«ویرایش» of the content: title, description and priority each change, one audit row with only the changed fields, one `work_item.updated` per assignee", async () => {
+    await rolledBack(async (tx) => {
+      const [s1, s2] = await enrollStudents(tx, 2);
+      const due = new Date(Date.now() - 86_400_000); // already overdue: an untouched deadline is never re-checked
+      const res = await createWorkItem(tx, teacher, { typeCode: "task", title: "تمرین صفحهٴ ۴۲", description: "سوال‌های ۱ تا ۵", priority: "normal", dueAt: due, recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: [] } });
+      for (const s of [s1, s2]) await markInboxRead(tx, s.ctx, { workItemId: res.id });
+      const updatedNotifs = () => tx.select({ recipient: notification.recipientPersonId, title: notification.title, body: notification.body }).from(notification).where(eq(notification.typeCode, "work_item.updated"));
+      const readCore = async () =>
+        (await tx.select({ title: workItem.title, description: workItem.description, priority: workItem.priority, dueAt: workItem.dueAt }).from(workItem).where(eq(workItem.id, res.id)))[0];
+
+      // The title alone (a typo), with the same due passed back unchanged — not a deadline change, not re-checked.
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, title: "  تمرین صفحهٴ ۴۳ ", dueAt: due })).toEqual({ changed: ["title"], notified: 2 });
+      expect(await readCore()).toEqual({ title: "تمرین صفحهٴ ۴۳", description: "سوال‌های ۱ تا ۵", priority: "normal", dueAt: due });
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, description: "سوال‌های ۱ تا ۸" })).toEqual({ changed: ["description"], notified: 2 });
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, priority: "urgent" })).toEqual({ changed: ["priority"], notified: 2 });
+      // An empty description clears it.
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, description: null, priority: "high" })).toEqual({ changed: ["description", "priority"], notified: 2 });
+      expect(await readCore()).toEqual({ title: "تمرین صفحهٴ ۴۳", description: null, priority: "high", dueAt: due });
+
+      const notifs = await updatedNotifs();
+      expect(notifs).toHaveLength(8);
+      expect(notifs.filter((n) => n.recipient === s1.personId).map((n) => n.body).sort()).toEqual(["عنوان تغییر کرد.", "توضیح تغییر کرد.", "اولویت تغییر کرد.", "توضیح و اولویت تغییر کرد."].sort());
+      expect(notifs[0].title).toBe("تکلیف «تمرین صفحهٴ ۴۳» ویرایش شد");
+      const entries = await tx.select({ personId: inboxEntry.personId, state: inboxEntry.state }).from(inboxEntry).where(eq(inboxEntry.workItemId, res.id));
+      expect(entries.filter((e) => e.personId !== f.PERSON_A2).every((e) => e.state === "unread")).toBe(true);
+
+      // Content and deadline in one save: ONE notification per person (the due one), naming the content change.
+      const next = new Date(Date.now() + 2 * 86_400_000);
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, title: "تمرین صفحهٴ ۴۴", dueAt: next })).toEqual({ changed: ["title", "dueAt"], notified: 2 });
+      const both = await tx.select({ title: notification.title, body: notification.body }).from(notification).where(eq(notification.typeCode, "work_item.due_extended"));
+      expect(both).toHaveLength(2);
+      expect(both[0]).toEqual({ title: `مهلت تکلیف «تمرین صفحهٴ ۴۴» تا ${formatJalaliDateTime(next)} تمدید شد`, body: "عنوان هم تغییر کرد." });
+      expect(await updatedNotifs()).toHaveLength(8);
+
+      const trail = await tx.select({ action: auditLog.action, before: auditLog.before, after: auditLog.after }).from(auditLog).where(eq(auditLog.entityId, res.id));
+      expect(trail.map((t) => t.action)).toEqual(["workspace.work_item.created", ...Array(5).fill("workspace.work_item.updated")]);
+      expect(trail[1]).toMatchObject({ before: { title: "تمرین صفحهٴ ۴۲" }, after: { title: "تمرین صفحهٴ ۴۳" } });
+      expect(trail[4]).toMatchObject({ before: { description: "سوال‌های ۱ تا ۸", priority: "urgent" }, after: { description: null, priority: "high" } });
+      expect(trail[5].before).toEqual({ title: "تمرین صفحهٴ ۴۳", dueAt: due.toISOString() });
+      expect(trail[5].after).toEqual({ title: "تمرین صفحهٴ ۴۴", dueAt: next.toISOString() });
+    });
+  });
+
+  it("«ویرایش» that changes nothing writes nothing: no update, no audit row, no notification", async () => {
+    await rolledBack(async (tx) => {
+      await enrollStudents(tx, 2);
+      const due = new Date(Date.now() + 86_400_000);
+      const res = await createWorkItem(tx, teacher, { typeCode: "task", title: "انشا", description: "موضوع آزاد", priority: "high", dueAt: due, recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: [] } });
+      const notificationsBefore = (await tx.select({ id: notification.id }).from(notification)).length;
+
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id })).toEqual({ changed: [], notified: 0 });
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, title: " انشا ", description: "موضوع آزاد", priority: "high", dueAt: new Date(due.getTime()) })).toEqual({ changed: [], notified: 0 });
+
+      const trail = await tx.select({ action: auditLog.action }).from(auditLog).where(eq(auditLog.entityId, res.id));
+      expect(trail.map((t) => t.action)).toEqual(["workspace.work_item.created"]);
+      expect((await tx.select({ id: notification.id }).from(notification)).length).toBe(notificationsBefore);
+    });
+  });
+
+  it("«ویرایش»: a student is FORBIDDEN, an outsider NOT_FOUND, a past or empty value VALIDATION — and nothing is written", async () => {
     await rolledBack(async (tx) => {
       const [s1, s2] = await enrollStudents(tx, 2);
       const res = await createWorkItem(tx, teacher, { typeCode: "task", title: "x", priority: "normal", recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: [s2.personId] } });
       const future = new Date(Date.now() + 86_400_000);
-      await expect(extendDueAt(tx, s1.ctx, { workItemId: res.id, dueAt: future })).rejects.toSatisfy(isCode("FORBIDDEN"));
-      await expect(extendDueAt(tx, s2.ctx, { workItemId: res.id, dueAt: future })).rejects.toSatisfy(isCode("NOT_FOUND"));
-      await expect(extendDueAt(tx, teacher, { workItemId: res.id, dueAt: new Date(Date.now() - 60_000) })).rejects.toSatisfy(isCode("VALIDATION"));
-      await expect(extendDueAt(tx, teacher, { workItemId: uuid(998), dueAt: future })).rejects.toSatisfy(isCode("NOT_FOUND"));
-      // Nothing was written.
-      expect(await tx.select({ id: notification.id }).from(notification).where(eq(notification.typeCode, "work_item.due_extended"))).toHaveLength(0);
+      await expect(updateWorkItem(tx, s1.ctx, { workItemId: res.id, dueAt: future })).rejects.toSatisfy(isCode("FORBIDDEN"));
+      await expect(updateWorkItem(tx, s1.ctx, { workItemId: res.id, title: "تقلب" })).rejects.toSatisfy(isCode("FORBIDDEN"));
+      await expect(updateWorkItem(tx, s2.ctx, { workItemId: res.id, title: "y" })).rejects.toSatisfy(isCode("NOT_FOUND"));
+      await expect(updateWorkItem(tx, teacher, { workItemId: res.id, dueAt: new Date(Date.now() - 60_000) })).rejects.toSatisfy(isCode("VALIDATION"));
+      await expect(updateWorkItem(tx, teacher, { workItemId: res.id, title: "   " })).rejects.toSatisfy(isCode("VALIDATION"));
+      await expect(updateWorkItem(tx, teacher, { workItemId: uuid(998), title: "y" })).rejects.toSatisfy(isCode("NOT_FOUND"));
+      // A removed («حذف») item is closed too: bring it back first.
+      await changeStatus(tx, teacher, { workItemId: res.id, toStatusCode: "cancelled" });
+      await expect(updateWorkItem(tx, teacher, { workItemId: res.id, title: "y" })).rejects.toSatisfy(isCode("VALIDATION"));
+
+      const [wi] = await tx.select({ title: workItem.title, dueAt: workItem.dueAt }).from(workItem).where(eq(workItem.id, res.id));
+      expect(wi).toEqual({ title: "x", dueAt: null });
+      expect(await tx.select({ id: notification.id }).from(notification).where(inArray(notification.typeCode, ["work_item.due_extended", "work_item.updated"]))).toHaveLength(0);
+      const trail = await tx.select({ action: auditLog.action }).from(auditLog).where(eq(auditLog.entityId, res.id));
+      expect(trail.map((t) => t.action)).not.toContain("workspace.work_item.updated");
     });
   });
 });
@@ -549,7 +630,7 @@ describe("a broad admin who is an ASSIGNEE takes the assignee path (verifier, 20
       const notificationsOfItem = () => tx.select({ id: notification.id }).from(notification).where(eq(notification.sourceId, res.id));
       const before = (await notificationsOfItem()).length;
 
-      // The detail page reads them as an assignee: «انجام شد» only, not the giver's «اتمام / تمدید / حذف».
+      // The detail page reads them as an assignee: «انجام شد» only, not the giver's «اتمام / ویرایش / حذف».
       expect((await getWorkItemDetail(tx, principal, res.id)).viewer).toMatchObject({ isCreator: false, isManager: false });
 
       const out = await changeStatus(tx, principal, { workItemId: res.id, toStatusCode: "done" });
@@ -569,11 +650,12 @@ describe("a broad admin who is an ASSIGNEE takes the assignee path (verifier, 20
       const trail = await tx.select({ action: auditLog.action, after: auditLog.after }).from(auditLog).where(eq(auditLog.entityId, res.id));
       expect(trail).toEqual(expect.arrayContaining([expect.objectContaining({ action: "workspace.work_item.status_changed", after: expect.objectContaining({ statusCode: "open", myState: "done" }) })]));
 
-      // The giver's rights are not theirs: «حذف» and «بازیابی» FORBIDDEN, «تمدید» FORBIDDEN, «انجام شد» twice VALIDATION.
+      // The giver's rights are not theirs: «حذف» and «بازیابی» FORBIDDEN, «ویرایش» FORBIDDEN, «انجام شد» twice VALIDATION.
       await expect(changeStatus(tx, principal, { workItemId: res.id, toStatusCode: "cancelled" })).rejects.toSatisfy(isCode("FORBIDDEN"));
       await expect(changeStatus(tx, principal, { workItemId: res.id, toStatusCode: "open" })).rejects.toSatisfy(isCode("FORBIDDEN"));
       await expect(changeStatus(tx, principal, { workItemId: res.id, toStatusCode: "done" })).rejects.toSatisfy(isCode("VALIDATION"));
-      await expect(extendDueAt(tx, principal, { workItemId: res.id, dueAt: new Date(Date.now() + 7 * 86_400_000) })).rejects.toSatisfy(isCode("FORBIDDEN"));
+      await expect(updateWorkItem(tx, principal, { workItemId: res.id, dueAt: new Date(Date.now() + 7 * 86_400_000) })).rejects.toSatisfy(isCode("FORBIDDEN"));
+      await expect(updateWorkItem(tx, principal, { workItemId: res.id, title: "گزارش دیگر" })).rejects.toSatisfy(isCode("FORBIDDEN"));
       const [still] = await tx.select({ statusId: workItem.statusId, dueAt: workItem.dueAt }).from(workItem).where(eq(workItem.id, res.id));
       expect(still).toEqual({ statusId: ST.open, dueAt: due });
       expect(await notificationsOfItem()).toHaveLength(before);

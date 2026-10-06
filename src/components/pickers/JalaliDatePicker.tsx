@@ -31,9 +31,11 @@ export interface JalaliDatePickerProps {
   variant?: "field" | "inline";
   id?: string;
   placeholder?: string;
-  /** Days before this wall-clock day cannot be picked (the extend dialog passes today). */
+  /** Days before this wall-clock day cannot be picked (the «ویرایش» dialog passes today). */
   minDate?: Date;
   disabled?: boolean;
+  /** Inside a dialog (the «ویرایش» form): the desktop popover is `modal` so it holds focus against the dialog's trap. */
+  modal?: boolean;
   "aria-invalid"?: boolean;
   "aria-describedby"?: string;
   "aria-label"?: string;
@@ -44,7 +46,7 @@ export interface JalaliDatePickerProps {
  * outlined, the pick filled persian-blue, past days muted, the Friday column sunken; quick chips for the dates a
  * teacher reaches for; 44 px cells; arrows move a day/week (RTL-aware), Enter picks, Esc closes.
  */
-export function JalaliDatePicker({ value, onChange, variant = "field", id, placeholder = "انتخاب تاریخ", minDate, disabled, ...aria }: JalaliDatePickerProps) {
+export function JalaliDatePicker({ value, onChange, variant = "field", id, placeholder = "انتخاب تاریخ", minDate, disabled, modal = false, ...aria }: JalaliDatePickerProps) {
   const [open, setOpen] = useState(false);
   const desktop = useIsDesktop();
   const selected = useMemo(() => (value ? parseJalaliDay(value) : null), [value]);
@@ -91,7 +93,7 @@ export function JalaliDatePicker({ value, onChange, variant = "field", id, place
   if (desktop) {
     return (
       <div className="relative">
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover modal={modal} open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>{trigger}</PopoverTrigger>
           {clear}
           <PopoverContent className="w-auto" onOpenAutoFocus={(e) => e.preventDefault()}>

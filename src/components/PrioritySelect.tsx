@@ -28,6 +28,8 @@ export interface PrioritySelectProps {
   id?: string;
   disabled?: boolean;
   className?: string;
+  /** Inside a dialog: a `modal` popover holds focus against the dialog's own trap (as `TimePicker` does). */
+  modal?: boolean;
 }
 
 /**
@@ -37,7 +39,7 @@ export interface PrioritySelectProps {
  * `listbox`: Space/Enter/↓ opens, ↑↓ walk the rows, Home/End jump, a Persian letter jumps to that level, Enter
  * picks, Esc closes and hands focus back to the trigger.
  */
-export function PrioritySelect({ value, onChange, name, id, disabled, className, ...aria }: PrioritySelectProps) {
+export function PrioritySelect({ value, onChange, name, id, disabled, className, modal = false, ...aria }: PrioritySelectProps) {
   const ids = useId();
   const [open, setOpen] = useState(false);
   // What the arrow keys are pointing at while the list is open — committed on Enter or a click.
@@ -100,7 +102,7 @@ export function PrioritySelect({ value, onChange, name, id, disabled, className,
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpenFrom}>
+    <Popover modal={modal} open={open} onOpenChange={setOpenFrom}>
       {name ? <input type="hidden" name={name} value={value} /> : null}
       <PopoverTrigger asChild>
         <button

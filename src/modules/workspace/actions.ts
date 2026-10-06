@@ -6,9 +6,9 @@
 import { defineAction, defineQuery } from "@/lib/actions";
 import { validation } from "@/lib/errors";
 import { parseJalaliToInstant } from "@/lib/format";
-import { ChangeStatusInput, CreateWorkItemInput, ExtendDueInput, OfferingIdInput, SearchPersonsInput, SetPinnedInput, WorkItemIdInput } from "./dto";
+import { ChangeStatusInput, CreateWorkItemInput, OfferingIdInput, SearchPersonsInput, SetPinnedInput, UpdateWorkItemInput, WorkItemIdInput } from "./dto";
 import { listOfferingRoster, searchPersons } from "./repo";
-import { archiveInbox, changeStatus, createWorkItem, extendDueAt, markInboxRead, personReach, setPinned } from "./service";
+import { archiveInbox, changeStatus, createWorkItem, markInboxRead, personReach, setPinned, updateWorkItem } from "./service";
 
 /** The pickers' strings («۱۴۰۵/۰۷/۰۵», `HH:mm` or empty = end of day) → the UTC instant; field errors point at the right control. */
 function parseDue(dueDate: string | undefined, dueTime: string | undefined): Date | null {
@@ -46,11 +46,16 @@ export const changeStatusAction = defineAction({ schema: ChangeStatusInput, perm
   changeStatus(tx, ctx, { workItemId: input.workItemId, toStatusCode: input.toStatusCode, note: input.note ?? null }),
 );
 
-export const extendDueAtAction = defineAction({ schema: ExtendDueInput, permission: "workspace.work_item.update", scope: "any" }, async (tx, input, ctx) => {
-  const dueAt = parseDue(input.dueDate, input.dueTime);
-  if (!dueAt) throw validation({ fieldErrors: { dueDate: ["تاریخ جدید را انتخاب کنید."] } });
-  return extendDueAt(tx, ctx, { workItemId: input.workItemId, dueAt });
-});
+/** «ویرایش»: omitted fields are kept; `dueDate` present (even "") means the deadline was edited — "" clears it. */
+export const updateWorkItemAction = defineAction({ schema: UpdateWorkItemInput, permission: "workspace.work_item.update", scope: "any" }, async (tx, input, ctx) =>
+  updateWorkItem(tx, ctx, {
+    workItemId: input.workItemId,
+    title: input.title,
+    description: input.description === undefined ? undefined : input.description || null,
+    priority: input.priority,
+    dueAt: input.dueDate === undefined && input.dueTime === undefined ? undefined : parseDue(input.dueDate, input.dueTime),
+  }),
+);
 
 export const markInboxReadAction = defineAction({ schema: WorkItemIdInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) =>
   markInboxRead(tx, ctx, { workItemId: input.workItemId }),

@@ -9,7 +9,7 @@
 //     assignee is its author.
 //   • Kept: a دبیر (or a broad admin) giving class homework notifies the class; an admin / principal handing a
 //     «تسک» to named people notifies them (an assignment to someone else — docs/decisions-pending/work-items.md);
-//     «تمدید» and the creator's own status changes («اتمام» / «بازیابی» / «حذف») tell the assignees, as before.
+//     «ویرایش» (a moved deadline or changed content) and the creator's own status changes («اتمام» / «بازیابی» / «حذف») tell the assignees, as before.
 import { type AssignmentLike, isStudentOnly } from "@/lib/work-item-words";
 import type { Recipients } from "./dto";
 

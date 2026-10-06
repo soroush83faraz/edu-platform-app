@@ -118,6 +118,8 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
         <WorkItemActions
           workItemId={item.id}
           title={item.title}
+          description={item.description}
+          priority={item.priority}
           statusCategory={item.statusCategory}
           dueAt={item.dueAt}
           assigneeCount={assignees.length}

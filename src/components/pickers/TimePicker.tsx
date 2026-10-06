@@ -192,7 +192,7 @@ export function TimePicker({ value, onChange, name, disabled, ...aria }: TimePic
       </label>
 
       {desktop ? (
-        // `modal`: inside the «تمدید» dialog a non-modal popover cannot hold focus — the dialog's focus trap pulls
+        // `modal`: inside the «ویرایش» dialog a non-modal popover cannot hold focus — the dialog's focus trap pulls
         // it straight back and the drums never see an arrow key. A trapped layer of its own wins that stack.
         <Popover modal open={open} onOpenChange={(o) => (o ? openPicker() : finish(!cancelling.current))}>
           <PopoverTrigger asChild>{field}</PopoverTrigger>

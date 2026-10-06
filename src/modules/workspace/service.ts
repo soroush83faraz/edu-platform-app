@@ -439,54 +439,115 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// due date
+// edit («ویرایش»)
 // ---------------------------------------------------------------------------------------------------------------
 
-export interface ExtendDueAtInput {
+/** A PATCH: `undefined` keeps the field; `description: null` / `dueAt: null` clear it. */
+export interface UpdateWorkItemInput {
   workItemId: string;
-  dueAt: Date;
+  title?: string;
+  description?: string | null;
+  priority?: Priority;
+  dueAt?: Date | null;
+}
+
+type EditableField = "title" | "description" | "priority" | "dueAt";
+
+export interface UpdateWorkItemResult {
+  /** The fields that actually changed — empty for a save that changed nothing (no write, no audit, no notification). */
+  changed: EditableField[];
+  notified: number;
+}
+
+/** The Persian names of the content fields, for the notification body («عنوان و اولویت تغییر کرد»). */
+const FIELD_FA: Record<Exclude<EditableField, "dueAt">, string> = { title: "عنوان", description: "توضیح", priority: "اولویت" };
+
+function listFa(parts: string[]): string {
+  return parts.length <= 1 ? (parts[0] ?? "") : `${parts.slice(0, -1).join("، ")} و ${parts[parts.length - 1]}`;
 }
 
 /**
- * «تمدید»: a manager of the item (`managesItem` — the creator, or a broad `update` holder who is not one of its
- * assignees; an assignee never extends their own deadline) moves the due date of an OPEN item to a later moment. The
- * new due must lie in the future — anything else is a back-date, which is not an extension. Every assignee is told
- * («مهلت تکلیف «…» تا … تمدید شد» in the actor's word, deduped per new due) and their inbox rows flip back to
- * unread; one audit row.
+ * «ویرایش»: a manager of the item (`managesItem` — the creator, or a broad `update` holder who is not one of its
+ * assignees; an assignee never edits what they were given) changes its title, description, priority and deadline.
+ * The item must be open and not archived. A CHANGED deadline must lie in the future — earlier or later than the old
+ * one, both fine — or be removed (an item may be created without one); an untouched one is never re-checked, so an
+ * overdue item can still have its typo fixed. Nothing changed → nothing written. Otherwise one audit row
+ * `workspace.work_item.updated` with the before/after of the changed fields only, and every assignee is told in ONE
+ * notification: a moved deadline is `work_item.due_extended` (deduped per new due value, as «تمدید» always was —
+ * «… تمدید شد» when it moved later, «… تغییر کرد» / «… برداشته شد» otherwise, the content changes named in its
+ * body), a content-only edit is `work_item.updated`. Their inbox rows flip back to unread either way.
  */
-export async function extendDueAt(tx: Tx, ctx: WorkspaceCtx, input: ExtendDueAtInput): Promise<{ dueAt: Date; notified: number }> {
+export async function updateWorkItem(tx: Tx, ctx: WorkspaceCtx, input: UpdateWorkItemInput): Promise<UpdateWorkItemResult> {
   const item = await canViewWorkItem(tx, ctx, input.workItemId);
-  if (item.archivedAt) throw validation(undefined, `این ${nouns(ctx).singular} بایگانی شده است.`);
+  const noun = nouns(ctx).singular;
+  if (item.archivedAt) throw validation(undefined, `این ${noun} بایگانی شده است.`);
   if (!canAtAnyScope(ctx.assignments, "workspace.work_item.update")) throw forbidden();
   const mine = await findMyAssigneeRow(tx, ctx.personId, item.id);
-  if (!managesItem(ctx, item, mine !== null)) throw forbidden(`فقط دهندهٴ ${nouns(ctx).singular} می‌تواند مهلت را تمدید کند.`);
-  if (item.statusCategory === "done" || item.statusCategory === "cancelled") throw validation(undefined, `این ${nouns(ctx).singular} بسته شده است؛ برای تمدید اول بازیابی کنید.`);
-  if (input.dueAt.getTime() <= Date.now()) throw validation({ fieldErrors: { dueDate: ["مهلت جدید باید بعد از اکنون باشد."] } });
-  if (item.dueAt && input.dueAt.getTime() === item.dueAt.getTime()) throw validation({ fieldErrors: { dueDate: ["مهلت تغییری نکرده است."] } });
+  if (!managesItem(ctx, item, mine !== null)) throw forbidden(`فقط دهندهٴ ${noun} می‌تواند آن را ویرایش کند.`);
+  if (item.statusCategory === "done" || item.statusCategory === "cancelled") throw validation(undefined, `این ${noun} بسته شده است؛ برای ویرایش اول بازیابی کنید.`);
 
-  await tx.update(workItem).set({ dueAt: input.dueAt }).where(eq(workItem.id, item.id));
+  const title = input.title?.trim();
+  if (title !== undefined && title === "") throw validation({ fieldErrors: { title: ["عنوان را وارد کنید."] } });
+  const description = input.description === undefined ? undefined : input.description?.trim() || null;
+
+  const before: Partial<Record<EditableField, unknown>> = {};
+  const after: Partial<Record<EditableField, unknown>> = {};
+  const set: Partial<{ title: string; description: string | null; priority: Priority; dueAt: Date | null }> = {};
+  if (title !== undefined && title !== item.title) {
+    before.title = item.title;
+    set.title = after.title = title;
+  }
+  if (description !== undefined && description !== item.description) {
+    before.description = item.description;
+    set.description = after.description = description;
+  }
+  if (input.priority !== undefined && input.priority !== item.priority) {
+    before.priority = item.priority;
+    set.priority = after.priority = input.priority;
+  }
+  const dueAt = input.dueAt;
+  if (dueAt !== undefined && (dueAt?.getTime() ?? null) !== (item.dueAt?.getTime() ?? null)) {
+    if (dueAt && dueAt.getTime() <= Date.now()) throw validation({ fieldErrors: { dueDate: ["مهلت جدید باید بعد از اکنون باشد."] } });
+    before.dueAt = item.dueAt;
+    set.dueAt = after.dueAt = dueAt;
+  }
+  const changed = Object.keys(after) as EditableField[];
+  if (changed.length === 0) return { changed, notified: 0 };
+
+  await tx.update(workItem).set(set).where(eq(workItem.id, item.id));
 
   const recipients = notifiable(ctx.assignments, (await listAssignees(tx, item.id)).map((a) => a.personId).filter((id) => id !== ctx.personId));
   let notified = 0;
   if (recipients.length > 0) {
-    const when = formatJalaliDateTime(input.dueAt);
-    notified = await notifyMany(tx, ctx, recipients, {
-      typeCode: "work_item.due_extended",
-      title: `مهلت ${nouns(ctx).singular} «${item.title}» تا ${when} تمدید شد`,
-      body: null,
-      sourceKind: "work_item",
-      sourceId: item.id,
-      deepLink: `/inbox/${item.id}`,
-      dedupeKey: (personId) => `wi:${item.id}:due:${input.dueAt.toISOString()}:${personId}`,
-    });
+    const shown = set.title ?? item.title;
+    const content = changed.filter((f): f is Exclude<EditableField, "dueAt"> => f !== "dueAt").map((f) => FIELD_FA[f]);
+    const common = { sourceKind: "work_item", sourceId: item.id, deepLink: `/inbox/${item.id}` } as const;
+    if (set.dueAt !== undefined) {
+      const newDue = set.dueAt;
+      const heading =
+        newDue === null
+          ? `مهلت ${noun} «${shown}» برداشته شد`
+          : item.dueAt && newDue > item.dueAt
+            ? `مهلت ${noun} «${shown}» تا ${formatJalaliDateTime(newDue)} تمدید شد`
+            : `مهلت ${noun} «${shown}» به ${formatJalaliDateTime(newDue)} تغییر کرد`;
+      notified = await notifyMany(tx, ctx, recipients, {
+        ...common,
+        typeCode: "work_item.due_extended",
+        title: heading,
+        body: content.length > 0 ? `${listFa(content)} هم تغییر کرد.` : null,
+        dedupeKey: (personId) => `wi:${item.id}:due:${newDue?.toISOString() ?? "none"}:${personId}`,
+      });
+    } else {
+      notified = await notifyMany(tx, ctx, recipients, { ...common, typeCode: "work_item.updated", title: `${noun} «${shown}» ویرایش شد`, body: `${listFa(content)} تغییر کرد.` });
+    }
     await tx
       .update(inboxEntry)
       .set({ state: "unread" })
       .where(and(eq(inboxEntry.workItemId, item.id), inArray(inboxEntry.personId, recipients), eq(inboxEntry.state, "read")));
   }
 
-  await audit(ctx, "workspace.work_item.due_extended", { schema: "workspace", table: "work_item", id: item.id }, { dueAt: item.dueAt }, { dueAt: input.dueAt }, tx);
-  return { dueAt: input.dueAt, notified };
+  await audit(ctx, "workspace.work_item.updated", { schema: "workspace", table: "work_item", id: item.id }, before, after, tx);
+  return { changed, notified };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -584,8 +645,8 @@ export async function getWorkItemDetail(tx: Tx, ctx: WorkspaceCtx, workItemId: s
     myAssigneeState: mine?.state ?? null,
     viewer: {
       isCreator,
-      // The one rule `changeStatus` / `extendDueAt` enforce (./manage-policy): a broad holder who is an ASSIGNEE of
-      // someone else's item reads it as an assignee — «انجام شد» only, no «اتمام» / «تمدید» / «حذف» / «بازیابی».
+      // The one rule `changeStatus` / `updateWorkItem` enforce (./manage-policy): a broad holder who is an ASSIGNEE of
+      // someone else's item reads it as an assignee — «انجام شد» only, no «اتمام» / «ویرایش» / «حذف» / «بازیابی».
       isManager: managesItem(ctx, item, mine !== null),
       isStaff: staff,
       canComment: canAtAnyScope(ctx.assignments, "workspace.work_item.comment"),

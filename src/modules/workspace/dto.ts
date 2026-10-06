@@ -64,15 +64,23 @@ export type ChangeStatusInput = z.output<typeof ChangeStatusInput>;
 
 export const SetPinnedInput = z.object({ workItemId: uuid, pinned: z.boolean() }).strict();
 
-/** «تمدید»: the same date/time strings as the create form; the action parses them into the new `dueAt`. */
-export const ExtendDueInput = z
+/**
+ * «ویرایش»: a PATCH — an omitted field keeps its value. The limits are the create form's. `description: ""` clears
+ * it; `dueDate: ""` clears the deadline (an item may be created without one, so it may lose it again), any other
+ * `dueDate` / `dueTime` are the create form's strings, parsed by the action into the new `dueAt`. The form sends the
+ * due fields only once the reader touched them, so an untouched deadline is never re-parsed (and never re-checked).
+ */
+export const UpdateWorkItemInput = z
   .object({
     workItemId: uuid,
-    dueDate: z.string().trim().min(1, "تاریخ جدید را انتخاب کنید.").max(12),
+    title: z.string().trim().min(1, "عنوان را وارد کنید.").max(200, "عنوان حداکثر ۲۰۰ نویسه است.").optional(),
+    description: z.string().trim().max(4000, "توضیح حداکثر ۴۰۰۰ نویسه است.").optional(),
+    priority: z.enum(PRIORITIES).optional(),
+    dueDate: z.string().trim().max(12).optional(),
     dueTime: z.string().trim().max(5).optional(),
   })
   .strict();
-export type ExtendDueInput = z.output<typeof ExtendDueInput>;
+export type UpdateWorkItemInput = z.output<typeof UpdateWorkItemInput>;
 
 export const ListInboxInput = z
   .object({

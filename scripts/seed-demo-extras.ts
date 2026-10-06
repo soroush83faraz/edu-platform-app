@@ -10,7 +10,7 @@
 // of «تکلیف» of the first دبیر (partly done by the class, one closed with «اتمام», one extended) — deadlines spread
 // round NOW in Asia/Tehran (overdue, today, this week, later, none).
 //
-// Everything goes THROUGH the real services (`createWorkItem`, `changeStatus`, `extendDueAt`, `markInboxRead`, the
+// Everything goes THROUGH the real services (`createWorkItem`, `changeStatus`, `updateWorkItem`, `markInboxRead`, the
 // notification repo's `markRead`) with each acting person's REAL ctx (`listValidAssignments`), so audit rows, inbox
 // entries and notifications are the ones the app itself writes — including the current notification policy (an
 // assignee's «انجام شد» notifies nobody). Only the notifications of an item an assignee finished or opened
@@ -18,7 +18,7 @@
 //
 // Idempotent: every planned item carries a deterministic `work_item.idempotency_key` (`demoItemKey`) and is looked up
 // by (creator, key) before it is created; a done mark / «اتمام» is skipped when already there, a «تمدید» when the
-// item's audit trail already holds one. A second run writes nothing (tests/int/seed-demo-extras.test.ts).
+// item's audit trail already holds a deadline change. A second run writes nothing (tests/int/seed-demo-extras.test.ts).
 //
 // It also renames old «کار جدید: …» notification titles of the pilot organizations to the creator's current word
 // («تکلیف جدید: …» / «تسک جدید: …»). With `--prune-legacy-status` (opt-in, destructive) it deletes the pilot
@@ -34,7 +34,7 @@ import { workItemVoice, workItemWords } from "../src/lib/work-item-words";
 import { listValidAssignments } from "../src/modules/iam/repo";
 import { markRead } from "../src/modules/notif/repo";
 import { findWorkItemCore } from "../src/modules/workspace/repo";
-import { changeStatus, createWorkItem, extendDueAt, markInboxRead, type CreateWorkItemInput } from "../src/modules/workspace/service";
+import { changeStatus, createWorkItem, markInboxRead, updateWorkItem, type CreateWorkItemInput } from "../src/modules/workspace/service";
 import {
   DEMO_ITEMS,
   LEGACY_NEW_PREFIX,
@@ -135,8 +135,18 @@ async function assigneeState(tx: Tx, workItemId: string, personId: string): Prom
   return row?.state ?? null;
 }
 
-async function hasAudit(tx: Tx, workItemId: string, action: string): Promise<boolean> {
-  const [row] = await tx.select({ id: auditLog.id }).from(auditLog).where(and(eq(auditLog.entityId, workItemId), eq(auditLog.action, action))).limit(1);
+/** The deadline was moved once already: a «ویرایش» that changed `dueAt`, or the «تمدید» audit row written before it. */
+async function hasDueChange(tx: Tx, workItemId: string): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: auditLog.id })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.entityId, workItemId),
+        sql`(${auditLog.action} = 'workspace.work_item.due_extended' or (${auditLog.action} = 'workspace.work_item.updated' and ${auditLog.after} ? 'dueAt'))`,
+      ),
+    )
+    .limit(1);
   return Boolean(row);
 }
 
@@ -294,11 +304,11 @@ async function seedItem(run: OrgRun, item: DemoItemSpec): Promise<void> {
     }
   }
 
-  // The giver's «تمدید» (tells every assignee) — once per item, whatever the date of the run.
-  if (item.extendTo && !(await hasAudit(tx, workItemId, "workspace.work_item.due_extended"))) {
+  // The giver's «تمدید» — a «ویرایش» of the deadline to a later one (tells every assignee) — once per item, whatever the date of the run.
+  if (item.extendTo && !(await hasDueChange(tx, workItemId))) {
     const core = await findWorkItemCore(tx, workItemId);
     if (core && !isClosed(core.statusCategory)) {
-      await extendDueAt(tx, actor, { workItemId, dueAt: demoDueAt(item.extendTo, run.now)! });
+      await updateWorkItem(tx, actor, { workItemId, dueAt: demoDueAt(item.extendTo, run.now)! });
       run.stats.extended++;
     }
   }

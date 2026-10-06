@@ -170,7 +170,9 @@ export const NOTIFICATION_TYPES: SystemNotificationType[] = [
   { code: "work_item.assigned", module: "workspace", name: "کار جدید به شما سپرده شد" },
   { code: "work_item.comment", module: "workspace", name: "نظر جدید روی کار" },
   { code: "work_item.status_changed", module: "workspace", name: "وضعیت کار تغییر کرد" },
-  { code: "work_item.due_extended", module: "workspace", name: "مهلت تکلیف تمدید شد" },
+  // The code keeps its first name; since «ویرایش» the deadline may also move earlier or be removed.
+  { code: "work_item.due_extended", module: "workspace", name: "مهلت کار تغییر کرد" },
+  { code: "work_item.updated", module: "workspace", name: "کار ویرایش شد" },
   { code: "work_item.due_soon", module: "workspace", name: "مهلت کار نزدیک است", urgency: "high" },
   { code: "account.password_reset", module: "iam", name: "رمز حساب بازنشانی شد", urgency: "high", userCanDisable: false },
   { code: "system.announcement", module: "system", name: "اطلاعیهٴ سامانه", userCanDisable: false },

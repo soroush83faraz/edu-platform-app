@@ -1,8 +1,8 @@
 "use client";
 
-import { CalendarPlus, Check, CheckCheck, RotateCcw, Trash2 } from "lucide-react";
+import { Check, CheckCheck, Pencil, RotateCcw, Trash2, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/cn";
 import { ResponsiveModal } from "@/components/admin/ResponsiveModal";
@@ -10,21 +10,32 @@ import { prefersReducedMotion } from "@/components/motion/CrossFade";
 import { DrawnCheck } from "@/components/motion/DrawnCheck";
 import { JalaliDatePicker } from "@/components/pickers/JalaliDatePicker";
 import { TimePicker, formatTimeFa } from "@/components/pickers/TimePicker";
+import { PrioritySelect } from "@/components/PrioritySelect";
+import type { Priority } from "@/components/priority";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { forgetCompleted, noteCompleted } from "@/lib/completion-moment";
 import { flatten } from "@/lib/form-errors";
-import { formatJalaliDateTime, parseJalaliToInstant, tehranNow } from "@/lib/format";
+import { parseJalaliToInstant, tehranNow } from "@/lib/format";
 import { formatHm, formatJalaliDay, formatJalaliDayLong, parseJalaliDay, tehranToday } from "@/lib/jalali-grid";
 import type { WorkItemWords } from "@/lib/work-item-words";
-import { changeStatusAction, extendDueAtAction, markInboxReadAction } from "../actions";
+import { changeStatusAction, markInboxReadAction, updateWorkItemAction } from "../actions";
 import type { StatusCategory } from "../repo";
 import { useCompletion } from "./Completion";
 
-export interface WorkItemActionsProps {
-  workItemId: string;
+/** What the «ویرایش» form starts from — the item as it is now. */
+export interface EditableItem {
   title: string;
-  statusCategory: StatusCategory;
+  description: string | null;
+  priority: Priority;
   dueAt: Date | null;
+}
+
+export interface WorkItemActionsProps extends EditableItem {
+  workItemId: string;
+  statusCategory: StatusCategory;
   assigneeCount: number;
   myAssigneeState: "pending" | "accepted" | "done" | null;
   /**
@@ -45,8 +56,8 @@ export interface WorkItemActionsProps {
  * The action row of a کار — named «تکلیف» or «تسک» by the reader's hats. An assignee gets «انجام شد» — also an
  * assignee who holds a broad admin hat (a principal given a تسک by the organization admin): their «انجام شد» marks
  * only their own row. The item's manager (`isManager`: its creator, or a broad admin who is not one of its
- * assignees) gets the three creator actions — «اتمام» (primary: closes it for everyone), «تمدید»
- * (secondary: a later due date), «حذف» (ghost, red) — or, once it is closed, «بازیابی» (outline) and, on a
+ * assignees) gets the three creator actions — «اتمام» (primary: closes it for everyone), «ویرایش»
+ * (secondary: title, description, priority and deadline — earlier, later or none), «حذف» (ghost, red) — or, once it is closed, «بازیابی» (outline) and, on a
  * finished one, «حذف» beside it (destructive tint; owner, round 7). «حذف» is a LABEL: the stored status is still
  * `cancelled`, nothing leaves the database and «بازیابی» brings the item back (owner, round 4); after it the reader
  * goes back to the list. Who sees «حذف» is exactly who may cancel — the creator (a student only on their own
@@ -61,12 +72,12 @@ export interface WorkItemActionsProps {
  * refusal un-strikes the title and brings the button back. The finish is noted for the کارتابل and Home
  * (`src/lib/completion-moment.ts`).
  */
-export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assigneeCount, myAssigneeState, isManager, canUpdate, inboxState, words, noun }: WorkItemActionsProps) {
+export function WorkItemActions({ workItemId, title, description, priority, statusCategory, dueAt, assigneeCount, myAssigneeState, isManager, canUpdate, inboxState, words, noun }: WorkItemActionsProps) {
   const router = useRouter();
   const [pending, start] = useTransition();
   // `"cancel"` is the `cancelled` transition — the button that used to read «کنسل» and now reads «حذف».
   const [confirm, setConfirm] = useState<"done" | "cancel" | null>(null);
-  const [extending, setExtending] = useState(false);
+  const [editing, setEditing] = useState(false);
   const markDone = useCompletion();
   // «انجام شد» was tapped on this page view: the button stays (as its finished twin) until it folds away.
   const [justDone, setJustDone] = useState(false);
@@ -187,9 +198,9 @@ export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assi
       );
     }
     buttons.push(
-      <Button key="extend" variant="outline" className={buttonClass} disabled={pending} onClick={() => setExtending(true)}>
-        <CalendarPlus aria-hidden />
-        تمدید
+      <Button key="edit" variant="outline" className={buttonClass} disabled={pending} onClick={() => setEditing(true)}>
+        <Pencil aria-hidden />
+        ویرایش
       </Button>,
       <Button key="cancel" variant="ghost" className={cn(buttonClass, "text-danger hover:bg-danger-soft hover:text-danger")} disabled={pending} onClick={() => setConfirm("cancel")}>
         <Trash2 aria-hidden />
@@ -257,8 +268,8 @@ export function WorkItemActions({ workItemId, title, statusCategory, dueAt, assi
         />
       </ResponsiveModal>
 
-      <ResponsiveModal open={extending} onOpenChange={setExtending} title="تمدید مهلت" description={`مهلت فعلی: ${dueAt ? formatJalaliDateTime(dueAt) : "بدون مهلت"}`}>
-        {extending ? <ExtendForm workItemId={workItemId} title={title} dueAt={dueAt} onClose={() => setExtending(false)} onDone={() => router.refresh()} /> : null}
+      <ResponsiveModal open={editing} onOpenChange={setEditing} title={`ویرایش ${noun}`}>
+        {editing ? <EditForm workItemId={workItemId} item={{ title, description, priority, dueAt }} noun={noun} onClose={() => setEditing(false)} onDone={() => router.refresh()} /> : null}
       </ResponsiveModal>
     </div>
   );
@@ -310,75 +321,176 @@ function ConfirmRow({ pending, onCancel, confirm }: { pending: boolean; onCancel
   );
 }
 
-/** The extend dialog's body: the calendar inline (today onward), the time toggle, the new due in one line, submit. */
-function ExtendForm({ workItemId, title, dueAt, onClose, onDone }: { workItemId: string; title: string; dueAt: Date | null; onClose: () => void; onDone: () => void }) {
+/**
+ * The «ویرایش» dialog's body: the create form's fields (title, description, the «مهلت» date + time, priority)
+ * prefilled with the item as it is. The deadline is sent only once it was touched, so an overdue item can have its
+ * typo fixed without being asked for a new date; a CHANGED deadline must lie ahead (earlier or later — both fine) or
+ * be removed with the field's ×. «ذخیرهٴ تغییرات» waits until something differs.
+ */
+function EditForm({ workItemId, item, noun, onClose, onDone }: { workItemId: string; item: EditableItem; noun: string; onClose: () => void; onDone: () => void }) {
+  const ids = useId();
   const [pending, start] = useTransition();
   const [errors, setErrors] = useState<Record<string, string>>({});
-  // Prefill with the current due (day + a specific time when it is not the end of the day) so «one week more» is two taps.
-  const [dueDate, setDueDate] = useState(() => {
-    if (!dueAt) return "";
-    const local = tehranNow(dueAt);
-    return local.getTime() >= tehranToday().getTime() ? formatJalaliDay(local) : "";
-  });
+  const [title, setTitle] = useState(item.title);
+  const [description, setDescription] = useState(item.description ?? "");
+  const [priority, setPriority] = useState<Priority>(item.priority);
+  // The current due as the pickers' strings — also when it is already behind us (it stays until it is changed).
+  const [dueDate, setDueDate] = useState(() => (item.dueAt ? formatJalaliDay(tehranNow(item.dueAt)) : ""));
   const [dueTime, setDueTime] = useState(() => {
-    if (!dueAt) return "";
-    const local = tehranNow(dueAt);
+    if (!item.dueAt) return "";
+    const local = tehranNow(item.dueAt);
     const minutes = local.getHours() * 60 + local.getMinutes();
     return minutes === 23 * 60 + 59 ? "" : formatHm(minutes);
   });
+  const [dueTouched, setDueTouched] = useState(false);
+
   const day = dueDate ? parseJalaliDay(dueDate) : null;
   const instant = dueDate ? parseJalaliToInstant(dueDate, dueTime || null) : null;
-  const inPast = instant !== null && instant <= new Date();
-  const unchanged = instant !== null && dueAt !== null && instant.getTime() === dueAt.getTime();
-  const blocked = pending || !instant || inPast || unchanged;
+  const dueChanged = dueTouched && (instant?.getTime() ?? null) !== (item.dueAt?.getTime() ?? null);
+  const inPast = dueChanged && instant !== null && instant <= new Date();
+  const dirty = title.trim() !== item.title || description.trim() !== (item.description ?? "") || priority !== item.priority || dueChanged;
+  const blocked = pending || !dirty || title.trim() === "" || inPast || (dueChanged && dueDate !== "" && !instant);
 
-  const submit = () =>
+  const submit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (blocked) return;
     start(async () => {
-      const r = await extendDueAtAction({ workItemId, dueDate, dueTime: dueTime || undefined });
+      const r = await updateWorkItemAction({
+        workItemId,
+        title: title.trim(),
+        description: description.trim(),
+        priority,
+        // Only a touched deadline travels: "" removes it, anything else is the new day (+ time).
+        ...(dueChanged ? { dueDate, dueTime: dueDate ? dueTime || undefined : undefined } : {}),
+      });
       if (r.ok) {
-        toast.success(`مهلت «${title}» تمدید شد`);
+        toast.success(r.data.changed.length > 0 ? `تغییرات ${noun} ذخیره شد` : "تغییری برای ذخیره نبود");
         onClose();
         onDone();
         return;
       }
-      setErrors(flatten(r.fieldErrors, r.message, ["dueDate", "dueTime"]));
+      setErrors(flatten(r.fieldErrors, r.message, EDIT_FIELDS));
     });
+  };
+
+  const field = (name: string) => ({ id: `${ids}-${name}`, error: errors[name], describedBy: errors[name] ? `${ids}-${name}-err` : undefined });
+  const titleF = field("title");
+  const descF = field("description");
+  const dueF = field("dueDate");
+  const timeF = field("dueTime");
 
   return (
-    <div className="flex flex-col gap-4 pt-2">
-      {/* The dialog itself is the «مهلت» panel — a card inside it would be a card inside a card. Just the rule. */}
-      <JalaliDatePicker variant="inline" value={dueDate} onChange={setDueDate} minDate={tehranToday()} />
-      {day ? (
-        <>
-          <hr className="border-line" />
-          <TimePicker value={dueTime} onChange={setDueTime} />
-        </>
-      ) : null}
-      <p role="status" className={cn("min-h-6 text-sm leading-6", inPast || unchanged ? "text-warning-text" : "text-text-muted")}>
+    <form onSubmit={submit} noValidate className="flex flex-col gap-5 pt-2">
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={titleF.id}>عنوان</Label>
+        <Input
+          id={titleF.id}
+          dir="auto"
+          maxLength={200}
+          required
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          aria-invalid={titleF.error || title.trim() === "" ? true : undefined}
+          aria-describedby={titleF.describedBy}
+        />
+        <FieldError id={`${titleF.id}-err`} text={titleF.error ?? (title.trim() === "" ? "عنوان را وارد کنید." : undefined)} />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={descF.id}>
+          توضیح <span className="text-text-faint">(اختیاری)</span>
+        </Label>
+        <Textarea
+          id={descF.id}
+          dir="auto"
+          rows={3}
+          maxLength={4000}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          aria-invalid={descF.error ? true : undefined}
+          aria-describedby={descF.describedBy}
+        />
+        <FieldError id={`${descF.id}-err`} text={descF.error} />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={dueF.id}>
+          مهلت <span className="text-text-faint">(اختیاری)</span>
+        </Label>
+        {/* The dialog is the panel — no card inside it; the clock sits under the day once a day exists. */}
+        <JalaliDatePicker
+          id={dueF.id}
+          modal
+          value={dueDate}
+          minDate={tehranToday()}
+          onChange={(v) => {
+            setDueDate(v);
+            if (!v) setDueTime("");
+            setDueTouched(true);
+          }}
+          aria-invalid={dueF.error ? true : undefined}
+          aria-describedby={dueF.describedBy}
+        />
         {day ? (
-          <>
-            {inPast ? "این زمان گذشته است: " : unchanged ? "همان مهلت فعلی است: " : "مهلت جدید: "}
-            <span className="tabular text-text">
-              {formatJalaliDayLong(day)}، ساعت {formatTimeFa(dueTime)}
-            </span>
-          </>
-        ) : (
-          "روز مهلت جدید را از تقویم انتخاب کنید."
-        )}
-      </p>
-      <p role="alert" className={cn("text-sm text-danger", !(errors.dueDate || errors.dueTime || errors.form) && "hidden")}>
-        {errors.dueDate ?? errors.dueTime ?? errors.form}
+          <TimePicker
+            value={dueTime}
+            onChange={(v) => {
+              setDueTime(v);
+              setDueTouched(true);
+            }}
+            aria-describedby={timeF.describedBy}
+          />
+        ) : null}
+        <FieldError id={`${dueF.id}-err`} text={dueF.error} />
+        <FieldError id={`${timeF.id}-err`} text={timeF.error} />
+        <p role="status" className={cn("flex items-center gap-1.5 text-sm leading-6", inPast ? "text-warning-text" : "text-text-muted")}>
+          {inPast ? <TriangleAlert className="size-4 shrink-0" aria-hidden /> : null}
+          {day ? (
+            <>
+              {inPast ? "این زمان گذشته است: " : dueChanged ? "مهلت جدید: " : "مهلت: "}
+              <span className="tabular text-text">
+                {formatJalaliDayLong(day)}، ساعت {formatTimeFa(dueTime)}
+              </span>
+            </>
+          ) : dueChanged ? (
+            "مهلت برداشته می‌شود."
+          ) : (
+            "بدون مهلت"
+          )}
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span id={`${ids}-priority`} className="text-sm font-medium text-text">
+          اولویت
+        </span>
+        <PrioritySelect modal value={priority} onChange={setPriority} aria-labelledby={`${ids}-priority`} />
+      </div>
+
+      <p role="alert" className={cn("text-sm text-danger", !errors.form && "hidden")}>
+        {errors.form}
       </p>
       <ConfirmRow
         pending={pending}
         onCancel={onClose}
         confirm={
-          <Button type="button" className="min-w-32" disabled={blocked} onClick={submit}>
-            <CalendarPlus aria-hidden />
-            {pending ? "در حال تمدید…" : "تمدید مهلت"}
+          <Button type="submit" className="min-w-32" disabled={blocked}>
+            <Check aria-hidden />
+            {pending ? "در حال ذخیره…" : "ذخیرهٴ تغییرات"}
           </Button>
         }
       />
-    </div>
+    </form>
+  );
+}
+
+/** Every field the edit form renders; a server error on anything else lands on the form-level line. */
+const EDIT_FIELDS = ["title", "description", "priority", "dueDate", "dueTime"];
+
+function FieldError({ id, text }: { id: string; text?: string }) {
+  return (
+    <p id={id} role="alert" className={cn("text-sm text-danger", !text && "hidden")}>
+      {text}
+    </p>
   );
 }

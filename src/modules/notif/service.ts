@@ -9,6 +9,7 @@ export type NotificationTypeCode =
   | "work_item.comment"
   | "work_item.status_changed"
   | "work_item.due_extended"
+  | "work_item.updated"
   | "work_item.due_soon"
   | "account.password_reset"
   | "system.announcement";
