@@ -101,6 +101,9 @@ if ($Mode -eq "registry") {
 if ($NoDeploy) { Write-Host "Image $image is on the server. Skipping deploy (-NoDeploy)."; exit 0 }
 
 Write-Host "==> ssh $target $RemoteDir/deploy.sh $Sha" -ForegroundColor Cyan
-ssh $target "bash $RemoteDir/deploy.sh $Sha"
+# nohup: a dropped ssh link must not kill deploy.sh between «point .env at the new image» and «up -d app» (2026-10-07:
+# it did). cmd /c: compose writes progress to stderr, which PowerShell 5.1 with ErrorActionPreference=Stop turns into
+# a terminating NativeCommandError mid-deploy. The log is printed at the end and kept in $RemoteDir/deploy-<sha>.log.
+cmd /c "ssh $target ""cd $RemoteDir && nohup bash deploy.sh $Sha > deploy-$Sha.log 2>&1; rc=`$?; cat deploy-$Sha.log; exit `$rc"" 2>&1"
 if ($LASTEXITCODE -ne 0) { throw "deploy.sh failed (rollback should have run; check server logs)" }
 Write-Host "==> deployed $image" -ForegroundColor Green
