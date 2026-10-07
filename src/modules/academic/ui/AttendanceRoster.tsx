@@ -145,9 +145,13 @@ export function AttendanceRoster({ data }: { data: SessionForTaking }) {
         })}
       </ul>
 
-      {/* Sticky above the phone nav bar (3.5 rem + safe area); a card that floats at the bottom from `lg:`. */}
+      {/* Phones: pinned flush to the screen's bottom edge (the hub shell has no bottom nav — owner 2026-10-07: the old
+          3.5 rem lift left it floating mid-air), its padding growing by the home-indicator inset; the classic shell
+          (`data-shell="classic"`) still lifts it above its nav bar. From `lg:` a card that floats at the bottom.
+          `-mb-16` eats the 2 rem + 2 rem bottom padding of ContentWidth and <main>, so at the end of a short roster it
+          rests on the screen edge instead of 4 rem above it. */}
       {data.canWrite ? (
-        <div className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 -mx-4 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur lg:bottom-4 lg:mx-0 lg:rounded-card lg:border">
+        <div className="sticky bottom-0 z-30 max-lg:group-data-[shell=hub]/shell:-mb-16 -mx-4 border-t border-line bg-surface/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur group-data-[shell=classic]/shell:bottom-[calc(3.5rem+env(safe-area-inset-bottom))] group-data-[shell=classic]/shell:pb-3 lg:bottom-4 lg:mx-0 lg:rounded-card lg:border lg:pb-3 lg:group-data-[shell=classic]/shell:bottom-4">
           <div className="mx-auto flex w-full max-w-content items-center justify-between gap-3">
             <p className="min-w-0 text-meta text-text-muted">
               <CircleCheck className="me-1 inline size-4 align-text-bottom text-success" aria-hidden />

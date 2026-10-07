@@ -54,7 +54,7 @@ export async function AppShell({ ctx, children, adminItems }: { ctx: Ctx; childr
       </a>
       <h1 className="sr-only">{title}</h1>
       {hub ? null : <AppNav schoolName={title} role={navRole} hats={hats} adminItems={adminItems} />}
-      <div className="group/shell flex min-w-0 flex-1 flex-col">
+      <div className="group/shell flex min-w-0 flex-1 flex-col" data-shell={hub ? "hub" : "classic"}>
         {hub ? (
           <header className="sticky top-0 z-10 bg-canvas/90 pt-[env(safe-area-inset-top)] backdrop-blur-sm">
             {/* The bar's background spans the viewport; its controls sit on the content column (the same
