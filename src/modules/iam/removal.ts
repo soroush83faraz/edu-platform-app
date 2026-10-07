@@ -1,6 +1,6 @@
 // iam/removal — «حذف دانش‌آموز» / «حذف از کارکنان»: a SOFT removal of one person, inside the caller's transaction.
-// Nothing is deleted — work items, attendance, audit, enrollments and assignments stay as history; the person only
-// stops being LIVE anywhere:
+// Nothing is deleted but one thing (the last bullet) — work items, attendance, audit, enrollments and assignments stay
+// as history; the person only stops being LIVE anywhere:
 //   • person.status 'archived' — every people list, picker, roster, recipient query and counter filters on it;
 //   • student: active class_enrollment(s) → 'ended', live school_enrollment(s) → 'withdrawn' (both end TODAY in
 //     Asia/Tehran), student_profile → 'withdrawn';
@@ -8,7 +8,11 @@
 //     with it, audited there), staff_profile.left_on = today (Tehran);
 //   • every role_assignment still live is revoked (manager roles, the student's own `student` marker);
 //   • login: membership 'left', user_account 'disabled', every live session revoked, the encrypted initial password
-//     of the credentials sheet cleared. The account row and its identifier stay (history; restore is by hand).
+//     of the credentials sheet cleared. The account row and its identifier stay (history; restore is by hand);
+//   • OPEN work items somebody else gave them (owner, 2026-10-07): their unfinished assignee row is taken out
+//     (`withdrawRemovedAssignee` — the one deletion of the removal; the rows are listed in the audit row) so the
+//     giver's «n از m» counts only the people still here; an item whose remaining assignees are all done flips to
+//     done. Finished and cancelled items keep them as history.
 // One `iam.person.removed` audit row summarises the change (statuses, counts and the ids of the ended rows — no
 // secrets). Idempotent: on a person already removed nothing changes and nothing is written (`alreadyRemoved`).
 //
@@ -35,6 +39,7 @@ import { AppError, forbidden, notFound, validation } from "@/lib/errors";
 import { classEnrollment, schoolEnrollment, teacherAssignment } from "@/modules/academic/schema";
 import { endTeacherAssignment } from "@/modules/academic/service";
 import { branch, classGroup, classOffering } from "@/modules/tenancy/schema";
+import { withdrawRemovedAssignee } from "@/modules/workspace/service";
 import { can, canAtAnyScope } from "./can";
 import { revokeAllForUser } from "./repo";
 import { authIdentity, organizationMembership, person, role, roleAssignment, staffProfile, studentProfile, userAccount } from "./schema";
@@ -204,6 +209,10 @@ export interface RemovePersonResult {
   endedTeacherAssignments: number;
   /** Derived teacher roles (ended with their teaching) + every other role that was still live. */
   revokedRoleAssignments: number;
+  /** Open work items they were taken out of (their unfinished assignee row deleted). */
+  withdrawnWorkItems: number;
+  /** Of those, the items that flipped to done because everyone left had finished. */
+  completedWorkItems: number;
   revokedSessions: number;
   accountDisabled: boolean;
 }
@@ -249,6 +258,9 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
       studentStatus = "withdrawn";
     }
   }
+
+  // Open work items: out of the giver's count (header). Before the archive below; the order does not matter otherwise.
+  const work = await withdrawRemovedAssignee(tx, ctx, personId);
 
   let staffLeftOn = plan.staff?.leftOn ?? null;
   if (plan.staff && staffLeftOn === null) {
@@ -296,6 +308,7 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
     teacherAssignments: plan.teaching.length,
     roleAssignments: derivedRoles + revokedRoleIds.length,
     sessions: revokedSessions,
+    workItems: work.withdrawn.length,
   };
   const changed =
     personChanged ||
@@ -332,6 +345,9 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
         endedSchoolEnrollmentIds: endedSchoolIds,
         endedTeacherAssignmentIds: plan.teaching.map((t) => t.id),
         revokedRoleAssignmentIds: revokedRoleIds,
+        // Open items they were taken out of — a restore re-inserts these assignee rows (role 'assignee', this state).
+        withdrawnWorkItemAssignees: work.withdrawn,
+        completedWorkItemIds: work.completedWorkItemIds,
       },
       tx,
     );
@@ -344,6 +360,8 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
     endedSchoolEnrollments: counts.schoolEnrollments,
     endedTeacherAssignments: counts.teacherAssignments,
     revokedRoleAssignments: counts.roleAssignments,
+    withdrawnWorkItems: counts.workItems,
+    completedWorkItems: work.completedWorkItemIds.length,
     revokedSessions,
     accountDisabled: accountChanged || accountBefore === "disabled",
   };

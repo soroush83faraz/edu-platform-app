@@ -7,7 +7,7 @@
 // principals, vice principals — see all items of the organization; per-school partitioning is a later block) —
 // except a personal `todo` (single self-assignee), which only its owner sees. Everyone else gets NOT_FOUND, never
 // FORBIDDEN, so the existence of an item is not leaked.
-import { and, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
 import { chunk } from "@/lib/collections";
@@ -45,7 +45,7 @@ import {
   listTransitions,
   listWatchers,
 } from "./repo";
-import { inboxEntry, workItem, workItemAssignee, workItemComment, workItemTransition, workItemWatcher } from "./schema";
+import { inboxEntry, workItem, workItemAssignee, workItemComment, workItemStatus, workItemTransition, workItemWatcher } from "./schema";
 
 /** What the service needs from the request context (src/lib/ctx `Ctx` satisfies it; tests build one). */
 export type WorkspaceCtx = AuditCtx & CanContext & { personId: string };
@@ -436,6 +436,96 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
     tx,
   );
   return { statusCode: itemChanged ? target.code : item.statusCode, itemChanged, assigneesDone: done, assigneesTotal: assignees.length };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// a removed person («حذف دانش‌آموز» / «حذف از کارکنان», iam/removal)
+// ---------------------------------------------------------------------------------------------------------------
+
+export interface WithdrawnAssignment {
+  workItemId: string;
+  /** The state the row had (never `done`) — what a restore by hand re-inserts. */
+  state: string;
+}
+
+export interface WithdrawRemovedAssigneeResult {
+  withdrawn: WithdrawnAssignment[];
+  /** Items whose every REMAINING assignee had already finished: flipped to done, as the last «انجام شد» would. */
+  completedWorkItemIds: string[];
+}
+
+/** The transition note of an item closed because its last unfinished assignee was removed (shown on the item). */
+export const WITHDRAWN_COMPLETION_NOTE = "با حذف گیرنده‌ای که انجام نداده بود، همهٴ گیرندگان انجام داده‌اند.";
+
+/**
+ * Owner, 2026-10-07: a removed person drops out of the counts of OPEN items; on finished or cancelled ones they stay
+ * as history. Inside the removal's transaction: every assignee row of `personId` that is not `done`, on an item that
+ * is still open (category todo/doing, not archived) and that somebody ELSE gave, is deleted — so the giver's n/m,
+ * the «all done → item done» rule, the notification recipients and the roster on the item all agree without a filter
+ * in any reader. The person's own items (a personal note, a تسک they gave themselves) are left alone: deleting
+ * their only assignee would make a private item visible to managers (`isSelfAssigned`). The deleted rows are the
+ * history the caller writes to its audit row; the person's inbox entries for those items are archived. An item
+ * whose remaining assignees have ALL finished flips to the type's done status (transition + audit row, silent like
+ * an assignee's own last «انجام شد»); an item with no assignee left stays as it is, for its giver to close.
+ * Idempotent: a second call finds no row.
+ */
+export async function withdrawRemovedAssignee(tx: Tx, ctx: WorkspaceCtx, personId: string): Promise<WithdrawRemovedAssigneeResult> {
+  const rows = await tx
+    .select({ workItemId: workItemAssignee.workItemId, state: workItemAssignee.state })
+    .from(workItemAssignee)
+    .innerJoin(workItem, eq(workItem.id, workItemAssignee.workItemId))
+    .innerJoin(workItemStatus, eq(workItemStatus.id, workItem.statusId))
+    .where(
+      and(
+        eq(workItemAssignee.personId, personId),
+        eq(workItemAssignee.role, "assignee"),
+        ne(workItemAssignee.state, "done"),
+        ne(workItem.createdByPersonId, personId),
+        isNull(workItem.archivedAt),
+        inArray(workItemStatus.category, ["todo", "doing"]),
+      ),
+    );
+  if (rows.length === 0) return { withdrawn: [], completedWorkItemIds: [] };
+  const ids = rows.map((r) => r.workItemId);
+
+  for (const part of chunk(ids, INSERT_CHUNK)) {
+    await tx.delete(workItemAssignee).where(and(eq(workItemAssignee.personId, personId), eq(workItemAssignee.role, "assignee"), inArray(workItemAssignee.workItemId, part)));
+    await tx
+      .update(inboxEntry)
+      .set({ state: "archived" })
+      .where(and(eq(inboxEntry.personId, personId), inArray(inboxEntry.workItemId, part), ne(inboxEntry.state, "archived")));
+  }
+
+  const completedWorkItemIds: string[] = [];
+  for (const part of chunk(ids, INSERT_CHUNK)) {
+    const tallies = await tx
+      .select({
+        workItemId: workItemAssignee.workItemId,
+        total: sql<number>`count(*)::int`,
+        done: sql<number>`(count(*) filter (where ${workItemAssignee.state} = 'done'))::int`,
+      })
+      .from(workItemAssignee)
+      .where(and(inArray(workItemAssignee.workItemId, part), eq(workItemAssignee.role, "assignee")))
+      .groupBy(workItemAssignee.workItemId);
+    for (const t of tallies) {
+      if (t.total === 0 || t.done < t.total) continue;
+      const item = await findWorkItemCore(tx, t.workItemId);
+      if (!item) continue;
+      const target = (await listStatusesOfType(tx, item.typeId)).find((s) => s.category === "done");
+      if (!target) continue;
+      await setItemStatus(tx, ctx, item, target, WITHDRAWN_COMPLETION_NOTE);
+      await audit(
+        ctx,
+        "workspace.work_item.status_changed",
+        { schema: "workspace", table: "work_item", id: item.id },
+        { statusCode: item.statusCode, myState: null },
+        { statusCode: target.code, myState: null, note: WITHDRAWN_COMPLETION_NOTE, withdrawnPersonId: personId },
+        tx,
+      );
+      completedWorkItemIds.push(item.id);
+    }
+  }
+  return { withdrawn: rows.map((r) => ({ workItemId: r.workItemId, state: r.state })), completedWorkItemIds };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -10,7 +10,9 @@
 //      removes the principal), never another school's ties (teaching placed by the organization admin);
 //   R5 the doors stay shut: temporary password, unlock, new account, class, teaching, request context;
 //   R6 «رفع قفل» never re-enables a disabled account;
-//   R7 the importer refuses rows naming a removed person.
+//   R7 the importer refuses rows naming a removed person;
+//   R8 open work items drop them from the giver's count (an item whose remaining assignees are all done flips to
+//      done); finished items, and open ones they had already done, keep them; a second call changes nothing.
 // Everything runs inside withTenant transactions that end with Rollback; the catalog roles are seeded in beforeAll
 // and the fixture database is re-created in afterAll (later files assert exact template lists).
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -23,6 +25,7 @@ import {
   auditLog,
   authIdentity,
   classEnrollment,
+  inboxEntry,
   organizationMembership,
   person,
   roleAssignment,
@@ -50,7 +53,8 @@ import type { ParsedWorkbook, Row } from "@/modules/integ/importers/parse";
 import type { SheetKey } from "@/modules/integ/importers/template";
 import { loadReference, validateImport } from "@/modules/integ/importers/validate";
 import { createAcademicYear, createClassGroup, createClassOffering, createSchool } from "@/modules/tenancy/service";
-import { filterActivePersonIds, listOfferingRoster, searchPersons } from "@/modules/workspace/repo";
+import { filterActivePersonIds, listInbox, listOfferingRoster, searchPersons } from "@/modules/workspace/repo";
+import { changeStatus, createWorkItem, WITHDRAWN_COMPLETION_NOTE } from "@/modules/workspace/service";
 import { SYSTEM_ROLES } from "../../scripts/catalog";
 import { runMigrations } from "../../scripts/migrate";
 import { seedCatalog } from "../../scripts/seed";
@@ -176,6 +180,8 @@ describe("removing a student or a colleague", () => {
         endedSchoolEnrollments: 1,
         endedTeacherAssignments: 0,
         revokedRoleAssignments: 1,
+        withdrawnWorkItems: 0,
+        completedWorkItems: 0,
         revokedSessions: 2,
         accountDisabled: true,
       });
@@ -206,7 +212,7 @@ describe("removing a student or a colleague", () => {
         studentStatus: "withdrawn",
         membershipStatus: "left",
         accountStatus: "disabled",
-        counts: { classEnrollments: 1, schoolEnrollments: 1, teacherAssignments: 0, roleAssignments: 1, sessions: 2 },
+        counts: { classEnrollments: 1, schoolEnrollments: 1, teacherAssignments: 0, roleAssignments: 1, sessions: 2, workItems: 0 },
         clearedInitialPassword: true,
       });
       expect(JSON.stringify(trail)).not.toContain(s.initialPassword!);
@@ -409,6 +415,74 @@ describe("removing a student or a colleague", () => {
       expect(issuesOf("staff")).toContainEqual({ column: "phone", message: PERSON_REMOVED_MESSAGE, level: "error" });
       expect(issuesOf("teaching")).toContainEqual({ column: "teacher_phone", message: PERSON_REMOVED_MESSAGE, level: "error" });
       expect(issuesOf("students")).toContainEqual({ column: "student_number", message: PERSON_REMOVED_MESSAGE, level: "error" });
+      throw new Rollback();
+    });
+  });
+
+  it("R8: a removed student leaves the count of OPEN work items (the last one pending → the item is done); finished items and open ones they had done keep them; a second call changes nothing", async () => {
+    await rolledBack(async (tx) => {
+      const mk = async (n: number, first: string) =>
+        createStudent(tx, orgAdmin, { firstName: first, lastName: "کریمی", studentNumber: `R-80${n}`, contactPhone: `0912730008${n}`, login: { createAccount: true }, enrollment: { classGroupId: f.CLASS_GROUP_A1 } });
+      const s = await mk(1, "آرش");
+      const t = await mk(2, "بهار");
+      const u = await mk(3, "کاوه");
+      const studentCtx = (personId: string, profileId: string): AdminCtx =>
+        asAdmin(personId, { roleCode: "student", roleId: "r-student", scopeType: "student", scopeId: profileId, permissions: catalogPerms("student") });
+      const roster = (await listOfferingRoster(tx, f.OFFERING_A1)).map((r) => r.personId);
+      // A class item of OFFERING_A1 given by the organization admin to exactly `to` (everyone else excluded).
+      const give = async (title: string, to: string[]) =>
+        (await createWorkItem(tx, orgAdmin, { typeCode: "task", title, priority: "normal", recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: roster.filter((id) => !to.includes(id)) } })).id;
+      const open = await give("تمرین باز", [s.personId, t.personId]);
+      const finished = await give("تمرین بسته", [s.personId, t.personId]);
+      await changeStatus(tx, orgAdmin, { workItemId: finished, toStatusCode: "done" });
+      const lastPending = await give("تمرین آخر", [s.personId, t.personId]);
+      await changeStatus(tx, studentCtx(t.personId, t.studentProfileId), { workItemId: lastPending, toStatusCode: "done" });
+      const theyDid = await give("تمرین انجام‌شده", [s.personId, u.personId]);
+      await changeStatus(tx, studentCtx(s.personId, s.studentProfileId), { workItemId: theyDid, toStatusCode: "done" });
+
+      const giverRows = async () => new Map((await listInbox(tx, orgAdmin.personId, { tab: "all", createdByMe: true, limit: 100 })).rows.map((r) => [r.id, r]));
+      const before = await giverRows();
+      expect([open, finished, lastPending, theyDid].map((id) => before.get(id)!.assigneesTotal)).toEqual([2, 2, 2, 2]);
+      expect(before.get(lastPending)!.category).toBe("todo");
+
+      const res = await removePerson(tx, orgAdmin, { personId: s.personId, kind: "student" });
+      expect(res).toMatchObject({ alreadyRemoved: false, withdrawnWorkItems: 2, completedWorkItems: 1 });
+
+      const after = await giverRows();
+      // Open: «۰ از ۱» — only the classmate still here counts.
+      expect(after.get(open)).toMatchObject({ assigneesTotal: 1, assigneesDone: 0, category: "todo" });
+      // Finished before the removal: history, untouched.
+      expect(after.get(finished)).toMatchObject({ assigneesTotal: 2, assigneesDone: 2, category: "done" });
+      // The removed student was the last one pending: everyone left is done, so the item is done.
+      expect(after.get(lastPending)).toMatchObject({ assigneesTotal: 1, assigneesDone: 1, category: "done", statusCode: "done" });
+      // Open, but they had already done it: their «انجام شد» still counts.
+      expect(after.get(theyDid)).toMatchObject({ assigneesTotal: 2, assigneesDone: 1, category: "todo" });
+
+      // Their inbox entries of the two items they left are archived; the rest stay.
+      const entries = new Map(
+        (await tx.select({ workItemId: inboxEntry.workItemId, state: inboxEntry.state }).from(inboxEntry).where(eq(inboxEntry.personId, s.personId))).map((e) => [e.workItemId, e.state]),
+      );
+      expect(entries.get(open)).toBe("archived");
+      expect(entries.get(lastPending)).toBe("archived");
+      expect(entries.get(finished)).not.toBe("archived");
+      expect(entries.get(theyDid)).not.toBe("archived");
+
+      // The removal's audit row lists the rows taken out (what a restore re-inserts) and the item it closed; the
+      // closed item has its own status row and a transition with the note.
+      const [row] = await removedRows(tx, s.personId);
+      const auditAfter = row.after as { counts: { workItems: number }; withdrawnWorkItemAssignees: Array<{ workItemId: string; state: string }>; completedWorkItemIds: string[] };
+      expect(auditAfter.counts.workItems).toBe(2);
+      expect(auditAfter.withdrawnWorkItemAssignees.map((w) => w.workItemId).sort()).toEqual([open, lastPending].sort());
+      expect(auditAfter.withdrawnWorkItemAssignees.every((w) => w.state === "pending")).toBe(true);
+      expect(auditAfter.completedWorkItemIds).toEqual([lastPending]);
+      const closed = await tx.select({ after: auditLog.after }).from(auditLog).where(and(eq(auditLog.action, "workspace.work_item.status_changed"), eq(auditLog.entityId, lastPending)));
+      expect(closed.map((c) => c.after)).toContainEqual({ statusCode: "done", myState: null, note: WITHDRAWN_COMPLETION_NOTE, withdrawnPersonId: s.personId });
+
+      // Idempotent: nothing left to take out, nothing written.
+      const again = await removePerson(tx, orgAdmin, { personId: s.personId, kind: "student" });
+      expect(again).toMatchObject({ alreadyRemoved: true, withdrawnWorkItems: 0, completedWorkItems: 0 });
+      expect(await removedRows(tx, s.personId)).toHaveLength(1);
+      expect(await giverRows()).toEqual(after);
       throw new Rollback();
     });
   });
