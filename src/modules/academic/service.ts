@@ -578,6 +578,26 @@ export async function getMyTimetable(tx: Tx, ctx: TimetableCtx, now = new Date()
   return { student, teacher, today: clock.weekday, nowMinutes: clock.minutes, currentPeriodNo, nextPeriodNo };
 }
 
+/** The one gate of the subject page (see `getOfferingPage`): the offering and the viewer's relation, or NOT_FOUND. */
+async function openOffering(tx: Tx, ctx: TimetableCtx, offeringId: string): Promise<{ offering: OfferingFacts; isTeacher: boolean; isStudent: boolean }> {
+  const offering = await findOfferingFacts(tx, offeringId);
+  if (!offering) throw notFound();
+  const isTeacher = await teachesOffering(tx, ctx.personId, offeringId);
+  const cls = await findStudentClass(tx, ctx.personId);
+  const isStudent = cls !== null && cls.classGroupId === offering.classGroupId;
+  if (!isTeacher && !isStudent && !(await can(tx, ctx, "academic.timetable.read", { scopeType: "class_offering", id: offeringId }))) throw notFound();
+  return { offering, isTeacher, isStudent };
+}
+
+/**
+ * Where «برگشت» of a کار of a درس leads (`/inbox/[id]`): its subject page and the درس name — only when THIS viewer may
+ * open that page (the same gate), else NOT_FOUND and the detail page falls back to «پنل من».
+ */
+export async function getOfferingLink(tx: Tx, ctx: TimetableCtx, offeringId: string): Promise<{ offeringId: string; subjectName: string }> {
+  const { offering } = await openOffering(tx, ctx, offeringId);
+  return { offeringId: offering.id, subjectName: offering.subjectName };
+}
+
 export interface OfferingPage {
   offering: OfferingFacts;
   /** All sessions of the درس in the week, with times. */
@@ -593,12 +613,7 @@ export interface OfferingPage {
  * items of the درس are listed by the workspace query with `offeringId` (each viewer sees their own inbox rows).
  */
 export async function getOfferingPage(tx: Tx, ctx: TimetableCtx, offeringId: string, now = new Date()): Promise<OfferingPage> {
-  const offering = await findOfferingFacts(tx, offeringId);
-  if (!offering) throw notFound();
-  const isTeacher = await teachesOffering(tx, ctx.personId, offeringId);
-  const cls = await findStudentClass(tx, ctx.personId);
-  const isStudent = cls !== null && cls.classGroupId === offering.classGroupId;
-  if (!isTeacher && !isStudent && !(await can(tx, ctx, "academic.timetable.read", { scopeType: "class_offering", id: offeringId }))) throw notFound();
+  const { offering, isTeacher, isStudent } = await openOffering(tx, ctx, offeringId);
   const periods = (await listPeriodsOfSchools(tx, [offering.schoolId])).get(offering.schoolId) ?? [];
   const slots = await listOfferingSlots(tx, offeringId);
   const sessions: Session[] = slots.flatMap((s) => {

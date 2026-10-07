@@ -1598,3 +1598,49 @@ Owner, from the approved mock `docs/mockups/class-page-v3.html` (screens 5 and 6
   (`taughtOfferingsFrom`), so they always agree. Inbox rows now carry `offeringId`.
 - Tests: `hub-shell` (bar arrangement, the fixed layer, `pageBack`), `teacher-hues` (deterministic, distinct ≤ 8,
   order-independent, spread), `home-courses` (cover = class hue).
+
+## 2026-10-07 — the subject page as a hero + schedule + ONE تکالیف list; «پنل من» the same list
+Owner, from the approved mock `docs/mockups/class-page-v3.html` (screens 1–4).
+- **One list, no tabs, no bucket boxes.** «تکالیف این درس» on `/subjects/[offeringId]` and «پنل من» (`/inbox`) now
+  show the caller's work items as ONE `surface-work` box (`WorkItemList`, src/modules/workspace/ui/WorkItemList.tsx):
+  the open rows — overdue first, then by deadline, then those without one — then a quiet «انجام‌شده‌ها» divider and
+  the finished rows, latest deadline first (the latest 20; «نمایش همهٴ انجام‌شده‌ها» → `?done=all`, up to 100). Every
+  row ends with a status tag (`WorkItemStatusTag`, a `text-xs` pill): «در انتظار» (primary-50 / primary-700),
+  «مهلت گذشته» (danger-soft / danger — the overdue bucket, the same rule that reddens the deadline), «انجام‌شده»
+  (success-soft / success: green only says completed), and a quiet «حذف‌شده» for a withdrawn item. «Finished» is
+  unchanged: the category the caller experiences (`listInbox` — a student's own «انجام شد» wins; for the giver, the
+  item's status). On what I gave, the meta line says «۹ از ۲۴ انجام داده‌اند» over a thin sky bar, or «همه انجام
+  دادند». The rules are pure (src/modules/workspace/work-item-list.ts). The `?tab=` URLs are ignored, harmlessly.
+  This retires the «انجام‌نشده» / «انجام‌شده» `SegmentedLinks` on both pages and «پنل من»'s deadline-bucket boxes
+  (`InboxBuckets`, `InboxBoxRow`, `groupByBucket`, `emptyDoneCopy` removed), and with them the one exception to «one
+  `surface-work` per view». Kept, because they are features, not tabs: «فقط تکالیف داده‌شده» for staff and the
+  removable deadline / unread chips Home's «امروز» strip and the notifications link to (a deadline filter shows open
+  work only, so it drops the finished tail). In «پنل من» each row leads with its مُهر درس (`SubjectStamp`, a homework
+  row is titled by something else — CLAUDE.md marks rule; the mock drew نشان درس glyphs here) and names its درس.
+- **Moving, not popping.** A row finished on the detail page and brought back from the router cache is no longer
+  removed but moves under «انجام‌شده‌ها»: `LeavingList` gained `moves` — a FLIP glide (transform only, 320 ms) of every
+  row whose place changed; nothing under reduced motion.
+- **Data — no wider visibility.** `listWorkItemsQuery` reads exactly `listInbox`'s rows (the caller's own inbox
+  entries) twice: open (`tab: "todo"`, 50 a page, the keyset cursor) and, after the last open page, finished
+  (`tab: "done"`, new `order: "recent"` — `due_at desc nulls last, created_at desc`, no cursor). The switcher's
+  counts are `openCountsByOffering` — my own open inbox rows grouped by `class_offering_id`, the same «open for me»
+  rule as `inboxCounts`.
+- **The hero is the header.** `PageHeader` keeps the back pill and an assistive-tech title (`hideTitle`); the white
+  `rounded-hero` card shows the نشان درس (the teacher's own class hue), the name, the illustration slot
+  (`SubjectHeroArt` — ONE component, the generic `BookClay` until the per-درس drawings replace its internals), for a
+  دبیر the class switcher (`ClassSwitcher`: «■ کلاس ۱۲/۳ ▾», the square in that class's hue, opening «کلاس‌های من» —
+  `ResponsiveModal fit`: a content-height bottom sheet on phones, a dialog from `md:` — every class they teach with
+  its نشان in its own hue and «N تکلیف در انتظار», the current one checked; a choice is a plain link to that class's
+  page; a one-class دبیر sees a static label), «N دانش‌آموز · N کلاس دیگر», and the primary «تکلیف جدید برای این
+  درس»; anyone else reads «کلاس X · دبیر: Y» («دبیر هنوز مشخص نشده» kept).
+- **Schedule card.** «جلسهٴ بعدی: <امروز / فردا / weekday> <Jalali day month> · <زنگ> <time>» and one cell per class day
+  (weekday, Jalali day of the month, the time range in `<bdi dir="ltr">`), dated in the Saturday-start week that
+  holds the next session (`sessionWeekDays`, src/lib/timetable.ts), so the highlighted cell (info-soft + info ring)
+  and the line always name the same day. Days without a session are left out; more than five cells scroll inside
+  the card.
+- **Empty.** The «برگه و تیک» drawing (`SheetCheckIllustration`, inline SVG) over «تکلیفی برای این درس در انتظار
+  نیست» and the reader's next step — this subject page spot earns an illustration; «پنل من»'s empties stay text.
+- **Back by name.** `/inbox/[id]` goes back to its درس's page, labelled with the درس name, when the reader may open
+  it (`offeringLinkQuery` → `getOfferingLink`, the subject page's own gate, `openOffering`), else to «پنل من».
+- Tests: `unified-list` (unit: tags, ordering, progress text, list shape, day cells), `navigation-feel` (row files);
+  `timetable` (int: `order: "recent"`, `openCountsByOffering`, `getOfferingLink`).

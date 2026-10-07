@@ -7,8 +7,8 @@ import { createVoice, workItemVoice } from "@/lib/work-item-words";
 import { canAtAnyScope, canBroadly } from "@/modules/iam/can";
 import { getPermissionScope } from "@/modules/iam/service";
 import { unreadNotificationCount } from "@/modules/notif";
-import { ListInboxInput, WorkItemIdInput } from "./dto";
-import { type InboxSummary, inboxCounts, inboxTabCounts, isStaff, listInbox, listOfferingsInScope, listTaughtOfferings } from "./repo";
+import { ListInboxInput, ListWorkItemsInput, WorkItemIdInput } from "./dto";
+import { type InboxSummary, inboxCounts, inboxTabCounts, isStaff, listInbox, listOfferingsInScope, listTaughtOfferings, openCountsByOffering } from "./repo";
 import { getWorkItemDetail } from "./service";
 
 export const listInboxQuery = defineQuery({ schema: ListInboxInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) => {
@@ -35,6 +35,41 @@ export const listInboxQuery = defineQuery({ schema: ListInboxInput, permission: 
     createVoice: createVoice(ctx.assignments),
   };
 });
+
+/** Open rows per page of the unified list; the finished tail follows the last page (see `ListWorkItemsInput`). */
+const OPEN_PAGE = 50;
+const DONE_TAIL = 20;
+const DONE_ALL = 100;
+
+/**
+ * The unified list of «پنل من» and the subject page (owner, mock class-page-v3): the caller's OWN inbox rows —
+ * exactly `listInbox`'s rows and visibility, read twice: the open ones by deadline, then the finished ones latest
+ * first. A deadline-bucket filter (Home's «عقب‌افتاده» / «امروز» links) is about open work, so it drops the tail.
+ */
+export const listWorkItemsQuery = defineQuery({ schema: ListWorkItemsInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) => {
+  const staff = await isStaff(tx, ctx.personId);
+  const common = { createdByMe: input.createdByMe, unreadOnly: input.unreadOnly, offeringId: input.offeringId ?? null, viewerIsStaff: staff };
+  const open = await listInbox(tx, ctx.personId, { ...common, tab: "todo", bucket: input.bucket, cursor: input.cursor ?? null, limit: OPEN_PAGE });
+  const done =
+    open.nextCursor || input.bucket
+      ? []
+      : (await listInbox(tx, ctx.personId, { ...common, tab: "done", order: "recent", limit: input.allDone ? DONE_ALL : DONE_TAIL })).rows;
+  return {
+    open: open.rows,
+    nextCursor: open.nextCursor,
+    done,
+    counts: await inboxTabCounts(tx, ctx.personId, common),
+    isStaff: staff,
+    canCreate: canAtAnyScope(ctx.assignments, "workspace.work_item.create"),
+    voice: workItemVoice(ctx.assignments),
+    createVoice: createVoice(ctx.assignments),
+  };
+});
+
+/** My open items per درس — the class switcher's «N تکلیف در انتظار» (`openCountsByOffering`). */
+export const openItemsByOfferingQuery = defineQuery({ permission: "workspace.work_item.read", scope: "any" }, async (tx, _input, ctx) =>
+  openCountsByOffering(tx, ctx.personId),
+);
 
 export const workItemDetailQuery = defineQuery({ schema: WorkItemIdInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) =>
   getWorkItemDetail(tx, ctx, input.workItemId),

@@ -40,7 +40,8 @@ describe("route-level loading states", () => {
 
 describe("entity rows do not prefetch", () => {
   const ROW_FILES = [
-    "src/modules/workspace/ui/InboxRow.tsx",
+    "src/modules/workspace/ui/WorkItemList.tsx",
+    "src/components/classes/ClassSwitcher.tsx",
     "src/components/home/CompactItemRow.tsx",
     "src/components/admin/PeopleRows.tsx",
     "src/components/admin/ResourceTable.tsx",

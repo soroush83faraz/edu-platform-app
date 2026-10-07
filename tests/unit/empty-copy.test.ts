@@ -1,7 +1,7 @@
 // Empty states in the reader's voice (src/lib/empty-copy.ts, UX review 2026-09-27): a student is «تو», staff «شما»,
 // the noun follows work-item-words (تکلیف / تسک), and every line names the next step — never «داده‌ای وجود ندارد».
 import { describe, expect, it } from "vitest";
-import { type Audience, audienceOf, emptyDayCopy, emptyDoneCopy, emptyNotificationsCopy, emptyOpenCopy } from "@/lib/empty-copy";
+import { type Audience, audienceOf, emptyDayCopy, emptyNotificationsCopy, emptyOpenCopy } from "@/lib/empty-copy";
 
 const a = (roleCode: string, scopeType: string, permissions: string[] = []) => ({ roleCode, scopeType, permissions });
 const student = a("student", "student", ["workspace.work_item.read"]);
@@ -10,7 +10,7 @@ const principal = a("school_principal", "school", ["iam.admin.access"]);
 
 const AUDIENCES: Audience[] = ["student", "teacher", "admin", "member"];
 const all = () =>
-  AUDIENCES.flatMap((au) => [emptyOpenCopy(au, true, true), emptyOpenCopy(au, true), emptyOpenCopy(au, false), emptyDoneCopy(au), emptyNotificationsCopy(au)].map((c) => ({ au, c })));
+  AUDIENCES.flatMap((au) => [emptyOpenCopy(au, true, true), emptyOpenCopy(au, true), emptyOpenCopy(au, false), emptyNotificationsCopy(au)].map((c) => ({ au, c })));
 
 describe("audienceOf", () => {
   it("student only → student; any teaching hat → teacher (a teaching principal too); admin; anyone else → member", () => {
@@ -38,7 +38,7 @@ describe("empty copy", () => {
       if (au === "student") continue;
       expect(`${c.title} ${c.description}`).not.toMatch(/نداری(?!د)|خبرت(?!ان)|کنی(?![دم])|بزنی(?!د)/);
     }
-    for (const c of [emptyOpenCopy("admin", true), emptyDoneCopy("admin")]) expect(c.title).toContain("تسک");
+    expect(emptyOpenCopy("admin", true).title).toContain("تسک");
     expect(emptyOpenCopy("teacher", true, true).title).toBe("هنوز تکلیفی نداده‌اید.");
     // Once a دبیر has given work, «هنوز … نداده‌اید» would be untrue.
     expect(emptyOpenCopy("teacher", true, false).title).not.toContain("نداده");

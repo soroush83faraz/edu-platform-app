@@ -1,148 +1,234 @@
-import { CalendarClock, CircleCheck, ListTodo, type LucideIcon, Plus } from "lucide-react";
+import { CalendarClock, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { cn } from "@/lib/cn";
+import { ClassSwitcher, type SwitcherOffering } from "@/components/classes/ClassSwitcher";
 import { EmptyState } from "@/components/EmptyState";
-import { CrossFade } from "@/components/motion/CrossFade";
-import { LeavingList } from "@/components/motion/LeavingList";
+import { getHats } from "@/components/home/home-data";
+import { SheetCheckIllustration } from "@/components/illustrations/SheetCheck";
+import { SubjectHeroArt } from "@/components/illustrations/SubjectHeroArt";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { SegmentedLinks } from "@/components/SegmentedLinks";
-import { SubjectIcon } from "@/components/SubjectStamp";
+import { SubjectIcon, SubjectSwatch } from "@/components/SubjectStamp";
 import { Button } from "@/components/ui/button";
-import { formatNumberFa } from "@/lib/format";
-import { offeringHue } from "@/lib/subject-stamp";
+import { formatJalaliDayOfMonth, formatJalaliShort, formatNumberFa } from "@/lib/format";
+import { normalizeName, offeringHue } from "@/lib/subject-stamp";
 import { getTeacherHues } from "@/lib/teacher-hues";
-import { formatSessionFa, formatTimeRangeFa, WEEKDAY_LABELS } from "@/lib/timetable";
+import { formatTimeFa, formatTimeRangeFa, sessionWeekDays, WEEKDAY_LABELS } from "@/lib/timetable";
 import { offeringPageQuery } from "@/modules/academic/queries";
-import type { InboxTab } from "@/modules/workspace/dto";
-import { listInboxQuery } from "@/modules/workspace/queries";
-import { InboxRow } from "@/modules/workspace/ui/InboxRow";
+import { listWorkItemsQuery, openItemsByOfferingQuery } from "@/modules/workspace/queries";
+import { WorkItemList } from "@/modules/workspace/ui/WorkItemList";
 
 export const metadata: Metadata = { title: "درس" };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const collator = new Intl.Collator("fa", { numeric: true });
 
-const TABS: Array<{ tab: Exclude<InboxTab, "all">; label: string; icon: LucideIcon }> = [
-  { tab: "todo", label: "انجام‌نشده", icon: ListTodo },
-  { tab: "done", label: "انجام‌شده", icon: CircleCheck },
-];
+type Search = Record<string, string | string[] | undefined>;
 
 /**
- * The subject page: the درس beside its نشان درس (`SubjectIcon`) with its class and teacher, the next session, every session of the week, then the
- * work items of this درس — the caller's own inbox rows (a student sees what was given to them, a teacher what
- * they gave). A teacher gets «کار جدید برای این درس» with the offering pre-selected. For the teacher of this class
- * the mark (and the rows' stamps) wear their own colour of the class (`getTeacherHues`, owner 2026-10-06) — the one
- * its course card and timetable cells wear; everyone else sees the درس's hue.
+ * The subject page (mock class-page-v3, owner 2026-10-07). The HERO is the page's header — the درس's نشان (in a
+ * دبیر's own colour of this class, `getTeacherHues`) and name, the illustration slot at the end (`SubjectHeroArt`),
+ * for a دبیر the class switcher «■ کلاس ۱۲/۳ ▾» and «تکلیف جدید برای این درس»; for anyone else «کلاس X · دبیر: Y».
+ * Then the schedule card — «جلسهٴ بعدی» and one cell per class day, the next one highlighted — and «تکالیف این درس»
+ * as ONE list (`WorkItemList`): the caller's own inbox rows of this درس, open first, finished under «انجام‌شده‌ها».
+ * `PageHeader` stays for the back pill and the assistive-tech title (visually hidden: the hero says it). An old
+ * `?tab=` link is ignored.
  */
-export default async function SubjectPage({ params, searchParams }: { params: Promise<{ offeringId: string }>; searchParams: Promise<{ tab?: string }> }) {
+export default async function SubjectPage({ params, searchParams }: { params: Promise<{ offeringId: string }>; searchParams: Promise<Search> }) {
   const { offeringId } = await params;
   if (!UUID_RE.test(offeringId)) notFound();
   const sp = await searchParams;
-  const tab: Exclude<InboxTab, "all"> = sp.tab === "done" ? "done" : "todo";
+  const one = (k: string) => (Array.isArray(sp[k]) ? sp[k]?.[0] : sp[k]);
+  const allDone = one("done") === "all";
+  const cursor = one("cursor") || undefined;
   const page = await offeringPageQuery({ offeringId });
   if (!page.ok) {
     if (page.code === "UNAUTHENTICATED") redirect("/login");
     notFound();
   }
   const { offering, sessions, nextSession, viewer } = page.data;
-  const items = await listInboxQuery({ tab, offeringId });
-  const rows = items.ok ? items.data.rows : [];
-  const tabCounts = items.ok ? items.data.tabCounts : { todo: 0, done: 0 };
+  const items = await listWorkItemsQuery({ offeringId, allDone, cursor });
+  const open = items.ok ? items.data.open : [];
+  const done = items.ok ? items.data.done : [];
+  const counts = items.ok ? items.data.counts : { todo: 0, done: 0 };
+  const nextCursor = items.ok ? items.data.nextCursor : null;
   const hues = await getTeacherHues();
+  const hue = offeringHue(hues, offering.id, offering.subjectId);
+  const now = new Date();
+
+  // A دبیر's classes for the switcher: every class they teach, its own colour and how much is open in it.
+  let classes: SwitcherOffering[] = [];
+  let studentCount: number | null = null;
+  if (viewer.isTeacher) {
+    const hats = await getHats();
+    const taught = hats?.teachingOfferings ?? [];
+    const openCounts = taught.length > 1 ? await openItemsByOfferingQuery() : null;
+    studentCount = taught.find((o) => o.offeringId === offering.id)?.activeStudents ?? null;
+    classes = taught
+      .map((o) => ({
+        offeringId: o.offeringId,
+        subjectId: o.subjectId,
+        subjectName: o.subjectName,
+        classGroupName: o.classGroupName,
+        hue: offeringHue(hues, o.offeringId, o.subjectId),
+        openCount: openCounts?.ok ? (openCounts.data[o.offeringId] ?? 0) : 0,
+      }))
+      .sort((a, b) => collator.compare(normalizeName(a.subjectName), normalizeName(b.subjectName)) || collator.compare(normalizeName(a.classGroupName), normalizeName(b.classGroupName)));
+  }
+  const otherClasses = classes.filter((c) => c.offeringId !== offering.id).length;
+  const canSwitch = classes.length > 1 && classes.some((c) => c.offeringId === offering.id);
+
+  const meta = viewer.isTeacher
+    ? [studentCount !== null ? `${formatNumberFa(studentCount)} دانش‌آموز` : null, otherClasses > 0 ? `${formatNumberFa(otherClasses)} کلاس دیگر` : null].filter(Boolean).join(" · ")
+    : null;
+
+  const days = sessionWeekDays(sessions, nextSession, now);
+  const nextDay = days.find((d) => d.isNext);
+  const total = counts.todo + counts.done;
+  const moreDone = !allDone && !nextCursor && counts.done > done.length;
+
   return (
     <ContentWidth className="reveal-stagger">
-      <PageHeader
-        back={{ href: "/home", label: "خانه" }}
-        title={
-          <span className="flex items-center gap-3">
-            <SubjectIcon subjectId={offering.subjectId} name={offering.subjectName} size="lg" hue={offeringHue(hues, offering.id, offering.subjectId)} />
-            <bdi>{offering.subjectName}</bdi>
-          </span>
-        }
-        description={
-          <>
-            کلاس <bdi>{offering.classGroupName}</bdi>
-            {viewer.isTeacher ? null : offering.teacherName ? (
-              <>
-                {" · "}
-                <bdi>{offering.teacherName}</bdi>
-              </>
-            ) : (
-              " · دبیر هنوز مشخص نشده"
-            )}
-          </>
-        }
-        actions={
-          viewer.canCreate ? (
-            <Button asChild>
-              <Link href={`/inbox/new?offering=${offering.id}`}>
-                <Plus aria-hidden />
-                تکلیف جدید برای این درس
-              </Link>
-            </Button>
-          ) : undefined
-        }
-      />
+      <PageHeader back={{ href: "/home", label: "خانه" }} title={offering.subjectName} hideTitle />
 
-      <header className="flex items-start gap-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <p className="flex items-center gap-1.5 text-sm text-primary-800">
-            <CalendarClock className="size-4 shrink-0 text-sky-strong" aria-hidden />
-            {nextSession ? (
+      <section aria-label={`درس ${offering.subjectName}`} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 overflow-hidden rounded-hero bg-surface p-4 shadow-1 lg:p-6">
+        <div className="flex min-w-0 flex-col items-start gap-2.5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <SubjectIcon subjectId={offering.subjectId} name={offering.subjectName} size="lg" hue={hue} />
+            {/* The name is the page's title — `PageHeader` carries it for assistive tech, so it is not read twice. */}
+            <p className="min-w-0 truncate text-title font-extrabold text-text lg:text-display" aria-hidden>
+              <bdi>{offering.subjectName}</bdi>
+            </p>
+          </div>
+          {canSwitch ? (
+            <ClassSwitcher currentId={offering.id} offerings={classes} />
+          ) : viewer.isTeacher ? (
+            <p className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-text">
+              <SubjectSwatch subjectId={offering.subjectId} hue={hue} />
               <span>
-                جلسهٴ بعدی: <bdi>{formatSessionFa(nextSession)}</bdi>
+                کلاس <bdi>{offering.classGroupName}</bdi>
               </span>
-            ) : (
-              <span className="text-text-muted">هنوز در برنامهٴ هفتگی نیست</span>
-            )}
-          </p>
+            </p>
+          ) : null}
+          {viewer.isTeacher && !meta ? null : (
+            <p className="text-meta text-text-muted">
+              {viewer.isTeacher ? (
+                meta
+              ) : (
+                <>
+                  کلاس <bdi>{offering.classGroupName}</bdi>
+                  {" · "}
+                  {offering.teacherName ? (
+                    <>
+                      دبیر: <bdi>{offering.teacherName}</bdi>
+                    </>
+                  ) : (
+                    "دبیر هنوز مشخص نشده"
+                  )}
+                </>
+              )}
+            </p>
+          )}
         </div>
-      </header>
+        <SubjectHeroArt subjectName={offering.subjectName} subjectId={offering.subjectId} className="-me-2 size-28 lg:size-36" />
+        {viewer.canCreate ? (
+          <Button asChild className="col-span-2 mt-4 w-full sm:w-auto sm:justify-self-start">
+            <Link href={`/inbox/new?offering=${offering.id}`}>
+              <Plus aria-hidden />
+              تکلیف جدید برای این درس
+            </Link>
+          </Button>
+        ) : null}
+      </section>
 
-      {sessions.length > 0 ? (
-        <ul className="flex flex-wrap gap-2" aria-label="جلسه‌های هفته">
-          {sessions.map((s) => (
-            <li key={`${s.weekday}-${s.periodNo}`} className={cn("rounded-full border px-3 py-1 text-meta", nextSession && nextSession.weekday === s.weekday && nextSession.periodNo === s.periodNo ? "border-info bg-info-soft text-primary-800" : "border-line bg-surface text-text-muted")}>
-              {WEEKDAY_LABELS[s.weekday]}{" "}
-              <bdi dir="ltr" className="tabular">
-                {formatTimeRangeFa(s.startsAt, s.endsAt)}
+      <section aria-label="جلسه‌های درس" className="surface-work flex flex-col gap-3 p-3.5 lg:p-5">
+        <p className="flex items-start gap-2 text-sm text-primary-800">
+          <CalendarClock className="mt-0.5 size-5 shrink-0 text-sky-strong" strokeWidth={1.75} aria-hidden />
+          {nextSession ? (
+            <span>
+              جلسهٴ بعدی:{" "}
+              <span className="font-bold">
+                {nextSession.daysAhead === 0 ? "امروز" : nextSession.daysAhead === 1 ? "فردا" : WEEKDAY_LABELS[nextSession.weekday]}
+                {nextDay ? ` ${formatJalaliShort(nextDay.at, now)}` : null}
+              </span>
+              {" · "}
+              {nextSession.label}{" "}
+              <bdi dir="ltr" className="tabular whitespace-nowrap">
+                {formatTimeRangeFa(nextSession.startsAt, nextSession.endsAt)}
               </bdi>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+            </span>
+          ) : (
+            <span className="text-text-muted">هنوز در برنامهٴ هفتگی نیست</span>
+          )}
+        </p>
+        {days.length > 0 ? (
+          <ul className="flex gap-2 overflow-x-auto" aria-label="روزهای کلاس">
+            {days.map((d) => (
+              <li
+                key={d.weekday}
+                aria-current={d.isNext ? "date" : undefined}
+                className={cn(
+                  "flex min-w-18 flex-1 basis-0 flex-col items-center rounded-lg px-1 py-2 text-center text-meta",
+                  d.isNext ? "bg-info-soft text-primary-800 ring-2 ring-info ring-inset" : "bg-surface-sunken text-text-muted",
+                )}
+              >
+                <span>{WEEKDAY_LABELS[d.weekday]}</span>
+                <span className={cn("tabular text-row font-bold", d.isNext ? "text-primary-700" : "text-text")}>{formatJalaliDayOfMonth(d.at)}</span>
+                {d.sessions.map((s) => (
+                  <bdi key={s.periodNo} dir="ltr" className="tabular">
+                    {formatTimeFa(s.startsAt)}–<wbr />
+                    {formatTimeFa(s.endsAt)}
+                  </bdi>
+                ))}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
 
       <section aria-labelledby="items-heading" className="flex flex-col gap-3">
-        <h3 id="items-heading" className="px-1 text-section font-semibold text-text">
-          تکالیف این درس
-        </h3>
-        <SegmentedLinks
-          label="وضعیت تکالیف"
-          current={tab}
-          items={TABS.map(({ tab: t, label, icon: Icon }) => ({
-            key: t,
-            href: t === "todo" ? `/subjects/${offering.id}` : `/subjects/${offering.id}?tab=${t}`,
-            label,
-            icon: <Icon className="size-4" strokeWidth={1.75} aria-hidden />,
-            count: { value: tabCounts[t], text: formatNumberFa(tabCounts[t]), label: `${formatNumberFa(tabCounts[t])} تکلیف` },
-          }))}
-        />
-        <CrossFade swapKey={tab}>
-        {rows.length === 0 ? (
+        <div className="flex items-center gap-2 px-1">
+          <h3 id="items-heading" className="text-section font-semibold text-text">
+            تکالیف این درس
+          </h3>
+          {total > 0 ? <span className="tabular rounded-full bg-surface px-2.5 text-meta text-text-muted shadow-1">{formatNumberFa(total)} تکلیف</span> : null}
+        </div>
+        {open.length === 0 && done.length === 0 ? (
           <EmptyState
-            title={tab === "todo" ? "تکلیفی برای این درس در انتظار نیست" : "هنوز تکلیفی از این درس انجام‌شده علامت نخورده"}
-            description={viewer.canCreate && tab === "todo" ? "با «تکلیف جدید برای این درس» به کلاس تکلیف بدهید." : undefined}
-            className="surface-work"
+            illustration={<SheetCheckIllustration />}
+            title="تکلیفی برای این درس در انتظار نیست"
+            description={
+              viewer.canCreate
+                ? "با «تکلیف جدید برای این درس» به کلاس تکلیف بدهید."
+                : viewer.isStudent
+                  ? `وقتی دبیر ${offering.subjectName} تکلیف بدهد، اینجا و در اعلان‌ها می‌بینید.`
+                  : undefined
+            }
+            className="surface-work py-8"
           />
         ) : (
-          <LeavingList className="reveal-rows divide-y divide-line/70 surface-work" completedFrom={tab === "todo"}>
-            {rows.map((row) => (
-              <InboxRow key={row.id} row={row} inSubject hues={hues} />
-            ))}
-          </LeavingList>
+          <WorkItemList open={open} done={done} openEmpty="تکلیفی برای این درس در انتظار نیست" rowProps={{ inSubject: true, mark: false, chevron: true, hues }} />
         )}
-        </CrossFade>
+        {nextCursor || cursor || moreDone ? (
+          <div className="flex flex-wrap items-center justify-center gap-3 py-2">
+            {cursor ? (
+              <Button asChild variant="ghost">
+                <Link href={`/subjects/${offering.id}`}>بازگشت به ابتدا</Link>
+              </Button>
+            ) : null}
+            {nextCursor ? (
+              <Button asChild variant="outline">
+                <Link href={`/subjects/${offering.id}?cursor=${encodeURIComponent(nextCursor)}`}>نمایش بیشتر</Link>
+              </Button>
+            ) : null}
+            {moreDone ? (
+              <Button asChild variant="outline">
+                <Link href={`/subjects/${offering.id}?done=all`}>نمایش همهٴ انجام‌شده‌ها</Link>
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </section>
     </ContentWidth>
   );

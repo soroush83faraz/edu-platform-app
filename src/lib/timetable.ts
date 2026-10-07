@@ -1,7 +1,7 @@
 // Pure timetable math shared by the services, the pages and the client components: the Saturday-start weekday of
 // a Tehran instant, «which زنگ is ringing now», the next session of a subject, and the Persian labels. No I/O, no
 // Date-dependent globals — every function takes `now` so the unit tests pin a fixed Tehran time.
-import { formatNumberFa, toFaDigits } from "@/lib/format";
+import { formatNumberFa, tehranDayStart, toFaDigits } from "@/lib/format";
 
 /** 0 = شنبه … 6 = جمعه (the DB CHECK allows 6; the UI offers شنبه…پنج‌شنبه). */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -164,6 +164,43 @@ export function nextSessionOf<T extends SessionRef>(slots: readonly T[], periods
 export function formatSessionFa(s: { weekday: number; label: string; startsAt: string; endsAt: string; daysAhead?: number }): string {
   const day = s.daysAhead === 0 ? "امروز" : s.daysAhead === 1 ? "فردا" : WEEKDAY_LABELS[s.weekday] ?? "";
   return `${day}، ${s.label} ${formatTimeRangeFa(s.startsAt, s.endsAt)}`;
+}
+
+export interface WeekDayCell<T> {
+  weekday: number;
+  /** Noon (Tehran) of that day in the week the cells show — render its Jalali day of the month. */
+  at: Date;
+  /** The sessions of the day, in time order. */
+  sessions: T[];
+  /** The day of the next session (highlighted). */
+  isNext: boolean;
+}
+
+/**
+ * The subject page's day cells (mock class-page-v3): one per weekday that has a session, in weekday order, dated in
+ * the Saturday-start week that holds the NEXT session — so the highlighted cell and «جلسهٴ بعدی» name the same day,
+ * even when the next session is already in next week (without one: this week).
+ */
+export function sessionWeekDays<T extends SessionRef & { startsAt: string }>(
+  sessions: readonly T[],
+  next: (SessionRef & { daysAhead: number }) | null,
+  now: Date,
+): WeekDayCell<T>[] {
+  const today = tehranClock(now).weekday;
+  const ahead = next?.daysAhead ?? 0;
+  // Days from today to the Saturday of the week that holds the next session.
+  const saturday = ahead - ((today + ahead) % 7);
+  const dayStart = tehranDayStart(now).getTime();
+  const byDay = new Map<number, T[]>();
+  for (const s of sessions) byDay.set(s.weekday, [...(byDay.get(s.weekday) ?? []), s]);
+  return [...byDay.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([weekday, list]) => ({
+      weekday,
+      at: new Date(dayStart + (saturday + weekday) * DAY_MIN * 60_000 + 12 * 3_600_000),
+      sessions: [...list].sort((a, b) => timeToMinutes(a.startsAt) - timeToMinutes(b.startsAt)),
+      isNext: next !== null && next.weekday === weekday,
+    }));
 }
 
 export type SessionState = "past" | "current" | "next" | "later";

@@ -47,10 +47,25 @@ export function mergeItems(prev: readonly Item[], next: readonly Item[]): Item[]
  * `completedFrom` hands over what the detail page just finished (`src/lib/completion-moment.ts`): when the router
  * brought this list back from its cache still showing such a row, the row is struck through at once and the list
  * refreshes — the fresh server list no longer has it, so it collapses away. Under reduced motion rows go at once.
+ *
+ * `moves` (the unified list, where a finished row is not removed but moves under «انجام‌شده‌ها»): a row that stays but
+ * changes place glides from its old position to the new one (FLIP: transform only, 320 ms), and so do the rows it
+ * passes. Skipped under reduced motion.
  */
-export function LeavingList({ children, className, completedFrom = false }: { children: React.ReactNode; className?: string; completedFrom?: boolean }) {
+export function LeavingList({
+  children,
+  className,
+  completedFrom = false,
+  moves = false,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  completedFrom?: boolean;
+  moves?: boolean;
+}) {
   const router = useRouter();
   const ref = useRef<HTMLUListElement>(null);
+  const tops = useRef<Map<string, number> | null>(null);
   const [state, setState] = useState(() => ({ source: children, items: keyed(children) }));
   if (state.source !== children) setState({ source: children, items: mergeItems(state.items, keyed(children)) });
   const items = state.items;
@@ -94,6 +109,25 @@ export function LeavingList({ children, className, completedFrom = false }: { ch
       cancelled = true;
     };
   }, [leavingKeys]);
+
+  // FLIP: where each row was at the last commit vs. where it is now; a moved row starts at its old place.
+  useLayoutEffect(() => {
+    const list = ref.current;
+    if (!moves || !list) return;
+    const base = list.getBoundingClientRect().top;
+    const next = new Map<string, number>();
+    const rows = [...list.querySelectorAll<HTMLElement>(":scope > [data-row-id]")];
+    for (const li of rows) next.set(li.dataset.rowId!, li.getBoundingClientRect().top - base);
+    const prev = tops.current;
+    tops.current = next;
+    if (!prev || prefersReducedMotion()) return;
+    for (const li of rows) {
+      const before = prev.get(li.dataset.rowId!);
+      const delta = before === undefined ? 0 : before - next.get(li.dataset.rowId!)!;
+      if (Math.abs(delta) < 1 || typeof li.animate !== "function") continue;
+      li.animate([{ transform: `translateY(${delta}px)` }, { transform: "none" }], { duration: 320, easing: EASE });
+    }
+  });
 
   // A row finished on the detail page but still here: this render came from the router's cache.
   useEffect(() => {

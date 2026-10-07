@@ -13,8 +13,8 @@ export default async function InboxLoading() {
       <div className="pt-4 lg:pt-17">
         <Skeleton className="h-8 w-24" />
       </div>
-      <Skeleton className="h-14 w-full rounded-2xl sm:h-11" />
-      <div className="surface-work mt-3 overflow-hidden">
+      {/* The one list (no tabs since the unified list, mock class-page-v3). */}
+      <div className="surface-work mt-1 overflow-hidden">
         <ListSkeleton rows={6} />
       </div>
     </ContentWidth>

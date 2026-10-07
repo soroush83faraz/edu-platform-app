@@ -96,6 +96,22 @@ export const ListInboxInput = z
   .strict();
 export type ListInboxInput = z.output<typeof ListInboxInput>;
 
+/**
+ * The unified list («پنل من», the subject page): the open rows a page at a time (the `cursor` pages them), then —
+ * once they are exhausted — the finished ones, the latest 20 or (`allDone`) up to 100. Same filters as the inbox.
+ */
+export const ListWorkItemsInput = z
+  .object({
+    bucket: z.enum(BUCKETS).optional(),
+    createdByMe: z.boolean().default(false),
+    unreadOnly: z.boolean().default(false),
+    offeringId: uuid.optional(),
+    cursor: z.string().max(200).optional(),
+    allDone: z.boolean().default(false),
+  })
+  .strict();
+export type ListWorkItemsInput = z.output<typeof ListWorkItemsInput>;
+
 export const OfferingIdInput = z.object({ classOfferingId: uuid }).strict();
 
 /** Empty `q` = the first people alphabetically (the picker lists from 0 characters and narrows as one types). */

@@ -264,6 +264,11 @@ export interface ListInboxOptions {
   offeringId?: string | null;
   cursor?: string | null;
   limit?: number;
+  /**
+   * `due` (default): `due_at NULLS LAST, id` with the keyset cursor. `recent`: the latest deadlines first (`due_at
+   * DESC NULLS LAST`, then newest) — the «انجام‌شده‌ها» tail of the unified list, read without a cursor.
+   */
+  order?: "due" | "recent";
   now?: Date;
   /** Staff see staff-only comments, so their comment counts include them (everyone counts their own). */
   viewerIsStaff?: boolean;
@@ -296,7 +301,8 @@ const TAB_CATEGORIES: Record<InboxTab, StatusCategory[] | null> = {
 export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions, bounds: DayBounds = tehranDayBounds(opts.now)): Promise<InboxPage> {
   const limit = Math.min(Math.max(opts.limit ?? 30, 1), 100);
   const cats = TAB_CATEGORIES[opts.tab];
-  const after = decodeInboxCursor(opts.cursor);
+  const recent = opts.order === "recent";
+  const after = recent ? null : decodeInboxCursor(opts.cursor);
 
   const filters = [sql`true`];
   if (cats) filters.push(sql`r.category in (${sql.join(cats.map((c) => sql`${c}`), sql`, `)})`);
@@ -392,7 +398,7 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
       where ie.person_id = ${personId}::uuid and ie.state <> 'archived' and wi.archived_at is null
     ) r
     where ${sql.join(filters, sql` and `)}
-    order by r.due_at asc nulls last, r.id asc
+    order by ${recent ? sql`r.due_at desc nulls last, r.created_at desc, r.id desc` : sql`r.due_at asc nulls last, r.id asc`}
     limit ${limit + 1}
   `);
 
@@ -424,7 +430,27 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
   }));
   const rows = all.slice(0, limit);
   const last = rows.at(-1);
-  return { rows, nextCursor: all.length > limit && last ? encodeInboxCursor(last.dueAt, last.id) : null };
+  return { rows, nextCursor: all.length > limit && last && !recent ? encodeInboxCursor(last.dueAt, last.id) : null };
+}
+
+/**
+ * Open items per درس (class offering) in MY inbox — the «N تکلیف در انتظار» of the subject page's class switcher.
+ * The same rows and the same «still open for me» rule as `listInbox` / `inboxCounts` (own assignee state wins, a
+ * cancelled item is not open), so the number matches that درس's list; only my own inbox entries are counted.
+ */
+export async function openCountsByOffering(tx: Tx, personId: string): Promise<Record<string, number>> {
+  const res = await tx.execute<{ offering_id: string; n: number }>(sql`
+    select wi.class_offering_id as offering_id, count(*)::int as n
+    from ${inboxEntry} ie
+    join ${workItem} wi on wi.id = ie.work_item_id
+    join ${workItemStatus} s on s.id = wi.status_id
+    left join ${workItemAssignee} wa on wa.work_item_id = wi.id and wa.person_id = ie.person_id and wa.role = 'assignee'
+    where ie.person_id = ${personId}::uuid and ie.state <> 'archived' and wi.archived_at is null
+      and wi.class_offering_id is not null
+      and s.category in ('todo', 'doing') and coalesce(wa.state, '') <> 'done'
+    group by wi.class_offering_id
+  `);
+  return Object.fromEntries(res.rows.map((r) => [r.offering_id, Number(r.n)]));
 }
 
 export interface InboxSummary {

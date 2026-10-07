@@ -45,18 +45,6 @@ export function emptyOpenCopy(audience: Audience, canCreate: boolean, firstTime 
   }
 }
 
-/** The «انجام‌شده» tab with nothing in it. */
-export function emptyDoneCopy(audience: Audience): EmptyCopy {
-  switch (audience) {
-    case "student":
-      return { title: "هنوز تکلیفی را تمام نکرده‌ای.", description: "هر تکلیفی را که انجام‌شده علامت بزنی، این‌جا می‌ماند." };
-    case "admin":
-      return { title: "هنوز تسکی تمام نشده.", description: "تسک‌های تمام‌شده این‌جا می‌مانند تا هر وقت خواستید دوباره ببینید." };
-    default:
-      return { title: "هنوز تکلیفی تمام نشده.", description: "تکالیف تمام‌شده این‌جا می‌مانند تا هر وقت خواستید دوباره ببینید." };
-  }
-}
-
 /** «اعلان‌ها» with no notification at all. */
 export function emptyNotificationsCopy(audience: Audience): EmptyCopy {
   switch (audience) {

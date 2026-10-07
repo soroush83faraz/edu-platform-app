@@ -16,6 +16,18 @@ const HUE_CLASSES = [
   "bg-subject-7-bg text-subject-7-ink ring-subject-7-ink/9",
 ] as const;
 
+// The ink alone, as a fill — the small hue swatch of the subject page's class switcher.
+const SWATCH_CLASSES = [
+  "bg-subject-0-ink",
+  "bg-subject-1-ink",
+  "bg-subject-2-ink",
+  "bg-subject-3-ink",
+  "bg-subject-4-ink",
+  "bg-subject-5-ink",
+  "bg-subject-6-ink",
+  "bg-subject-7-ink",
+] as const;
+
 /** The class string of a hue index — `hue` when given (a teacher's own offering colour, `offeringHue`), else the درس's. */
 function hueClasses(subjectId: string, hue?: number): string {
   return HUE_CLASSES[(((hue ?? subjectHue(subjectId)) % HUE_CLASSES.length) + HUE_CLASSES.length) % HUE_CLASSES.length];
@@ -28,6 +40,12 @@ function hueClasses(subjectId: string, hue?: number): string {
  */
 export function subjectHueClasses(subjectId: string, hue?: number): string {
   return hueClasses(subjectId, hue);
+}
+
+/** A 10 px square of a درس's (or a teacher's class's, `hue`) ink — names the class colour beside its name. Decorative. */
+export function SubjectSwatch({ subjectId, hue, className }: { subjectId: string; hue?: number; className?: string }) {
+  const i = (((hue ?? subjectHue(subjectId)) % SWATCH_CLASSES.length) + SWATCH_CLASSES.length) % SWATCH_CLASSES.length;
+  return <span className={cn("inline-block size-2.5 shrink-0 rounded-[3px]", SWATCH_CLASSES[i], className)} aria-hidden />;
 }
 
 /**

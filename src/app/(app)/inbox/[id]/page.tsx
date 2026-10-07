@@ -10,6 +10,7 @@ import { PRIORITY_LABELS } from "@/components/priority";
 import { RelativeTime } from "@/components/RelativeTime";
 import { formatDueLongFa, formatNumberFa } from "@/lib/format";
 import { personalItemLabel, workItemStatusLabel, workItemWords } from "@/lib/work-item-words";
+import { offeringLinkQuery } from "@/modules/academic/queries";
 import { workItemDetailQuery } from "@/modules/workspace/queries";
 import type { StatusCategory } from "@/modules/workspace/repo";
 import { CompletableTitle, CompletionProvider } from "@/modules/workspace/ui/Completion";
@@ -60,12 +61,16 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
   // Finished for THIS reader — my own part done, or the item closed as done: the title stands struck through.
   const finished = (myAssigneeState === "done" && !viewer.isManager) || item.statusCategory === "done";
   const showPriority = !(item.statusCategory === "done" || item.statusCategory === "cancelled") && (item.priority === "high" || item.priority === "urgent");
+  // Nested pages go back to their parent by name (mock class-page-v3): a کار of a درس → that درس's page, when this
+  // reader may open it (the subject page's own gate); anything else → «پنل من».
+  const subject = item.classOfferingId ? await offeringLinkQuery({ offeringId: item.classOfferingId }) : null;
+  const back = subject?.ok ? { href: `/subjects/${subject.data.offeringId}`, label: subject.data.subjectName } : { href: "/inbox", label: "پنل من" };
 
   return (
     <ContentWidth size="reading" className="gap-4">
       <CompletionProvider initialDone={finished}>
       <PageHeader
-        back={{ href: "/inbox", label: "پنل من" }}
+        back={back}
         title={<CompletableTitle>{item.title}</CompletableTitle>}
         description={
           <>

@@ -8,7 +8,7 @@ import { attendanceGaps, classAttendanceReport, defaultRange, getSessionForTakin
 import { attendanceReportReach } from "./attendance-report";
 import { AttendanceCellInput, AttendanceReportInput, ClassAttendanceInput, ClassGroupIdInput, MyAttendanceInput, OfferingIdInput, SchoolIdInput, StudentAttendanceInput } from "./dto";
 import { findStudentProfile, getMyClass, listClassesForPicker } from "./repo";
-import { getClassTimetable, getMyTimetable, getOfferingPage } from "./service";
+import { getClassTimetable, getMyTimetable, getOfferingLink, getOfferingPage } from "./service";
 
 export type { MyClass, MyClassTeacher } from "./repo";
 export type { ClassTimetable, DayPlan, MyTimetable, OfferingPage, Session, TimetableOffering } from "./service";
@@ -27,6 +27,11 @@ export const classTimetableQuery = defineQuery({ schema: ClassGroupIdInput, perm
 /** The subject page (`/subjects/[offeringId]`): the offering's facts, its sessions and the viewer's relation to it. */
 export const offeringPageQuery = defineQuery({ schema: OfferingIdInput, permission: "academic.timetable.read", scope: "any" }, async (tx, input, ctx) =>
   getOfferingPage(tx, ctx, input.offeringId),
+);
+
+/** «برگشت» of a کار of a درس: the subject page's link when the viewer may open it (same gate), else NOT_FOUND. */
+export const offeringLinkQuery = defineQuery({ schema: OfferingIdInput, permission: "academic.timetable.read", scope: "any" }, async (tx, input, ctx) =>
+  getOfferingLink(tx, ctx, input.offeringId),
 );
 
 /** زنگ‌بندی of one school for the admin editor; `canEdit` = structure write at that school (org admin, principal, vice principal). */

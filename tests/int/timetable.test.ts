@@ -11,12 +11,12 @@ import { withTenant, type Tx } from "@/db/client";
 import { auditLog, classOffering, schoolPeriod, timetableSlot } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { DEFAULT_PERIODS } from "@/lib/timetable";
-import { assignTeacher, enrollStudent, getClassTimetable, getMyTimetable, getOfferingPage, setTimetableSlot, type TimetableCtx } from "@/modules/academic/service";
+import { assignTeacher, enrollStudent, getClassTimetable, getMyTimetable, getOfferingLink, getOfferingPage, setTimetableSlot, type TimetableCtx } from "@/modules/academic/service";
 import type { Assignment } from "@/modules/iam/can";
 import { PERMISSIONS } from "@/modules/iam/permissions";
 import { listSchoolPeriods } from "@/modules/tenancy/repo";
 import { setSchoolPeriods } from "@/modules/tenancy/service";
-import { inboxTabCounts, listInbox } from "@/modules/workspace/repo";
+import { inboxTabCounts, listInbox, openCountsByOffering } from "@/modules/workspace/repo";
 import { createWorkItem, type WorkspaceCtx } from "@/modules/workspace/service";
 import * as f from "./fixtures";
 import { Rollback, asAppOwner } from "./helpers";
@@ -278,6 +278,10 @@ describe("getClassTimetable / getMyTimetable / getOfferingPage", () => {
       const other = ctxOf("0199a000-00f9-7000-8000-000000000001", [studentRole("0199a000-00f9-7000-8000-000000000002")]);
       await expect(getOfferingPage(tx, other, f.OFFERING_A1, TUE_1205)).rejects.toSatisfy(isCode("NOT_FOUND"));
       await expect(getOfferingPage(tx, student, f.OFFERING_B1, TUE_1205)).rejects.toSatisfy(isCode("NOT_FOUND"));
+
+      // «برگشت» of a کار of this درس (`/inbox/[id]`) uses the very same gate.
+      expect(await getOfferingLink(tx, student, f.OFFERING_A1)).toEqual({ offeringId: f.OFFERING_A1, subjectName: "ریاضی" });
+      await expect(getOfferingLink(tx, other, f.OFFERING_A1)).rejects.toSatisfy(isCode("NOT_FOUND"));
     });
   });
 });
@@ -303,6 +307,14 @@ describe("work items of a درس", () => {
       expect(await inboxTabCounts(tx, f.PERSON_A2, { offeringId: f.OFFERING_A1 })).toEqual({ todo: 1, done: 0 });
       expect(await inboxTabCounts(tx, f.PERSON_A2, {})).toEqual({ todo: 2, done: 0 });
       expect(await inboxTabCounts(tx, f.PERSON_A2, { offeringId: f.OFFERING_B1 })).toEqual({ todo: 0, done: 0 });
+
+      // The unified list's finished tail is read latest-deadline-first and never pages.
+      const recent = await listInbox(tx, f.PERSON_A2, { tab: "all", order: "recent", limit: 1 });
+      expect(recent.rows).toHaveLength(1);
+      expect(recent.nextCursor).toBeNull();
+      // The class switcher's «N تکلیف در انتظار»: my own open rows per درس; a personal کار has no درس.
+      expect(await openCountsByOffering(tx, f.PERSON_A2)).toEqual({ [f.OFFERING_A1]: 1 });
+      expect(await openCountsByOffering(tx, f.PERSON_A1)).toEqual({ [f.OFFERING_A1]: 1 });
     });
   });
 });

@@ -22,11 +22,16 @@ export interface ResponsiveModalProps {
   onOpenChange: (open: boolean) => void;
   title: string;
   description?: string;
+  /** Phone: a sheet as tall as its content (a short pick list) instead of the full-height form sheet. */
+  fit?: boolean;
   children: React.ReactNode;
 }
 
-/** Desktop: centered Dialog. Phone: full-height bottom Sheet (the keyboard pushes the form up, not the page). */
-export function ResponsiveModal({ open, onOpenChange, title, description, children }: ResponsiveModalProps) {
+/**
+ * Desktop: centered Dialog. Phone: full-height bottom Sheet (the keyboard pushes the form up, not the page) — or,
+ * with `fit`, a sheet as tall as its content with rounded top corners (a pick list, no keyboard).
+ */
+export function ResponsiveModal({ open, onOpenChange, title, description, fit = false, children }: ResponsiveModalProps) {
   const desktop = useIsDesktop();
   if (desktop) {
     return (
@@ -43,7 +48,14 @@ export function ResponsiveModal({ open, onOpenChange, title, description, childr
   }
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="h-[100dvh] overflow-y-auto rounded-t-none pb-[env(safe-area-inset-bottom)]">
+      <SheetContent
+        side="bottom"
+        className={
+          fit
+            ? "max-h-[85dvh] overflow-y-auto rounded-t-hero pb-[env(safe-area-inset-bottom)]"
+            : "h-[100dvh] overflow-y-auto rounded-t-none pb-[env(safe-area-inset-bottom)]"
+        }
+      >
         <SheetHeader className="pb-0">
           <SheetTitle className="text-lg">{title}</SheetTitle>
           {description ? <SheetDescription>{description}</SheetDescription> : <SheetDescription className="sr-only">{title}</SheetDescription>}

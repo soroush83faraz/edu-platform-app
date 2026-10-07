@@ -73,6 +73,11 @@ export function formatJalaliShort(instant: Date, now = new Date()): string {
   return toFaDigits(format(d, sameYear ? "d MMMM" : "d MMMM yyyy", { locale: faIR }));
 }
 
+/** «۱۳» — the Jalali day of the month of a UTC instant, in Tehran (the subject page's day cells). */
+export function formatJalaliDayOfMonth(instant: Date): string {
+  return toFaDigits(format(tehranNow(instant), "d"));
+}
+
 /** «پنج‌شنبه ۲ مهر ۱۴۰۵، ۲۳:۵۹». */
 export function formatJalaliDateTime(instant: Date): string {
   return toFaDigits(format(tehranNow(instant), "EEEE d MMMM yyyy، HH:mm", { locale: faIR }));
