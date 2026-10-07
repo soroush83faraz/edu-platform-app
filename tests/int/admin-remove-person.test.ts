@@ -12,7 +12,10 @@
 //   R6 «رفع قفل» never re-enables a disabled account;
 //   R7 the importer refuses rows naming a removed person;
 //   R8 open work items drop them from the giver's count (an item whose remaining assignees are all done flips to
-//      done); finished items, and open ones they had already done, keep them; a second call changes nothing.
+//      done); finished items, and open ones they had already done, keep them; a second call changes nothing;
+//   R9 an item they are history on that opens again («بازیابی», or back to «در حال انجام») takes them out — not
+//      counted, not notified, inbox row archived, listed in the transition's audit row; a done they had stays only
+//      when nobody starts over.
 // Everything runs inside withTenant transactions that end with Rollback; the catalog roles are seeded in beforeAll
 // and the fixture database is re-created in afterAll (later files assert exact template lists).
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -26,6 +29,7 @@ import {
   authIdentity,
   classEnrollment,
   inboxEntry,
+  notification,
   organizationMembership,
   person,
   roleAssignment,
@@ -483,6 +487,55 @@ describe("removing a student or a colleague", () => {
       expect(again).toMatchObject({ alreadyRemoved: true, withdrawnWorkItems: 0, completedWorkItems: 0 });
       expect(await removedRows(tx, s.personId)).toHaveLength(1);
       expect(await giverRows()).toEqual(after);
+      throw new Rollback();
+    });
+  });
+
+  it("R9: an item a removed student is history on opens again — «بازیابی» takes them out (not counted, not notified, inbox archived, in the audit row); back to «در حال انجام» only if they had not done it", async () => {
+    await rolledBack(async (tx) => {
+      const mk = async (n: number, first: string) =>
+        createStudent(tx, orgAdmin, { firstName: first, lastName: "رستمی", studentNumber: `R-90${n}`, enrollment: { classGroupId: f.CLASS_GROUP_A1 } });
+      const s = await mk(1, "مانی");
+      const t = await mk(2, "مینا");
+      const roster = (await listOfferingRoster(tx, f.OFFERING_A1)).map((r) => r.personId);
+      const give = async (title: string) =>
+        (await createWorkItem(tx, orgAdmin, { typeCode: "task", title, priority: "normal", recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: roster.filter((id) => id !== s.personId && id !== t.personId) } })).id;
+      const finished = await give("تمرین تمام‌شده");
+      await changeStatus(tx, orgAdmin, { workItemId: finished, toStatusCode: "done" });
+      const cancelled = await give("تمرین حذف‌شده");
+      await changeStatus(tx, orgAdmin, { workItemId: cancelled, toStatusCode: "cancelled" });
+      const resumedDone = await give("تمرین ازسرگرفته");
+      await changeStatus(tx, orgAdmin, { workItemId: resumedDone, toStatusCode: "done" });
+
+      expect(await removePerson(tx, orgAdmin, { personId: s.personId, kind: "student" })).toMatchObject({ withdrawnWorkItems: 0 });
+      const giverRows = async () => new Map((await listInbox(tx, orgAdmin.personId, { tab: "all", createdByMe: true, limit: 100 })).rows.map((r) => [r.id, r]));
+      // Closed: they stay as history.
+      const history = await giverRows();
+      expect([finished, cancelled, resumedDone].map((id) => history.get(id)!.assigneesTotal)).toEqual([2, 2, 2]);
+
+      const statusNotes = async (personId: string, workItemId: string) =>
+        (await tx.select({ id: notification.id }).from(notification).where(and(eq(notification.recipientPersonId, personId), eq(notification.sourceId, workItemId), eq(notification.typeCode, "work_item.status_changed")))).length;
+      const sBefore = await statusNotes(s.personId, finished);
+      const tBefore = await statusNotes(t.personId, finished);
+
+      // «بازیابی»: everyone starts over — the removed student would be pending again, so they go (their done is history).
+      const reopened = await changeStatus(tx, orgAdmin, { workItemId: finished, toStatusCode: "open" });
+      expect(reopened).toMatchObject({ statusCode: "open", itemChanged: true, assigneesTotal: 1, assigneesDone: 0 });
+      expect((await giverRows()).get(finished)).toMatchObject({ assigneesTotal: 1, assigneesDone: 0, category: "todo" });
+      expect(await statusNotes(s.personId, finished)).toBe(sBefore);
+      expect(await statusNotes(t.personId, finished)).toBe(tBefore + 1);
+      const [entry] = await tx.select({ state: inboxEntry.state }).from(inboxEntry).where(and(eq(inboxEntry.personId, s.personId), eq(inboxEntry.workItemId, finished)));
+      expect(entry.state).toBe("archived");
+      const trail = await tx.select({ after: auditLog.after }).from(auditLog).where(and(eq(auditLog.action, "workspace.work_item.status_changed"), eq(auditLog.entityId, finished)));
+      expect(trail.map((r) => r.after)).toContainEqual(expect.objectContaining({ statusCode: "open", withdrawnAssignees: [{ personId: s.personId, state: "done" }] }));
+
+      // A cancelled item back to «در حال انجام» (nobody starts over): they had not done it, so they go too.
+      expect(await changeStatus(tx, orgAdmin, { workItemId: cancelled, toStatusCode: "in_progress" })).toMatchObject({ statusCode: "in_progress", assigneesTotal: 1 });
+      const cancelledTrail = await tx.select({ after: auditLog.after }).from(auditLog).where(and(eq(auditLog.action, "workspace.work_item.status_changed"), eq(auditLog.entityId, cancelled)));
+      expect(cancelledTrail.map((r) => r.after)).toContainEqual(expect.objectContaining({ statusCode: "in_progress", withdrawnAssignees: [{ personId: s.personId, state: "pending" }] }));
+
+      // A finished item back to «در حال انجام»: nobody starts over and their «انجام شد» stands, as on any open item.
+      expect(await changeStatus(tx, orgAdmin, { workItemId: resumedDone, toStatusCode: "in_progress" })).toMatchObject({ assigneesTotal: 2, assigneesDone: 2 });
       throw new Rollback();
     });
   });

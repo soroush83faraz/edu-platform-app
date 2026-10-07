@@ -7,7 +7,7 @@
 // principals, vice principals — see all items of the organization; per-school partitioning is a later block) —
 // except a personal `todo` (single self-assignee), which only its owner sees. Everyone else gets NOT_FOUND, never
 // FORBIDDEN, so the existence of an item is not leaked.
-import { and, asc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, exists, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
 import { chunk } from "@/lib/collections";
@@ -15,7 +15,7 @@ import { forbidden, invalidReference, notFound, validation } from "@/lib/errors"
 import { formatJalaliDateTime, formatNumberFa } from "@/lib/format";
 import { can, canAtAnyScope, canBroadly, type CanContext } from "@/modules/iam/can";
 import { type WorkItemVoice, type WorkItemWords, createVoice, workItemStatusLabel, workItemVoice, workItemWords } from "@/lib/work-item-words";
-import { staffProfile } from "@/modules/iam/schema";
+import { person, staffProfile } from "@/modules/iam/schema";
 import { getPermissionScope } from "@/modules/iam/service";
 import { notifyMany } from "@/modules/notif/service";
 import type { Recipients } from "./dto";
@@ -89,13 +89,32 @@ export async function canViewWorkItem(tx: Tx, ctx: WorkspaceCtx, workItemId: str
  * racing the last «انجام شد» closes it. Its own statement (not `FOR … OF` on `findWorkItemCore`): after a wait
  * PostgreSQL would re-check that read's status join against the OLD status row and drop the item. FOR NO KEY UPDATE —
  * exactly what the UPDATE of the item takes anyway — so comments, inbox rows and transitions that only reference the
- * item (their foreign-key checks take KEY SHARE) are not held up. Lock order: iam/removal «Concurrency».
+ * item (their foreign-key checks take KEY SHARE) are not held up. Callers take `lockItemPeople` first. Lock order:
+ * iam/removal «Concurrency».
  */
 async function lockWorkItem(tx: Tx, workItemId: string): Promise<WorkItemCore> {
   await tx.select({ id: workItem.id }).from(workItem).where(eq(workItem.id, workItemId)).for("no key update");
   const item = await findWorkItemCore(tx, workItemId);
   if (!item) throw notFound();
   return item;
+}
+
+/**
+ * FOR KEY SHARE, in ascending id order, on the person rows a write on this item will reference — the actor (the
+ * transition's `by_person_id`) and every assignee (a notification's recipient; the person status a reopening reads) —
+ * BEFORE `lockWorkItem`. Those inserts' foreign-key checks take exactly this lock: taken there, after the item's lock,
+ * they would invert the lock order and deadlock with a removal, which holds its person FOR UPDATE and then locks that
+ * person's open items. Here a removal in flight is waited for first, and one that starts later waits for this
+ * transaction. Assignee rows are never added to an existing item, so the set read here covers every later recipient.
+ */
+async function lockItemPeople(tx: Tx, ctx: WorkspaceCtx, workItemId: string): Promise<void> {
+  const assignees = tx.select({ id: workItemAssignee.personId }).from(workItemAssignee).where(eq(workItemAssignee.workItemId, workItemId));
+  await tx
+    .select({ id: person.id })
+    .from(person)
+    .where(or(eq(person.id, ctx.personId), inArray(person.id, assignees)))
+    .orderBy(asc(person.id))
+    .for("key share");
 }
 
 /** Exactly one assignee row, and that assignee is the creator — any type. One indexed query, only on the broad-reader branch. */
@@ -366,7 +385,8 @@ async function setItemStatus(tx: Tx, ctx: WorkspaceCtx, item: WorkItemCore, to: 
  */
 export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatusInput): Promise<ChangeStatusResult> {
   await canViewWorkItem(tx, ctx, input.workItemId);
-  // Everything below reads the item under its row lock (`lockWorkItem`).
+  // Everything below reads the item under its row lock (`lockWorkItem`), its people locked before it.
+  await lockItemPeople(tx, ctx, input.workItemId);
   const item = await lockWorkItem(tx, input.workItemId);
   if (item.archivedAt) throw validation(undefined, `این ${nouns(ctx).singular} بایگانی شده است.`);
   if (!canAtAnyScope(ctx.assignments, "workspace.work_item.update")) throw forbidden();
@@ -380,9 +400,12 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
   const before = { statusCode: item.statusCode, myState: mine?.state ?? null };
   let itemChanged = false;
   let recipients: string[] = [];
+  let withdrawnAssignees: WithdrawnFromItem[] = [];
 
   if (manager) {
     if (target.id === item.statusId) throw validation(undefined, "وضعیت تغییری نکرده است.");
+    // Open again, or started over: a removed person does not come back with it (`withdrawArchivedAssignees`).
+    if (target.category === "todo" || target.category === "doing") withdrawnAssignees = await withdrawArchivedAssignees(tx, item, { includeDone: target.category === "todo" });
     await setItemStatus(tx, ctx, item, target, note);
     if (target.category === "done") {
       await tx
@@ -453,7 +476,8 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
     "workspace.work_item.status_changed",
     { schema: "workspace", table: "work_item", id: item.id },
     before,
-    { statusCode: itemChanged ? target.code : item.statusCode, myState: myStateAfter, note },
+    // The removed people a reopening took out are history: a restore by hand re-inserts these rows.
+    { statusCode: itemChanged ? target.code : item.statusCode, myState: myStateAfter, note, ...(withdrawnAssignees.length > 0 ? { withdrawnAssignees } : {}) },
     tx,
   );
   return { statusCode: itemChanged ? target.code : item.statusCode, itemChanged, assigneesDone: done, assigneesTotal: assignees.length };
@@ -493,8 +517,10 @@ export const WITHDRAWN_COMPLETION_NOTE = "با حذف گیرنده‌ای که �
  * Concurrency: the candidate items are locked FOR NO KEY UPDATE like `lockWorkItem` does for one, in ascending id
  * order (two removals sharing items never wait on each other in a circle), and read AGAIN under the locks — an item
  * closed meanwhile, or the person's own «انجام شد» committed meanwhile, keeps them; another assignee's «انجام شد»
- * racing this waits or is waited for, so whichever runs second sees the other and closes the item. The caller holds
- * the person's row first (iam/removal «Concurrency»).
+ * racing this waits or is waited for, so whichever runs second sees the other and closes the item. Before the items,
+ * the actor's person row FOR KEY SHARE (the flip's transition references it), as `lockItemPeople` does. The caller
+ * holds the removed person's row first (iam/removal «Concurrency») — what a status change or edit of any item of
+ * theirs waits for (`lockItemPeople`), a «بازیابی» of one they are history on included (`withdrawArchivedAssignees`).
  */
 export async function withdrawRemovedAssignee(tx: Tx, ctx: WorkspaceCtx, personId: string): Promise<WithdrawRemovedAssigneeResult> {
   const openItemsOfPerson = (onlyIds?: string[]) =>
@@ -516,6 +542,7 @@ export async function withdrawRemovedAssignee(tx: Tx, ctx: WorkspaceCtx, personI
       );
   const candidates = [...new Set((await openItemsOfPerson()).map((r) => r.workItemId))].sort();
   if (candidates.length === 0) return { withdrawn: [], completedWorkItemIds: [] };
+  await tx.select({ id: person.id }).from(person).where(eq(person.id, ctx.personId)).for("key share");
   for (const part of chunk(candidates, INSERT_CHUNK)) {
     await tx.select({ id: workItem.id }).from(workItem).where(inArray(workItem.id, part)).orderBy(asc(workItem.id)).for("no key update");
   }
@@ -569,6 +596,48 @@ export async function withdrawRemovedAssignee(tx: Tx, ctx: WorkspaceCtx, personI
   return { withdrawn, completedWorkItemIds };
 }
 
+export interface WithdrawnFromItem {
+  personId: string;
+  /** The state the row had before the transition — what a restore by hand re-inserts. */
+  state: string;
+}
+
+/**
+ * A manager's transition that leaves the item OPEN (owner: a removed person never counts on an open item) takes out
+ * the assignees whose person was removed (archived), the way `withdrawRemovedAssignee` does — the row deleted, their
+ * inbox entry archived — instead of starting them over or counting them. On «بازیابی» (→ todo, which resets everyone
+ * to pending) all of them go; on another reopening (→ in progress) only those who had not finished, as on any open
+ * item. Never on an item they gave themselves (the same exception). Returns the rows taken out for the transition's
+ * audit row.
+ *
+ * Their status is read with no lock of its own — the caller holds the item's lock, and a person locked after a work
+ * item would invert the lock order (iam/removal «Concurrency»). It needs none: the caller took every assignee's person
+ * row FOR KEY SHARE before the item (`lockItemPeople`), which a removal's FOR UPDATE conflicts with. So a removal in
+ * flight was waited for and committed — this read sees `archived` — or it waits for this transaction and then finds
+ * the item open and withdraws them itself (`withdrawRemovedAssignee`).
+ */
+async function withdrawArchivedAssignees(tx: Tx, item: WorkItemCore, opts: { includeDone: boolean }): Promise<WithdrawnFromItem[]> {
+  const deleted = await tx
+    .delete(workItemAssignee)
+    .where(
+      and(
+        eq(workItemAssignee.workItemId, item.id),
+        eq(workItemAssignee.role, "assignee"),
+        ne(workItemAssignee.personId, item.createdByPersonId),
+        opts.includeDone ? undefined : ne(workItemAssignee.state, "done"),
+        exists(tx.select({ id: person.id }).from(person).where(and(eq(person.id, workItemAssignee.personId), eq(person.status, "archived")))),
+      ),
+    )
+    .returning({ personId: workItemAssignee.personId, state: workItemAssignee.state });
+  if (deleted.length > 0) {
+    await tx
+      .update(inboxEntry)
+      .set({ state: "archived" })
+      .where(and(eq(inboxEntry.workItemId, item.id), inArray(inboxEntry.personId, deleted.map((d) => d.personId)), ne(inboxEntry.state, "archived")));
+  }
+  return deleted;
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // edit («ویرایش»)
 // ---------------------------------------------------------------------------------------------------------------
@@ -610,8 +679,9 @@ function listFa(parts: string[]): string {
  */
 export async function updateWorkItem(tx: Tx, ctx: WorkspaceCtx, input: UpdateWorkItemInput): Promise<UpdateWorkItemResult> {
   await canViewWorkItem(tx, ctx, input.workItemId);
-  // Under the item's row lock (`lockWorkItem`): an «اتمام» / «حذف» committed meanwhile is seen below and refused, and
-  // the audit `before` is the item as it is now.
+  // Under the item's row lock (`lockWorkItem`, its people locked before it): an «اتمام» / «حذف» committed meanwhile is
+  // seen below and refused, and the audit `before` is the item as it is now.
+  await lockItemPeople(tx, ctx, input.workItemId);
   const item = await lockWorkItem(tx, input.workItemId);
   const noun = nouns(ctx).singular;
   if (item.archivedAt) throw validation(undefined, `این ${noun} بایگانی شده است.`);

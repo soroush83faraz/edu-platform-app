@@ -10,7 +10,12 @@
 //   C7 a work item for named persons, one of them being removed: refused like any inactive recipient, nothing written;
 //   C8 an edit racing «اتمام»: waits and is refused, never written to the closed item — or goes first and is kept;
 //   C9 two last «انجام شد» at once close the item;
-//   C10 a removal racing another assignee's last «انجام شد» closes the item, whichever of the two runs first.
+//   C10 a removal racing another assignee's last «انجام شد» closes the item, whichever of the two runs first;
+//   C11 a «بازیابی» racing the removal of a student who is history on the item: they never come back with it,
+//      whichever runs first (the reopening locks its assignees' person rows before the item);
+//   C12 a removal that holds its person row (and has not reached the items yet) against «اتمام» / «ویرایش» of an
+//      item they are assigned: no deadlock — the item write waits BEFORE taking the item (its notification would
+//      otherwise lock the person after the item, through the foreign-key check), and the removed one is not notified.
 // Each race asserts that the second transaction really WAITED for the first (pg_blocking_pids), so a pass means the
 // lock was there, not that the timing happened to be kind. The rows must be COMMITTED for the second connection to
 // see them, so the catalog is seeded in beforeAll and the database is re-created in afterAll (as
@@ -102,9 +107,10 @@ interface Raced<A, B> {
 /**
  * `first` runs in one transaction and then HOLDS it open (not committed); `second` starts in another transaction on
  * another connection and runs until the database reports it blocked by `first` (pg_blocking_pids, polled from a third
- * connection) or until it settles — which means it never waited. Then `first` commits and `second` finishes.
+ * connection) or until it settles — which means it never waited. Then `thenFirst` (if any) runs in the FIRST
+ * transaction — the rest of a write whose opening locks were all `first` took — and `first` commits; `second` finishes.
  */
-async function race<A, B>(first: (tx: Tx) => Promise<A>, second: (tx: Tx) => Promise<B>): Promise<Raced<A, B>> {
+async function race<A, B>(first: (tx: Tx) => Promise<A>, second: (tx: Tx) => Promise<B>, thenFirst?: (tx: Tx) => Promise<unknown>): Promise<Raced<A, B>> {
   let commitFirst!: () => void;
   const hold = new Promise<void>((resolve) => (commitFirst = resolve));
   let firstHeld!: (pid: number) => void;
@@ -115,6 +121,7 @@ async function race<A, B>(first: (tx: Tx) => Promise<A>, second: (tx: Tx) => Pro
       const out = await first(tx);
       firstHeld(pid);
       await hold;
+      if (thenFirst) await thenFirst(tx);
       return out;
     }),
   );
@@ -403,5 +410,72 @@ describe("concurrency: a removal against the doors that would bring the person b
     expect(back.first).toMatchObject({ withdrawnWorkItems: 1, completedWorkItems: 0 });
     expect(expectFulfilled(back.second)).toMatchObject({ itemChanged: true, statusCode: "done", assigneesDone: 1, assigneesTotal: 1 });
     expect(await itemState(item2)).toEqual({ title: "تمرین گروهی دوم", category: "done", assignees: [{ personId: staying2.personId, state: "done" }] });
+  });
+
+  it("C11: a «بازیابی» racing the removal of a student who is history on the item: they never come back with it, whichever runs first", async () => {
+    // «بازیابی» first (the leaver is still here, so it starts over with them): the removal waits for the reopening's
+    // lock on the leaver's person row, then finds the item open and takes them out.
+    const leaving = await newStudent("بردیا");
+    const staying = await newStudent("بنفشه");
+    const item = await giveTo("تمرین بازگشته", [leaving.personId, staying.personId]);
+    await committed((tx) => changeStatus(tx, orgAdmin, { workItemId: item, toStatusCode: "done" }));
+    const r = await race(
+      (tx) => changeStatus(tx, orgAdmin, { workItemId: item, toStatusCode: "open" }),
+      (tx) => removePerson(tx, orgAdmin, { personId: leaving.personId, kind: "student" }),
+    );
+    expect(r.waited).toBe(true);
+    expect(r.first).toMatchObject({ statusCode: "open", assigneesTotal: 2 });
+    expect(expectFulfilled(r.second)).toMatchObject({ withdrawnWorkItems: 1, completedWorkItems: 0 });
+    expect(await itemState(item)).toEqual({ title: "تمرین بازگشته", category: "todo", assignees: [{ personId: staying.personId, state: "pending" }] });
+
+    // The removal first (a closed item: history, nothing to take out yet): «بازیابی» waits for the removal on the
+    // leaver's person row, then reads them as removed and takes them out instead of starting them over.
+    const leaving2 = await newStudent("بهاره");
+    const staying2 = await newStudent("بیژن");
+    const item2 = await giveTo("تمرین بازگشته دوم", [leaving2.personId, staying2.personId]);
+    await committed((tx) => changeStatus(tx, orgAdmin, { workItemId: item2, toStatusCode: "done" }));
+    const back = await race(
+      (tx) => removePerson(tx, orgAdmin, { personId: leaving2.personId, kind: "student" }),
+      (tx) => changeStatus(tx, orgAdmin, { workItemId: item2, toStatusCode: "open" }),
+    );
+    expect(back.waited).toBe(true);
+    expect(back.first).toMatchObject({ withdrawnWorkItems: 0 });
+    expect(expectFulfilled(back.second)).toMatchObject({ statusCode: "open", assigneesTotal: 1, assigneesDone: 0 });
+    expect(await itemState(item2)).toEqual({ title: "تمرین بازگشته دوم", category: "todo", assignees: [{ personId: staying2.personId, state: "pending" }] });
+  });
+
+  it("C12: a removal holding its person row against «اتمام» / «ویرایش» of an open item they are assigned — no deadlock, the item write waits before the item, the removed one is not notified", async () => {
+    const lockPerson = (personId: string) => (tx: Tx) => tx.select({ id: schema.person.id }).from(schema.person).where(eq(schema.person.id, personId)).for("update");
+    const notifiedOn = (personId: string, workItemId: string) =>
+      committed((tx) => tx.select({ type: notification.typeCode }).from(notification).where(and(eq(notification.recipientPersonId, personId), eq(notification.sourceId, workItemId))));
+
+    // «اتمام»: the removal's first lock is taken (as `planRemoval` takes it), then the giver closes the item; only once
+    // that is seen waiting does the removal go on — to the item, which must still be free.
+    const leaving = await newStudent("تینا");
+    const staying = await newStudent("تیام");
+    const item = await giveTo("تمرین پایانی", [leaving.personId, staying.personId]);
+    const r = await race(
+      lockPerson(leaving.personId),
+      (tx) => changeStatus(tx, orgAdmin, { workItemId: item, toStatusCode: "done" }),
+      (tx) => removePerson(tx, orgAdmin, { personId: leaving.personId, kind: "student" }),
+    );
+    expect(r.waited).toBe(true);
+    expect(expectFulfilled(r.second)).toMatchObject({ statusCode: "done", itemChanged: true, assigneesTotal: 1 });
+    expect(await itemState(item)).toEqual({ title: "تمرین پایانی", category: "done", assignees: [{ personId: staying.personId, state: "done" }] });
+    expect(await notifiedOn(leaving.personId, item)).toEqual([{ type: "work_item.assigned" }]);
+
+    // «ویرایش»: the same, the edit's notification would have locked the leaver after the item.
+    const leaving2 = await newStudent("تارا");
+    const staying2 = await newStudent("تورج");
+    const item2 = await giveTo("تمرین ویرایشی", [leaving2.personId, staying2.personId]);
+    const edit = await race(
+      lockPerson(leaving2.personId),
+      (tx) => updateWorkItem(tx, orgAdmin, { workItemId: item2, title: "تمرین ویرایشی (تازه)" }),
+      (tx) => removePerson(tx, orgAdmin, { personId: leaving2.personId, kind: "student" }),
+    );
+    expect(edit.waited).toBe(true);
+    expect(expectFulfilled(edit.second)).toMatchObject({ changed: ["title"], notified: 1 });
+    expect(await itemState(item2)).toEqual({ title: "تمرین ویرایشی (تازه)", category: "todo", assignees: [{ personId: staying2.personId, state: "pending" }] });
+    expect(await notifiedOn(leaving2.personId, item2)).toEqual([{ type: "work_item.assigned" }]);
   });
 });

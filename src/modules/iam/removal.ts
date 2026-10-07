@@ -44,9 +44,13 @@
 //   • FOR KEY SHARE on the recipients of a new work item (the class roster, the named persons — workspace/repo
 //     `RecipientReadOptions`): a whole class at once, so the weakest mode that still waits for FOR UPDATE.
 // So this lock must stay FOR UPDATE: FOR NO KEY UPDATE would not wait for the KEY SHARE readers, nor they for it.
-// Lock order — the same in every transaction, so none waits on another in a circle: the person row → work item rows
+// Lock order — the same in every transaction, so none waits on another in a circle: person rows → work item rows
 // (FOR NO KEY UPDATE; ascending id when several, `withdrawRemovedAssignee`; one in `changeStatus` / `updateWorkItem`)
-// → the rows under an item (assignees, inbox entries, transitions). Nothing locks a work item and then a person.
+// → the rows under an item (assignees, inbox entries, transitions). Nothing locks a work item and then a person — and
+// a foreign-key check is a lock too: inserting a notification or a transition takes KEY SHARE on the person it names.
+// So a write on an existing item takes its actor's and assignees' person rows FOR KEY SHARE (ascending id) BEFORE the
+// item (workspace/service `lockItemPeople`) and the removal its actor's before its items; a reopening («بازیابی») then
+// reads its assignees' status under those locks (`withdrawArchivedAssignees`).
 import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit } from "@/lib/audit";
@@ -302,18 +306,19 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
       await tx.update(organizationMembership).set({ status: "left", leftAt: sql`now()` }).where(eq(organizationMembership.id, membership.id));
       membershipChanged = true;
     }
-    const [acct] = await tx.select({ status: userAccount.status }).from(userAccount).where(eq(userAccount.id, membership.userAccountId)).limit(1);
-    accountBefore = acct?.status ?? null;
-    if (acct && acct.status !== "disabled") {
-      await tx.update(userAccount).set({ status: "disabled" }).where(eq(userAccount.id, membership.userAccountId));
-      accountChanged = true;
-    }
+    // auth_identity before user_account, the order setPassword / resetInitialPassword write them in (no deadlock).
     const cleared = await tx
       .update(authIdentity)
       .set({ initialPasswordEnc: null })
       .where(and(eq(authIdentity.userAccountId, membership.userAccountId), sql`${authIdentity.initialPasswordEnc} is not null`))
       .returning({ id: authIdentity.id });
     clearedInitialPassword = cleared.length > 0;
+    const [acct] = await tx.select({ status: userAccount.status }).from(userAccount).where(eq(userAccount.id, membership.userAccountId)).limit(1);
+    accountBefore = acct?.status ?? null;
+    if (acct && acct.status !== "disabled") {
+      await tx.update(userAccount).set({ status: "disabled" }).where(eq(userAccount.id, membership.userAccountId));
+      accountChanged = true;
+    }
     revokedSessions = await revokeAllForUser(tx, membership.userAccountId);
   }
 
