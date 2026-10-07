@@ -7,7 +7,7 @@
 // principals, vice principals — see all items of the organization; per-school partitioning is a later block) —
 // except a personal `todo` (single self-assignee), which only its owner sees. Everyone else gets NOT_FOUND, never
 // FORBIDDEN, so the existence of an item is not leaked.
-import { and, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
 import { chunk } from "@/lib/collections";
@@ -81,6 +81,23 @@ export async function canViewWorkItem(tx: Tx, ctx: WorkspaceCtx, workItemId: str
   throw notFound();
 }
 
+/**
+ * The item's row lock, then the item as committed NOW (NOT_FOUND if it is gone). Every write that decides from the
+ * item's status or its assignees takes it first — an edit, a status change (an assignee's «انجام شد», «اتمام», «حذف»,
+ * «بازیابی») and a removed person's withdrawal — so on one item they run one after another and each reads what the
+ * one before committed: an edit never lands on an item closed meanwhile, two last «انجام شد» close it, a withdrawal
+ * racing the last «انجام شد» closes it. Its own statement (not `FOR … OF` on `findWorkItemCore`): after a wait
+ * PostgreSQL would re-check that read's status join against the OLD status row and drop the item. FOR NO KEY UPDATE —
+ * exactly what the UPDATE of the item takes anyway — so comments, inbox rows and transitions that only reference the
+ * item (their foreign-key checks take KEY SHARE) are not held up. Lock order: iam/removal «Concurrency».
+ */
+async function lockWorkItem(tx: Tx, workItemId: string): Promise<WorkItemCore> {
+  await tx.select({ id: workItem.id }).from(workItem).where(eq(workItem.id, workItemId)).for("no key update");
+  const item = await findWorkItemCore(tx, workItemId);
+  if (!item) throw notFound();
+  return item;
+}
+
 /** Exactly one assignee row, and that assignee is the creator — any type. One indexed query, only on the broad-reader branch. */
 async function isSelfAssigned(tx: Tx, item: WorkItemCore): Promise<boolean> {
   const assignees = await tx
@@ -137,7 +154,8 @@ async function resolveRecipients(tx: Tx, ctx: WorkspaceCtx, recipients: Recipien
     case "class_offering": {
       // Scoped check: the teacher of THIS offering, or a broad (school/organization) assignment.
       if (!(await can(tx, ctx, "workspace.work_item.assign_class", { scopeType: "class_offering", id: recipients.id }))) throw forbidden();
-      const roster = await listOfferingRoster(tx, recipients.id);
+      // Locked (KEY SHARE): a student removed at this moment is waited for and drops out (repo `RecipientReadOptions`).
+      const roster = await listOfferingRoster(tx, recipients.id, { lock: true });
       const excluded = new Set(recipients.excludePersonIds);
       const ids = roster.map((r) => r.personId).filter((id) => !excluded.has(id));
       if (ids.length === 0) throw validation({ fieldErrors: { recipients: ["این کلاس گیرندهٴ فعالی ندارد."] } });
@@ -149,7 +167,8 @@ async function resolveRecipients(tx: Tx, ctx: WorkspaceCtx, recipients: Recipien
       // (no oracle for «exists in another school»), and it is refused before the item or any row is written.
       const reach = await personReach(tx, ctx);
       const wanted = [...new Set(recipients.ids)];
-      const ids = await filterActivePersonIds(tx, wanted, reach);
+      // Locked like the roster: a person removed at this moment is waited for and then refused like any inactive id.
+      const ids = await filterActivePersonIds(tx, wanted, reach, { lock: true });
       if (ids.length !== wanted.length) throw invalidReference("یکی از گیرندگان یافت نشد.");
       return ids;
     }
@@ -346,7 +365,9 @@ async function setItemStatus(tx: Tx, ctx: WorkspaceCtx, item: WorkItemCore, to: 
  * on the item.
  */
 export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatusInput): Promise<ChangeStatusResult> {
-  const item = await canViewWorkItem(tx, ctx, input.workItemId);
+  await canViewWorkItem(tx, ctx, input.workItemId);
+  // Everything below reads the item under its row lock (`lockWorkItem`).
+  const item = await lockWorkItem(tx, input.workItemId);
   if (item.archivedAt) throw validation(undefined, `این ${nouns(ctx).singular} بایگانی شده است.`);
   if (!canAtAnyScope(ctx.assignments, "workspace.work_item.update")) throw forbidden();
   const statuses = await listStatusesOfType(tx, item.typeId);
@@ -468,33 +489,53 @@ export const WITHDRAWN_COMPLETION_NOTE = "با حذف گیرنده‌ای که �
  * whose remaining assignees have ALL finished flips to the type's done status (transition + audit row, silent like
  * an assignee's own last «انجام شد»); an item with no assignee left stays as it is, for its giver to close.
  * Idempotent: a second call finds no row.
+ *
+ * Concurrency: the candidate items are locked FOR NO KEY UPDATE like `lockWorkItem` does for one, in ascending id
+ * order (two removals sharing items never wait on each other in a circle), and read AGAIN under the locks — an item
+ * closed meanwhile, or the person's own «انجام شد» committed meanwhile, keeps them; another assignee's «انجام شد»
+ * racing this waits or is waited for, so whichever runs second sees the other and closes the item. The caller holds
+ * the person's row first (iam/removal «Concurrency»).
  */
 export async function withdrawRemovedAssignee(tx: Tx, ctx: WorkspaceCtx, personId: string): Promise<WithdrawRemovedAssigneeResult> {
-  const rows = await tx
-    .select({ workItemId: workItemAssignee.workItemId, state: workItemAssignee.state })
-    .from(workItemAssignee)
-    .innerJoin(workItem, eq(workItem.id, workItemAssignee.workItemId))
-    .innerJoin(workItemStatus, eq(workItemStatus.id, workItem.statusId))
-    .where(
-      and(
-        eq(workItemAssignee.personId, personId),
-        eq(workItemAssignee.role, "assignee"),
-        ne(workItemAssignee.state, "done"),
-        ne(workItem.createdByPersonId, personId),
-        isNull(workItem.archivedAt),
-        inArray(workItemStatus.category, ["todo", "doing"]),
-      ),
-    );
-  if (rows.length === 0) return { withdrawn: [], completedWorkItemIds: [] };
-  const ids = rows.map((r) => r.workItemId);
+  const openItemsOfPerson = (onlyIds?: string[]) =>
+    tx
+      .select({ workItemId: workItemAssignee.workItemId })
+      .from(workItemAssignee)
+      .innerJoin(workItem, eq(workItem.id, workItemAssignee.workItemId))
+      .innerJoin(workItemStatus, eq(workItemStatus.id, workItem.statusId))
+      .where(
+        and(
+          eq(workItemAssignee.personId, personId),
+          eq(workItemAssignee.role, "assignee"),
+          ne(workItemAssignee.state, "done"),
+          ne(workItem.createdByPersonId, personId),
+          isNull(workItem.archivedAt),
+          inArray(workItemStatus.category, ["todo", "doing"]),
+          onlyIds ? inArray(workItemAssignee.workItemId, onlyIds) : undefined,
+        ),
+      );
+  const candidates = [...new Set((await openItemsOfPerson()).map((r) => r.workItemId))].sort();
+  if (candidates.length === 0) return { withdrawn: [], completedWorkItemIds: [] };
+  for (const part of chunk(candidates, INSERT_CHUNK)) {
+    await tx.select({ id: workItem.id }).from(workItem).where(inArray(workItem.id, part)).orderBy(asc(workItem.id)).for("no key update");
+  }
+  const stillOpen = new Set((await openItemsOfPerson(candidates)).map((r) => r.workItemId));
 
-  for (const part of chunk(ids, INSERT_CHUNK)) {
-    await tx.delete(workItemAssignee).where(and(eq(workItemAssignee.personId, personId), eq(workItemAssignee.role, "assignee"), inArray(workItemAssignee.workItemId, part)));
+  // The rows actually taken out, with the state each had, are the history the caller audits.
+  const withdrawn: WithdrawnAssignment[] = [];
+  for (const part of chunk(candidates.filter((id) => stillOpen.has(id)), INSERT_CHUNK)) {
+    const deleted = await tx
+      .delete(workItemAssignee)
+      .where(and(eq(workItemAssignee.personId, personId), eq(workItemAssignee.role, "assignee"), ne(workItemAssignee.state, "done"), inArray(workItemAssignee.workItemId, part)))
+      .returning({ workItemId: workItemAssignee.workItemId, state: workItemAssignee.state });
+    if (deleted.length === 0) continue;
+    withdrawn.push(...deleted);
     await tx
       .update(inboxEntry)
       .set({ state: "archived" })
-      .where(and(eq(inboxEntry.personId, personId), inArray(inboxEntry.workItemId, part), ne(inboxEntry.state, "archived")));
+      .where(and(eq(inboxEntry.personId, personId), inArray(inboxEntry.workItemId, deleted.map((d) => d.workItemId)), ne(inboxEntry.state, "archived")));
   }
+  const ids = withdrawn.map((w) => w.workItemId);
 
   const completedWorkItemIds: string[] = [];
   for (const part of chunk(ids, INSERT_CHUNK)) {
@@ -525,7 +566,7 @@ export async function withdrawRemovedAssignee(tx: Tx, ctx: WorkspaceCtx, personI
       completedWorkItemIds.push(item.id);
     }
   }
-  return { withdrawn: rows.map((r) => ({ workItemId: r.workItemId, state: r.state })), completedWorkItemIds };
+  return { withdrawn, completedWorkItemIds };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -568,7 +609,10 @@ function listFa(parts: string[]): string {
  * body), a content-only edit is `work_item.updated`. Their inbox rows flip back to unread either way.
  */
 export async function updateWorkItem(tx: Tx, ctx: WorkspaceCtx, input: UpdateWorkItemInput): Promise<UpdateWorkItemResult> {
-  const item = await canViewWorkItem(tx, ctx, input.workItemId);
+  await canViewWorkItem(tx, ctx, input.workItemId);
+  // Under the item's row lock (`lockWorkItem`): an «اتمام» / «حذف» committed meanwhile is seen below and refused, and
+  // the audit `before` is the item as it is now.
+  const item = await lockWorkItem(tx, input.workItemId);
   const noun = nouns(ctx).singular;
   if (item.archivedAt) throw validation(undefined, `این ${noun} بایگانی شده است.`);
   if (!canAtAnyScope(ctx.assignments, "workspace.work_item.update")) throw forbidden();

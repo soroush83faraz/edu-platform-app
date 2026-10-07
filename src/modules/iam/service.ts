@@ -19,7 +19,7 @@ import { can, canAtAnyScope, resolveScopeChain, type Assignment } from "./can";
 import { PERSON_REMOVED_MESSAGE } from "./messages";
 import { generateInitialPassword, hashPassword } from "./password";
 import type { Permission } from "./permissions";
-import { findAccountByIdentifier } from "./repo";
+import { findAccountByIdentifier, lockPersonForShare } from "./repo";
 import { clearRecentFailures } from "./throttle";
 import { authIdentity, contactPoint, organizationMembership, person, role, roleAssignment, staffProfile, studentProfile, userAccount, userSession } from "./schema";
 
@@ -256,10 +256,11 @@ export interface CreateAccountResult {
  * user_account + password identity (random initial password, must_change_password) + organization_membership.
  * A login identifier that already exists anywhere → CONFLICT with one message whether it belongs to this
  * organization or another (no enumeration of other tenants). The person must be ACTIVE: a removed person
- * (`person.status = 'archived'`) never gets a login again through a fresh account (CONFLICT «این شخص حذف شده است.»).
+ * (`person.status = 'archived'`) never gets a login again through a fresh account (CONFLICT «این شخص حذف شده است.»),
+ * read under the person row's FOR SHARE lock so a removal running at the same moment is waited for (./removal).
  */
 export async function createAccountForPerson(tx: Tx, ctx: IamCtx, input: CreateAccountInput): Promise<CreateAccountResult> {
-  const [target] = await tx.select({ status: person.status }).from(person).where(eq(person.id, input.personId)).limit(1);
+  const [target] = await tx.select({ status: person.status }).from(person).where(eq(person.id, input.personId)).limit(1).for("share");
   if (!target) throw notFound();
   if (target.status !== "active") throw conflict(MESSAGES.personRemoved);
   const { loginIdentifier, phoneE164 } = input.identifier;
@@ -305,8 +306,11 @@ export async function findAccountOfPerson(tx: Tx, personId: string): Promise<{ u
  * The membership row proves the account belongs to the caller's organization (RLS hides other tenants'). The account
  * of a REMOVED person (archived person or `left` membership — src/modules/iam/removal.ts) stays shut: no temporary
  * password, no unlock (CONFLICT «این شخص حذف شده است.»). Callers check the person's scope first (NOT_FOUND before this).
+ * Read under the person row's FOR SHARE lock: a removal running at the same moment is waited for and then refused —
+ * otherwise the reset / unlock below would write `status` back over the removal's `disabled` (./removal).
  */
 async function requireAccountInOrg(tx: Tx, userAccountId: string): Promise<{ personId: string }> {
+  await lockPersonForShare(tx, tx.select({ id: organizationMembership.personId }).from(organizationMembership).where(eq(organizationMembership.userAccountId, userAccountId)));
   const rows = await tx
     .select({ personId: organizationMembership.personId, membershipStatus: organizationMembership.status, personStatus: person.status })
     .from(organizationMembership)
@@ -582,11 +586,13 @@ async function isActiveStaff(tx: Tx, personId: string): Promise<boolean> {
  * (`org_admin` bootstrap, `school_principal`, `vice_principal`) additionally needs an active colleague
  * (`isActiveStaff`): a student, a guardian-only person or a colleague who has left is refused with a field error
  * (VALIDATION on `personId`, nothing written) — the person is already known to be in the caller's scope, so the
- * answer reveals nothing the caller's own lists do not.
+ * answer reveals nothing the caller's own lists do not. Those checks run under the person row's FOR SHARE lock: a
+ * removal running at the same moment is waited for and then refused, never left holding a live role (./removal).
  */
 export async function assignRole(tx: Tx, ctx: IamCtx, input: AssignRoleInput): Promise<{ roleAssignmentId: string; created: boolean }> {
   const { roleId, target, adminScope } = await resolveRoleGrant(tx, ctx, input);
   await requirePersonInScope(tx, adminScope, input.personId);
+  await lockPersonForShare(tx, input.personId);
   if (target.scopeType === "student") {
     // A profile of another person would hand `personId` the reach over that student's items.
     const [sp] = await tx.select({ personId: studentProfile.personId }).from(studentProfile).where(eq(studentProfile.id, target.studentProfileId)).limit(1);

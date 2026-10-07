@@ -1,6 +1,6 @@
 // iam queries. Every function takes `tx`; whether that transaction is tenant-bound (`withTenant`) or global
 // (`withoutTenant`) is stated per function — RLS makes the wrong choice return nothing, not the wrong rows.
-import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql, type SQLWrapper } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { organization, school } from "@/modules/tenancy/schema";
 import type { Assignment } from "./can";
@@ -88,6 +88,22 @@ export async function revokeAllForUser(tx: Tx, userAccountId: string, exceptSess
     )
     .returning({ id: userSession.id });
   return rows.length;
+}
+
+/**
+ * Tenant-bound. FOR SHARE on the person row(s) named by `personIds` — one id, or a subquery yielding person ids (only
+ * the person rows are locked, never the subquery's). The lock in front of every «is this person still here?» check
+ * that is followed by a write making them live again (a class, a teaching, a role, a login): call it BEFORE that
+ * check. `removePerson` holds FOR UPDATE on the same row until it commits, so the check waits for a removal in flight
+ * and then reads what it committed (`archived` → refused); a removal that starts later waits for this transaction and
+ * then ends what it wrote. Modes and lock order: ./removal, «Concurrency».
+ */
+export async function lockPersonForShare(tx: Tx, personIds: string | SQLWrapper): Promise<void> {
+  await tx
+    .select({ id: person.id })
+    .from(person)
+    .where(inArray(person.id, typeof personIds === "string" ? [personIds] : personIds))
+    .for("share");
 }
 
 /** Global. Replaces the password hash and clears the forced-change flag in one go. */

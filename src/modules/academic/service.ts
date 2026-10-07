@@ -13,6 +13,7 @@ import { normalizeFa } from "@/lib/normalize";
 import { SCHOOL_WEEKDAYS, currentPeriodOf, nextSessionOf, tehranClock, type Weekday } from "@/lib/timetable";
 import { can, canAtAnyScope, type CanContext } from "@/modules/iam/can";
 import { PERSON_REMOVED_MESSAGE } from "@/modules/iam/messages";
+import { lockPersonForShare } from "@/modules/iam/repo";
 import { person, role, roleAssignment, staffProfile, studentProfile } from "@/modules/iam/schema";
 import { branch, classGroup, classOffering, school } from "@/modules/tenancy/schema";
 import {
@@ -57,9 +58,12 @@ export interface AssignTeacherResult {
  * (offering, staff, role) is already active (partial unique `teacher_assignment_active_uq`), and when the colleague
  * was removed (`left_on` set or the person archived — src/modules/iam/removal.ts): every caller (the offerings form,
  * «افزودن تدریس», the importer, the seeds) goes through here, so a removed person never teaches again by a stale id.
+ * The person row is locked (FOR SHARE) before that check, so a removal running at the same moment is waited for and
+ * then refused (iam/removal «Concurrency»).
  */
 export async function assignTeacher(tx: Tx, ctx: ServiceCtx, input: AssignTeacherInput): Promise<AssignTeacherResult> {
   const teacherRole = input.role ?? "main";
+  await lockPersonForShare(tx, tx.select({ id: staffProfile.personId }).from(staffProfile).where(eq(staffProfile.id, input.staffProfileId)));
   const [staff] = await tx
     .select({ id: staffProfile.id, personId: staffProfile.personId, leftOn: staffProfile.leftOn, personStatus: person.status })
     .from(staffProfile)
@@ -198,9 +202,11 @@ async function loadClassGroup(tx: Tx, classGroupId: string): Promise<ClassGroupF
  * grade) and inserts an active class_enrollment. A second active class in the same period is rejected by the
  * exclusion constraint (`class_enrollment_active_excl`) — use moveEnrollment for a transfer. A removed student
  * (person archived or profile `withdrawn` — src/modules/iam/removal.ts) is refused (CONFLICT): placing them in a class
- * again would put them back on rosters and head counts.
+ * again would put them back on rosters and head counts. The person row is locked (FOR SHARE) before that check, so a
+ * removal running at the same moment is waited for and then refused (iam/removal «Concurrency»).
  */
 export async function enrollStudent(tx: Tx, ctx: ServiceCtx, input: EnrollStudentInput): Promise<EnrollStudentResult> {
+  await lockPersonForShare(tx, tx.select({ id: studentProfile.personId }).from(studentProfile).where(eq(studentProfile.id, input.studentProfileId)));
   const [student] = await tx
     .select({ status: studentProfile.status, personStatus: person.status })
     .from(studentProfile)
@@ -274,24 +280,42 @@ export interface MoveEnrollmentInput {
   reason: EnrollmentChangeReason;
 }
 
+/** `moveEnrollment` found its row no longer active when it came to end it: another placement of the student won. */
+export const ENROLLMENT_CHANGED_MESSAGE = "ثبت‌نام این دانش‌آموز هم‌زمان تغییر کرد؛ دوباره تلاش کنید.";
+
 /**
  * Transfers a student to another class of the SAME academic year: the current row ends today
  * (`status = 'transferred'`, `ends_on = today`) and a new active row starts today with `previous_enrollment_id`.
+ * A removed student (src/modules/iam/removal.ts) is refused (CONFLICT), checked under the person row's FOR SHARE lock
+ * like `enrollStudent`, so a removal running at the same moment is waited for and then refused; the row is ended only
+ * while it is still active (a second placement racing this one gets CONFLICT, never a second active class).
  */
 export async function moveEnrollment(tx: Tx, ctx: ServiceCtx, input: MoveEnrollmentInput): Promise<{ classEnrollmentId: string }> {
+  await lockPersonForShare(
+    tx,
+    tx.select({ id: studentProfile.personId }).from(classEnrollment).innerJoin(studentProfile, eq(studentProfile.id, classEnrollment.studentProfileId)).where(eq(classEnrollment.id, input.classEnrollmentId)),
+  );
   const [current] = await tx
     .select({
       id: classEnrollment.id,
+      status: classEnrollment.status,
       schoolEnrollmentId: classEnrollment.schoolEnrollmentId,
       classGroupId: classEnrollment.classGroupId,
       studentProfileId: classEnrollment.studentProfileId,
       academicYearId: classGroup.academicYearId,
+      studentStatus: studentProfile.status,
+      personStatus: person.status,
     })
     .from(classEnrollment)
     .innerJoin(classGroup, eq(classGroup.id, classEnrollment.classGroupId))
-    .where(and(eq(classEnrollment.id, input.classEnrollmentId), eq(classEnrollment.status, "active")))
+    .innerJoin(studentProfile, eq(studentProfile.id, classEnrollment.studentProfileId))
+    .innerJoin(person, eq(person.id, studentProfile.personId))
+    .where(eq(classEnrollment.id, input.classEnrollmentId))
     .limit(1);
   if (!current) throw invalidReference("ثبت‌نام فعالی برای این دانش‌آموز پیدا نشد.");
+  // Before the row's own state: a removal that ended it meanwhile answers as what it is.
+  if (current.personStatus !== "active" || current.studentStatus === "withdrawn") throw conflict(PERSON_REMOVED_MESSAGE);
+  if (current.status !== "active") throw invalidReference("ثبت‌نام فعالی برای این دانش‌آموز پیدا نشد.");
   if (current.classGroupId === input.newClassGroupId) throw validation(undefined, "دانش‌آموز هم‌اکنون در همین کلاس است.");
 
   const target = await loadClassGroup(tx, input.newClassGroupId);
@@ -299,11 +323,15 @@ export async function moveEnrollment(tx: Tx, ctx: ServiceCtx, input: MoveEnrollm
     throw validation(undefined, "انتقال فقط بین کلاس‌های همان سال تحصیلی ممکن است.");
   }
 
-  // ends_on = today, but never before starts_on (a future-dated enrollment collapses to an empty range).
-  await tx
+  // ends_on = today, but never before starts_on (a future-dated enrollment collapses to an empty range). Only while
+  // still active: two placements at once both read it active, the second one waits for the first's row lock here and
+  // then matches nothing.
+  const ended = await tx
     .update(classEnrollment)
     .set({ status: "transferred", endsOn: sql`greatest(current_date, ${classEnrollment.startsOn})`, changeReason: input.reason, changedByPersonId: ctx.personId })
-    .where(eq(classEnrollment.id, current.id));
+    .where(and(eq(classEnrollment.id, current.id), eq(classEnrollment.status, "active")))
+    .returning({ id: classEnrollment.id });
+  if (ended.length === 0) throw conflict(ENROLLMENT_CHANGED_MESSAGE);
 
   const [next] = await tx
     .insert(classEnrollment)

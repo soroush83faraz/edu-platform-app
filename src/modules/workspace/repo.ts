@@ -3,6 +3,7 @@
 // The inbox list is ONE SQL statement (inbox_entry ⨝ work_item ⨝ status ⨝ type ⨝ creator ⟕ درس/class + lateral counts) with
 // the Tehran day boundaries passed in as parameters, so bucket and tab filters run in the database.
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Tx } from "@/lib/actions";
 import { type Bucket, type DayBounds, tehranDayBounds } from "@/lib/format";
 import { person, roleAssignment, staffProfile, studentProfile } from "@/modules/iam/schema";
@@ -82,13 +83,26 @@ function inReach(reach: PersonReach): SQL {
   return sql`(${person.id} = ${reach.selfId}::uuid or ${personInScopeSql(reach.scope, "iam.person.id")})`;
 }
 
+/**
+ * The write paths' recipient reads (`lock`: a new work item's class roster / named persons) take FOR KEY SHARE on the
+ * person rows they return. A removal holds FOR UPDATE on its person until it commits, so such a read waits for it and
+ * PostgreSQL then re-checks `status = 'active'` on the committed row — a student removed at that moment drops out
+ * instead of becoming a pending assignee; a removal that starts later waits for the new item and withdraws them from
+ * it. KEY SHARE is the weakest lock FOR UPDATE still waits for: a whole class is locked at once, and FOR SHARE would
+ * also queue behind every classmate's rename (an import holds those until it commits) — iam/removal «Concurrency».
+ */
+export interface RecipientReadOptions {
+  lock?: boolean;
+}
+
 /** Ids of the given persons that exist in this tenant, are active and inside `reach` (RLS already hides other organizations). */
-export async function filterActivePersonIds(tx: Tx, ids: readonly string[], reach: PersonReach): Promise<string[]> {
+export async function filterActivePersonIds(tx: Tx, ids: readonly string[], reach: PersonReach, opts: RecipientReadOptions = {}): Promise<string[]> {
   if (ids.length === 0) return [];
-  const rows = await tx
+  const query = tx
     .select({ id: person.id })
     .from(person)
     .where(and(inArray(person.id, [...ids]), eq(person.status, "active"), inReach(reach)));
+  const rows = opts.lock ? await query.for("key share") : await query;
   return rows.map((r) => r.id);
 }
 
@@ -99,16 +113,22 @@ export interface RosterRow {
   studentNumber: string;
 }
 
-/** Active students of the offering's class group (academic.class_enrollment status = 'active'). */
-export async function listOfferingRoster(tx: Tx, classOfferingId: string): Promise<RosterRow[]> {
-  return tx
-    .select({ personId: person.id, firstName: person.firstName, lastName: person.lastName, studentNumber: studentProfile.studentNumber })
+/**
+ * Active students of the offering's class group (academic.class_enrollment status = 'active'), in ONE statement also
+ * when `lock` (FOR KEY SHARE OF the person rows, `RecipientReadOptions`). The person table is aliased because
+ * PostgreSQL only accepts an unqualified name after `OF`.
+ */
+export async function listOfferingRoster(tx: Tx, classOfferingId: string, opts: RecipientReadOptions = {}): Promise<RosterRow[]> {
+  const p = alias(person, "roster_person");
+  const query = tx
+    .select({ personId: p.id, firstName: p.firstName, lastName: p.lastName, studentNumber: studentProfile.studentNumber })
     .from(classOffering)
     .innerJoin(classEnrollment, and(eq(classEnrollment.classGroupId, classOffering.classGroupId), eq(classEnrollment.status, "active")))
     .innerJoin(studentProfile, eq(studentProfile.id, classEnrollment.studentProfileId))
-    .innerJoin(person, and(eq(person.id, studentProfile.personId), eq(person.status, "active")))
+    .innerJoin(p, and(eq(p.id, studentProfile.personId), eq(p.status, "active")))
     .where(eq(classOffering.id, classOfferingId))
-    .orderBy(asc(person.lastName), asc(person.firstName));
+    .orderBy(asc(p.lastName), asc(p.firstName));
+  return opts.lock ? query.for("key share", { of: p }) : query;
 }
 
 export interface OfferingRow {

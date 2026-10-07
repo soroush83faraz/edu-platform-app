@@ -32,6 +32,21 @@
 //      the role's grant scope; `school_principal` needs the organization — FORBIDDEN): a vice principal cannot
 //      unseat the principal by removing them;
 //   7. every live teaching must be one the caller could end (`academic.teacher_assignment.write` at its school).
+//
+// Concurrency (READ COMMITTED; tests/int/concurrency.test.ts runs these races on two real connections). The removal
+// takes the person row FOR UPDATE before anything else (`planRemoval`) and holds it until it commits. Every write that
+// would make the person live again reads «is this person still here?» only under a lock on that same row, so it waits
+// for a removal in flight and then sees `archived`, and a removal that starts later waits for it and ends what it wrote:
+//   • FOR SHARE (`lockPersonForShare`, ./repo) in front of the one-person checks — `enrollStudent`, `moveEnrollment`,
+//     `assignTeacher` (academic/service), `assignRole`, `createAccountForPerson`, the temporary password and the unlock
+//     (`requireAccountInOrg`, ./service). The importer, «افزودن تدریس», the offerings form and the placement all reach
+//     the database through these;
+//   • FOR KEY SHARE on the recipients of a new work item (the class roster, the named persons — workspace/repo
+//     `RecipientReadOptions`): a whole class at once, so the weakest mode that still waits for FOR UPDATE.
+// So this lock must stay FOR UPDATE: FOR NO KEY UPDATE would not wait for the KEY SHARE readers, nor they for it.
+// Lock order — the same in every transaction, so none waits on another in a circle: the person row → work item rows
+// (FOR NO KEY UPDATE; ascending id when several, `withdrawRemovedAssignee`; one in `changeStatus` / `updateWorkItem`)
+// → the rows under an item (assignees, inbox entries, transitions). Nothing locks a work item and then a person.
 import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit } from "@/lib/audit";
@@ -84,7 +99,7 @@ interface RemovalPlan {
  * Every guard of the removal (header, 1–7), in an order that leaks nothing: self → permission scope (FORBIDDEN) →
  * person in scope (NOT_FOUND) → kind → organization role → other schools → manager roles → teaching. Reads only;
  * `lock` takes the person row FOR UPDATE first (the real removal), so a double tap serialises on it and the second
- * call sees the first one's result.
+ * call sees the first one's result — and so does every door that would bring the person back (header, «Concurrency»).
  */
 async function planRemoval(tx: Tx, ctx: IamCtx, personId: string, kind: RemovalKind, lock: boolean): Promise<RemovalPlan> {
   if (personId === ctx.personId) throw validation(undefined, REMOVAL_MESSAGES.self);
