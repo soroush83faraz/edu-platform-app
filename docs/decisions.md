@@ -1559,3 +1559,42 @@ Owner's ask (client): after creating a تکلیف / تسک the giver could only 
 - **Notifications: one per assignee per save.** A moved deadline keeps the type `work_item.due_extended` and its dedupe per due value (`wi:<id>:due:<iso|none>:<person>`); its title says what happened — «… تا … تمدید شد» (later), «… به … تغییر کرد» (earlier / newly set), «… برداشته شد» (removed) — and the body names a content change made in the same save. A content-only edit is the new type `work_item.updated` («تکلیف «…» ویرایش شد», body «عنوان و اولویت تغییر کرد.»), added to `scripts/catalog.ts` so the deploy's catalog seed installs it; the bell renders title/body generically, so no UI change was needed. Every notified assignee's inbox row flips to unread, as for any other notification. The catalog name of `due_extended` now reads «مهلت کار تغییر کرد» (the code is never renamed).
 - **The form.** The create form's controls (`Input`, `Textarea`, `JalaliDatePicker` from today, `TimePicker`, `PrioritySelect`) in the `ResponsiveModal` «ویرایش تکلیف/تسک», «ذخیرهٴ تغییرات» disabled until something differs. `JalaliDatePicker` and `PrioritySelect` gained an opt-in `modal` prop (default unchanged) so their desktop popovers hold focus inside the dialog, the fix `TimePicker` already carries.
 - **Out of scope.** Editing recipients (adding/removing assignees) and the type; letting an assignee ask for more time.
+
+## 2026-10-06 — top bar «برگشت»: the way back moves into the bar; each class of a دبیر gets its own colour
+Owner, from the approved mock `docs/mockups/class-page-v3.html` (screens 5 and 6).
+- **Inner pages: back pill at the START, bell + profile at the END; Home: profile START, bell END (unchanged).** The
+  «خانه» `BackLink` row under the bar read as clutter. In the hub layout every page except Home now shows a white
+  pill (`bg-surface` + `shadow-1`, 44 px, `ArrowRight` + the destination's name, `primary-700` semibold) in the top
+  bar's start slot; the profile button moves to the end, after the bell. The page body draws no back link any more.
+  The classic layout (kept for a one-line revert) keeps its in-body `BackLink`.
+- **One source of truth: `PageHeader`'s `back`.** The target is still the page's logical parent as it already
+  declared it (default «خانه» → /home; nested pages keep their explicit target and label); `pageBack(back, variant)`
+  is the one rule (unit-tested).
+- **Plumbing — why a fixed layer and `:has()`.** A layout does not re-render between sibling pages and never sees a
+  page's props, so the bar cannot ask the page for its parent; a client portal would appear after hydration (flicker,
+  shift). Instead `PageHeader` renders `TopBarBack` — a server-rendered, `position: fixed` layer that repeats the
+  bar's box exactly (full width, safe-area top, the 1200 px content column and its gutters, 56/64 px) — so the pill
+  sits on the bar's start slot in the first HTML, out of flow (no layout shift). The layer carries
+  `data-topbar-back`; the shell column is a Tailwind group and the bar shows the start profile or the end one with
+  `group-has-[[data-topbar-back]]/shell:` — pure CSS, correct on the first paint, after every client navigation and
+  across streamed `loading.tsx` swaps. The layer is a sibling BEFORE the `<header>` (a `max-lg:sr-only` header would
+  clip it) and opts out of the `reveal-*` entrances (`animate-none!`; an animated ancestor with `translate`/`opacity`
+  would become the containing block / stacking context of a fixed child). Loading skeletons (`PageSkeleton`, the
+  inbox skeleton) put the real pill in the bar when every page under the boundary has the same parent, else a
+  stand-in pill with a skeleton label; the in-shell not-found pages carry «خانه».
+- **Each class of a دبیر its own hue.** `fnv1a32(subject id) % 8` gave a math teacher with five classes five identical
+  colours, and different درس‌ها could collide. For a TEACHER's own views the hue now comes from the class offering:
+  `teacherOfferingHues` (src/lib/subject-stamp.ts) sorts the teacher's live offerings by درس name, then class name
+  (Persian collation, numeric), then id, and hands out the eight existing subject hues in the bit-reversal order
+  0,4,2,6,1,5,3,7 (consecutive picks ≥ 90° apart on the 45°-step wheel), rotated so the first offering keeps its
+  درس's own hue (a one-class teacher sees what their students see); distinct for up to eight, wrapping after. No new
+  hue, no new token. Where it applies, for that teacher: the «درس‌های من» cover set on Home (the cover sets map 1:1
+  to the stamp hues, so card and stamp agree), the teaching week cells (phone grid and desktop table) and its class
+  list, «کلاس‌های من» cards and the desktop «کلاس‌های من» list, the subject page header mark, today's «حضور و غیاب»
+  rows, and the مُهر درس of their rows of that class in «پنل من», the subject page and the Home dashboard. Students
+  and admins (and a teacher looking at a class they do not teach) keep the درس's hue. Read once per request:
+  pages holding the hats compute it from `teachingOfferings`; the others use `getTeacherHues()` (src/lib/teacher-hues.ts,
+  React `cache`, skipped without a teacher role) over `teacherHuesQuery` — both from ONE SQL fragment
+  (`taughtOfferingsFrom`), so they always agree. Inbox rows now carry `offeringId`.
+- Tests: `hub-shell` (bar arrangement, the fixed layer, `pageBack`), `teacher-hues` (deterministic, distinct ≤ 8,
+  order-independent, spread), `home-courses` (cover = class hue).

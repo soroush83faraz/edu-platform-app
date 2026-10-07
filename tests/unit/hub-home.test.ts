@@ -24,7 +24,7 @@ vi.mock("@/modules/workspace/queries", () => ({
   inboxSummaryQuery: vi.fn(async () => ({ ok: true, data: { overdue: 2, dueToday: 0, unread: 0, unreadNotifications: 0 } })),
 }));
 const resolveHomeTiles = vi.hoisted(() => vi.fn());
-vi.mock("@/components/home/home-data", () => ({ resolveHomeTiles, getMyTimetable: vi.fn(async () => null), getNearbyItems: vi.fn(async () => []), getMyClass: vi.fn(async () => null) }));
+vi.mock("@/components/home/home-data", () => ({ resolveHomeTiles, getHats: vi.fn(async () => null), getMyTimetable: vi.fn(async () => null), getNearbyItems: vi.fn(async () => []), getMyClass: vi.fn(async () => null) }));
 
 const { default: HomePage } = await import("@/app/(app)/home/page");
 const { HubGreeting } = await import("@/components/home/HubGreeting");

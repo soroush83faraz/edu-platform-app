@@ -47,6 +47,7 @@ function row(bucket: Bucket, over: Partial<Row> = {}): Row {
     assigneesDone: 0,
     commentsCount: 0,
     bucket,
+    offeringId: "off-math",
     subjectId: "sub-math",
     subjectName: "ریاضی ۱",
     classGroupName: "۱۰/۱",

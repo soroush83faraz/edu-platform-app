@@ -239,6 +239,8 @@ export interface InboxRow {
   assigneesDone: number;
   commentsCount: number;
   bucket: Bucket;
+  /** The class offering (درس × کلاس) of a class task — the key of a teacher's own colour of that class. */
+  offeringId: string | null;
   /** The درس of a class task (via `work_item.class_offering_id`); null for personal notes and admin tasks. */
   subjectId: string | null;
   subjectName: string | null;
@@ -333,6 +335,7 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
     assignees_done: number;
     comments_count: number;
     bucket: Bucket;
+    class_offering_id: string | null;
     subject_id: string | null;
     subject_name: string | null;
     class_group_name: string | null;
@@ -414,6 +417,7 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
     assigneesDone: r.assignees_done,
     commentsCount: r.comments_count,
     bucket: r.bucket,
+    offeringId: r.class_offering_id,
     subjectId: r.subject_id,
     subjectName: r.subject_name,
     classGroupName: r.class_group_name,

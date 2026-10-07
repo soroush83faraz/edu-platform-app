@@ -2,9 +2,10 @@ import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { Card } from "@/components/Card";
 import type { EmptyCopy } from "@/lib/empty-copy";
+import { teacherOfferingHues } from "@/lib/subject-stamp";
 import type { WorkItemWords } from "@/lib/work-item-words";
 import { CompactItemRow } from "./CompactItemRow";
-import { getNearbyItems } from "./home-data";
+import { getHats, getNearbyItems } from "./home-data";
 
 /**
  * «تکالیف نزدیک»: the next five open items of my کارتابل (assigned to me or given by me), by due date. Empty, it is
@@ -15,6 +16,8 @@ import { getNearbyItems } from "./home-data";
  */
 export async function NearbyCard({ words, empty }: { words: WorkItemWords; empty: EmptyCopy }) {
   const rows = await getNearbyItems();
+  // A teacher's rows wear the colour of their class (the cached hats read Home already made).
+  const hues = teacherOfferingHues((await getHats())?.teachingOfferings ?? []);
   return (
     <section aria-labelledby="nearby-heading" className="flex flex-col gap-2.5">
       <div className="flex items-baseline justify-between gap-3 px-1">
@@ -35,7 +38,7 @@ export async function NearbyCard({ words, empty }: { words: WorkItemWords; empty
         ) : (
           <ul className="divide-y divide-line/70">
             {rows.map((row) => (
-              <CompactItemRow key={row.id} row={row} />
+              <CompactItemRow key={row.id} row={row} hues={hues} />
             ))}
           </ul>
         )}

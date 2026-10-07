@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { requireContext } from "@/lib/ctx";
 import { tehranNow } from "@/lib/format";
 import { schoolWeekOf } from "@/lib/jalali-grid";
+import { teacherOfferingHues } from "@/lib/subject-stamp";
 import { myTimetableQuery } from "@/modules/academic/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 import { hatsQuery } from "@/modules/iam/hats";
@@ -47,7 +48,7 @@ export default async function ClassesPage() {
             </h3>
             {hasTeachingWeek(tt) ? <p className="tabular text-meta text-text-muted">{week.label}</p> : null}
           </div>
-          <TeachingWeek tt={tt} week={week} />
+          <TeachingWeek tt={tt} week={week} hues={teacherOfferingHues(offerings)} />
         </section>
       ) : null}
 

@@ -106,3 +106,51 @@ export function fnv1a(s: string): number {
 export function subjectHue(subjectId: string): number {
   return fnv1a(subjectId) % SUBJECT_HUES;
 }
+
+/** Hue index (0–7) per class offering id — a teacher's own colours (`teacherOfferingHues`). Plain data, so it crosses
+ *  the server → client boundary (the timetable is a client component). */
+export type OfferingHues = Readonly<Record<string, number>>;
+
+/** What the per-offering assignment needs of one offering the teacher teaches. */
+export interface HueOffering {
+  offeringId: string;
+  subjectId: string;
+  subjectName: string;
+  classGroupName: string;
+}
+
+/**
+ * The order the hues are handed out in: the bit-reversal of 0–7, so the first two picks sit opposite on the hue
+ * wheel (the eight hues are 45° apart), the first four 90° apart, and consecutive picks are never neighbours on the
+ * wheel (≥ 90° apart) — the wrap after eight is the only place two adjacent hues follow each other.
+ */
+const HUE_SPREAD = [0, 4, 2, 6, 1, 5, 3, 7] as const;
+const offeringCollator = new Intl.Collator("fa", { numeric: true });
+
+/**
+ * A TEACHER's colours (owner, 2026-10-06 — «هر کلاسِ دبیر یک رنگ جدا»): every live class offering (درس × کلاس) the
+ * teacher teaches gets its own hue from the eight subject hues, so a math teacher with five classes sees five
+ * colours, not five identical greens — on the Home course cards, the timetable cells, the subject page header and
+ * the rows of that class. Deterministic and independent of input order: the offerings are sorted by درس name, then
+ * class name (Persian collation, numeric — «۹/۱» before «۱۰/۱»), then id, and take the hues in `HUE_SPREAD` order,
+ * rotated so the first one keeps its درس's own hue (`subjectHue`, so a one-class teacher sees what their students
+ * see); distinct for up to eight offerings, wrapping after that. Students and admins keep `subjectHue`.
+ */
+export function teacherOfferingHues(offerings: readonly HueOffering[]): OfferingHues {
+  const unique = [...new Map(offerings.map((o) => [o.offeringId, o])).values()];
+  unique.sort(
+    (a, b) =>
+      offeringCollator.compare(normalizeName(a.subjectName), normalizeName(b.subjectName)) ||
+      offeringCollator.compare(normalizeName(a.classGroupName), normalizeName(b.classGroupName)) ||
+      (a.offeringId < b.offeringId ? -1 : a.offeringId > b.offeringId ? 1 : 0),
+  );
+  if (unique.length === 0) return {};
+  const base = subjectHue(unique[0].subjectId);
+  return Object.fromEntries(unique.map((o, i) => [o.offeringId, (base + HUE_SPREAD[i % SUBJECT_HUES]) % SUBJECT_HUES]));
+}
+
+/** The hue of one offering for this viewer: the teacher's own (`hues`) when it is theirs, else its درس's. */
+export function offeringHue(hues: OfferingHues | null | undefined, offeringId: string | null | undefined, subjectId: string): number {
+  const own = offeringId ? hues?.[offeringId] : undefined;
+  return own ?? subjectHue(subjectId);
+}

@@ -6,6 +6,7 @@ import { RelativeTime } from "@/components/RelativeTime";
 import { PriorityDot, RowMark } from "@/components/RowMark";
 import { SubjectStamp } from "@/components/SubjectStamp";
 import { formatNumberFa } from "@/lib/format";
+import { offeringHue, type OfferingHues } from "@/lib/subject-stamp";
 import { type WorkItemVoice, type WorkItemWords, personalItemLabel, workItemWords } from "@/lib/work-item-words";
 import type { InboxRow as Row } from "../repo";
 
@@ -20,18 +21,21 @@ import type { InboxRow as Row } from "../repo";
  * `words` is the reader's noun set; it defaults to «تکلیف» for the lists that are a teaching context anyway.
  * `createVoice` is the reader's word for a کار of their own — it names the PERSONAL rows (`todo`): «تسک» for a
  * student, the catalog's own «کار شخصی» for everyone else. `inSubject` drops the درس and class from the meta
- * (the subject page already says them).
+ * (the subject page already says them). `hues`: the reader's own colour per class they teach (`getTeacherHues`) —
+ * a teacher's rows wear the colour of their class, everyone else's the درس's.
  */
 export function InboxRow({
   row,
   words = workItemWords("assignment"),
   createVoice = "assignment",
   inSubject = false,
+  hues,
 }: {
   row: Row;
   words?: WorkItemWords;
   createVoice?: WorkItemVoice;
   inSubject?: boolean;
+  hues?: OfferingHues;
 }) {
   const closed = row.category === "done" || row.category === "cancelled";
   const showProgress = row.createdByMe && row.assigneesTotal > 0 && !(row.assigneesTotal === 1 && row.myAssigneeState);
@@ -45,7 +49,7 @@ export function InboxRow({
         href={`/inbox/${row.id}`}
         className="pressable flex min-h-16 items-center gap-3 px-3 py-2.5 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken active:bg-surface-sunken"
       >
-        <WorkItemMark row={row} label={row.typeCode === "todo" ? personalItemLabel(createVoice, row.typeName) : words.singular} />
+        <WorkItemMark row={row} label={row.typeCode === "todo" ? personalItemLabel(createVoice, row.typeName) : words.singular} hues={hues} />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <p className={cn("line-clamp-2 text-row", closed ? "font-medium text-text-muted line-through decoration-text-faint" : cn("text-text", row.unread ? "font-semibold" : "font-medium"))}>
             {!closed ? <PriorityDot priority={row.priority} className="me-1.5 align-middle" /> : null}
@@ -66,11 +70,14 @@ export function InboxRow({
 
 /**
  * The lead of a work-item row: the مُهر درس when the item belongs to a درس, else the quiet type glyph. A closed
- * row's mark is faded with its title.
+ * row's mark is faded with its title. The stamp wears the reader's own colour of the class when they teach it
+ * (`hues`, `offeringHue`), else the درس's hue.
  */
-export function WorkItemMark({ row, label, className }: { row: Row; label?: string; className?: string }) {
+export function WorkItemMark({ row, label, className, hues }: { row: Row; label?: string; className?: string; hues?: OfferingHues }) {
   const closed = row.category === "done" || row.category === "cancelled";
-  if (row.subjectId && row.subjectName) return <SubjectStamp subjectId={row.subjectId} name={row.subjectName} className={cn(closed && "opacity-60", className)} />;
+  if (row.subjectId && row.subjectName) {
+    return <SubjectStamp subjectId={row.subjectId} name={row.subjectName} hue={offeringHue(hues, row.offeringId, row.subjectId)} className={cn(closed && "opacity-60", className)} />;
+  }
   return <RowMark icon={row.typeCode === "todo" ? ListTodo : ClipboardList} label={label} className={cn(closed && "opacity-60", className)} />;
 }
 
@@ -81,7 +88,17 @@ export function WorkItemMark({ row, label, className }: { row: Row; label?: stri
  * enough for the full meta line, my progress on what I gave and the unread dot, as in `InboxRow`. The whole row is
  * the link, ≥ 44 px.
  */
-export function InboxBoxRow({ row, words = workItemWords("assignment"), createVoice = "assignment" }: { row: Row; words?: WorkItemWords; createVoice?: WorkItemVoice }) {
+export function InboxBoxRow({
+  row,
+  words = workItemWords("assignment"),
+  createVoice = "assignment",
+  hues,
+}: {
+  row: Row;
+  words?: WorkItemWords;
+  createVoice?: WorkItemVoice;
+  hues?: OfferingHues;
+}) {
   const showProgress = row.createdByMe && row.assigneesTotal > 0 && !(row.assigneesTotal === 1 && row.myAssigneeState);
   const meta = rowMeta(row);
   const due = meta.filter((p) => isValidElement(p) && p.key === "due");
@@ -97,6 +114,7 @@ export function InboxBoxRow({ row, words = workItemWords("assignment"), createVo
           row={row}
           label={row.typeCode === "todo" ? personalItemLabel(createVoice, row.typeName) : words.singular}
           className="mt-0.5 size-7 md:mt-0 md:size-9"
+          hues={hues}
         />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <p className={cn("line-clamp-2 text-row text-text", row.unread ? "font-semibold" : "font-medium")}>

@@ -16,12 +16,18 @@ const HUE_CLASSES = [
   "bg-subject-7-bg text-subject-7-ink ring-subject-7-ink/9",
 ] as const;
 
+/** The class string of a hue index — `hue` when given (a teacher's own offering colour, `offeringHue`), else the درس's. */
+function hueClasses(subjectId: string, hue?: number): string {
+  return HUE_CLASSES[(((hue ?? subjectHue(subjectId)) % HUE_CLASSES.length) + HUE_CLASSES.length) % HUE_CLASSES.length];
+}
+
 /**
  * The hue classes of a درس (bg + ink + the 9 % ink ring) for a surface that wears the stamp's colour without being
- * the 36/48 px stamp — the cells of the phone timetable grid. Same key, same colour everywhere.
+ * the 36/48 px stamp — the cells of the timetable. Same key, same colour everywhere; `hue` overrides the درس's hue
+ * with the teacher's own colour of that class (`teacherOfferingHues`, src/lib/subject-stamp).
  */
-export function subjectHueClasses(subjectId: string): string {
-  return HUE_CLASSES[subjectHue(subjectId)];
+export function subjectHueClasses(subjectId: string, hue?: number): string {
+  return hueClasses(subjectId, hue);
 }
 
 /**
@@ -30,15 +36,16 @@ export function subjectHueClasses(subjectId: string): string {
  * replaces the row glyph on rows that belong to a subject but are titled by something else (homework rows); a row or
  * header whose title IS the درس name uses `SubjectIcon` below; rows without a subject keep `RowMark`. 36 px / radius 10 (`rounded-stamp`) and 13 px letters (`text-meta`) in lists, `lg` 48 px / radius 13
  * (`rounded-stamp-lg`) and 16 px letters (`text-stamp`) for a header — tokens in globals.css `@theme`.
- * Decorative (`aria-hidden`): the subject name is always in the text beside it.
+ * Decorative (`aria-hidden`): the subject name is always in the text beside it. `hue`: a teacher's own colour of the
+ * class (`offeringHue` — owner 2026-10-06: each class of a teacher its own hue); left out, the درس's hue.
  */
-export function SubjectStamp({ subjectId, name, size = "md", className }: { subjectId: string; name: string; size?: "md" | "lg"; className?: string }) {
+export function SubjectStamp({ subjectId, name, size = "md", hue, className }: { subjectId: string; name: string; size?: "md" | "lg"; hue?: number; className?: string }) {
   return (
     <span
       className={cn(
         "inline-grid shrink-0 place-items-center pt-px font-bold leading-none whitespace-nowrap ring-1 ring-inset",
         size === "lg" ? "size-12 rounded-stamp-lg text-stamp" : "size-9 rounded-stamp text-meta leading-none",
-        HUE_CLASSES[subjectHue(subjectId)],
+        hueClasses(subjectId, hue),
         className,
       )}
       aria-hidden
@@ -53,12 +60,12 @@ export function SubjectStamp({ subjectId, name, size = "md", className }: { subj
  * book for ادبیات…) in the subject's ink on its hue, in the stamp's shape: 36 px / `rounded-stamp` with a 20 px glyph
  * in lists, `lg` 48 px / `rounded-stamp-lg` with a 24 px glyph for the subject page header. For subject LISTS and
  * headers, where the full درس name is printed beside it (the stamp's letters would only repeat it), so a list of
- * درس‌ها no longer repeats one grey mark. Decorative (`aria-hidden`).
+ * درس‌ها no longer repeats one grey mark. Decorative (`aria-hidden`). `hue` as on `SubjectStamp`.
  */
-export function SubjectIcon({ subjectId, name, size = "md", className }: { subjectId: string; name: string; size?: "md" | "lg"; className?: string }) {
+export function SubjectIcon({ subjectId, name, size = "md", hue, className }: { subjectId: string; name: string; size?: "md" | "lg"; hue?: number; className?: string }) {
   return (
     <span
-      className={cn("inline-grid shrink-0 place-items-center ring-1 ring-inset", size === "lg" ? "size-12 rounded-stamp-lg" : "size-9 rounded-stamp", HUE_CLASSES[subjectHue(subjectId)], className)}
+      className={cn("inline-grid shrink-0 place-items-center ring-1 ring-inset", size === "lg" ? "size-12 rounded-stamp-lg" : "size-9 rounded-stamp", hueClasses(subjectId, hue), className)}
       aria-hidden
     >
       {/* A lookup of a module-level lucide component, not a component made in render (createElement keeps the

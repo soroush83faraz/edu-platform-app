@@ -1,20 +1,21 @@
 import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { PriorityDot } from "@/components/RowMark";
+import type { OfferingHues } from "@/lib/subject-stamp";
 import type { InboxRow } from "@/modules/workspace/repo";
 import { MetaLine, Progress, WorkItemMark, rowMeta } from "@/modules/workspace/ui/InboxRow";
 
 /**
  * One کار in a Home list: the مُهر درس (or the quiet type glyph when it has no درس), the title with its priority
  * dot, one meta line — درس (+ class on what I gave) · deadline (red when overdue) or sender — and, for items I
- * gave, «۳/۲۵» over a slim progress bar. Denser than the کارتابل row.
+ * gave, «۳/۲۵» over a slim progress bar. Denser than the کارتابل row. `hues`: a teacher's own class colours.
  */
-export function CompactItemRow({ row }: { row: InboxRow }) {
+export function CompactItemRow({ row, hues }: { row: InboxRow; hues?: OfferingHues }) {
   const showProgress = row.createdByMe && row.assigneesTotal > 0 && !(row.assigneesTotal === 1 && row.myAssigneeState);
   return (
     <li>
       <Link prefetch={false} href={`/inbox/${row.id}`} className="pressable flex min-h-14 items-center gap-3 px-3 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken active:bg-surface-sunken">
-        <WorkItemMark row={row} />
+        <WorkItemMark row={row} hues={hues} />
         <div className="flex min-w-0 flex-1 flex-col">
           <p className={cn("truncate text-sm text-text", row.unread ? "font-semibold" : "font-medium")}>
             <PriorityDot priority={row.priority} className="me-1.5 align-middle" />

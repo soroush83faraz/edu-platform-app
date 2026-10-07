@@ -12,7 +12,7 @@ vi.mock("@/modules/workspace/queries", () => ({
   listInboxQuery: vi.fn(async () => ({ ok: true, data: { rows: [] } })),
 }));
 const resolveHomeTiles = vi.fn();
-vi.mock("@/components/home/home-data", () => ({ resolveHomeTiles, getMyTimetable: vi.fn(async () => null), getNearbyItems: vi.fn(async () => []) }));
+vi.mock("@/components/home/home-data", () => ({ resolveHomeTiles, getHats: vi.fn(async () => null), getMyTimetable: vi.fn(async () => null), getNearbyItems: vi.fn(async () => []) }));
 
 const { NearbyCard } = await import("@/components/home/NearbyCard");
 const { HomeGrid } = await import("@/components/home/HomeGrid");

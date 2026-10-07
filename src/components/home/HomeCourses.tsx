@@ -1,9 +1,9 @@
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
-import { COVER_PALETTES, CourseCover } from "@/components/illustrations/CourseCover";
+import { CourseCover } from "@/components/illustrations/CourseCover";
 import { PageSection } from "@/components/layout/PageSection";
 import type { Ctx } from "@/lib/ctx";
-import { subjectHue } from "@/lib/subject-stamp";
+import { subjectHue, teacherOfferingHues } from "@/lib/subject-stamp";
 import type { MyClass } from "@/modules/academic/repo";
 import type { TeachingOffering } from "@/modules/iam/hats";
 import { getMyClass, resolveHomeTiles } from "./home-data";
@@ -28,14 +28,15 @@ export interface HomeCourse {
  * درس‌ها of the class they study in (the «درس‌ها و دبیران» read, `getMyClass`). One card per offering; a person
  * with neither hat (an admin who does not teach) gets none.
  *
- * Covers (owner 2026-09-27): a teacher's cards must all look different, even one درس in five classes — so the
- * teaching cards take the colour sets IN ORDER, starting at the first card's own subject set (a one-class teacher
- * still sees the درس's colour), and seed the pattern from the offering; neighbours never repeat a colour before all
- * eight are used. A student's cards keep the subject's own set and pattern — one درس, one stable look.
+ * Covers (owner 2026-09-27): a teacher's cards must all look different, even one درس in five classes — so a teaching
+ * card's colour set is the teacher's own hue of that class (`teacherOfferingHues`, owner 2026-10-06: the SAME index
+ * the class wears on the stamps, the timetable cells and the subject page — the cover sets map 1:1 to the stamp
+ * hues), distinct for up to eight classes, and its pattern is seeded from the offering. A student's cards keep the
+ * subject's own set and pattern — one درس, one stable look.
  */
 export function homeCourses({ teachingOfferings, myClass }: { teachingOfferings: readonly TeachingOffering[]; myClass: MyClass | null }): HomeCourse[] {
   const out = new Map<string, HomeCourse>();
-  const start = teachingOfferings.length > 0 ? subjectHue(teachingOfferings[0].subjectId) : 0;
+  const hues = teacherOfferingHues(teachingOfferings);
   for (const o of teachingOfferings) {
     if (out.has(o.offeringId)) continue;
     out.set(o.offeringId, {
@@ -44,7 +45,7 @@ export function homeCourses({ teachingOfferings, myClass }: { teachingOfferings:
       subjectName: o.subjectName,
       kind: "teach",
       metaName: o.classGroupName,
-      palette: (start + out.size) % COVER_PALETTES,
+      palette: hues[o.offeringId],
       variantKey: o.offeringId,
     });
   }

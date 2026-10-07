@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { formatNumberFa } from "@/lib/format";
 import type { SchoolWeek } from "@/lib/jalali-grid";
+import { teacherOfferingHues, type OfferingHues } from "@/lib/subject-stamp";
 import type { MyTimetable } from "@/modules/academic/service";
 import type { TeachingOffering } from "@/modules/iam/hats";
 
@@ -48,22 +49,29 @@ export function hasTeachingWeek(tt: MyTimetable | null): boolean {
   return Boolean(tt?.teacher);
 }
 
-/** The teacher's week across classes, or the «not set yet» state. */
-export function TeachingWeek({ tt, week }: { tt: MyTimetable | null; week: SchoolWeek }) {
+/**
+ * The teacher's week across classes, or the «not set yet» state. `hues`: the teacher's own colour per class
+ * (`teacherOfferingHues` of their offerings), so each class keeps its colour in the cells as on the cards.
+ */
+export function TeachingWeek({ tt, week, hues }: { tt: MyTimetable | null; week: SchoolWeek; hues?: OfferingHues }) {
   const teaching = tt?.teacher ?? null;
   // A teacher's classes may sit in different schools: the period rows of the week table come from the sessions themselves.
   const periods = teaching
     ? [...new Map(teaching.days.flatMap((d) => d.sessions).map((s) => [s.periodNo, { periodNo: s.periodNo, label: s.label, startsAt: s.startsAt, endsAt: s.endsAt }])).values()].sort((a, b) => a.periodNo - b.periodNo)
     : [];
   return teaching && tt ? (
-    <WeekTimetable days={teaching.days} periods={periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="class" perspective="staff" weekDays={week.days} comingWeek={week.comingWeek} />
+    <WeekTimetable days={teaching.days} periods={periods} today={tt.today} nowMinutes={tt.nowMinutes} secondary="class" perspective="staff" weekDays={week.days} comingWeek={week.comingWeek} hues={hues} />
   ) : (
     <EmptyState title="برنامهٴ هفتگی هنوز تنظیم نشده" description="وقتی مدرسه برنامهٴ کلاس‌ها را ثبت کند، زنگ‌های شما همین‌جا می‌آیند." className="surface-work py-10" />
   );
 }
 
-/** One card per offering (درس, کلاس, students, open items I gave that class), each opening the subject page. */
+/**
+ * One card per offering (درس, کلاس, students, open items I gave that class), each opening the subject page; the
+ * mark wears the teacher's own colour of that class (`teacherOfferingHues`).
+ */
 export function OfferingsGrid({ offerings }: { offerings: readonly TeachingOffering[] }) {
+  const hues = teacherOfferingHues(offerings);
   return (
     <ul className="reveal-grid grid grid-cols-2 gap-2.5 md:grid-cols-3">
       {offerings.map((o) => (
@@ -71,7 +79,7 @@ export function OfferingsGrid({ offerings }: { offerings: readonly TeachingOffer
           <Link prefetch={false} href={`/subjects/${o.offeringId}`} className="surface-work surface-link flex w-full flex-col gap-3 p-4">
             {/* The درس's own glyph on its hue heads the card (the name keeps the full card width on a phone's two columns). */}
             <div className="flex items-start justify-between gap-2">
-              <SubjectIcon subjectId={o.subjectId} name={o.subjectName} />
+              <SubjectIcon subjectId={o.subjectId} name={o.subjectName} hue={hues[o.offeringId]} />
               <ChevronLeft className="mt-1 size-4 shrink-0 text-text-faint" aria-hidden />
             </div>
             <span className="flex min-w-0 flex-col gap-0.5">

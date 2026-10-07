@@ -20,8 +20,12 @@ import { inboxSummaryQuery } from "@/modules/workspace/queries";
  * their own width with `ContentWidth` (1200 px, or the reading measure). The admin layout passes `adminItems`
  * (sections with counts) so the rail can nest them under «مدیریت».
  * The «hub» layout (`getUiVariant`, adopted by the owner — docs/decisions-pending/home-hub.md) swaps the nav and
- * the mobile header for ONE top bar on every size: the profile icon (→ «بیشتر») at the start, the bell at the end,
- * aligned with the content column, no school name, no bottom bar or rail (so no bottom padding reserved for it).
+ * the mobile header for ONE top bar on every size, aligned with the content column, no school name, no bottom bar
+ * or rail (so no bottom padding reserved for it). Home: the profile icon (→ «حساب من») at the start, the bell at the
+ * end. Every inner page (owner, 2026-10-06): the page's back pill at the start, the bell AND the profile at the end.
+ * The pill belongs to the page (`PageHeader` → `TopBarBack`, a fixed layer over the start slot carrying
+ * `data-topbar-back`); the bar only reacts to its presence with `:has()` — the start profile hides, the end one
+ * shows — so the layout, which does not re-render between pages, never has to know which page it frames.
  * Hub is everyone's layout now (`getUiVariant()` returns "hub"); the classic branch is kept so it can be reverted.
  */
 export async function AppShell({ ctx, children, adminItems }: { ctx: Ctx; children: React.ReactNode; adminItems?: readonly AdminNavItem[] }) {
@@ -50,14 +54,19 @@ export async function AppShell({ ctx, children, adminItems }: { ctx: Ctx; childr
       </a>
       <h1 className="sr-only">{title}</h1>
       {hub ? null : <AppNav schoolName={title} role={navRole} hats={hats} adminItems={adminItems} />}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="group/shell flex min-w-0 flex-1 flex-col">
         {hub ? (
           <header className="sticky top-0 z-10 bg-canvas/90 pt-[env(safe-area-inset-top)] backdrop-blur-sm">
-            {/* The bar's background spans the viewport; its two controls sit on the content column (the same
-                1200 px and gutters as `ContentWidth`), so on a wide screen they line up with the page, not the edges. */}
+            {/* The bar's background spans the viewport; its controls sit on the content column (the same
+                1200 px and gutters as `ContentWidth`), so on a wide screen they line up with the page, not the edges.
+                The profile is in the DOM twice, one of them `display: none` at any time: at the start on Home, beside
+                the bell (bell first, profile at the far end) whenever the page put a back pill in the start slot. */}
             <div className="mx-auto flex h-14 w-full max-w-content items-center justify-between gap-3 px-4 lg:h-16 lg:px-8">
-              <ProfileButton />
-              <NotificationsBell />
+              <ProfileButton className="group-has-[[data-topbar-back]]/shell:hidden" />
+              <div className="ms-auto flex items-center gap-1.5">
+                <NotificationsBell />
+                <ProfileButton className="hidden group-has-[[data-topbar-back]]/shell:grid" />
+              </div>
             </div>
           </header>
         ) : (

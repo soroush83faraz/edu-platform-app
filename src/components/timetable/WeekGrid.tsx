@@ -9,7 +9,7 @@ import { SubjectIcon, subjectHueClasses } from "@/components/SubjectStamp";
 import { CrossFade } from "@/components/motion/CrossFade";
 import { emptyDayCopy, type TimetablePerspective } from "@/lib/empty-copy";
 import { formatNumberFa } from "@/lib/format";
-import { cellSubjectLabel } from "@/lib/subject-stamp";
+import { cellSubjectLabel, offeringHue, type OfferingHues } from "@/lib/subject-stamp";
 import { CALENDAR_WEEKDAYS, currentPeriodOf, defaultWeekCell, formatTimeRangeFa, FRIDAY, timeToMinutes, WEEKDAY_LABELS, weekRows, type PeriodLike, type WeekCell, type Weekday } from "@/lib/timetable";
 import { PeriodProgress } from "./PeriodProgress";
 import { cellOfferings, WeekClassList, weekClasses } from "./WeekClassList";
@@ -28,6 +28,11 @@ export interface WeekGridProps {
   weekDays?: readonly string[];
   /** The dates are the week that starts tomorrow (`schoolWeekOf` on جمعه): no column is today while it is still جمعه. */
   comingWeek?: boolean;
+  /**
+   * The teacher's own colour per class (`teacherOfferingHues`, owner 2026-10-06) — a دبیر's week passes it so each
+   * class wears its own hue; left out (a student's or a class's week), every lesson wears its درس's hue.
+   */
+  hues?: OfferingHues;
 }
 
 /**
@@ -58,7 +63,7 @@ export interface WeekGridProps {
  * تعطیل cell, clears it; tapping a row selects that class in the grid the same way (again: clears), and the row's
  * chevron opens the درس page.
  */
-export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspective, weekDays, comingWeek = false }: WeekGridProps) {
+export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspective, weekDays, comingWeek = false, hues }: WeekGridProps) {
   const byDay = new Map(days.map((d) => [d.weekday, d.sessions]));
   const all = days.flatMap((d) => d.sessions);
   const rows = weekRows(periods, all);
@@ -153,7 +158,7 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
                   onClick={() => pickCell({ weekday: d, periodNo: r.periodNo })}
                   className={cn(
                     "pressable relative flex h-14 min-w-0 flex-col items-center justify-center overflow-hidden rounded-stamp-lg text-center outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                    s ? cn(subjectHueClasses(s.subjectId), "ring-1 ring-inset") : "ring-1 ring-inset ring-line/70",
+                    s ? cn(subjectHueClasses(s.subjectId, offeringHue(hues, s.offeringId, s.subjectId)), "ring-1 ring-inset") : "ring-1 ring-inset ring-line/70",
                     s && past && !selected && !inFocus && !faded && "opacity-60",
                     faded && "opacity-40",
                     selected && (s ? "shadow-1 ring-2 ring-current" : "ring-2 ring-text-faint"),
@@ -181,7 +186,7 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
       </div>
 
       {teacher ? (
-        <WeekClassList classes={weekClasses(days, today, nowMinutes)} selected={focus} onSelect={pickClass} />
+        <WeekClassList classes={weekClasses(days, today, nowMinutes)} selected={focus} onSelect={pickClass} hues={hues} />
       ) : pick && pickedRow ? (
         <div className="mt-2 border-t border-line/70 pt-1.5" aria-live="polite">
           <CrossFade swapKey={`${pick.weekday}-${pick.periodNo}`}>
@@ -210,7 +215,7 @@ export function WeekGrid({ days, periods, today, nowMinutes, secondary, perspect
                 {pickedSessions.map((s) => (
                   <li key={s.offeringId}>
                     <Link prefetch={false} href={`/subjects/${s.offeringId}`} className="pressable flex min-h-16 items-center gap-3 rounded-xl px-2 py-2 hover:bg-surface-sunken">
-                      <SubjectIcon subjectId={s.subjectId} name={s.subjectName} />
+                      <SubjectIcon subjectId={s.subjectId} name={s.subjectName} hue={offeringHue(hues, s.offeringId, s.subjectId)} />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-row font-semibold text-text">
                           <bdi>{s.subjectName}</bdi>

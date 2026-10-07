@@ -6,6 +6,7 @@ import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { tehranNow } from "@/lib/format";
 import { schoolWeekOf } from "@/lib/jalali-grid";
+import { teacherOfferingHues } from "@/lib/subject-stamp";
 import { myTimetableQuery } from "@/modules/academic/queries";
 import { hatsQuery } from "@/modules/iam/hats";
 
@@ -30,7 +31,7 @@ export default async function TeachingWeekPage() {
   return (
     <ContentWidth className="gap-4">
       <PageHeader title="برنامهٴ هفتگی" description={hasTeachingWeek(tt) ? <span className="tabular">{week.label}</span> : undefined} back={{ href: "/home", label: "خانه" }} />
-      {offerings.length === 0 ? <NoOfferingsYet /> : <TeachingWeek tt={tt} week={week} />}
+      {offerings.length === 0 ? <NoOfferingsYet /> : <TeachingWeek tt={tt} week={week} hues={teacherOfferingHues(offerings)} />}
     </ContentWidth>
   );
 }

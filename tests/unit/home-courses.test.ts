@@ -23,7 +23,7 @@ const { HomeCourses, CourseCards, homeCourses } = await import("@/components/hom
 const { resolveHomeTiles } = await import("@/components/home/home-data");
 const { CourseCover, COVER_FAMILIES, COVER_PALETTES, coverFamily } = await import("@/components/illustrations/CourseCover");
 const { upcomingTilesFor } = await import("@/lib/modules-registry");
-const { subjectHue } = await import("@/lib/subject-stamp");
+const { subjectHue, teacherOfferingHues } = await import("@/lib/subject-stamp");
 type Ctx = import("@/lib/ctx").Ctx;
 
 const ctx = { assignments: [{ roleCode: "x", roleId: "r", scopeType: "school", scopeId: "s", permissions: ["workspace.work_item.read"] }] } as unknown as Ctx;
@@ -171,11 +171,12 @@ describe("course covers across a person's list (owner 2026-09-27)", () => {
     openItems: 0,
   }));
 
-  it("a teacher's five same-subject cards get five distinct colour sets, in order, and each its own pattern seed", () => {
+  it("a teacher's five same-subject cards get five distinct colour sets — the class's own hue — and each its own pattern seed", () => {
     const cards = homeCourses({ teachingOfferings: FIVE_MATH, myClass: null });
     expect(new Set(cards.map((c) => c.palette)).size).toBe(5);
-    const start = subjectHue("sub-math");
-    expect(cards.map((c) => c.palette)).toEqual([0, 1, 2, 3, 4].map((k) => (start + k) % COVER_PALETTES));
+    // The cover set IS the teacher's hue of the class (owner 2026-10-06), so card, stamp and timetable cell agree.
+    const hues = teacherOfferingHues(FIVE_MATH);
+    expect(cards.map((c) => c.palette)).toEqual(FIVE_MATH.map((o) => hues[o.offeringId]));
     expect(cards.map((c) => c.variantKey)).toEqual(FIVE_MATH.map((o) => o.offeringId));
     const html = renderToStaticMarkup(CourseCards({ courses: cards }));
     const drawn = [...html.matchAll(/data-palette="(\d)"/g)].map((m) => m[1]);
@@ -184,11 +185,12 @@ describe("course covers across a person's list (owner 2026-09-27)", () => {
     expect(html.match(/lucide-sigma/g)?.length).toBe(5);
   });
 
-  it("neighbours never repeat a colour until all eight are used", () => {
-    const many = Array.from({ length: 11 }, (_, i) => ({ ...FIVE_MATH[0], offeringId: `t-${i}`, subjectId: `sub-${i % 3}` }));
+  it("up to eight classes never share a colour, whatever order the hats read returns them in", () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({ ...FIVE_MATH[0], offeringId: `t-${i}`, subjectId: `sub-${i % 3}`, subjectName: `درس ${i % 3}`, classGroupName: `کلاس ${i}` }));
     const p = homeCourses({ teachingOfferings: many, myClass: null }).map((c) => c.palette);
-    expect(new Set(p.slice(0, 8)).size).toBe(8);
-    for (let i = 1; i < p.length; i++) expect(p[i]).not.toBe(p[i - 1]);
+    expect(new Set(p).size).toBe(8);
+    const byId = (list: typeof many) => Object.fromEntries(homeCourses({ teachingOfferings: list, myClass: null }).map((c) => [c.offeringId, c.palette]));
+    expect(byId([...many].reverse())).toEqual(byId(many));
   });
 
   it("a student's cards keep the subject's own set and pattern — one درس, one stable look", () => {

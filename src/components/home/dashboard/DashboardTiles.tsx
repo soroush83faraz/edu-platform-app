@@ -4,6 +4,7 @@ import { PageSection } from "@/components/layout/PageSection";
 import { SubjectIcon } from "@/components/SubjectStamp";
 import { formatNumberFa } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { teacherOfferingHues } from "@/lib/subject-stamp";
 import type { TeachingOffering } from "@/modules/iam/hats";
 import type { HomeTiles } from "../home-data";
 import { Tile } from "../Tile";
@@ -37,9 +38,11 @@ export function DashboardTiles({ home, full = false }: { home: HomeTiles; full?:
 
 /**
  * (Teacher) «کلاس‌های من» as a compact list: درس، کلاس، the open items I gave that class; each row opens the subject page.
- * `allHref` is «همهٴ کلاس‌ها»: `/classes`, or the hub layout's `/classes/offerings`.
+ * `allHref` is «همهٴ کلاس‌ها»: `/classes`, or the hub layout's `/classes/offerings`. Each row's mark wears the
+ * teacher's own colour of that class (`teacherOfferingHues`, from the full list — the same as everywhere else).
  */
 export function MyClassesCompact({ offerings, allHref = "/classes" }: { offerings: TeachingOffering[]; allHref?: string }) {
+  const hues = teacherOfferingHues(offerings);
   return (
     <PageSection
       id="my-classes-aside"
@@ -63,7 +66,7 @@ export function MyClassesCompact({ offerings, allHref = "/classes" }: { offering
           {offerings.slice(0, 8).map((o) => (
             <li key={o.offeringId}>
               <Link prefetch={false} href={`/subjects/${o.offeringId}`} className="pressable flex min-h-12 items-center gap-3 px-4 py-1.5 first:rounded-t-card last:rounded-b-card hover:bg-surface">
-                <SubjectIcon subjectId={o.subjectId} name={o.subjectName} />
+                <SubjectIcon subjectId={o.subjectId} name={o.subjectName} hue={hues[o.offeringId]} />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-sm font-semibold text-text">
                     <bdi>{o.subjectName}</bdi>

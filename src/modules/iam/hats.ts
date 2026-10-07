@@ -4,6 +4,7 @@
 import { sql } from "drizzle-orm";
 import { defineQuery, type Tx } from "@/lib/actions";
 import type { Ctx } from "@/lib/ctx";
+import { teacherOfferingHues, type HueOffering, type OfferingHues } from "@/lib/subject-stamp";
 import { canAtAnyScope } from "./can";
 import { getAdminScope, type AdminScope } from "./service";
 
@@ -52,6 +53,24 @@ async function isStudent(tx: Tx, personId: string): Promise<boolean> {
   return Number(res.rows[0]?.n ?? 0) > 0;
 }
 
+/**
+ * The offerings a person teaches NOW — a current teacher assignment (`valid_to is null`) on an offering that is not
+ * closed, in an active class. ONE fragment for both reads below, so the Home / «کلاس‌های من» cards and the teacher's
+ * colours (`teacherHuesQuery`) always see the same set. Aliases: `o` offering, `cg` class, `subj` درس.
+ */
+function taughtOfferingsFrom(personId: string) {
+  return sql`
+    from academic.teacher_assignment ta
+    join iam.staff_profile stp on stp.id = ta.staff_profile_id
+    join tenancy.class_offering o on o.id = ta.class_offering_id
+    join tenancy.class_group cg on cg.id = o.class_group_id
+    join tenancy.subject subj on subj.id = o.subject_id
+    where stp.person_id = ${personId}::uuid
+      and ta.valid_to is null
+      and o.status <> 'closed'
+      and cg.status = 'active'`;
+}
+
 async function teachingOfferingsOf(tx: Tx, personId: string): Promise<TeachingOffering[]> {
   const res = await tx.execute<{ offering_id: string; subject_id: string; subject_name: string; class_group_name: string; active_students: number; open_items: number }>(sql`
     select
@@ -75,15 +94,7 @@ async function teachingOfferingsOf(tx: Tx, personId: string): Promise<TeachingOf
             where a.work_item_id = wi.id and a.role = 'assignee' and ce.class_group_id = cg.id
           )
       ) as open_items
-    from academic.teacher_assignment ta
-    join iam.staff_profile stp on stp.id = ta.staff_profile_id
-    join tenancy.class_offering o on o.id = ta.class_offering_id
-    join tenancy.class_group cg on cg.id = o.class_group_id
-    join tenancy.subject subj on subj.id = o.subject_id
-    where stp.person_id = ${personId}::uuid
-      and ta.valid_to is null
-      and o.status <> 'closed'
-      and cg.status = 'active'
+    ${taughtOfferingsFrom(personId)}
     order by cg.name, subj.name
   `);
   return res.rows.map((r) => ({
@@ -116,3 +127,20 @@ export async function getHats(tx: Tx, ctx: Pick<Ctx, "orgId" | "personId" | "ass
 
 /** Every member may ask which hats they wear (`iam.account.self` is implicit). */
 export const hatsQuery = defineQuery({ permission: "iam.account.self" }, async (tx, _input, ctx) => getHats(tx, ctx));
+
+/** The keys of the offerings a person teaches (no counts) — the input of `teacherOfferingHues`. */
+async function teachingOfferingKeysOf(tx: Tx, personId: string): Promise<HueOffering[]> {
+  const res = await tx.execute<{ offering_id: string; subject_id: string; subject_name: string; class_group_name: string }>(sql`
+    select distinct o.id as offering_id, subj.id as subject_id, subj.name as subject_name, cg.name as class_group_name
+    ${taughtOfferingsFrom(personId)}
+  `);
+  return res.rows.map((r) => ({ offeringId: r.offering_id, subjectId: r.subject_id, subjectName: r.subject_name, classGroupName: r.class_group_name }));
+}
+
+/**
+ * The caller's own colour per class they teach (`teacherOfferingHues`, owner 2026-10-06) — empty for someone who
+ * teaches nothing. The light read for pages that do not already hold the hats (`getTeacherHues`, src/lib/teacher-hues.ts).
+ */
+export const teacherHuesQuery = defineQuery({ permission: "iam.account.self" }, async (tx, _input, ctx): Promise<OfferingHues> =>
+  teacherOfferingHues(await teachingOfferingKeysOf(tx, ctx.personId)),
+);

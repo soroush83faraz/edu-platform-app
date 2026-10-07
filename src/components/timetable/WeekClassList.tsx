@@ -4,6 +4,7 @@ import { cn } from "@/lib/cn";
 import { Chip } from "@/components/Chip";
 import { SubjectIcon } from "@/components/SubjectStamp";
 import { formatNumberFa } from "@/lib/format";
+import { offeringHue, type OfferingHues } from "@/lib/subject-stamp";
 import { CALENDAR_WEEKDAYS, formatTimeFa, timeToMinutes, WEEKDAY_LABELS, type WeekCell, type Weekday } from "@/lib/timetable";
 import type { DayView } from "./types";
 
@@ -63,6 +64,8 @@ export interface WeekClassListProps {
   selected: readonly string[];
   /** Tapping a row selects its class in the grid (again: clears) — it never navigates; the chevron opens the درس. */
   onSelect?: (offeringId: string) => void;
+  /** The دبیر's own colour per class (`teacherOfferingHues`) — the row mark matches the class's cells. */
+  hues?: OfferingHues;
 }
 
 /**
@@ -72,7 +75,7 @@ export interface WeekClassListProps {
  * a toggle button (`aria-pressed`) that selects the class in the grid; the selected row (`data-selected`) turns
  * bolder on a `primary-50` ground with a brand hairline and a 1 % lift (no lift under reduced motion).
  */
-export function WeekClassList({ classes, selected, onSelect }: WeekClassListProps) {
+export function WeekClassList({ classes, selected, onSelect, hues }: WeekClassListProps) {
   if (classes.length === 0) return null;
   return (
     <div data-week-classes="" className="mt-2 border-t border-line/70 pt-2">
@@ -97,7 +100,7 @@ export function WeekClassList({ classes, selected, onSelect }: WeekClassListProp
                 onClick={() => onSelect?.(c.offeringId)}
                 className="pressable flex min-h-16 min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2 text-start outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               >
-                <SubjectIcon subjectId={c.subjectId} name={c.subjectName} />
+                <SubjectIcon subjectId={c.subjectId} name={c.subjectName} hue={offeringHue(hues, c.offeringId, c.subjectId)} />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className={cn("truncate text-row transition-colors duration-200 motion-reduce:transition-none", on ? "font-bold text-primary-900" : "font-semibold text-text")}>
                     <bdi>{c.subjectName}</bdi>

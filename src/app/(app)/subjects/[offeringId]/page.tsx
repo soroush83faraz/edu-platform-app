@@ -12,6 +12,8 @@ import { SegmentedLinks } from "@/components/SegmentedLinks";
 import { SubjectIcon } from "@/components/SubjectStamp";
 import { Button } from "@/components/ui/button";
 import { formatNumberFa } from "@/lib/format";
+import { offeringHue } from "@/lib/subject-stamp";
+import { getTeacherHues } from "@/lib/teacher-hues";
 import { formatSessionFa, formatTimeRangeFa, WEEKDAY_LABELS } from "@/lib/timetable";
 import { offeringPageQuery } from "@/modules/academic/queries";
 import type { InboxTab } from "@/modules/workspace/dto";
@@ -29,7 +31,9 @@ const TABS: Array<{ tab: Exclude<InboxTab, "all">; label: string; icon: LucideIc
 /**
  * The subject page: the درس beside its نشان درس (`SubjectIcon`) with its class and teacher, the next session, every session of the week, then the
  * work items of this درس — the caller's own inbox rows (a student sees what was given to them, a teacher what
- * they gave). A teacher gets «کار جدید برای این درس» with the offering pre-selected.
+ * they gave). A teacher gets «کار جدید برای این درس» with the offering pre-selected. For the teacher of this class
+ * the mark (and the rows' stamps) wear their own colour of the class (`getTeacherHues`, owner 2026-10-06) — the one
+ * its course card and timetable cells wear; everyone else sees the درس's hue.
  */
 export default async function SubjectPage({ params, searchParams }: { params: Promise<{ offeringId: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { offeringId } = await params;
@@ -45,13 +49,14 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
   const items = await listInboxQuery({ tab, offeringId });
   const rows = items.ok ? items.data.rows : [];
   const tabCounts = items.ok ? items.data.tabCounts : { todo: 0, done: 0 };
+  const hues = await getTeacherHues();
   return (
     <ContentWidth className="reveal-stagger">
       <PageHeader
         back={{ href: "/home", label: "خانه" }}
         title={
           <span className="flex items-center gap-3">
-            <SubjectIcon subjectId={offering.subjectId} name={offering.subjectName} size="lg" />
+            <SubjectIcon subjectId={offering.subjectId} name={offering.subjectName} size="lg" hue={offeringHue(hues, offering.id, offering.subjectId)} />
             <bdi>{offering.subjectName}</bdi>
           </span>
         }
@@ -133,7 +138,7 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
         ) : (
           <LeavingList className="reveal-rows divide-y divide-line/70 surface-work" completedFrom={tab === "todo"}>
             {rows.map((row) => (
-              <InboxRow key={row.id} row={row} inSubject />
+              <InboxRow key={row.id} row={row} inSubject hues={hues} />
             ))}
           </LeavingList>
         )}

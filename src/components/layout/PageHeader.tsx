@@ -1,12 +1,13 @@
 import { BackLink } from "@/components/layout/BackLink";
+import { TopBarBack } from "@/components/shell/TopBarBack";
 import { cn } from "@/lib/cn";
 import { formatJalaliLong } from "@/lib/format";
 import { SchoolsMenu } from "@/components/layout/SchoolsMenu";
 import { getShellContext } from "@/lib/shell-context";
-import { getUiVariant } from "@/lib/ui-variant";
+import { getUiVariant, type UiVariant } from "@/lib/ui-variant";
 
 /**
- * The header of every page, one DOM in two shapes. On phones: an optional back link, the title (`text-title`)
+ * The header of every page, one DOM in two shapes. On phones: the back link (classic only), the title (`text-title`)
  * with the actions at its end, then the description. From `lg:` the same nodes settle into a slim header bar —
  * the context line «مدرسه · سال · نوبت» (the organization admin: «سازمان · سال») at the start, today's Jalali date and the page's primary action at the
  * end, a hairline under it — with the title (`text-display`) and description beneath. The action node moves
@@ -14,10 +15,24 @@ import { getUiVariant } from "@/lib/ui-variant";
  * `count` sits beside the title as a quiet tabular number (list pages). Context is read once per request.
  * `hideTitle` keeps the title for assistive tech only: on phones the whole header is then visually gone (a page
  * the bottom nav already names, e.g. «کلاس من»), from `lg:` only the context bar shows.
- * In the experimental «hub» layout (no bottom nav or rail — docs/decisions-pending/home-hub.md) every page must lead
- * back to Home: with no `back` given, the header draws a «خانه» back link to /home (and a `hideTitle` header stays
- * visible on phones so that link shows). `back={false}` opts out — Home itself. In «classic» `false` = no link.
+ * The way back is `back` — the page's logical parent, declared once here (`pageBack` resolves it). In the «hub»
+ * layout (everyone's — docs/decisions-pending/home-hub.md) every page leads back: with no `back` given it is «خانه» →
+ * /home, and the pill is drawn in the TOP BAR's start slot (`TopBarBack`, owner 2026-10-06), never as a row of the
+ * page body; `back={false}` opts out — Home itself. In «classic» the link stays a row above the title, and no `back`
+ * = no link.
  */
+const HOME_BACK = { href: "/home", label: "خانه" } as const;
+
+export function pageBack(
+  back: { href: string; label: string } | false | undefined,
+  variant: UiVariant,
+): { href: string; label: string; place: "bar" | "body" } | null {
+  if (back === false) return null;
+  if (variant === "hub") return { ...(back ?? HOME_BACK), place: "bar" };
+  return back ? { ...back, place: "body" } : null;
+}
+
+/** The page header (see the module notes above `pageBack`). */
 export async function PageHeader({
   title,
   description,
@@ -38,14 +53,16 @@ export async function PageHeader({
   hideTitle?: boolean;
 }) {
   const shell = await getShellContext();
-  const hubHome = back === undefined && (await getUiVariant()) === "hub";
-  const backLink = back || (hubHome ? { href: "/home", label: "خانه" } : undefined);
+  const way = pageBack(back, await getUiVariant());
+  const backLink = way?.place === "body" ? way : null;
   // More than one school in the caller's scope: the chip replaces the name and opens the list (`SchoolsMenu`).
   // The organization admin's context is the ORGANIZATION (owner, 2026-09-27: never a school, even the only one) —
   // its name leads, then the chip when there are several schools, then the year they share; no single نوبت.
   const schoolsPart = shell.schools.length > 1 ? <SchoolsMenu key="schools" schools={shell.schools} /> : shell.schoolName;
   const context: React.ReactNode[] = [shell.orgScoped ? shell.orgName : null, schoolsPart, shell.yearName, shell.termName].filter(Boolean);
   return (
+    <>
+    {way?.place === "bar" ? <TopBarBack href={way.href} label={way.label} /> : null}
     <header
       className={cn(
         "grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 pt-4",
@@ -55,7 +72,7 @@ export async function PageHeader({
         // underneath instead.
         "[grid-template-areas:'back_back'_'title_title'_'actions_actions'_'desc_desc']",
         "lg:pt-0 lg:[grid-template-areas:'context_actions'_'back_back'_'title_title'_'desc_desc']",
-        hideTitle && !hubHome && "max-lg:sr-only",
+        hideTitle && "max-lg:sr-only",
         className,
       )}
     >
@@ -88,5 +105,6 @@ export async function PageHeader({
       )}
       {description ? <p className="max-w-prose text-sm text-text-muted [grid-area:desc]">{description}</p> : null}
     </header>
+    </>
   );
 }

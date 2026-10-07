@@ -16,7 +16,7 @@ vi.mock("@/lib/shell-context", () => ({ getShellContext: async () => ({ schoolNa
 vi.mock("@/modules/workspace/queries", () => ({ inboxSummaryQuery: async () => ({ ok: true, data: { overdue: 0, dueToday: 0, unread: 0, unreadNotifications: 2 } }) }));
 
 const { AppShell } = await import("@/components/shell/AppShell");
-const { PageHeader } = await import("@/components/layout/PageHeader");
+const { PageHeader, pageBack } = await import("@/components/layout/PageHeader");
 const { SchoolBanner } = await import("@/components/home/SchoolBanner");
 const { ContentWidth } = await import("@/components/layout/ContentWidth");
 
@@ -122,11 +122,83 @@ describe("PageHeader: the default «خانه» back link in hub only", () => {
     expect(await header("classic", { back: false })).not.toContain("<a");
   });
 
-  it("hub: a `hideTitle` header stays visible on phones so the back link shows; classic hides it", async () => {
+  it("a `hideTitle` header is visually gone on phones in both layouts — the hub's back pill is in the top bar, not in it", async () => {
     expect(await header("classic", { hideTitle: true })).toContain("max-lg:sr-only");
     const hub = await header("hub", { hideTitle: true });
-    expect(hub).not.toContain("max-lg:sr-only");
-    expect(hub).toContain('href="/home"');
+    expect(hub).toContain("max-lg:sr-only");
+    // The pill is outside the (clipped) header, so it still shows.
+    expect(hub.slice(0, hub.indexOf("<header"))).toContain('href="/home"');
+  });
+});
+
+// Owner, 2026-10-06 (docs/mockups/class-page-v3 screen 6): inner pages carry the way back in the TOP BAR's start
+// slot — a white pill with an arrow and the destination's name — and the bell + profile sit together at the end;
+// Home keeps profile start, bell end. The page declares the target once (`PageHeader` `back`); the pill is a fixed
+// layer over the bar's start slot (`TopBarBack`) and the bar reacts to its `data-topbar-back` marker with `:has()`.
+describe("top bar «برگشت» (hub)", () => {
+  /** The fixed layer `PageHeader` renders before its <header>. */
+  const layerOf = (html: string) => html.slice(0, html.indexOf("<header"));
+
+  it("pageBack: hub → always a bar pill (default «خانه» → /home), Home (`false`) none; classic → body link only when given", () => {
+    expect(pageBack(undefined, "hub")).toEqual({ href: "/home", label: "خانه", place: "bar" });
+    expect(pageBack({ href: "/inbox", label: "پنل من" }, "hub")).toEqual({ href: "/inbox", label: "پنل من", place: "bar" });
+    expect(pageBack(false, "hub")).toBeNull();
+    expect(pageBack(undefined, "classic")).toBeNull();
+    expect(pageBack({ href: "/admin/staff", label: "کارکنان" }, "classic")).toEqual({ href: "/admin/staff", label: "کارکنان", place: "body" });
+    expect(pageBack(false, "classic")).toBeNull();
+  });
+
+  it("the pill is drawn in a fixed layer over the bar's start slot, never inside the page header", async () => {
+    const html = await header("hub", { back: { href: "/admin/classes", label: "کلاس‌ها" } });
+    const layer = layerOf(html);
+    expect(layer).toContain('data-topbar-back=""');
+    const wrap = layer.match(/^<div data-topbar-back="" class="([^"]*)"/)?.[1].split(" ") ?? [];
+    for (const c of ["fixed", "inset-x-0", "top-0", "z-20", "pointer-events-none", "pt-[env(safe-area-inset-top)]", "animate-none!", "print:hidden"]) expect(wrap).toContain(c);
+    // The same box as the bar's control row (AppShell): the content column, 56 px / 64 px from lg.
+    const box = layer.match(/<div class="([^"]*)"/)?.[1] ?? "";
+    for (const c of ["mx-auto", "max-w-content", "px-4", "lg:px-8", "h-14", "lg:h-16"]) expect(box).toContain(c);
+    // The page body draws no second back link.
+    const body = html.slice(html.indexOf("<header"));
+    expect(body).not.toContain("<a");
+    expect(body).not.toContain("کلاس‌ها");
+  });
+
+  it("the pill: a white 44 px pill with shadow-1, an ArrowRight before the destination's name, primary-700 semibold", async () => {
+    const layer = layerOf(await header("hub", { back: { href: "/inbox", label: "پنل من" } }));
+    const link = layer.match(/<a [^>]*class="([^"]*)"/)?.[1].split(" ") ?? [];
+    for (const c of ["bg-surface", "shadow-1", "rounded-full", "min-h-11", "text-primary-700", "font-semibold", "pointer-events-auto", "pressable"]) expect(link).toContain(c);
+    expect(layer).toMatch(/<a [^>]*href="\/inbox"/);
+    expect(layer).toContain("lucide-arrow-right");
+    expect(layer.indexOf("lucide-arrow-right")).toBeLessThan(layer.indexOf("پنل من"));
+    // A long name truncates instead of running under the bell and the profile.
+    expect(link).toContain("max-w-[calc(100%-7rem)]");
+    expect(layer).toContain('<span class="truncate">پنل من</span>');
+  });
+
+  it("classic keeps the back link as a row of the page header, and no top-bar layer", async () => {
+    const html = await header("classic", { back: { href: "/inbox", label: "پنل من" } });
+    expect(html).not.toContain("data-topbar-back");
+    expect(html).toMatch(/^<header/);
+    expect(html).toContain("[grid-area:back]");
+  });
+
+  it("the bar: profile at the start unless a back pill is on the page, then bell + profile together at the end", async () => {
+    const html = await shell("hub");
+    // The shell column is the `:has()` group: it holds both the bar and <main>, where the page's pill lives.
+    expect(html).toMatch(/<div class="group\/shell [^"]*flex-col/);
+    const bar = topBar(html);
+    const profiles = [...bar.matchAll(/<a [^>]*href="\/more"[^>]*>/g)].map((m) => m[0]);
+    expect(profiles).toHaveLength(2);
+    const [start, end] = profiles;
+    expect(start).toContain("group-has-[[data-topbar-back]]/shell:hidden");
+    expect(start).not.toMatch(/class="[^"]*(?<![:\w-])hidden /);
+    expect(end).toMatch(/class="[^"]*(?<![:\w-])hidden /);
+    expect(end).toContain("group-has-[[data-topbar-back]]/shell:grid");
+    // RTL order start → end: [profile (Home)] … [bell][profile (inner pages)], the end pair pushed to the end.
+    const bell = bar.indexOf('href="/notifications"');
+    expect(bar.indexOf(start)).toBeLessThan(bell);
+    expect(bar.indexOf(end)).toBeGreaterThan(bell);
+    expect(bar).toMatch(/<div class="ms-auto flex items-center gap-1\.5">/);
   });
 });
 

@@ -18,8 +18,9 @@ import { fnv1a, subjectHue } from "@/lib/subject-stamp";
  * Variation: the pattern FAMILY and tone layout come from a hash of `variantKey` (default: the subject id) — the
  * family from bits above the hue's (`h >>> 3`), the rest seeding the per-cell tones and a mirror. A teacher's list
  * passes the OFFERING id as `variantKey` and an explicit `palette` per card (owner 2026-09-27: «ریاضی» in five classes
- * must not look alike — `homeCourses` hands the sets out in order, so neighbours never repeat until all eight are
- * used); a student's list leaves both unset, so one درس keeps one stable look. The glyph is always the درس's own.
+ * must not look alike — `homeCourses` passes the teacher's own hue of the class, `teacherOfferingHues`, so card and
+ * stamp agree and up to eight classes never share a set); a student's list leaves both unset, so one درس keeps one
+ * stable look. The glyph is always the درس's own.
  * The pattern is authored on a 320×180 (16:9) board and drawn `xMidYMid slice`, so it fills any box crisply and the
  * centred glyph always stays in view.
  */

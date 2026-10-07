@@ -3,8 +3,10 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { PageSection } from "@/components/layout/PageSection";
 import { formatNumberFa } from "@/lib/format";
+import { teacherOfferingHues } from "@/lib/subject-stamp";
 import { homeOpenItemsQuery } from "@/modules/workspace/queries";
 import { MetaLine, WorkItemMark, rowMeta } from "@/modules/workspace/ui/InboxRow";
+import { getHats } from "../home-data";
 
 /**
  * «نیاز به پیگیری» (teachers): the open تکالیف I gave, ranked by how far they are from done — overdue first, then
@@ -19,6 +21,8 @@ export async function FollowUp() {
     .map((row) => ({ ...row, ratio: row.assigneesDone / row.assigneesTotal }))
     .sort((a, b) => Number(b.bucket === "overdue") - Number(a.bucket === "overdue") || a.ratio - b.ratio)
     .slice(0, 5);
+  // Each row's stamp wears the teacher's own colour of that class (the cached hats read of Home).
+  const hues = teacherOfferingHues((await getHats())?.teachingOfferings ?? []);
   return (
     <PageSection
       id="follow-up"
@@ -42,7 +46,7 @@ export async function FollowUp() {
             return (
               <li key={row.id}>
                 <Link prefetch={false} href={`/inbox/${row.id}`} className="pressable flex min-h-14 items-center gap-3 px-4 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken">
-                  <WorkItemMark row={row} />
+                  <WorkItemMark row={row} hues={hues} />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-row font-semibold text-text">
                       <bdi>{row.title}</bdi>

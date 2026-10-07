@@ -4,6 +4,7 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { subjectHueClasses } from "@/components/SubjectStamp";
 import type { TimetablePerspective } from "@/lib/empty-copy";
+import { offeringHue, type OfferingHues } from "@/lib/subject-stamp";
 import { currentPeriodOf, formatTimeFa, SCHOOL_WEEKDAYS, WEEKDAY_LABELS, type PeriodLike, type Weekday } from "@/lib/timetable";
 import { PeriodProgress } from "./PeriodProgress";
 import type { DayView, SessionSecondary } from "./types";
@@ -23,6 +24,11 @@ export interface WeekTimetableProps {
   weekDays?: readonly string[];
   /** `schoolWeekOf(...).comingWeek`: on جمعه the dates are next week's, so the phone grid marks no column as today. */
   comingWeek?: boolean;
+  /**
+   * The teacher's own colour per class (`teacherOfferingHues`, owner 2026-10-06) — a دبیر's week passes it so each
+   * class wears its own hue; left out (a student's or a class's week), every lesson wears its درس's hue.
+   */
+  hues?: OfferingHues;
   className?: string;
 }
 
@@ -35,7 +41,7 @@ export interface WeekTimetableProps {
  * is tinted, the ringing cell carries the brand ring and the live progress bar (no legend under it, owner 2026-09-27). Every lesson opens
  * its subject page. «now» comes from `useLiveClock`, so a page left open follows the bell.
  */
-export function WeekTimetable({ days, periods, today: serverToday, nowMinutes: serverMinutes, secondary, perspective, weekDays, comingWeek, className }: WeekTimetableProps) {
+export function WeekTimetable({ days, periods, today: serverToday, nowMinutes: serverMinutes, secondary, perspective, weekDays, comingWeek, hues, className }: WeekTimetableProps) {
   const clock = useLiveClock({ weekday: serverToday, minutes: serverMinutes });
   const today = clock.weekday;
   const { currentPeriodNo } = currentPeriodOf(periods, clock.minutes);
@@ -44,7 +50,7 @@ export function WeekTimetable({ days, periods, today: serverToday, nowMinutes: s
   return (
     <div className={className}>
       <div className="md:hidden">
-        <WeekGrid days={days} periods={periods} today={today} nowMinutes={clock.minutes} secondary={secondary} perspective={perspective} weekDays={weekDays} comingWeek={comingWeek} />
+        <WeekGrid days={days} periods={periods} today={today} nowMinutes={clock.minutes} secondary={secondary} perspective={perspective} weekDays={weekDays} comingWeek={comingWeek} hues={hues} />
       </div>
       <div className="hidden md:block">
         <div className="surface-work overflow-x-auto overscroll-x-contain">
@@ -93,7 +99,7 @@ export function WeekTimetable({ days, periods, today: serverToday, nowMinutes: s
                                     "pressable relative flex min-h-12 flex-col justify-center rounded-md px-1.5 py-1 text-center ring-1 ring-inset",
                                     // The درس's stamp hue (as on the phone grid); the ringing cell adds the brand ring and keeps room
                                     // at its bottom edge for the progress bar.
-                                    subjectHueClasses(s.subjectId),
+                                    subjectHueClasses(s.subjectId, offeringHue(hues, s.offeringId, s.subjectId)),
                                     now && "pb-2.5 ring-2 ring-primary-600",
                                   )}
                                 >

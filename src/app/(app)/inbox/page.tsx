@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { type Audience, audienceOf, emptyDoneCopy, emptyOpenCopy } from "@/lib/empty-copy";
 import { requireContext } from "@/lib/ctx";
 import { BUCKET_LABELS, type Bucket, formatNumberFa } from "@/lib/format";
+import { getTeacherHues } from "@/lib/teacher-hues";
 import { type WorkItemWords, workItemWords } from "@/lib/work-item-words";
 import { BUCKETS, INBOX_TABS, type InboxTab } from "@/modules/workspace/dto";
 import { listInboxQuery } from "@/modules/workspace/queries";
@@ -73,6 +74,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   // the button above them says «تسک جدید» (src/lib/work-item-words, round 6).
   const createWords = workItemWords(createVoice);
   const filtered = Boolean(f.bucket || f.unread || f.mine);
+  // A teacher's rows wear the colour of their class (owner 2026-10-06); everyone else's the درس's.
+  const hues = await getTeacherHues();
 
   return (
     <ContentWidth className="gap-3">
@@ -125,12 +128,12 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           <div className="mt-2 flex flex-col">
             {f.tab === "todo" ? (
               // Each deadline bucket is its own box in a two-column grid (src/modules/workspace/ui/InboxBuckets).
-              <InboxBuckets rows={rows} words={words} createVoice={createVoice} />
+              <InboxBuckets rows={rows} words={words} createVoice={createVoice} hues={hues} />
             ) : (
               // «انجام‌شده» stays one list: no buckets to box.
               <LeavingList className="reveal-rows surface-work divide-y divide-line/70">
                 {rows.map((row) => (
-                  <InboxRow key={row.id} row={row} words={words} createVoice={createVoice} />
+                  <InboxRow key={row.id} row={row} words={words} createVoice={createVoice} hues={hues} />
                 ))}
               </LeavingList>
             )}

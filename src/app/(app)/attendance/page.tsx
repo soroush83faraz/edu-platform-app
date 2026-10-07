@@ -10,6 +10,8 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { ATTENDANCE_LABELS, ATTENDANCE_TONES, totalOf, type AttendanceStatus } from "@/lib/attendance";
 import { requireContext } from "@/lib/ctx";
 import { formatNumberFa, isoDateToJalali } from "@/lib/format";
+import { offeringHue } from "@/lib/subject-stamp";
+import { getTeacherHues } from "@/lib/teacher-hues";
 import { formatTimeRangeFa, WEEKDAY_LABELS } from "@/lib/timetable";
 import { myAttendanceQuery, teacherDayQuery } from "@/modules/academic/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
@@ -29,6 +31,8 @@ export default async function AttendancePage() {
 
   const day = canTake ? await teacherDayQuery() : null;
   const cells = day?.ok ? day.data.cells : [];
+  // Today's زنگ‌ها wear the teacher's own colour of each class (owner 2026-10-06), as on their cards and week.
+  const hues = cells.length > 0 ? await getTeacherHues() : undefined;
   const mine = await myAttendanceQuery({});
   const summary = mine.ok ? mine.data : null;
 
@@ -65,7 +69,7 @@ export default async function AttendancePage() {
                   href={`/attendance/${c.classGroupId}?date=${day?.ok ? day.data.date : ""}&period=${c.periodNo}`}
                   className="pressable flex min-h-14 items-center gap-3 px-3 py-2 first:rounded-t-card last:rounded-b-card hover:bg-surface-sunken"
                 >
-                  <SubjectIcon subjectId={c.subjectId} name={c.subjectName} />
+                  <SubjectIcon subjectId={c.subjectId} name={c.subjectName} hue={offeringHue(hues, c.offeringId, c.subjectId)} />
                   <div className="flex min-w-0 flex-1 flex-col">
                     <p className="truncate text-row font-medium text-text">
                       <bdi>{c.subjectName}</bdi> — کلاس <bdi>{c.classGroupName}</bdi>

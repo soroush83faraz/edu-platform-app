@@ -1,6 +1,8 @@
 import { ListSkeleton } from "@/components/ListSkeleton";
 import { CardSkeleton, DashboardSkeleton, GridSkeleton } from "@/components/home/HomeSkeletons";
+import { TopBarBack, TopBarBackPlaceholder } from "@/components/shell/TopBarBack";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getUiVariant } from "@/lib/ui-variant";
 import { ContentWidth } from "./ContentWidth";
 
 /**
@@ -16,11 +18,30 @@ import { ContentWidth } from "./ContentWidth";
  *
  * Why it exists (docs/decisions.md «navigation feel»): a dynamic route with a loading boundary is prefetched down
  * to that boundary, so the click commits the placeholder instantly instead of waiting for the server render.
+ *
+ * The top bar's back pill (hub layout, owner 2026-10-06 — `TopBarBack`): every kind but `home` puts one in the bar's
+ * start slot at once, so the bar is already in its inner-page arrangement (bell + profile at the end) while the page
+ * streams. `back` is the real link when every page under this boundary goes back to the same place (most
+ * boundaries: «خانه»); left out, the pill is a stand-in with a skeleton label (a boundary over pages with different
+ * parents — /admin, «حضور و غیاب»), which the page's own pill replaces.
  */
-export function PageSkeleton({ kind, framed = true, rows = 6 }: { kind: "list" | "detail" | "cards" | "home"; framed?: boolean; rows?: number }) {
+export async function PageSkeleton({
+  kind,
+  framed = true,
+  rows = 6,
+  back,
+}: {
+  kind: "list" | "detail" | "cards" | "home";
+  framed?: boolean;
+  rows?: number;
+  back?: { href: string; label: string };
+}) {
+  const hub = (await getUiVariant()) === "hub";
+  const pill = !hub || kind === "home" ? null : back ? <TopBarBack href={back.href} label={back.label} /> : <TopBarBackPlaceholder />;
   const body = (
     <div aria-busy="true" aria-label="در حال بارگذاری" className="flex flex-col gap-5">
-      <HeaderSkeleton back={kind === "detail"} />
+      {pill}
+      <HeaderSkeleton back={!hub && kind === "detail"} />
       {kind === "list" ? (
         <div className="surface-work overflow-hidden">
           <ListSkeleton rows={rows} />
@@ -55,7 +76,8 @@ export function PageSkeleton({ kind, framed = true, rows = 6 }: { kind: "list" |
   return <ContentWidth size={kind === "detail" ? "reading" : "full"}>{body}</ContentWidth>;
 }
 
-/** `PageHeader`'s footprint: phones — the title row under a 16 px top; from `lg:` — the 48 px context bar, then the title. */
+/** `PageHeader`'s footprint: phones — the title row under a 16 px top; from `lg:` — the 48 px context bar, then the
+ *  title. `back`: the classic layout's back row above the title (the hub draws it in the top bar instead). */
 function HeaderSkeleton({ back }: { back: boolean }) {
   return (
     <div className="flex flex-col gap-2 pt-4 lg:pt-0">
