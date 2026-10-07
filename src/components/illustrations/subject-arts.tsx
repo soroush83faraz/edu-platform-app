@@ -201,15 +201,10 @@ const english = (u: U) => (
   </>
 );
 
-const religion = (u: U, pre: string) => (
+// No religious emblem (subject-icon.ts rule, owner 2026-10-07): rehl + open book, with a yellow sparkle as the warm accent.
+const religion = (u: U) => (
   <>
-    <defs>
-      <mask id={`${pre}-moon`}>
-        <circle cx="128" cy="30" r="15" fill="#fff" />
-        <circle cx="135" cy="25" r="12.5" fill="#000" />
-      </mask>
-    </defs>
-    <circle cx="128" cy="30" r="15" fill={u("y")} mask={`url(#${pre}-moon)`} />
+    <Sparkle x={126} y={30} r={13} fill={u("y")} />
     <path d="M44 116L98 80" stroke={u("b")} strokeWidth="11" strokeLinecap="round" />
     <path d="M100 116L46 80" stroke={u("d")} strokeWidth="11" strokeLinecap="round" />
     <path d="M24 60Q48 50 72 66Q96 50 120 60L118 88Q96 80 72 94Q48 80 26 88Z" fill={u("b")} />

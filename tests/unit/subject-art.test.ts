@@ -71,9 +71,8 @@ describe("SubjectHeroArt", () => {
     const name = { math: "ریاضی", physics: "فیزیک", chemistry: "شیمی", biology: "علوم تجربی", literature: "ادبیات فارسی", arabic: "عربی", english: "زبان انگلیسی", religion: "دین و زندگی", social: "تاریخ", tech: "کار و فناوری", sport: "تربیت بدنی", art: "هنر", generic: "کلاس تقویتی" }[art];
     const h = html(name);
     expect(h).toContain(`data-art="${art}"`);
-    // Only the moon's luminance mask may use literal black/white.
     const colours = [...h.matchAll(/(?:fill|stroke|stop-color)="(#[0-9a-fA-F]+)"/g)].map((m) => m[1]);
-    expect(colours.every((c) => art === "religion" && (c === "#fff" || c === "#000"))).toBe(true);
+    expect(colours).toEqual([]);
     expect(h.length).toBeLessThan(9000);
   });
 
