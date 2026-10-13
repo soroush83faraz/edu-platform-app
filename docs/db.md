@@ -1,4 +1,4 @@
-# دیتابیس — فاز ۱ (گام ۱: tenancy + iam · گام ۲: academic, workspace, notif, files, audit, config, integ)
+# دیتابیس — فاز ۱ (گام ۱: tenancy + iam · گام ۲: academic, workspace, notif, files, audit, config, integ · مشاوره: counseling)
 
 PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در `/drizzle`. منبع حقیقت اسکیما: `src/db/schema/*.ts`.
 
@@ -16,7 +16,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 
 ## قانون RLS
 
-- هر جدول در اسکیماهای مستأجری (`tenancy, iam, academic, workspace, notif, files, audit, config, integ`) که ستون `organization_id` دارد: `ENABLE` + `FORCE ROW LEVEL SECURITY` و سیاست `tenant_isolation`:
+- هر جدول در اسکیماهای مستأجری (`tenancy, iam, academic, workspace, notif, files, audit, config, integ, counseling`) که ستون `organization_id` دارد: `ENABLE` + `FORCE ROW LEVEL SECURITY` و سیاست `tenant_isolation`:
   `USING (organization_id = app.current_org_id()) WITH CHECK (organization_id = app.current_org_id())`.
 - `app.current_org_id()` مقدار `current_setting('app.current_org_id', true)` است؛ وقتی تنظیم نشده → `NULL` → هیچ سطری دیده/نوشته نمی‌شود (**fail-closed**).
 - استثنا: جدول‌هایی که `organization_id` آن‌ها nullable است (`iam.role` و `workspace.work_item_type`؛ ردیف NULL = الگوی سیستمی). این جدول‌ها به‌جای یک سیاست `FOR ALL`، **چهار سیاست به‌ازای هر دستور** می‌گیرند (مهاجرت `0004`):
@@ -28,10 +28,11 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 - جدول‌های سراسری (بدون RLS): `tenancy.organization`, `iam.user_account`, `iam.auth_identity`, `iam.user_session`, `iam.login_attempt`, `iam.permission`, `iam.role_permission`, `workspace.work_item_status`, `notif.notification_type`. چهار تای آخر **کاتالوگ‌های seed** هستند و برای `app_rw` فقط‌خواندنی‌اند (`REVOKE INSERT, UPDATE, DELETE` داخل `app.apply_grants()`، مهاجرت `0011`). جدول مستأجریِ `academic.learning_objective` هم کاتالوگ seed است و همین‌طور فقط‌خواندنی (مهاجرت `0017`).
   - **چرا `work_item_status` و `notification_type` سراسری‌اند:** هر دو کاتالوگِ ثابتِ محصول‌اند، نه دادهٴ مستأجر. وضعیت‌ها زیرِ `work_item_type` تعریف می‌شوند (تا وقتی نوعِ اختصاصیِ مستأجر نداریم، همهٴ نوع‌ها سیستمی‌اند و `organization_id` روی وضعیت هم بی‌معنا می‌شد) و کدهای اعلان (`work_item.assigned`, …) را کد برنامه تولید می‌کند. RLS نداشتن یعنی هر مستأجر همهٴ ردیف‌ها را می‌بیند — که همان مطلوب است — و نداشتنِ مجوز نوشتن یعنی هیچ مستأجری نمی‌تواند آن‌ها را تغییر دهد. اگر روزی نوعِ اختصاصی مستأجر اضافه شد، `work_item_status` باید `organization_id` (nullable مثل نوعش) بگیرد.
   - **`audit.audit_log` فقط‌افزودنی است:** `app_rw` فقط `SELECT, INSERT` دارد (`REVOKE UPDATE, DELETE` داخل `apply_grants()`)؛ برنامه هیچ راهی برای بازنویسی تاریخچه ندارد. تست: `tests/int/audit.test.ts`.
+  - **اسکیمای `counseling` (مهاجرت `0018`):** `app_rw` هیچ ردیفی را `DELETE` نمی‌کند (یادداشت و گزارش با `status`/`archived_at` کنار می‌روند) و `counseling.referral` را `UPDATE` هم نمی‌کند (پیوندی تغییرناپذیر است). افزون بر `tenant_isolation`، سه جدول آن سیاست‌های **RESTRICTIVE** دستی دارند، فقط `TO app_rw` (seed و reset با `app_owner`، dump با `app_backup`): `counseling_read` / `counseling_insert` / `counseling_update` که با `app.counseling_holds(permission, school_id)` (مجوزِ «شخص جاری» — `app.current_person_id()` که withTenant از نشست می‌گذارد — در سازمان، همان مدرسه یا شعبه‌ای از آن) و `app.counseling_addressee(work_item_id)` همان قاعدهٴ سرویس را در پایگاه داده تکرار می‌کنند: یادداشت را مشاورانِ مدرسه‌اش می‌خوانند و مدیریتِ مدرسه فقط وقتی `visibility = 'counselors_and_principal'` است؛ یادداشت و گزارش فقط به نام خودِ شخص جاری درج و ویرایش می‌شود؛ ارجاع را خوانندگانِ پروندهٴ آن مدرسه و گیرندگانِ کارِ آن می‌خوانند. `apply_rls()` این سیاست‌ها را دست نمی‌زند (فقط شش نامِ خودش را می‌سازد). تست: `tests/int/counseling.test.ts`.
 - چون `FORCE` روی مالک هم اعمال می‌شود، **seed هم باید قبل از نوشتن در جدول‌های مستأجری `set_config('app.current_org_id', …, true)` بزند** (نمونه: `tests/int/global-setup.ts`).
 - در کد فقط `withTenant(ctx, fn)` / `withoutTenant(fn)` از `src/db/client` (اولین دستورِ تراکنش `set_config(..., true)` است؛ با پایان تراکنش پاک می‌شود و از pool به درخواست دیگر نشت نمی‌کند). `withoutTenant` فقط برای جدول‌های سراسری **و الگوهای سیستمی `iam.role`** (ردیف‌های `organization_id IS NULL` بدون context هم خواندنی‌اند؛ هیچ ردیف مستأجری دیده نمی‌شود).
 - **`set_config` فقط در `src/db/client.ts`** (استثنا: مهاجرت `0012` که برای backfill زیر FORCE RLS به‌ازای هر سازمان context را transaction-local می‌گذارد و در پایان پاک می‌کند — `drizzle/` از بررسی `check-forbidden` بیرون است). `set_config(..., false)` (session-level) هرگز: اتصالِ pool، context یک درخواست را به درخواست بعدی می‌برد؛ و `set_config('app.current_org_id', <ورودی>, true)` در کدِ ماژول‌ها یعنی انتخاب مستأجر توسط کلاینت. ESLint داخل `sql\`…\`` را نمی‌بیند، پس `pnpm verify` با `scripts/check-forbidden.js` هر `set_config(` خارج از `src/db/client.ts` (و `scripts/`, `tests/`, `drizzle/`) را رد می‌کند. تنها bind دیگر، `app.current_user_account_id` برای فهرست عضویت‌ها هنگام ورود، تابع `bindAccountContext(tx, id)` در همان فایل است که فقط از راه `definePublicAction` (`tools.bindAccount`) در دسترس است — با id از ردیفِ تأییدشدهٴ `user_account`، هرگز از ورودی.
-- توابع `app.apply_grants()`، `app.apply_rls()` و `app.apply_updated_at_triggers()` idempotent‌اند و **هر مهاجرتی که جدول/اسکیمای جدید می‌سازد باید در انتها `SELECT app.apply_grants();`، `SELECT app.apply_rls();` و `SELECT app.apply_updated_at_triggers();` را (هر یک به‌عنوان یک statement جدا) صدا بزند.** تست `tests/int/rls-meta.test.ts` جدولِ بدون RLS و `tests/int/guards.test.ts` جدولِ دارای `updated_at` بدون تریگر را رد می‌کند.
+- توابع `app.apply_grants()`، `app.apply_rls()` و `app.apply_updated_at_triggers()` idempotent‌اند و **هر مهاجرتی که جدول/اسکیمای جدید می‌سازد باید در انتها `SELECT app.apply_grants();`، `SELECT app.apply_rls();` و `SELECT app.apply_updated_at_triggers();` را (هر یک به‌عنوان یک statement جدا) صدا بزند.** فهرست اسکیماهای مستأجری در **هر سه تابع** نوشته شده است (آخرین تعریف‌ها: هر سه در `0018`، که `counseling` را افزود — `apply_grants` همان تعریف `0017` با یک اسکیما و سه REVOKE بیشتر)؛ اسکیمای تازه یعنی بازتعریف هر سه + `drizzle.config.ts` (`schemaFilter`) + فهرست‌های `tests/int/{global-setup,rls-meta,guards,backup-role}` + `scripts/seed-pilot.ts` (`--reset`) + SQLهای `docs/qa` و `docs/ops/go-live-checklist.md`. تست `tests/int/rls-meta.test.ts` جدولِ بدون RLS و `tests/int/guards.test.ts` جدولِ دارای `updated_at` بدون تریگر را رد می‌کند.
 - `updated_at` را سرور نگه می‌دارد: تریگر `set_updated_at` (`BEFORE UPDATE FOR EACH ROW` → `app.set_updated_at()`، مهاجرت `0009`) روی هر جدولی که این ستون را دارد؛ مقدارِ فرستادهٴ کلاینت نادیده گرفته می‌شود. `$onUpdate` در Drizzle هم می‌ماند (فقط برای type و خوانایی).
 
 ## گردش کار مهاجرت
@@ -46,7 +47,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 
 ## جدول‌ها و کلید طبیعی
 
-شمار جدول‌ها: **۵۱** (tenancy ۱۱ · iam ۱۳ · academic ۸ · workspace ۹ · notif ۳ · files ۱ · audit ۱ · config ۲ · integ ۳). جدول‌های مستأجری (زیر RLS): ۴۲. (`school_period` و `timetable_slot` از مهاجرت `0015`؛ `attendance_session` و `attendance_entry` از `0016`؛ `learning_objective` و `objective_rating` از `0017`.)
+شمار جدول‌ها: **۵۴** (tenancy ۱۱ · iam ۱۳ · academic ۸ · workspace ۹ · notif ۳ · files ۱ · audit ۱ · config ۲ · integ ۳ · counseling ۳). جدول‌های مستأجری (زیر RLS): ۴۵. (`school_period` و `timetable_slot` از مهاجرت `0015`؛ `attendance_session` و `attendance_entry` از `0016`؛ `learning_objective` و `objective_rating` از `0017`؛ `counselor_note`، `teacher_report` و `referral` از `0018`.)
 
 ### tenancy (۱۱)
 | جدول | کلید طبیعی / یکتایی | یادداشت |
@@ -96,7 +97,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 |---|---|---|
 | work_item_type | `(organization_id, code)` **NULLS NOT DISTINCT** | `organization_id NULL` = نوع سیستمی (`todo, task, admin_request, reminder, approval` از seed)؛ همان سیاست‌های چهارگانهٴ `iam.role` را خودکار می‌گیرد |
 | work_item_status (سراسری) | `(work_item_type_id, code)` | `category ∈ todo,doing,done,cancelled`؛ کاتالوگ seed، فقط‌خواندنی برای app_rw |
-| work_item | — (`(organization_id, id)`) | `char_length(title) 1..200`؛ `priority ∈ low,normal,high,urgent`؛ `visibility ∈ assignees,watchers,scope`؛ `parent_work_item_id` خودارجاع ترکیبی؛ `type_id`/`status_id` FK ساده (نوع ممکن است سیستمی باشد)؛ ایندکس `(organization_id, due_at) WHERE completed_at IS NULL AND archived_at IS NULL`, `(organization_id, created_by_person_id)` |
+| work_item | — (`(organization_id, id)`) | `char_length(title) 1..200`؛ `priority ∈ low,normal,high,urgent`؛ `visibility ∈ assignees,watchers,scope`؛ `parent_work_item_id` خودارجاع ترکیبی؛ `type_id`/`status_id` FK ساده (نوع ممکن است سیستمی باشد)؛ `is_confidential boolean NOT NULL DEFAULT false` (مهاجرت `0018`): کارِ «فقط شرکت‌کنندگان» — خواندنِ گستردهٴ مدیران به آن نمی‌رسد و عنوانش در `audit_log` نمی‌آید (ارجاع‌های مشاور، `createConfidentialWorkItem`)؛ ایندکس `(organization_id, due_at) WHERE completed_at IS NULL AND archived_at IS NULL`, `(organization_id, created_by_person_id)` |
 | work_item_assignee | PK `(work_item_id, person_id, role)` | `role ∈ owner,assignee,approver`؛ `state ∈ pending,accepted,done`؛ ایندکس `(organization_id, person_id)` |
 | work_item_watcher | PK `(work_item_id, person_id)` | `reason ∈ guardian,supervisor,manual,creator` |
 | work_item_comment | — | `char_length(body) 1..4000`؛ `visibility ∈ all,staff_only`؛ **تنها جدول با `deleted_at`** (حذفِ نرمِ نظر جایش را در رشته حفظ می‌کند — استثنای صریح spec)؛ ایندکس `(work_item_id, created_at)` |
@@ -133,6 +134,13 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 | import_batch | — (`(organization_id, id)`) | `kind ∈ students,staff,classes,full`؛ `status ∈ draft,validated,committed,failed`؛ FK ترکیبی به school (nullable), file_object (nullable), person |
 | import_row | `(batch_id, sheet, row_number)` | `status ∈ pending,ok,warning,error,committed`؛ ایندکس `(organization_id, batch_id, status)` |
 | external_identity_map | `(organization_id, source, entity_table, external_ref)` | `source ∈ excel,legacy_system` |
+
+### counseling (۳) — «مشاوره»، مهاجرت `0018` (docs/decisions.md «مشاوره — فاز ۱»)
+| جدول | کلید طبیعی / یکتایی | یادداشت |
+|---|---|---|
+| counselor_note | — (`(organization_id, id)`) | یادداشت مشاور دربارهٴ یک دانش‌آموز: `school_id` (مدرسهٴ دانش‌آموز هنگام نوشتن — خواندن به‌ازای مدرسه است)، `author_person_id`؛ `kind ∈ general,academic,behavioral,family` (پیش‌فرض `general`)؛ `visibility ∈ counselors,counselors_and_principal` (پیش‌فرض دومی)؛ `char_length(body) 1..4000`؛ `status/archived_at` (CHECK هم‌خوانی)؛ FK ترکیبی به school, student_profile, person؛ ایندکس `(organization_id, student_profile_id, created_at DESC)`, `(organization_id, author_person_id)`. ویرایش و بایگانی فقط با نویسنده؛ متن هرگز به `audit_log` نمی‌رود (طول، نوع و دیده‌شدن) |
+| teacher_report | — (`(organization_id, id)`) | «گزارش دبیر به مشاور»: `school_id`، `author_person_id`، `class_offering_id` (درسی که دبیر از راه آن دانش‌آموز را درس می‌دهد، nullable)؛ `kind ∈ academic,behavioral`؛ `char_length(body) 1..1000`؛ `status/archived_at`؛ ایندکس‌های مانند بالا. سرویس فقط برای دانش‌آموزِ کلاسی که دبیر اکنون درس می‌دهد اجازه می‌دهد |
+| referral | `(organization_id, work_item_id)` | پیوند دانش‌آموز ↔ کاری که مشاور باز کرده: `kind ∈ management,teacher` («ارجاع به مدیریت» = `admin_request`، «درخواست گزارش از دبیر» = `task`)؛ `school_id`، `created_by_person_id`، فقط `created_at` (بدون `updated_at`)؛ FK ترکیبی به `workspace.work_item`. وضعیت، گیرندگان و پاسخ (یادداشتِ آخرین گذار) روی خودِ کار است. برای `app_rw` بدون UPDATE و DELETE |
 
 ### نگهبان‌های بین‌مستأجری (مهاجرت `0006`)
 

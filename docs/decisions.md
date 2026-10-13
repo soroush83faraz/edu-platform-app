@@ -1692,3 +1692,87 @@ correct. Docs: the school's data review **docs/primary-objectives-review.md**, d
   objective-rating,report-card-tiles}.test.ts`, `tests/int/{objectives-catalog,report-card,seed-pilot}.test.ts`.
 - **Pilot:** a fourth pilot tenant «دبستان پیشگامان» (one school per pilot organisation is how the specs work, and the
   secondary pilots and their demo extras stay untouched), with sample مهر ratings written through the service.
+
+## 2026-10-13 — «مشاوره» — فاز ۱: the counselor's student file (migration 0018)
+
+Owner, 2026-10-13: the employer's counseling spec has ~15 parts; phase 1 is the FOUNDATION — the «مشاور» role, the
+student file with the counselor's notes, teachers' reports and referrals. Parent portal, appointment booking
+(«نوبت مشاوره», still on the roadmap in phase 3), payments, tests/exams, study plans, charts and photo upload are
+later phases (no code for them; the seams are below). Docs: docs/db.md «counseling», docs/admin.md (role matrix),
+docs/workspace.md (confidential items, administrative requests).
+
+- **Role `counselor` («مشاور»), school-scoped only**, granted and revoked on /admin/roles by exactly the people who
+  grant «معاون» (`SCHOOL_GRANTABLE_ROLES`: a principal / vice principal at their own school, the organization admin
+  anywhere); a staff role (`assignRole` refuses a non-colleague like for the managers). Permissions:
+  `counseling.case.read` (the file), `counseling.note.write`, `counseling.referral.create`, `notif.notification.read`,
+  `academic.objective_rating.read` (a primary student's report card from the file). **No `workspace.*` permission
+  on purpose:** a school-scoped holder of `workspace.work_item.read/create/update` is a BROAD holder (`canBroadly`)
+  — it would read every non-personal item of the organization and manage any of them. The counselor follows their
+  referrals in the student file instead of «پنل من» (and so gets no bell for them in phase 1 — see «open» below).
+- **Management reads, it never writes in the counselor's name.** New `NON_MANAGER_PERMS` in scripts/catalog.ts
+  (`counseling.note.write`, `counseling.referral.create`, `counseling.teacher_report.write`) are excluded from the
+  «every permission» set of `org_admin` / `school_principal` / `vice_principal`, which carry `counseling.case.read`
+  and `counseling.referral.receive`. **Vice principal = principal** (the 2026-09-27 rule stands: same permissions,
+  bounded by the school) — both read; the default the brief suggested («principal yes, vice read-only») collapses to
+  «both read-only» because neither writes notes. The **organization admin** reads like management (its context is the
+  organisation): `counselors_and_principal` notes of every school, never `counselors` ones. Teachers get
+  `counseling.teacher_report.write` only; students and guardians nothing.
+- **Confidentiality model — two layers, both fail closed.** (1) The service (src/modules/counseling/service.ts): a
+  student belongs to the school of their LIVE school enrollment; the file is NOT_FOUND unless the viewer's
+  `counseling.case.read` reaches that school (`getPermissionScope` — a branch counts as its school); a note is read
+  by its school's counselors (`counseling.note.write` there) and by its management only when its visibility is
+  `counselors_and_principal` (the default; `counselors` = counselors only); edited / archived by its AUTHOR only,
+  while still a counselor there. Every row carries the school it was written at and is read per school, so a student
+  moving to another school of the organisation does not carry the old file to the new school's counselor. (2) The
+  database: tenant_isolation as everywhere, plus RESTRICTIVE policies for app_rw hand-written in 0018
+  (`app.counseling_holds(permission, school)` over the CURRENT person's valid role assignments,
+  `app.counseling_addressee(work_item)`) mirroring the same rules — a teacher, a student or another school's
+  counselor cannot select a note row even through a buggy query; a note / report can be inserted or updated only in
+  the current person's own name; app_rw cannot DELETE counseling rows (soft removal) nor UPDATE a referral. They use
+  `app.current_person_id()`, which withTenant binds from the session (unbound → nothing passes).
+- **Audit without text.** `audit()` copies whatever `before`/`after` it is given into `audit_log` (append-only, kept
+  forever, readable by operators and pg_dump) — so counseling writes record ids, kind, visibility, school and LENGTHS
+  only: `counseling.counselor_note.created/updated/archived` (`bodyChanged` instead of the body),
+  `counseling.teacher_report.created/archived`, `counseling.referral.created` (subject/description lengths). The
+  confidential work item's `workspace.work_item.created` row also carries lengths, not its title.
+- **Teacher reports** («گزارش به مشاور», table `counseling.teacher_report` — a sibling table, not the notes table,
+  so a teacher's code path never touches counselor notes): only a teacher who teaches the student NOW (a current
+  teacher assignment on an open offering of the student's active class, and the permission at that offering) — else
+  NOT_FOUND; درسی / رفتاری, ≤ 1000 chars; read by the school's counselors and management; the teacher sees only their
+  own and may withdraw them. Entry point: a 44 px «گزارش به مشاور» link at the end of each student's row of the roll
+  call (`/attendance/[class]` — the one place a teacher already sees their students), and the work item of a report
+  request.
+- **Referrals reuse the work-item model.** `counseling.referral` links a student to a work item (no nullable
+  reference added to `work_item` itself): «ارجاع به مدیریت» = an `admin_request` to the school's management —
+  holders of `counseling.referral.receive` at the school (principal + vice principals), the organisation admin when
+  the school has none, VALIDATION when nobody; «درخواست گزارش از دبیر» = a `task` to some of the student's current
+  teachers (anyone else = INVALID_REFERENCE). Both through `createConfidentialWorkItem` (workspace): recipients
+  authorised and locked FOR KEY SHARE by the caller first (person rows before work items), the item flagged
+  **`work_item.is_confidential`** (additive column) — participants only: `canViewWorkItem`'s broad managers' read
+  skips it, like a personal item — so a principal of another school or an unaddressed organisation admin gets
+  NOT_FOUND. Idempotency key per form. The file shows each referral's live status («در انتظار / در جریان /
+  انجام‌شده / بسته‌شده») and, for management, the decision = the item's latest transition note.
+- **Administrative requests became answerable in «پنل من»:** an `admin_request` is closed by its FIRST answer
+  (`closesOnFirstAnswer` — a request to an office is answered once by whichever addressee), the addressee's button is
+  «ثبت پاسخ» with an optional answer (the transition note), shown on the item as «پاسخ». The action row now sends the
+  item type's OWN status codes (`statusCodesOf`: answered / open / rejected), and `ChangeStatusInput` accepts every
+  catalog code (the service still checks it against the type). Before this, «انجام شد» on an admin_request failed.
+- **UI:** Home tile «مشاوره» (`counseling.case.read`, role `everyone` — the counselor wears no student/teacher/admin
+  hat) in both layouts, after the admin tiles and before «حضور و غیاب»; hat «مشاور» in the emblem. `/counseling`: one
+  school of the reach (a switcher for several), one white box with a quiet header per پایه in the catalog's order and
+  its head count, class + student number per row, name/number search (`app.fa_norm`). `/counseling/students/[id]`:
+  مشخصات (initials on a neutral circle — no photo placeholder text — student number, class, school, «ولی» phones as
+  `tel:` links in `<bdi dir="ltr">`), وضعیت تحصیلی (this year's غیبت / تأخیر / موجه, تکالیف done/given and overdue, a
+  primary report card link), then the notes (composer for the counselor), teachers' reports, referrals; «ارجاع به
+  مدیریت» / «درخواست گزارش از دبیر» as the header's outline actions. A confidential item leads back from `/inbox/[id]`
+  (`counselingLinkQuery`): a teacher → «ثبت گزارش برای مشاور», management → the file. Roadmap: «مشاوره» is live; «نوبت
+  مشاوره» stays in phase 3.
+- **Pilot:** «فرزانگان» and «دبستان پیشگامان» get a counselor (phone slot 4, the shared pilot password) with three
+  students' sample notes (one «فقط مشاوران»), one teacher report and one open referral to the principal + vice.
+- **Open (owner decisions):** (a) the counselor gets no bell when management answers or a teacher reports (assignee
+  actions are silent by the round-7 rule; a `counseling.*` notification type would be new); (b) the counselor cannot
+  withdraw a referral (no workspace permission — a «لغو ارجاع» would be a counseling action); (c) whether the
+  organisation admin should read counselor notes at all (today: like management); (d) the bell count of a
+  counselor-only account stays 0 (`inboxSummaryQuery` needs `workspace.work_item.read`). Tests:
+  `tests/unit/counseling-policy.test.ts`, `tests/int/counseling.test.ts` (written; not run in this session —
+  Docker was down).
