@@ -102,3 +102,43 @@ export type AttendanceReportInput = z.output<typeof AttendanceReportInput>;
 
 export const MyAttendanceInput = z.object({ from: isoDate.optional(), to: isoDate.optional() }).strict();
 export type MyAttendanceInput = z.output<typeof MyAttendanceInput>;
+
+// ---------------------------------------------------------------------------------------------------------------
+// «کارنامهٴ توصیفی» (descriptive report card, migration 0017)
+// ---------------------------------------------------------------------------------------------------------------
+
+export const ObjectiveRatingEnum = z.enum(["very_good", "good", "acceptable", "needs_effort"], { error: "سطح ارزشیابی نامعتبر است." });
+
+/** A Jalali month 1..12 (7 = مهر). */
+const jalaliMonth = z.number("ماه نامعتبر است.").int("ماه نامعتبر است.").min(1, "ماه نامعتبر است.").max(12, "ماه نامعتبر است.");
+const subjectName = z.string("درس را انتخاب کنید.").trim().min(1, "درس را انتخاب کنید.").max(60, "نام درس نامعتبر است.");
+
+/** One sheet: a class × month × درس (the entry roster). */
+export const ReportSheetInput = z.object({ classGroupId: uuid, month: jalaliMonth, subjectName }).strict();
+export type ReportSheetInput = z.output<typeof ReportSheetInput>;
+
+/** «ثبت کارنامه»: the whole sheet in ONE action; `rating: null` clears a rating. */
+export const SaveObjectiveRatingsInput = z
+  .object({
+    classGroupId: uuid,
+    month: jalaliMonth,
+    subjectName,
+    entries: z
+      .array(z.object({ studentProfileId: uuid, learningObjectiveId: uuid, rating: ObjectiveRatingEnum.nullable() }).strict())
+      .min(1, "چیزی برای ثبت نیست.")
+      .max(5000, "این فهرست بیش از حد بزرگ است."),
+  })
+  .strict();
+export type SaveObjectiveRatingsInput = z.output<typeof SaveObjectiveRatingsInput>;
+
+/** The class page / «کارنامهٴ کلاس» of one month (month omitted = the month the page opens on). */
+export const ReportClassInput = z.object({ classGroupId: uuid, month: jalaliMonth.optional() }).strict();
+export type ReportClassInput = z.output<typeof ReportClassInput>;
+
+/** The printable report cards of a class (every student, or one). */
+export const ReportPrintInput = z.object({ classGroupId: uuid, month: jalaliMonth, studentProfileId: uuid.optional() }).strict();
+export type ReportPrintInput = z.output<typeof ReportPrintInput>;
+
+/** «کارنامهٴ من». */
+export const MyReportCardInput = z.object({ month: jalaliMonth.optional() }).strict();
+export type MyReportCardInput = z.output<typeof MyReportCardInput>;

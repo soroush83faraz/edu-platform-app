@@ -83,6 +83,11 @@ export function formatJalaliDateTime(instant: Date): string {
   return toFaDigits(format(tehranNow(instant), "EEEE d MMMM yyyy، HH:mm", { locale: faIR }));
 }
 
+/** The Jalali month (1 = فروردین … 12 = اسفند) of an instant in Tehran — «کارنامهٴ توصیفی» opens on it. */
+export function tehranJalaliMonth(now = new Date()): number {
+  return Number(format(tehranNow(now), "M"));
+}
+
 /** «۱۴۰۵/۰۷/۰۲» — the shape the due-date input expects. */
 export function formatJalaliNumeric(instant: Date): string {
   return toFaDigits(format(tehranNow(instant), "yyyy/MM/dd"));

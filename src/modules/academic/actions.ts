@@ -8,7 +8,8 @@ import { can } from "@/modules/iam/can";
 import { getAdminScope, assertSchoolInScope } from "@/modules/iam/service";
 import { setSchoolPeriods } from "@/modules/tenancy/service";
 import { takeAttendance } from "./attendance";
-import { SetSchoolPeriodsInput, SetTimetableSlotInput, TakeAttendanceInput } from "./dto";
+import { SaveObjectiveRatingsInput, SetSchoolPeriodsInput, SetTimetableSlotInput, TakeAttendanceInput } from "./dto";
+import { saveObjectiveRatings } from "./report-card";
 import { setTimetableSlot } from "./service";
 
 export const setTimetableSlotAction = defineAction({ schema: SetTimetableSlotInput, permission: "academic.timetable.write", scope: "any" }, async (tx, input, ctx) =>
@@ -35,5 +36,18 @@ export const takeAttendanceAction = defineAction({ schema: TakeAttendanceInput, 
     classOfferingId: input.classOfferingId ?? null,
     note: input.note ?? null,
     entries: input.entries.map((e) => ({ studentProfileId: e.studentProfileId, status: e.status, minutesLate: e.minutesLate ?? null, note: e.note ?? null })),
+  }),
+);
+
+/**
+ * «ثبت کارنامه» — one sheet (class × month × درس) in one transaction. `scope: "any"`: the service decides the real
+ * scope (the class for an admin, any open offering of it for a teacher) and answers NOT_FOUND otherwise.
+ */
+export const saveObjectiveRatingsAction = defineAction({ schema: SaveObjectiveRatingsInput, permission: "academic.objective_rating.write", scope: "any" }, async (tx, input, ctx) =>
+  saveObjectiveRatings(tx, ctx, {
+    classGroupId: input.classGroupId,
+    month: input.month,
+    subjectName: input.subjectName,
+    entries: input.entries.map((e) => ({ studentProfileId: e.studentProfileId, learningObjectiveId: e.learningObjectiveId, rating: e.rating })),
   }),
 );

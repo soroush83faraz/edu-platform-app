@@ -6,7 +6,21 @@ import { assertSchoolInScope, getAdminScope } from "@/modules/iam/service";
 import { findSchoolById, listSchoolPeriods } from "@/modules/tenancy/repo";
 import { attendanceGaps, classAttendanceReport, defaultRange, getSessionForTaking, studentAttendanceSummary, teacherDay } from "./attendance";
 import { attendanceReportReach } from "./attendance-report";
-import { AttendanceCellInput, AttendanceReportInput, ClassAttendanceInput, ClassGroupIdInput, MyAttendanceInput, OfferingIdInput, SchoolIdInput, StudentAttendanceInput } from "./dto";
+import {
+  AttendanceCellInput,
+  AttendanceReportInput,
+  ClassAttendanceInput,
+  ClassGroupIdInput,
+  MyAttendanceInput,
+  MyReportCardInput,
+  OfferingIdInput,
+  ReportClassInput,
+  ReportPrintInput,
+  ReportSheetInput,
+  SchoolIdInput,
+  StudentAttendanceInput,
+} from "./dto";
+import { classReportCards, classReportOverview, getRatingSheet, listRatableClasses, myReportCard } from "./report-card";
 import { findStudentProfile, getMyClass, listClassesForPicker } from "./repo";
 import { getClassTimetable, getMyTimetable, getOfferingLink, getOfferingPage } from "./service";
 
@@ -100,3 +114,30 @@ export const attendanceClassesQuery = defineQuery({ schema: AttendanceReportInpu
   const reach = await attendanceReportReach(tx, ctx, input.schoolId);
   return listClassesForPicker(tx, reach.schoolIds);
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// «کارنامهٴ توصیفی» (descriptive report card) — the service decides the scope inside the transaction (NOT_FOUND)
+// ---------------------------------------------------------------------------------------------------------------
+
+export type { ClassReportOverview, ClassStudentSummary, ClassSubjectProgress, RatableClass, RatingSheet, ReportCardSubject, SheetRow, StudentReportCard } from "./report-card";
+
+/** The classes whose report cards the caller may open (admins: their schools; teachers: the classes they teach). */
+export const reportCardClassesQuery = defineQuery({ permission: "academic.objective_rating.read", scope: "any" }, async (tx, _input, ctx) => listRatableClasses(tx, ctx));
+
+/** One class × month: درس‌ها with progress and the per-student summary («کارنامهٴ کلاس»). */
+export const classReportQuery = defineQuery({ schema: ReportClassInput, permission: "academic.objective_rating.read", scope: "any" }, async (tx, input, ctx) =>
+  classReportOverview(tx, ctx, { classGroupId: input.classGroupId, month: input.month }),
+);
+
+/** The entry roster of one class × month × درس. */
+export const ratingSheetQuery = defineQuery({ schema: ReportSheetInput, permission: "academic.objective_rating.read", scope: "any" }, async (tx, input, ctx) =>
+  getRatingSheet(tx, ctx, { classGroupId: input.classGroupId, month: input.month, subjectName: input.subjectName }),
+);
+
+/** The printable cards of a class (all students, or one). */
+export const classReportCardsQuery = defineQuery({ schema: ReportPrintInput, permission: "academic.objective_rating.read", scope: "any" }, async (tx, input, ctx) =>
+  classReportCards(tx, ctx, { classGroupId: input.classGroupId, month: input.month, studentProfileId: input.studentProfileId }),
+);
+
+/** «کارنامهٴ من» — null when the person is not a primary student. */
+export const myReportCardQuery = defineQuery({ schema: MyReportCardInput, permission: "academic.objective_rating.read", scope: "any" }, async (tx, input, ctx) => myReportCard(tx, ctx, { month: input.month }));
