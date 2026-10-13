@@ -30,6 +30,8 @@ import { Pool } from "pg";
 import * as schema from "../src/db/schema";
 import { findAttendanceSession, listClassRoster, listClassSlots } from "../src/modules/academic/repo";
 import { takeAttendance } from "../src/modules/academic/attendance";
+import { saveObjectiveRatings } from "../src/modules/academic/report-card";
+import { tehranToday } from "../src/lib/attendance";
 import { assignTeacher, setTimetableSlot } from "../src/modules/academic/service";
 import { weekdayOfIso } from "../src/lib/attendance";
 import { DEFAULT_PERIODS, SCHOOL_WEEKDAYS } from "../src/lib/timetable";
@@ -41,7 +43,7 @@ import { createStaff, createStudent, findAccountOfPerson, type IamCtx } from "..
 import { findAcademicYearByName, findClassGroupByName, findDefaultBranch, findGradeLevelByCode, findOffering, findSchoolByCode, findSubjectByCode } from "../src/modules/tenancy/repo";
 import { createAcademicYear, createClassGroup, createClassOffering, createSchool, createSubject, ensureCatalogYears, updateBranch, upsertTerm } from "../src/modules/tenancy/service";
 import { addComment, changeStatus, createWorkItem, type WorkspaceCtx } from "../src/modules/workspace/service";
-import { ensureOrgCatalog, seedCatalog } from "./seed";
+import { ensureOrgCatalog, ensureOrgObjectives, seedCatalog } from "./seed";
 import { attendanceStatusFor, minutesLateFor, pastSchoolDays, rollCallPeriod } from "./attendance-plan";
 import { hasTeacherClash, planTimetables, type PlanClass } from "./timetable-plan";
 
@@ -134,6 +136,11 @@ export interface PilotClass {
 export interface PilotTeacherSpec {
   /** Subjects this teacher can take, in preference order (the allocator balances offerings to 4–6 per teacher). */
   subjects: string[];
+  /**
+   * Only these classes (by name) — a دبستان's آموزگار teaches every درس of ONE class (`DABESTAN`); omitted = any
+   * class of the school.
+   */
+  classes?: string[];
 }
 
 export interface PilotOrgSpec {
@@ -147,6 +154,10 @@ export interface PilotOrgSpec {
   classes: PilotClass[];
   teachers: PilotTeacherSpec[];
   adminGender: Gender;
+  /** Students per class at scale 1 (default 25). */
+  classSize?: number;
+  /** A دبستان: its آموزگاران also get sample «کارنامهٴ توصیفی» ratings for مهر (`seedReportCards`). */
+  primary?: boolean;
 }
 
 const SEC2_SUBJECTS: PilotSubject[] = [
@@ -267,6 +278,56 @@ export const HELLI: PilotOrgSpec = {
 
 export const PILOT_ORGS: PilotOrgSpec[] = [ALLAMEH, FARZANEGAN, HELLI];
 
+const PRIMARY_PILOT_SUBJECTS: PilotSubject[] = [
+  { code: "QURAN", name: "قرآن" },
+  { code: "HED", name: "هدیه‌های آسمان" },
+  { code: "FA", name: "فارسی" },
+  { code: "MATH", name: "ریاضی" },
+  { code: "SCI", name: "علوم تجربی" },
+  { code: "SOC", name: "مطالعات اجتماعی" },
+  { code: "TAF", name: "تفکر و پژوهش" },
+  { code: "TECH", name: "کار و فناوری" },
+  { code: "ART", name: "هنر" },
+  { code: "PE", name: "تربیت بدنی" },
+];
+
+/** The درس‌ها of each primary پایه (as the school's objective documents have them; ورزش everywhere). */
+const PRIMARY_CLASSES: PilotClass[] = [
+  { name: "اول الف", grade: "G1", subjects: ["QURAN", "FA", "MATH", "SCI", "ART", "PE"] },
+  { name: "دوم الف", grade: "G2", subjects: ["QURAN", "HED", "FA", "MATH", "SCI", "ART", "PE"] },
+  { name: "سوم الف", grade: "G3", subjects: ["QURAN", "HED", "FA", "MATH", "SCI", "SOC", "ART", "PE"] },
+  { name: "چهارم الف", grade: "G4", subjects: ["QURAN", "HED", "FA", "MATH", "SCI", "SOC", "ART", "PE"] },
+  { name: "پنجم الف", grade: "G5", subjects: ["QURAN", "HED", "FA", "MATH", "SCI", "SOC", "ART", "PE"] },
+  { name: "ششم الف", grade: "G6", subjects: ["QURAN", "HED", "FA", "MATH", "SCI", "SOC", "TAF", "TECH", "ART", "PE"] },
+];
+
+/**
+ * «کارنامهٴ توصیفی» demo (owner, 2026-10-13): a small primary school in its OWN pilot organisation — the pilot
+ * specs are one school per organisation, and a fourth tenant keeps the three secondary pilots (and the demo extras
+ * built on them) exactly as they were. Grades ۱–۶, one class each, ~10 students, one آموزگار per class who teaches
+ * every درس of it (the classic دبستان) and one ورزش teacher for all six (a درس with its own teacher), principal +
+ * vice, the shared pilot password — and sample ratings for مهر so the report card is not empty.
+ */
+export const DABESTAN: PilotOrgSpec = {
+  key: "dbs",
+  name: "دبستان پیشگامان",
+  slug: "pishgaman",
+  phoneBlock: 40,
+  school: { code: "DBS", name: "دبستان پیشگامان", gender: "girls", branchName: "مرکزی" },
+  subjects: PRIMARY_PILOT_SUBJECTS,
+  classes: PRIMARY_CLASSES,
+  teachers: [
+    ...PRIMARY_CLASSES.map((c) => ({ subjects: c.subjects.filter((code) => code !== "PE"), classes: [c.name] })),
+    { subjects: ["PE"] },
+  ],
+  adminGender: "female",
+  classSize: 10,
+  primary: true,
+};
+
+/** Every organisation `pnpm seed:pilot` writes (and `--reset` removes): the three secondary pilots + the دبستان. */
+export const SEEDED_PILOT_ORGS: PilotOrgSpec[] = [...PILOT_ORGS, DABESTAN];
+
 /**
  * `<class>:<subject>` offering keys per teacher index. Greedy placement (most constrained offerings first, each on
  * the capable teacher with the fewest offerings; ties → the teacher whose primary subject it is), then a
@@ -278,7 +339,7 @@ export function allocateOfferings(spec: PilotOrgSpec): string[][] {
   const offerings: Array<{ key: string; code: string; capable: number[] }> = [];
   for (const cls of spec.classes) {
     for (const code of cls.subjects) {
-      const capable = spec.teachers.flatMap((t, i) => (t.subjects.includes(code) ? [i] : []));
+      const capable = spec.teachers.flatMap((t, i) => (t.subjects.includes(code) && (!t.classes || t.classes.includes(cls.name)) ? [i] : []));
       if (capable.length === 0) throw new Error(`pilot ${spec.key}: no teacher for ${code}`);
       offerings.push({ key: `${cls.name}:${code}`, code, capable });
     }
@@ -362,8 +423,8 @@ export interface PilotOptions {
   roleIds: Record<string, string>;
 }
 
-export function studentsPerClass(scale: number): number {
-  return Math.max(2, Math.round(25 * scale));
+export function studentsPerClass(scale: number, spec?: Pick<PilotOrgSpec, "classSize">): number {
+  return Math.max(2, Math.round((spec?.classSize ?? 25) * scale));
 }
 
 /** Tasks the t-th teacher of a school creates: 2, 3, 4, 2, … at full scale; at least one when scaled down. */
@@ -400,15 +461,15 @@ export function expectedCounts(scale: number): ExpectedCounts {
   let students = 0;
   let workItems = 0;
   let timetableSlots = 0;
-  for (const spec of PILOT_ORGS) {
+  for (const spec of SEEDED_PILOT_ORGS) {
     classGroups += spec.classes.length;
     offerings += spec.classes.reduce((n, c) => n + c.subjects.length, 0);
     teachers += spec.teachers.length;
-    students += spec.classes.length * studentsPerClass(scale);
+    students += spec.classes.length * studentsPerClass(scale, spec);
     workItems += spec.teachers.reduce((n, _t, i) => n + tasksOfTeacher(i, scale), 0) + 2 * STAFF_TODOS.length + ADMIN_TASKS.length;
     timetableSlots += spec.classes.reduce((n, c) => n + c.subjects.reduce((m, code) => m + sessionsOf(spec.key, `${c.name}:${code}`), 0), 0);
   }
-  return { organizations: PILOT_ORGS.length, schools: PILOT_ORGS.length, classGroups, offerings, teachers, students, workItems, timetableSlots };
+  return { organizations: SEEDED_PILOT_ORGS.length, schools: SEEDED_PILOT_ORGS.length, classGroups, offerings, teachers, students, workItems, timetableSlots };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -450,6 +511,8 @@ export interface SchoolSummary {
   teachers: TeacherOut[];
   classes: Array<{ name: string; students: StudentOut[] }>;
   counts: Record<string, number>;
+  /** A دبستان (its accounts sheet explains «کارنامهٴ توصیفی»). */
+  primary: boolean;
 }
 
 export async function withOrg<T>(db: Db, orgId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
@@ -552,7 +615,7 @@ async function findWorkItemByTitle(tx: Tx, creatorPersonId: string, title: strin
 async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secretHash: string): Promise<SchoolSummary> {
   const orgId = pilotId(`org:${spec.key}`);
   const k = (s: string) => `${spec.key}:${s}`;
-  const perClass = studentsPerClass(opts.scale);
+  const perClass = studentsPerClass(opts.scale, spec);
   const created = { created: 0 };
   const phase: Record<string, number> = {};
   let mark = Date.now();
@@ -717,6 +780,9 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
     return { admin, principal, vice, teachers, classIds, offeringIds, subjectNames, allocation };
   });
 
+  // The primary learning objectives («کارنامهٴ توصیفی»), now that the درس rows exist to link (every pilot org gets
+  // them, as the deploy's catalog step would; only the دبستان uses them).
+  await ensureOrgObjectives(db, orgId);
   lap("structureMs");
 
   // ---- 2. students: one transaction per class (25 accounts = 25 argon2 hashes each) ----
@@ -841,6 +907,9 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
   await seedAttendance(db, orgId, spec, structure, ctxCache, ATTENDANCE_DAYS);
   lap("attendanceMs");
 
+  // ---- 6. «کارنامهٴ توصیفی»: sample ratings for مهر in the دبستان, by each class's own آموزگار ----
+  if (spec.primary) await seedReportCards(db, orgId, spec, structure, ctxCache);
+
   const counts = await withOrg(db, orgId, async (tx) => {
     const count = async (table: string, where = ""): Promise<number> => {
       const res = await tx.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table} ${where}`));
@@ -857,6 +926,7 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
       timetableSlots: await count("academic.timetable_slot"),
       attendanceSessions: await count("academic.attendance_session"),
       attendanceEntries: await count("academic.attendance_entry"),
+      objectiveRatings: await count("academic.objective_rating"),
       workItems: await count("workspace.work_item"),
       assignees: await count("workspace.work_item_assignee"),
       comments: await count("workspace.work_item_comment"),
@@ -866,7 +936,7 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
     };
   });
 
-  return { org: spec.name, school: spec.school.name, code: spec.school.code, admin: structure.admin, principal: structure.principal, vice: structure.vice, teachers: structure.teachers, classes, counts };
+  return { primary: spec.primary === true, org: spec.name, school: spec.school.name, code: spec.school.code, admin: structure.admin, principal: structure.principal, vice: structure.vice, teachers: structure.teachers, classes, counts };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -928,6 +998,57 @@ async function seedAttendance(db: Db, orgId: string, spec: PilotOrgSpec, structu
   }
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// «کارنامهٴ توصیفی» (sample ratings for مهر in the دبستان)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** The month the sample report cards are for: مهر, the first month of the school year. */
+export const SAMPLE_REPORT_MONTH = 7;
+
+/**
+ * A deterministic level for (student, درس, objective position): ~۴۵٪ خیلی خوب, ~۳۳٪ خوب, ~۱۶٪ قابل قبول, ~۶٪ نیاز به
+ * تلاش — and ~۱۵٪ of the (student, درس) sheets left unrated, so the class page shows real progress («۸ از ۱۰»).
+ */
+export function sampleRatingFor(key: string): "very_good" | "good" | "acceptable" | "needs_effort" {
+  const n = hashInt(`rating:${key}`, 100);
+  return n < 45 ? "very_good" : n < 78 ? "good" : n < 94 ? "acceptable" : "needs_effort";
+}
+export const sampleSheetSkipped = (key: string): boolean => hashInt(`skip:${key}`, 100) < 15;
+
+/**
+ * Every class of a primary pilot school: its آموزگار (the teacher of its فارسی) rates the roster on every درس of مهر
+ * through the real service with their own ctx (scope rule + audit). Idempotent by the service itself: a pair that
+ * already has the same level is not written, and a save that changes nothing writes no audit row.
+ */
+async function seedReportCards(db: Db, orgId: string, spec: PilotOrgSpec, structure: { classIds: Record<string, string>; teachers: TeacherOut[]; allocation: string[][] }, ctxCache: Map<string, ActorCtx>): Promise<void> {
+  for (const c of spec.classes) {
+    const classGroupId = structure.classIds[c.name];
+    const t = structure.allocation.findIndex((keys) => keys.includes(`${c.name}:FA`));
+    if (t === -1) continue;
+    await withOrg(db, orgId, async (tx) => {
+      const ctx = await actorCtx(tx, orgId, structure.teachers[t].personId, ctxCache);
+      const objectives = await tx.execute<{ id: string; subject_name: string; sort_order: number }>(sql`
+        select lo.id, lo.subject_name, lo.sort_order
+        from academic.learning_objective lo
+        join tenancy.class_group cg on cg.grade_level_id = lo.grade_level_id
+        where cg.id = ${classGroupId}::uuid and lo.month = ${SAMPLE_REPORT_MONTH} and lo.status = 'active'
+        order by lo.subject_name, lo.sort_order`);
+      const roster = await listClassRoster(tx, classGroupId, tehranToday());
+      const subjects = [...new Set(objectives.rows.map((o) => o.subject_name))];
+      for (const subjectName of subjects) {
+        const entries = roster.flatMap((r) =>
+          sampleSheetSkipped(`${spec.key}:${r.personId}:${subjectName}`)
+            ? []
+            : objectives.rows
+                .filter((o) => o.subject_name === subjectName)
+                .map((o) => ({ studentProfileId: r.studentProfileId, learningObjectiveId: o.id, rating: sampleRatingFor(`${spec.key}:${r.personId}:${subjectName}:${o.sort_order}`) })),
+        );
+        if (entries.length > 0) await saveObjectiveRatings(tx, ctx, { classGroupId, month: SAMPLE_REPORT_MONTH, subjectName, entries });
+      }
+    });
+  }
+}
+
 export interface PilotCounts extends Record<string, number> {
   organizations: number;
   schools: number;
@@ -937,8 +1058,8 @@ export interface PilotCounts extends Record<string, number> {
 
 /** Global counts (as app_owner, per pilot organization so FORCE RLS lets us see the rows). */
 export async function pilotCounts(db: Db): Promise<PilotCounts> {
-  const totals: PilotCounts = { organizations: 0, schools: 0, classGroups: 0, offerings: 0, staff: 0, students: 0, accounts: 0, classEnrollments: 0, teacherAssignments: 0, timetableSlots: 0, attendanceSessions: 0, attendanceEntries: 0, workItems: 0, comments: 0, notifications: 0 };
-  const orgs = await db.select({ id: organization.id }).from(organization).where(inArray(organization.slug, PILOT_ORGS.map((o) => o.slug)));
+  const totals: PilotCounts = { organizations: 0, schools: 0, classGroups: 0, offerings: 0, staff: 0, students: 0, accounts: 0, classEnrollments: 0, teacherAssignments: 0, timetableSlots: 0, attendanceSessions: 0, attendanceEntries: 0, objectiveRatings: 0, workItems: 0, comments: 0, notifications: 0 };
+  const orgs = await db.select({ id: organization.id }).from(organization).where(inArray(organization.slug, SEEDED_PILOT_ORGS.map((o) => o.slug)));
   totals.organizations = orgs.length;
   for (const { id } of orgs) {
     await withOrg(db, id, async (tx) => {
@@ -957,6 +1078,7 @@ export async function pilotCounts(db: Db): Promise<PilotCounts> {
       totals.timetableSlots += await count("academic.timetable_slot");
       totals.attendanceSessions += await count("academic.attendance_session");
       totals.attendanceEntries += await count("academic.attendance_entry");
+      totals.objectiveRatings += await count("academic.objective_rating");
       totals.workItems += await count("workspace.work_item");
       totals.comments += await count("workspace.work_item_comment");
       totals.notifications += await count("notif.notification");
@@ -1020,7 +1142,7 @@ async function tenantTablesInDeleteOrder(db: Db): Promise<string[]> {
  * Organizations with other slugs (the demo, a real customer) are never touched.
  */
 export async function resetPilot(db: Db): Promise<PilotResetResult> {
-  const orgs = await db.select({ id: organization.id, slug: organization.slug }).from(organization).where(inArray(organization.slug, PILOT_ORGS.map((o) => o.slug)));
+  const orgs = await db.select({ id: organization.id, slug: organization.slug }).from(organization).where(inArray(organization.slug, SEEDED_PILOT_ORGS.map((o) => o.slug)));
   const deleted: Record<string, number> = {};
   const add = (key: string, n: number) => {
     if (n > 0) deleted[key] = (deleted[key] ?? 0) + n;
@@ -1073,7 +1195,7 @@ export async function seedPilot(db: Db, opts: { password?: string; scale?: numbe
   if (!roles[0]) throw new Error("system roles missing — run `pnpm seed` (catalog) first");
   const secretHash = await hashPassword(password);
   const summaries: SchoolSummary[] = [];
-  for (const spec of PILOT_ORGS) summaries.push(await seedPilotOrg(db, spec, { password, scale, roleIds: { org_admin: roles[0].id } }, secretHash));
+  for (const spec of SEEDED_PILOT_ORGS) summaries.push(await seedPilotOrg(db, spec, { password, scale, roleIds: { org_admin: roles[0].id } }, secretHash));
   return { summaries, password, scale, ms: Date.now() - started };
 }
 
@@ -1090,6 +1212,12 @@ export function renderAccountsMarkdown(result: SeedPilotResult): string {
   lines.push("# حساب‌های پایلوت", "", `رمز همهٴ حساب‌ها: \`${result.password}\` (بدون تغییر رمز اجباری). ورود با موبایل یا نام‌کاربری.`, "");
   for (const s of result.summaries) {
     lines.push(`## ${s.org} — ${s.school} (\`${s.code}\`)`, "");
+    if (s.primary) {
+      lines.push(
+        "دبستان (پایهٔ اول تا ششم، یک کلاس در هر پایه). «کارنامهٴ توصیفی» در خانهٔ آموزگار، مدیر و معاون؛ «کارنامهٴ من» در خانهٔ دانش‌آموز. کارنامهٴ ماه مهر به‌عنوان نمونه ثبت شده است (چند برگه عمداً خالی مانده‌اند).",
+        "",
+      );
+    }
     lines.push("| نقش | نام | ورود |", "|---|---|---|");
     lines.push(`| مدیر سازمان | ${s.admin.name} | \`${national(s.admin.phone)}\` |`);
     lines.push(`| مدیر مدرسه | ${s.principal.name} | \`${national(s.principal.phone)}\` |`);

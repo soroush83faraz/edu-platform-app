@@ -11,7 +11,7 @@ import * as schema from "@/db/schema";
 import { withTenant } from "@/db/client";
 import { runMigrations } from "../../scripts/migrate";
 import { seedCatalog } from "../../scripts/seed";
-import { ALLAMEH, FARZANEGAN, expectedCounts, pilotCounts, pilotId, pilotPhone, resetPilot, seedPilot } from "../../scripts/seed-pilot";
+import { ALLAMEH, DABESTAN, FARZANEGAN, SEEDED_PILOT_ORGS, expectedCounts, pilotCounts, pilotId, pilotPhone, resetPilot, seedPilot, studentsPerClass } from "../../scripts/seed-pilot";
 import { OWNER_URL } from "./env";
 import { dropAppSchemas, seed } from "./global-setup";
 import { asAppRw } from "./helpers";
@@ -36,7 +36,7 @@ describe("seed:pilot", () => {
       const second = await pilotCounts(db);
 
       expect(second).toEqual(first);
-      expect(run2.summaries.map((s) => s.counts.createdAccounts)).toEqual([0, 0, 0]);
+      expect(run2.summaries.map((s) => s.counts.createdAccounts)).toEqual(SEEDED_PILOT_ORGS.map(() => 0));
 
       const plan = expectedCounts(SCALE);
       expect(first.organizations).toBe(plan.organizations);
@@ -48,15 +48,24 @@ describe("seed:pilot", () => {
       expect(first.timetableSlots).toBe(plan.timetableSlots); // every offering has its 2–4 sessions on the grid
       // حضور و غیاب: three weeks of roll calls, one per class per school day, every student marked, ~۹۲٪ حاضر.
       expect(first.attendanceSessions).toBeGreaterThan(0);
-      expect(first.attendanceEntries).toBe(first.attendanceSessions * (first.students / plan.classGroups));
-      expect(first.staff).toBe(plan.teachers + 3 * 3); // + admin, principal, vice per school
+      // Class sizes differ (the دبستان has ~10 per class), so the entries lie between the smallest and largest roster.
+      const sizes = SEEDED_PILOT_ORGS.map((o) => studentsPerClass(SCALE, o));
+      expect(first.attendanceEntries).toBeGreaterThanOrEqual(first.attendanceSessions * Math.min(...sizes));
+      expect(first.attendanceEntries).toBeLessThanOrEqual(first.attendanceSessions * Math.max(...sizes));
+      // «کارنامهٴ توصیفی»: the دبستان's sample مهر ratings exist, and the second run added none.
+      expect(first.objectiveRatings).toBeGreaterThan(0);
+      expect(first.staff).toBe(plan.teachers + 3 * SEEDED_PILOT_ORGS.length); // + admin, principal, vice per school
       expect(first.accounts).toBe(first.students + first.staff);
       expect(first.workItems).toBe(plan.workItems);
       expect(first.comments).toBeGreaterThan(0);
       expect(first.notifications).toBeGreaterThan(first.students);
       // Every teacher of the plan got 4–6 offerings and the first run created every account.
-      for (const s of run1.summaries) for (const t of s.teachers) expect(t.offerings.length).toBeGreaterThanOrEqual(4);
-      for (const s of run1.summaries) for (const t of s.teachers) expect(t.offerings.length).toBeLessThanOrEqual(6);
+      // (The دبستان's آموزگار teaches every درس of ONE class instead — 5 to 9 offerings, and the ورزش teacher six.)
+      for (const s of run1.summaries.filter((x) => !x.primary)) for (const t of s.teachers) expect(t.offerings.length).toBeGreaterThanOrEqual(4);
+      for (const s of run1.summaries.filter((x) => !x.primary)) for (const t of s.teachers) expect(t.offerings.length).toBeLessThanOrEqual(6);
+      const dbs = run1.summaries.find((x) => x.primary)!;
+      expect(dbs.code).toBe(DABESTAN.school.code);
+      expect(dbs.teachers.map((t) => t.offerings.length)).toEqual([5, 6, 7, 7, 7, 9, 6]);
       expect(run1.summaries.reduce((n, s) => n + s.counts.createdAccounts, 0)).toBe(first.accounts);
 
       // The shared password is applied without a forced change; the ALK admin logs in by phone.
@@ -70,12 +79,12 @@ describe("seed:pilot", () => {
       // the fixture organizations A/B stay; a fresh seed afterwards rebuilds identical counts.
       const before = await pool.query<{ n: string }>("select count(*) as n from tenancy.organization");
       const reset = await resetPilot(db);
-      expect(reset.organizations).toBe(3);
-      expect(reset.deleted["tenancy.organization"]).toBe(3);
+      expect(reset.organizations).toBe(SEEDED_PILOT_ORGS.length);
+      expect(reset.deleted["tenancy.organization"]).toBe(SEEDED_PILOT_ORGS.length);
       expect(reset.deleted["iam.user_account"]).toBe(first.accounts);
       expect(await pilotCounts(db)).toMatchObject({ organizations: 0, students: 0, workItems: 0, notifications: 0 });
       const after = await pool.query<{ n: string }>("select count(*) as n from tenancy.organization");
-      expect(Number(after.rows[0].n)).toBe(Number(before.rows[0].n) - 3);
+      expect(Number(after.rows[0].n)).toBe(Number(before.rows[0].n) - SEEDED_PILOT_ORGS.length);
       const gone = await pool.query<{ n: string }>("select count(*) as n from iam.user_account where login_identifier like '+98935%'");
       expect(gone.rows[0].n).toBe("0");
       expect(await resetPilot(db)).toEqual({ organizations: 0, deleted: {} });
