@@ -4,6 +4,8 @@ export {
   attendanceEntry,
   attendanceSession,
   classEnrollment,
+  learningObjective,
+  objectiveRating,
   schoolEnrollment,
   teacherAssignment,
   timetableSlot,

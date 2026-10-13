@@ -14,11 +14,13 @@
 // exactly the point (deploy/README.md).
 //
 // Deliberately no `import.meta` / `require.main` guard: this file is a program, not a library (the compiled bundle
-// wraps it in its own module registry). Imports: `pg`, `node:*` and ./catalog only (the build refuses more).
+// wraps it in its own module registry). Imports: `pg`, `node:*`, ./catalog and ./objectives-catalog only (the build
+// refuses bare packages).
 import fs from "node:fs";
 import path from "node:path";
 import { Client } from "pg";
 import { catalogCountsWith, formatCatalogSummary, formatOrgCatalogSummary, seedCatalogWith, seedOrgCatalogsWith } from "./catalog";
+import { formatObjectivesSummary, seedOrgObjectivesWith } from "./objectives-catalog";
 
 /** Loads ./.env for local runs (never overrides variables already set; Docker uses env_file). */
 function loadDotEnv(): void {
@@ -46,6 +48,8 @@ async function main(): Promise<void> {
     console.log(formatCatalogSummary(await catalogCountsWith(client)));
     // Then the fixed مقطع/پایه/سال catalog of every organization (one transaction each; tenant rows under RLS).
     console.log(formatOrgCatalogSummary(await seedOrgCatalogsWith(client)));
+    // Then the primary learning objectives of «کارنامهٴ توصیفی» (scripts/objectives-catalog.ts; needs the پایه‌ها above).
+    console.log(formatObjectivesSummary(await seedOrgObjectivesWith(client)));
   } finally {
     await client.end();
   }

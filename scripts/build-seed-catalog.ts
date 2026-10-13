@@ -29,10 +29,10 @@ interface Emitted {
 
 const toId = (abs: string): string => relative(ROOT, abs).split("\\").join("/").replace(/\.ts$/, "");
 
-/** Resolves a relative specifier from `fromAbs` to an existing `.ts` file (or `<dir>/index.ts`). */
+/** Resolves a relative specifier from `fromAbs` to an existing `.ts` file (or `<dir>/index.ts`, or a `.json` file). */
 function resolveRelative(fromAbs: string, spec: string): string {
   const base = resolve(dirname(fromAbs), spec);
-  for (const candidate of [`${base}.ts`, join(base, "index.ts")]) {
+  for (const candidate of spec.endsWith(".json") ? [base] : [`${base}.ts`, join(base, "index.ts")]) {
     try {
       readFileSync(candidate);
       return candidate;
@@ -69,6 +69,11 @@ function collect(entryAbs: string): Emitted[] {
     const id = toId(abs);
     if (done.has(id)) return;
     done.set(id, { id, js: "" }); // reserve (cycles)
+    if (abs.endsWith(".json")) {
+      // Data (scripts/data/primary-objectives.json): inlined as a CommonJS module, re-serialised so a bad file fails here.
+      done.set(id, { id, js: `module.exports = ${JSON.stringify(JSON.parse(readFileSync(abs, "utf8")))};` });
+      return;
+    }
     const js = transpile(abs).replace(/require\((["'])([^"']+)\1\)/g, (_m, quote: string, spec: string) => {
       if (spec.startsWith(".")) {
         const target = resolveRelative(abs, spec);

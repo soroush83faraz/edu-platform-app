@@ -9,7 +9,9 @@
 //            notif.notification_type. The data and the writer live in ./catalog (pg-only), shared with the
 //            compiled scripts/seed-catalog.js that the deploy runs after `migrate` (deploy/README.md). Then the
 //            FIXED structure catalog of every organization (مقطع‌ها, the twelve پایه‌ها, سال ۱۴۰۵–۱۴۰۶ and
-//            ۱۴۰۶–۱۴۰۷ for each school — `seedOrgCatalogsWith`, src/modules/tenancy/fixed-catalog.ts).
+//            ۱۴۰۶–۱۴۰۷ for each school — `seedOrgCatalogsWith`, src/modules/tenancy/fixed-catalog.ts), then the
+//            primary learning objectives of «کارنامهٴ توصیفی» for every organisation (`seedOrgObjectivesWith`,
+//            scripts/objectives-catalog.ts, from scripts/data/primary-objectives.json).
 // --demo:    two organizations with schools, years, terms, subjects, classes, offerings, persons,
 //            accounts and role assignments; the students are enrolled in their class (school_enrollment +
 //            class_enrollment) and the teachers get real academic.teacher_assignment rows through the academic
@@ -71,6 +73,7 @@ import {
   type Queryable,
 } from "./catalog";
 import { attendanceStatusFor, minutesLateFor, pastSchoolDays, rollCallPeriod } from "./attendance-plan";
+import { ensureOrgObjectivesWith, formatObjectivesSummary, seedOrgObjectivesWith, type ObjectiveSeedCounts } from "./objectives-catalog";
 import { planTimetables, type PlanClass } from "./timetable-plan";
 
 export { NOTIFICATION_TYPES, SYSTEM_ROLES, SYSTEM_WORK_ITEM_TYPES, type CatalogCounts } from "./catalog";
@@ -132,6 +135,22 @@ export async function seedOrgCatalogs(db: Db): Promise<OrgCatalogCounts> {
  */
 export async function ensureOrgCatalog(db: Db, orgId: string): Promise<OrgCatalogCounts> {
   return withDriverConnection(db, (q) => ensureOrgCatalogWith(q, orgId));
+}
+
+/**
+ * «کارنامهٴ توصیفی»: the primary learning objectives of EVERY organisation (scripts/objectives-catalog.ts) — the
+ * third catalog step, after the structure catalog (it needs the پایه‌ها). Idempotent.
+ */
+export async function seedOrgObjectives(db: Db): Promise<ObjectiveSeedCounts> {
+  return withDriverConnection(db, (q) => seedOrgObjectivesWith(q));
+}
+
+/**
+ * The objectives of ONE organisation — the pilot and demo seeds call it after they created their درس‌ها, so the
+ * rows link the organisation's subject rows on the first run (the deploy's catalog step does it again, a no-op).
+ */
+export async function ensureOrgObjectives(db: Db, orgId: string): Promise<ObjectiveSeedCounts> {
+  return withDriverConnection(db, (q) => ensureOrgObjectivesWith(q, orgId));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -758,6 +777,7 @@ async function main(): Promise<void> {
     if (doCatalog) {
       console.log(formatCatalogSummary(await catalogCounts(db)));
       console.log(formatOrgCatalogSummary(await seedOrgCatalogs(db)));
+      console.log(formatObjectivesSummary(await seedOrgObjectives(db)));
     }
     if (doDemo) {
       const { logins, password, generated, counts } = await seedDemo(db, roleIds);

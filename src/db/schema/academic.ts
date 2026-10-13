@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { check, date, foreignKey, index, pgSchema, smallint, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { id, timestamps } from "./_common";
 import { person, staffProfile, studentProfile } from "./iam";
-import { academicYear, classGroup, classOffering, gradeLevel, orgFk, school } from "./tenancy";
+import { academicYear, classGroup, classOffering, gradeLevel, orgFk, school, subject } from "./tenancy";
 
 export const academic = pgSchema("academic");
 
@@ -277,6 +277,107 @@ export const attendanceEntry = academic.table(
       name: "attendance_entry_student_fk",
       columns: [t.organizationId, t.studentProfileId],
       foreignColumns: [studentProfile.organizationId, studentProfile.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
+ * «کارنامهٴ توصیفی» (migration 0017): one learning objective («هدف آموزشی») of a primary پایه for one Jalali month
+ * and one درس — the school's documents as data, installed per organisation by the catalog seed from
+ * scripts/data/primary-objectives.json (scripts/objectives-catalog.ts, every deploy). Seed-managed: app_rw may only
+ * READ it (`app.apply_grants()`, migration 0017). `subject_name` is the canonical درس name
+ * (src/modules/academic/primary-objectives.ts); `subject_id` links the organisation's own `tenancy.subject` row when
+ * one matches that name (nullable — a درس like «شایستگی‌های عمومی» has no subject row). The natural key is the
+ * POSITION `(grade, month, subject_name, sort_order)`: a corrected wording updates the row in place and its ratings
+ * stay; a line the documents no longer have is archived (`status`/`archived_at`), never deleted.
+ */
+export const learningObjective = academic.table(
+  "learning_objective",
+  {
+    id: id(),
+    organizationId: orgFk(),
+    gradeLevelId: uuid("grade_level_id").notNull(),
+    /** Jalali month 1..12 (7 = مهر … 2 = اردیبهشت). */
+    month: smallint("month").notNull(),
+    subjectName: text("subject_name").notNull(),
+    subjectId: uuid("subject_id"),
+    /** knowledge / application / reasoning («دانشی / کاربردی / استدلالی»); NULL = the school gave no domain. */
+    domain: text("domain"),
+    text: text("text").notNull(),
+    /** 1-based position inside (grade, month, درس) — the documents' order. */
+    sortOrder: smallint("sort_order").notNull(),
+    status: text("status").notNull().default("active"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    ...timestamps(),
+  },
+  (t) => [
+    unique("learning_objective_slot_uq").on(t.organizationId, t.gradeLevelId, t.month, t.subjectName, t.sortOrder),
+    unique("learning_objective_org_id_uq").on(t.organizationId, t.id),
+    index("learning_objective_org_subject_idx").on(t.organizationId, t.subjectId),
+    check("learning_objective_month_chk", sql`${t.month} BETWEEN 1 AND 12`),
+    check("learning_objective_domain_chk", sql`${t.domain} IS NULL OR ${t.domain} IN ('knowledge', 'application', 'reasoning')`),
+    check("learning_objective_status_chk", sql`${t.status} IN ('active', 'archived')`),
+    check("learning_objective_archived_chk", sql`(${t.status} = 'archived') = (${t.archivedAt} IS NOT NULL)`),
+    check("learning_objective_text_chk", sql`char_length(${t.text}) BETWEEN 1 AND 400`),
+    check("learning_objective_subject_name_chk", sql`char_length(${t.subjectName}) BETWEEN 1 AND 60`),
+    check("learning_objective_sort_chk", sql`${t.sortOrder} BETWEEN 1 AND 500`),
+    foreignKey({
+      name: "learning_objective_grade_fk",
+      columns: [t.organizationId, t.gradeLevelId],
+      foreignColumns: [gradeLevel.organizationId, gradeLevel.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "learning_objective_subject_fk",
+      columns: [t.organizationId, t.subjectId],
+      foreignColumns: [subject.organizationId, subject.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
+ * One student's rating on one objective in one academic year: `very_good` / `good` / `acceptable` / `needs_effort`
+ * («خیلی خوب / خوب / قابل قبول / نیاز به تلاش»). UNIQUE `(organization, year, student, objective)` — saving again
+ * UPDATES the row (upsert), clearing a rating DELETES it; every save is audited
+ * (`academic.objective_rating.saved`, with each change). `rated_by_person_id` / `rated_at` are the last writer.
+ */
+export const objectiveRating = academic.table(
+  "objective_rating",
+  {
+    id: id(),
+    organizationId: orgFk(),
+    academicYearId: uuid("academic_year_id").notNull(),
+    studentProfileId: uuid("student_profile_id").notNull(),
+    learningObjectiveId: uuid("learning_objective_id").notNull(),
+    rating: text("rating").notNull(),
+    ratedByPersonId: uuid("rated_by_person_id").notNull(),
+    ratedAt: timestamp("rated_at", { withTimezone: true }).defaultNow().notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique("objective_rating_student_objective_uq").on(t.organizationId, t.academicYearId, t.studentProfileId, t.learningObjectiveId),
+    unique("objective_rating_org_id_uq").on(t.organizationId, t.id),
+    index("objective_rating_org_objective_idx").on(t.organizationId, t.learningObjectiveId),
+    index("objective_rating_org_student_idx").on(t.organizationId, t.studentProfileId),
+    check("objective_rating_rating_chk", sql`${t.rating} IN ('very_good', 'good', 'acceptable', 'needs_effort')`),
+    foreignKey({
+      name: "objective_rating_year_fk",
+      columns: [t.organizationId, t.academicYearId],
+      foreignColumns: [academicYear.organizationId, academicYear.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "objective_rating_student_fk",
+      columns: [t.organizationId, t.studentProfileId],
+      foreignColumns: [studentProfile.organizationId, studentProfile.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "objective_rating_objective_fk",
+      columns: [t.organizationId, t.learningObjectiveId],
+      foreignColumns: [learningObjective.organizationId, learningObjective.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "objective_rating_rated_by_fk",
+      columns: [t.organizationId, t.ratedByPersonId],
+      foreignColumns: [person.organizationId, person.id],
     }).onDelete("restrict"),
   ],
 );

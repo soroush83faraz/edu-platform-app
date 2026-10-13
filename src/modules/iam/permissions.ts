@@ -21,6 +21,8 @@ export const PERMISSIONS = [
   { code: "academic.attendance.read", module: "academic", name: "مشاهدهٴ حضور و غیاب", isSensitive: false },
   { code: "academic.attendance.write", module: "academic", name: "ثبت حضور و غیاب", isSensitive: false },
   { code: "academic.attendance.report", module: "academic", name: "گزارش حضور و غیاب", isSensitive: false },
+  { code: "academic.objective_rating.read", module: "academic", name: "مشاهدهٴ کارنامهٴ توصیفی", isSensitive: false },
+  { code: "academic.objective_rating.write", module: "academic", name: "ثبت کارنامهٴ توصیفی", isSensitive: false },
   { code: "workspace.work_item.read", module: "workspace", name: "مشاهدهٴ کارتابل", isSensitive: false },
   { code: "workspace.work_item.create", module: "workspace", name: "ایجاد کار", isSensitive: false },
   { code: "workspace.work_item.update", module: "workspace", name: "ویرایش کار", isSensitive: false },

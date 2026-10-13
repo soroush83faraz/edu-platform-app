@@ -76,7 +76,18 @@ export const SYSTEM_ROLES: SystemRole[] = [
     name: "معلم",
     description: "کارتابل درس‌های خود",
     allowedScopeTypes: ["class_offering", "class_group"],
-    permissions: [...WORK_ITEM_ALL, "notif.notification.read", "iam.person.read", "academic.timetable.read", "academic.attendance.read", "academic.attendance.write"],
+    // «کارنامهٴ توصیفی»: held at the teacher's class_offering; the service lets ANY teacher of an open offering of a
+    // class rate that whole class (the primary آموزگار teaches everything; a درس with its own teacher can rate too).
+    permissions: [
+      ...WORK_ITEM_ALL,
+      "notif.notification.read",
+      "iam.person.read",
+      "academic.timetable.read",
+      "academic.attendance.read",
+      "academic.attendance.write",
+      "academic.objective_rating.read",
+      "academic.objective_rating.write",
+    ],
   },
   {
     code: "student",
@@ -95,6 +106,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
       "notif.notification.read",
       "academic.timetable.read",
       "academic.attendance.read",
+      // Their own «کارنامهٴ من» (the service reads the student's OWN profile only).
+      "academic.objective_rating.read",
     ],
   },
   {
