@@ -23,3 +23,13 @@ export function managesItem(actor: ManageActor, item: { createdByPersonId: strin
   if (item.createdByPersonId === actor.personId) return true;
   return !actorIsAssignee && canBroadly(actor.assignments, "workspace.work_item.update");
 }
+
+/**
+ * Does ONE assignee's «انجام شد» close the item for everyone? For an `admin_request` («درخواست اداری» — the
+ * counselor's «ارجاع به مدیریت», addressed to every manager of the school) yes: a request to an office is answered
+ * once, by whichever addressee answers it, and that answer — the transition's note — is the decision. Every other
+ * type keeps «done when every assignee is done» (a class task, named people). Pure; used by `changeStatus`.
+ */
+export function closesOnFirstAnswer(typeCode: string): boolean {
+  return typeCode === "admin_request";
+}

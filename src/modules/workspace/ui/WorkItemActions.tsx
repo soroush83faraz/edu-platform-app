@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, CheckCheck, Pencil, RotateCcw, Trash2, TriangleAlert } from "lucide-react";
+import { Check, CheckCheck, MessageSquareReply, Pencil, RotateCcw, Trash2, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -23,6 +23,7 @@ import { formatHm, formatJalaliDay, formatJalaliDayLong, parseJalaliDay, tehranT
 import type { WorkItemWords } from "@/lib/work-item-words";
 import { changeStatusAction, markInboxReadAction, updateWorkItemAction } from "../actions";
 import type { StatusCategory } from "../repo";
+import type { StatusCodes } from "../status-codes";
 import { useCompletion } from "./Completion";
 
 /** What the «ویرایش» form starts from — the item as it is now. */
@@ -50,7 +51,17 @@ export interface WorkItemActionsProps extends EditableItem {
   words: WorkItemWords;
   /** THIS item's name for the reader — `words.singular`, or a personal item's «تسک» / catalog name (`personalItemLabel`). */
   noun: string;
+  /** The item type's own codes for done / open / cancelled (`statusCodesOf`); the plain `task` codes when omitted. */
+  statusCodes?: StatusCodes;
+  /**
+   * An administrative request («درخواست اداری», `admin_request` — the counselor's «ارجاع به مدیریت»): an addressee's
+   * finish is «ثبت پاسخ», which asks for the answer (optional) and closes the request for every addressee — the
+   * answer is the transition's note, the decision the counselor reads in the student file.
+   */
+  answerable?: boolean;
 }
+
+const TASK_CODES: StatusCodes = { done: "done", open: "open", cancelled: "cancelled" };
 
 /**
  * The action row of a کار — named «تکلیف» or «تسک» by the reader's hats. An assignee gets «انجام شد» — also an
@@ -72,11 +83,29 @@ export interface WorkItemActionsProps extends EditableItem {
  * refusal un-strikes the title and brings the button back. The finish is noted for the کارتابل and Home
  * (`src/lib/completion-moment.ts`).
  */
-export function WorkItemActions({ workItemId, title, description, priority, statusCategory, dueAt, assigneeCount, myAssigneeState, isManager, canUpdate, inboxState, words, noun }: WorkItemActionsProps) {
+export function WorkItemActions({
+  workItemId,
+  title,
+  description,
+  priority,
+  statusCategory,
+  dueAt,
+  assigneeCount,
+  myAssigneeState,
+  isManager,
+  canUpdate,
+  inboxState,
+  words,
+  noun,
+  statusCodes = TASK_CODES,
+  answerable = false,
+}: WorkItemActionsProps) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  // `"cancel"` is the `cancelled` transition — the button that used to read «کنسل» and now reads «حذف».
-  const [confirm, setConfirm] = useState<"done" | "cancel" | null>(null);
+  // `"cancel"` is the `cancelled` transition — the button that used to read «کنسل» and now reads «حذف»;
+  // `"answer"` the addressee's «ثبت پاسخ» of an administrative request.
+  const [confirm, setConfirm] = useState<"done" | "cancel" | "answer" | null>(null);
+  const [answer, setAnswer] = useState("");
   const [editing, setEditing] = useState(false);
   const markDone = useCompletion();
   // «انجام شد» was tapped on this page view: the button stays (as its finished twin) until it folds away.
@@ -98,13 +127,13 @@ export function WorkItemActions({ workItemId, title, description, priority, stat
       } else toast.error(r.message ?? "خطایی رخ داد.");
     });
 
-  /** «انجام شد» / «اتمام»: strike now, ask the server, undo the strike if it refuses. */
-  const finish = (label: string) => {
+  /** «انجام شد» / «اتمام» / «ثبت پاسخ»: strike now, ask the server, undo the strike if it refuses. */
+  const finish = (label: string, note?: string) => {
     setJustDone(true);
     markDone?.(true);
     noteCompleted(workItemId, dueAt);
     start(async () => {
-      const r = await changeStatusAction({ workItemId, toStatusCode: "done" });
+      const r = await changeStatusAction({ workItemId, toStatusCode: statusCodes.done, ...(note?.trim() ? { note: note.trim() } : {}) });
       if (r.ok) {
         toast.success(label);
         router.refresh();
@@ -120,7 +149,7 @@ export function WorkItemActions({ workItemId, title, description, priority, stat
   /** «حذف»: the `cancelled` transition, then back to the list — the item is gone from the reader's work. */
   const remove = () =>
     start(async () => {
-      const r = await changeStatusAction({ workItemId, toStatusCode: "cancelled" });
+      const r = await changeStatusAction({ workItemId, toStatusCode: statusCodes.cancelled });
       if (r.ok) {
         toast.success(`${noun} حذف شد`);
         router.push("/inbox");
@@ -145,11 +174,14 @@ export function WorkItemActions({ workItemId, title, description, priority, stat
         disabled={pending && !justDone}
         aria-disabled={justDone || undefined}
         onClick={() => {
-          if (!justDone) finish("انجام شد");
+          if (justDone) return;
+          // An administrative request is answered, not just ticked: the answer is asked for first.
+          if (answerable) setConfirm("answer");
+          else finish("انجام شد");
         }}
       >
-        {justDone ? <DrawnCheck className="text-success" /> : <Check aria-hidden />}
-        انجام شد
+        {justDone ? <DrawnCheck className="text-success" /> : answerable ? <MessageSquareReply aria-hidden /> : <Check aria-hidden />}
+        {answerable ? "ثبت پاسخ" : "انجام شد"}
       </Button>
     );
     // Once the server says «done», the finished twin holds for a beat and folds away. Always wrapped, so the
@@ -170,7 +202,7 @@ export function WorkItemActions({ workItemId, title, description, priority, stat
         onClick={() => {
           setJustDone(false);
           markDone?.(false);
-          run(`${noun} بازیابی شد`, () => changeStatusAction({ workItemId, toStatusCode: "open" }));
+          run(`${noun} بازیابی شد`, () => changeStatusAction({ workItemId, toStatusCode: statusCodes.open }));
         }}
       >
         <RotateCcw aria-hidden />
@@ -238,6 +270,38 @@ export function WorkItemActions({ workItemId, title, description, priority, stat
             </Button>
           }
         />
+      </ResponsiveModal>
+
+      {/* «ثبت پاسخ» — an addressee answers an administrative request; the note is the decision its sender reads. */}
+      <ResponsiveModal
+        open={confirm === "answer"}
+        onOpenChange={(o) => setConfirm(o ? "answer" : null)}
+        title="ثبت پاسخ"
+        description="پاسخ شما برای فرستنده ثبت می‌شود و این درخواست برای همهٴ گیرندگان بسته می‌شود."
+      >
+        <form
+          className="flex flex-col gap-3 pt-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setConfirm(null);
+            finish("پاسخ ثبت شد", answer);
+          }}
+        >
+          <Label htmlFor={`${workItemId}-answer`}>
+            پاسخ <span className="text-text-faint">(اختیاری)</span>
+          </Label>
+          <Textarea id={`${workItemId}-answer`} dir="auto" rows={4} maxLength={500} value={answer} onChange={(e) => setAnswer(e.target.value)} />
+          <ConfirmRow
+            pending={pending}
+            onCancel={() => setConfirm(null)}
+            confirm={
+              <Button type="submit" className="min-w-28" disabled={pending}>
+                <MessageSquareReply aria-hidden />
+                ثبت پاسخ
+              </Button>
+            }
+          />
+        </form>
       </ResponsiveModal>
 
       {/* «حذف» — the `cancelled` transition (open or finished), under the word the owner asked for. */}

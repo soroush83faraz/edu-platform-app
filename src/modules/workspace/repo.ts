@@ -557,6 +557,8 @@ export interface WorkItemCore {
   createdByPersonId: string;
   /** Set when the item was given to a class (its درس) — its recipients are that class's students. */
   classOfferingId: string | null;
+  /** Participants only (migration 0018): the managers' broad read does not reach it (`canViewWorkItem`). */
+  isConfidential: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -580,6 +582,7 @@ export async function findWorkItemCore(tx: Tx, id: string): Promise<WorkItemCore
       archivedAt: workItem.archivedAt,
       createdByPersonId: workItem.createdByPersonId,
       classOfferingId: workItem.classOfferingId,
+      isConfidential: workItem.isConfidential,
       createdAt: workItem.createdAt,
       updatedAt: workItem.updatedAt,
     })

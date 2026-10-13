@@ -56,7 +56,9 @@ export type AddCommentInput = z.output<typeof AddCommentInput>;
 export const ChangeStatusInput = z
   .object({
     workItemId: uuid,
-    toStatusCode: z.enum(["open", "in_progress", "done", "cancelled"]),
+    // Every status code of the system types (scripts/catalog.ts): the detail page sends the code of the ITEM's own
+    // type (`admin_request`: in_review / answered / rejected); the service checks it against that type.
+    toStatusCode: z.enum(["open", "in_progress", "done", "cancelled", "in_review", "answered", "rejected", "pending", "approved"]),
     note: z.string().trim().max(500).optional(),
   })
   .strict();

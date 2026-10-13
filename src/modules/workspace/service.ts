@@ -5,8 +5,9 @@
 // Visibility rule (phase 1): an item is visible to its creator, to anyone with an inbox_entry for it (assignee,
 // watcher) and to holders of a BROAD `workspace.work_item.read` (organization/school/branch scoped roles — admins,
 // principals, vice principals — see all items of the organization; per-school partitioning is a later block) —
-// except a personal `todo` (single self-assignee), which only its owner sees. Everyone else gets NOT_FOUND, never
-// FORBIDDEN, so the existence of an item is not leaked.
+// except a personal `todo` (single self-assignee), which only its owner sees, and a CONFIDENTIAL item
+// (`is_confidential`, migration 0018 — the counselor's referrals), which only its participants see. Everyone else gets
+// NOT_FOUND, never FORBIDDEN, so the existence of an item is not leaked.
 import { and, asc, eq, exists, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
@@ -19,7 +20,7 @@ import { person, staffProfile } from "@/modules/iam/schema";
 import { getPermissionScope } from "@/modules/iam/service";
 import { notifyMany } from "@/modules/notif/service";
 import type { Recipients } from "./dto";
-import { managesItem } from "./manage-policy";
+import { closesOnFirstAnswer, managesItem } from "./manage-policy";
 import { creationNotifiable, notifiable } from "./notify-policy";
 import {
   type AssigneeRow,
@@ -70,14 +71,17 @@ function nouns(ctx: WorkspaceCtx): WorkItemWords {
  * The item when the caller may see it; throws NOT_FOUND (never FORBIDDEN) otherwise. A personal item — one whose
  * ONLY assignee is its creator, whatever its type («کار شخصی», or a `task` someone gave themselves) — is visible
  * to that person alone: the broad `workspace.work_item.read` of managers does not reach it, so nobody else can
- * open or reopen it (QA round 1 m5; widened from `todo` only in round 2).
+ * open or reopen it (QA round 1 m5; widened from `todo` only in round 2). A CONFIDENTIAL item (the counselor's
+ * «ارجاع به مدیریت» / «درخواست گزارش از دبیر», `createConfidentialWorkItem`) is the same for everyone but its
+ * participants — its creator and the people with an inbox row for it: a principal of another school, or the
+ * organization admin it was not addressed to, gets NOT_FOUND like for any unknown id.
  */
 export async function canViewWorkItem(tx: Tx, ctx: WorkspaceCtx, workItemId: string): Promise<WorkItemCore> {
   const item = await findWorkItemCore(tx, workItemId);
   if (!item) throw notFound();
   if (item.createdByPersonId === ctx.personId) return item;
   if (await findMyInboxEntry(tx, ctx.personId, workItemId)) return item;
-  if (canBroadly(ctx.assignments, "workspace.work_item.read") && !(await isSelfAssigned(tx, item))) return item;
+  if (!item.isConfidential && canBroadly(ctx.assignments, "workspace.work_item.read") && !(await isSelfAssigned(tx, item))) return item;
   throw notFound();
 }
 
@@ -194,41 +198,59 @@ async function resolveRecipients(tx: Tx, ctx: WorkspaceCtx, recipients: Recipien
   }
 }
 
+/** A double tap / retried request: the item this person already created with this form key (10-minute window). */
+async function findByIdempotencyKey(tx: Tx, ctx: WorkspaceCtx, key: string | null | undefined): Promise<CreateWorkItemResult | null> {
+  if (!key) return null;
+  const [existing] = await tx
+    .select({ id: workItem.id, n: sql<number>`(select count(*)::int from ${workItemAssignee} a where a.work_item_id = ${workItem.id} and a.role = 'assignee')` })
+    .from(workItem)
+    .where(and(eq(workItem.createdByPersonId, ctx.personId), eq(workItem.idempotencyKey, key), gt(workItem.createdAt, new Date(Date.now() - IDEMPOTENCY_WINDOW_MS))))
+    .limit(1);
+  return existing ? { id: existing.id, assigneeCount: existing.n, notified: 0, duplicate: true } : null;
+}
+
+/** Everything `insertWorkItem` writes, already decided by its caller (recipients resolved AND authorised). */
+interface InsertWorkItemInput {
+  type: { typeId: string; initialStatusId: string };
+  title: string;
+  description: string | null;
+  priority: Priority;
+  dueAt: Date | null;
+  recipientIds: readonly string[];
+  idempotencyKey: string | null;
+  classOfferingId: string | null;
+  isConfidential: boolean;
+  /** The `work_item.assigned` recipients among the others (the notify policy already applied). */
+  notify: (others: string[]) => string[];
+  notificationTitle: string;
+  /** The audit row's `after` (the caller decides what of the item it may record). */
+  auditAfter: Record<string, unknown>;
+}
+
 /**
- * Creates the item, N assignee rows, N unread inbox entries, the creator's watcher + read inbox entry
- * («کارهایی که دادم»), the first transition and N `work_item.assigned` notifications (deduped per person) —
- * none for a personal item or a student's (`creationNotifiable`, ./notify-policy).
+ * The one writer of a new item: the item, N assignee rows, N unread inbox entries, the creator's watcher + read inbox
+ * entry («کارهایی که دادم»), the first transition, the `work_item.assigned` notifications (deduped per person) and
+ * the `workspace.work_item.created` audit row — all in the caller's transaction.
  */
-export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWorkItemInput): Promise<CreateWorkItemResult> {
-  if (input.idempotencyKey) {
-    // A double tap / retried request: the same person sent this form already — hand back the item it created.
-    const [existing] = await tx
-      .select({ id: workItem.id, n: sql<number>`(select count(*)::int from ${workItemAssignee} a where a.work_item_id = ${workItem.id} and a.role = 'assignee')` })
-      .from(workItem)
-      .where(and(eq(workItem.createdByPersonId, ctx.personId), eq(workItem.idempotencyKey, input.idempotencyKey), gt(workItem.createdAt, new Date(Date.now() - IDEMPOTENCY_WINDOW_MS))))
-      .limit(1);
-    if (existing) return { id: existing.id, assigneeCount: existing.n, notified: 0, duplicate: true };
-  }
-  const type = await findTypeWithInitialStatus(tx, input.typeCode);
-  if (!type) throw invalidReference(`نوع ${nouns(ctx).singular} یافت نشد.`);
-  const recipientIds = [...new Set(await resolveRecipients(tx, ctx, input.recipients))];
+async function insertWorkItem(tx: Tx, ctx: WorkspaceCtx, input: InsertWorkItemInput): Promise<CreateWorkItemResult> {
+  const recipientIds = [...new Set(input.recipientIds)];
   const creatorName = (await findPersonName(tx, ctx.personId)) ?? "";
 
   const [wi] = await tx
     .insert(workItem)
     .values({
       organizationId: ctx.orgId,
-      typeId: type.typeId,
-      statusId: type.initialStatusId,
+      typeId: input.type.typeId,
+      statusId: input.type.initialStatusId,
       title: input.title,
       description: input.description?.trim() ? input.description.trim() : null,
       priority: input.priority,
       dueAt: input.dueAt ?? null,
       createdByPersonId: ctx.personId,
       visibility: "assignees",
-      idempotencyKey: input.idempotencyKey ?? null,
-      // A class task belongs to its درس: the subject page lists it (`listInbox({ offeringId })`).
-      classOfferingId: input.recipients.kind === "class_offering" ? input.recipients.id : null,
+      idempotencyKey: input.idempotencyKey,
+      classOfferingId: input.classOfferingId,
+      isConfidential: input.isConfidential,
     })
     .returning({ id: workItem.id });
 
@@ -254,11 +276,11 @@ export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWor
     state: "read",
     firstSeenAt: sql`now()`,
   });
-  await tx.insert(workItemTransition).values({ organizationId: ctx.orgId, workItemId: wi.id, fromStatusId: null, toStatusId: type.initialStatusId, byPersonId: ctx.personId });
+  await tx.insert(workItemTransition).values({ organizationId: ctx.orgId, workItemId: wi.id, fromStatusId: null, toStatusId: input.type.initialStatusId, byPersonId: ctx.personId });
 
-  const notified = await notifyMany(tx, ctx, creationNotifiable(ctx.assignments, input.recipients.kind, others), {
+  const notified = await notifyMany(tx, ctx, input.notify(others), {
     typeCode: "work_item.assigned",
-    title: `${nouns(ctx).new}: ${input.title}`,
+    title: input.notificationTitle,
     body: creatorName,
     sourceKind: "work_item",
     sourceId: wi.id,
@@ -266,15 +288,100 @@ export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWor
     dedupeKey: (personId) => `wi:${wi.id}:assigned:${personId}`,
   });
 
-  await audit(
-    ctx,
-    "workspace.work_item.created",
-    { schema: "workspace", table: "work_item", id: wi.id },
-    null,
-    { typeCode: input.typeCode, title: input.title, priority: input.priority, dueAt: input.dueAt ?? null, recipients: input.recipients.kind, assigneeCount: recipientIds.length },
-    tx,
-  );
+  await audit(ctx, "workspace.work_item.created", { schema: "workspace", table: "work_item", id: wi.id }, null, { ...input.auditAfter, assigneeCount: recipientIds.length }, tx);
   return { id: wi.id, assigneeCount: recipientIds.length, notified };
+}
+
+/**
+ * Creates the item, N assignee rows, N unread inbox entries, the creator's watcher + read inbox entry
+ * («کارهایی که دادم»), the first transition and N `work_item.assigned` notifications (deduped per person) —
+ * none for a personal item or a student's (`creationNotifiable`, ./notify-policy).
+ */
+export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWorkItemInput): Promise<CreateWorkItemResult> {
+  const existing = await findByIdempotencyKey(tx, ctx, input.idempotencyKey);
+  if (existing) return existing;
+  const type = await findTypeWithInitialStatus(tx, input.typeCode);
+  if (!type) throw invalidReference(`نوع ${nouns(ctx).singular} یافت نشد.`);
+  const recipientIds = [...new Set(await resolveRecipients(tx, ctx, input.recipients))];
+  return insertWorkItem(tx, ctx, {
+    type,
+    title: input.title,
+    description: input.description ?? null,
+    priority: input.priority,
+    dueAt: input.dueAt ?? null,
+    recipientIds,
+    idempotencyKey: input.idempotencyKey ?? null,
+    // A class task belongs to its درس: the subject page lists it (`listInbox({ offeringId })`).
+    classOfferingId: input.recipients.kind === "class_offering" ? input.recipients.id : null,
+    isConfidential: false,
+    notify: (others) => creationNotifiable(ctx.assignments, input.recipients.kind, others),
+    notificationTitle: `${nouns(ctx).new}: ${input.title}`,
+    auditAfter: { typeCode: input.typeCode, title: input.title, priority: input.priority, dueAt: input.dueAt ?? null, recipients: input.recipients.kind },
+  });
+}
+
+export interface ConfidentialWorkItemInput {
+  /** `admin_request` for a request to the school's management, `task` for a request to named people. */
+  typeCode: "admin_request" | "task";
+  title: string;
+  description: string | null;
+  priority: Priority;
+  dueAt: Date | null;
+  /**
+   * The people it is given to — resolved AND authorised by the calling module, which must also have read them under
+   * FOR KEY SHARE, active persons only, BEFORE this call (iam/removal «Concurrency»: person rows before work items).
+   * The caller is never among them.
+   */
+  recipientIds: readonly string[];
+  /** The bold line of the `work_item.assigned` notification (the generic «تسک جدید: …» would misname it). */
+  notificationTitle: string;
+  idempotencyKey?: string | null;
+  /** What the audit row records about the item INSTEAD of its text: ids, kinds, lengths. */
+  auditContext: Record<string, unknown>;
+}
+
+/**
+ * A work item another module opens on behalf of its own, already-checked capability — today the counselor's
+ * «ارجاع به مدیریت» and «درخواست گزارش از دبیر» (src/modules/counseling/service.ts). Not reachable from any
+ * workspace action: the calling module authorises the actor and the recipients (`ConfidentialWorkItemInput`).
+ * The item is CONFIDENTIAL — participants only (`canViewWorkItem`), so its title and description (about a student)
+ * never reach a manager it was not addressed to — and its audit row carries lengths, never the text. Otherwise the
+ * same item as `createWorkItem` writes: the recipients' inbox rows and bells, the creator's watcher row, the first
+ * transition. An idempotency key that already created an item hands that item back (`duplicate`).
+ */
+export async function createConfidentialWorkItem(tx: Tx, ctx: WorkspaceCtx, input: ConfidentialWorkItemInput): Promise<CreateWorkItemResult> {
+  const existing = await findByIdempotencyKey(tx, ctx, input.idempotencyKey);
+  if (existing) return existing;
+  const recipientIds = [...new Set(input.recipientIds)];
+  if (recipientIds.length === 0 || recipientIds.includes(ctx.personId)) throw validation(undefined, "گیرندهٴ این درخواست مشخص نیست.");
+  const type = await findTypeWithInitialStatus(tx, input.typeCode);
+  if (!type) throw invalidReference("نوع درخواست یافت نشد.");
+  const title = input.title.trim().slice(0, 200);
+  if (title === "") throw validation({ fieldErrors: { title: ["عنوان را وارد کنید."] } });
+  const description = input.description?.trim() ? input.description.trim() : null;
+  return insertWorkItem(tx, ctx, {
+    type,
+    title,
+    description,
+    priority: input.priority,
+    dueAt: input.dueAt,
+    recipientIds,
+    idempotencyKey: input.idempotencyKey ?? null,
+    classOfferingId: null,
+    isConfidential: true,
+    notify: (others) => notifiable(ctx.assignments, others),
+    notificationTitle: input.notificationTitle,
+    auditAfter: {
+      ...input.auditContext,
+      typeCode: input.typeCode,
+      confidential: true,
+      titleLength: title.length,
+      descriptionLength: description?.length ?? 0,
+      priority: input.priority,
+      dueAt: input.dueAt,
+      recipients: "linked",
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -376,7 +483,8 @@ async function setItemStatus(tx: Tx, ctx: WorkspaceCtx, item: WorkItemCore, to: 
 
 /**
  * Assignees: open → in_progress (own state `accepted`), → done (own state `done`; the item flips to done only
- * when EVERY assignee is done). Managers (`managesItem`, ./manage-policy — the creator, or a broad `update` holder
+ * when EVERY assignee is done — except an `admin_request`, which the FIRST answer closes, with its note as the
+ * decision: `closesOnFirstAnswer`). Managers (`managesItem`, ./manage-policy — the creator, or a broad `update` holder
  * who is NOT one of the assignees): any status; done marks all assignees done, open («بازیابی») resets them to
  * pending, cancelled is the UI's «حذف» (soft: nothing is deleted, «بازیابی» brings it back). An assignee who did not
  * create the item takes the assignee path whatever their hats — a principal given a تسک by the organization admin
@@ -441,7 +549,9 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
         .select({ personId: workItemAssignee.personId })
         .from(workItemAssignee)
         .where(and(eq(workItemAssignee.workItemId, item.id), eq(workItemAssignee.role, "assignee"), sql`${workItemAssignee.state} <> 'done'`));
-      if (remaining.length === 0) {
+      // An administrative request is answered ONCE, by whichever addressee answers it (./manage-policy): that answer
+      // and its note close the request for every addressee.
+      if (remaining.length === 0 || closesOnFirstAnswer(item.typeCode)) {
         await setItemStatus(tx, ctx, item, target, note);
         itemChanged = true;
       }
