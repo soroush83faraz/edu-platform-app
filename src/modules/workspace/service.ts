@@ -586,8 +586,14 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
     "workspace.work_item.status_changed",
     { schema: "workspace", table: "work_item", id: item.id },
     before,
-    // The removed people a reopening took out are history: a restore by hand re-inserts these rows.
-    { statusCode: itemChanged ? target.code : item.statusCode, myState: myStateAfter, note, ...(withdrawnAssignees.length > 0 ? { withdrawnAssignees } : {}) },
+    // The removed people a reopening took out are history: a restore by hand re-inserts these rows. A confidential
+    // item's note (management's answer about a student) is recorded by its length only, like its title.
+    {
+      statusCode: itemChanged ? target.code : item.statusCode,
+      myState: myStateAfter,
+      ...(item.isConfidential ? { noteLength: note?.length ?? 0 } : { note }),
+      ...(withdrawnAssignees.length > 0 ? { withdrawnAssignees } : {}),
+    },
     tx,
   );
   return { statusCode: itemChanged ? target.code : item.statusCode, itemChanged, assigneesDone: done, assigneesTotal: assignees.length };
@@ -860,7 +866,10 @@ export async function updateWorkItem(tx: Tx, ctx: WorkspaceCtx, input: UpdateWor
       .where(and(eq(inboxEntry.workItemId, item.id), inArray(inboxEntry.personId, recipients), eq(inboxEntry.state, "read")));
   }
 
-  await audit(ctx, "workspace.work_item.updated", { schema: "workspace", table: "work_item", id: item.id }, before, after, tx);
+  // A confidential item's text never enters the trail: its changed fields are named, the text replaced by lengths.
+  const redact = (v: Partial<Record<EditableField, unknown>>) =>
+    item.isConfidential ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "title" || k === "description" ? { length: typeof x === "string" ? x.length : 0 } : x])) : v;
+  await audit(ctx, "workspace.work_item.updated", { schema: "workspace", table: "work_item", id: item.id }, redact(before), redact(after), tx);
   return { changed, notified };
 }
 

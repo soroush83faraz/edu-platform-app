@@ -15,13 +15,13 @@
 //   • tenant isolation (another organization sees nothing, writes nothing).
 // The catalog (roles + permissions) is seeded in beforeAll; every write runs inside a withTenant transaction that
 // ends with Rollback; afterAll re-creates the fixture database (later files assert exact template lists).
-import { eq, sql } from "drizzle-orm";
+import { and, eq, like, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { withTenant, type Tx } from "@/db/client";
 import * as schema from "@/db/schema";
-import { notification, workItem, workItemAssignee, workItemType } from "@/db/schema";
+import { auditLog, notification, workItem, workItemAssignee, workItemType } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { assignTeacher } from "@/modules/academic/service";
 import {
@@ -385,9 +385,12 @@ describe("«مشاوره» — the counseling file", () => {
       await as(tx, w.counselorA, (t) => referToManagement(t, w.counselorA, { studentProfileId: w.studentA1.studentProfileId, subject: `موضوع ${MARK}`, description: `شرح ${MARK}` }));
       await as(tx, w.counselorA, (t) => requestTeacherReport(t, w.counselorA, { studentProfileId: w.studentA1.studentProfileId, teacherPersonIds: [w.teacherA1.personId], message: `پیام ${MARK}` }));
 
-      const audits = await tx.execute<{ action: string; before: unknown; after: unknown }>(sql`
-        select action, before, after from audit.audit_log
-        where action like 'counseling.%' or (action = 'workspace.work_item.created' and after->>'confidential' = 'true')`);
+      const audits = {
+        rows: await tx
+          .select({ action: auditLog.action, before: auditLog.before, after: auditLog.after })
+          .from(auditLog)
+          .where(or(like(auditLog.action, "counseling.%"), and(eq(auditLog.action, "workspace.work_item.created"), sql`${auditLog.after}->>'confidential' = 'true'`))),
+      };
       // One transaction → one `now()`: the rows are compared as a set. The second (unchanged) edit wrote none.
       expect(audits.rows.map((r) => r.action).sort()).toEqual(
         [
@@ -455,6 +458,14 @@ describe("«مشاوره» — the counseling file", () => {
       const answered = await as(tx, w.principalA, (t) => changeStatus(t, w.principalA, { workItemId: ref.workItemId, toStatusCode: "answered", note: "با ولی تماس گرفته شد" }));
       expect(answered).toMatchObject({ statusCode: "answered", itemChanged: true });
       await expect(sub(tx, (sp) => as(sp, w.viceA, (t) => changeStatus(t, w.viceA, { workItemId: ref.workItemId, toStatusCode: "answered" })))).rejects.toSatisfy(isError("VALIDATION"));
+      // The answer is about a student: the trail of the confidential item records its length, not its text.
+      const trail = await tx
+        .select({ after: auditLog.after })
+        .from(auditLog)
+        .where(and(eq(auditLog.action, "workspace.work_item.status_changed"), eq(auditLog.entityId, ref.workItemId)));
+      expect(trail).toHaveLength(1);
+      expect(trail[0].after).toMatchObject({ statusCode: "answered", noteLength: "با ولی تماس گرفته شد".length });
+      expect(trail[0].after).not.toHaveProperty("note");
       const after = await as(tx, w.counselorA, (t) => getStudentFile(t, w.counselorA, w.studentA2.studentProfileId));
       expect(after.referrals.map((r) => [r.statusCategory, r.lastNote, r.lastNoteBy])).toEqual([["done", "با ولی تماس گرفته شد", "مریم رضایی"]]);
       // The principal reads the referral in the file too; another school's counselor does not see a row of it.
