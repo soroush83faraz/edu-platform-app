@@ -1,6 +1,7 @@
 // Pilot dataset: THREE separate organizations (tenants), each one real-feeling school with a full year of structure,
 // ~40 staff and ~550 students in total, and a living کارتابل (tasks by every teacher, student comments and «انجام شد»,
-// staff todos, admin tasks) — so the product can be exercised with many users and cross-tenant isolation.
+// staff todos, admin tasks) — so the product can be exercised with many users and cross-tenant isolation. «فرزانگان»
+// and the دبستان also get a «مشاور» (owner, 2026-10-13) with sample notes, a teacher's report and an open referral.
 //
 //   pnpm seed:pilot                      (runs the catalog seed first; refuses in production unless SEED_ALLOW=1)
 //   pnpm seed:pilot --reset              (deletes ONLY the three pilot organizations — every tenant row of
@@ -43,6 +44,8 @@ import { createStaff, createStudent, findAccountOfPerson, type IamCtx } from "..
 import { findAcademicYearByName, findClassGroupByName, findDefaultBranch, findGradeLevelByCode, findOffering, findSchoolByCode, findSubjectByCode } from "../src/modules/tenancy/repo";
 import { createAcademicYear, createClassGroup, createClassOffering, createSchool, createSubject, ensureCatalogYears, updateBranch, upsertTerm } from "../src/modules/tenancy/service";
 import { addComment, changeStatus, createWorkItem, type WorkspaceCtx } from "../src/modules/workspace/service";
+import type { NoteKind, NoteVisibility } from "../src/modules/counseling/policy";
+import { createCounselorNote, createTeacherReport, referToManagement } from "../src/modules/counseling/service";
 import { ensureOrgCatalog, ensureOrgObjectives, seedCatalog } from "./seed";
 import { attendanceStatusFor, minutesLateFor, pastSchoolDays, rollCallPeriod } from "./attendance-plan";
 import { hasTeacherClash, planTimetables, type PlanClass } from "./timetable-plan";
@@ -51,7 +54,7 @@ import { hasTeacherClash, planTimetables, type PlanClass } from "./timetable-pla
 export type Db = NodePgDatabase<typeof schema> & { $client: NodePgClient };
 export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-const { organization, person, staffProfile, role, authIdentity, userAccount, teacherAssignment, workItem, workItemAssignee, workItemComment } = schema;
+const { organization, person, staffProfile, studentProfile, role, authIdentity, userAccount, teacherAssignment, workItem, workItemAssignee, workItemComment, counselorNote, teacherReport, referral } = schema;
 
 // ---------------------------------------------------------------------------------------------------------------
 // deterministic helpers
@@ -158,6 +161,8 @@ export interface PilotOrgSpec {
   classSize?: number;
   /** A دبستان: its آموزگاران also get sample «کارنامهٴ توصیفی» ratings for مهر (`seedReportCards`). */
   primary?: boolean;
+  /** A «مشاور» with sample notes, one teacher's report and one open referral (`seedCounseling`, owner 2026-10-13). */
+  counseling?: boolean;
 }
 
 const SEC2_SUBJECTS: PilotSubject[] = [
@@ -253,6 +258,7 @@ export const FARZANEGAN: PilotOrgSpec = {
     { subjects: ["PE", "ENG", "SOC"] },
   ],
   adminGender: "female",
+  counseling: true,
 };
 
 export const HELLI: PilotOrgSpec = {
@@ -323,6 +329,7 @@ export const DABESTAN: PilotOrgSpec = {
   adminGender: "female",
   classSize: 10,
   primary: true,
+  counseling: true,
 };
 
 /** Every organisation `pnpm seed:pilot` writes (and `--reset` removes): the three secondary pilots + the دبستان. */
@@ -448,6 +455,8 @@ export interface ExpectedCounts {
   classGroups: number;
   offerings: number;
   teachers: number;
+  /** One «مشاور» per organization with `counseling`. */
+  counselors: number;
   students: number;
   workItems: number;
   /** Timetable cells over all classes: Σ `sessionsOf` per offering. */
@@ -458,6 +467,7 @@ export function expectedCounts(scale: number): ExpectedCounts {
   let classGroups = 0;
   let offerings = 0;
   let teachers = 0;
+  let counselors = 0;
   let students = 0;
   let workItems = 0;
   let timetableSlots = 0;
@@ -467,9 +477,14 @@ export function expectedCounts(scale: number): ExpectedCounts {
     teachers += spec.teachers.length;
     students += spec.classes.length * studentsPerClass(scale, spec);
     workItems += spec.teachers.reduce((n, _t, i) => n + tasksOfTeacher(i, scale), 0) + 2 * STAFF_TODOS.length + ADMIN_TASKS.length;
+    // The counselor's one open «ارجاع به مدیریت» is a work item too.
+    if (spec.counseling) {
+      counselors += 1;
+      workItems += 1;
+    }
     timetableSlots += spec.classes.reduce((n, c) => n + c.subjects.reduce((m, code) => m + sessionsOf(spec.key, `${c.name}:${code}`), 0), 0);
   }
-  return { organizations: SEEDED_PILOT_ORGS.length, schools: SEEDED_PILOT_ORGS.length, classGroups, offerings, teachers, students, workItems, timetableSlots };
+  return { organizations: SEEDED_PILOT_ORGS.length, schools: SEEDED_PILOT_ORGS.length, classGroups, offerings, teachers, counselors, students, workItems, timetableSlots };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -508,6 +523,8 @@ export interface SchoolSummary {
   admin: StaffOut;
   principal: StaffOut;
   vice: StaffOut;
+  /** The school's «مشاور», when the spec has `counseling`. */
+  counselor: StaffOut | null;
   teachers: TeacherOut[];
   classes: Array<{ name: string; students: StudentOut[] }>;
   counts: Record<string, number>;
@@ -559,7 +576,7 @@ interface StaffPlan {
   gender: Gender;
   phone: string;
   schoolId: string | null;
-  roles: Array<{ roleCode: "org_admin" | "school_principal" | "vice_principal"; schoolId?: string | null }>;
+  roles: Array<{ roleCode: "org_admin" | "school_principal" | "vice_principal" | "counselor"; schoolId?: string | null }>;
 }
 
 /** Staff by natural key `pilot:<org>:<key>` (external_ref) → existing, else `createStaff` + roles. */
@@ -733,6 +750,18 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
       secretHash,
       created,
     );
+    // «مشاور» (owner, 2026-10-13): granted by the organization admin like a vice principal, at the school.
+    const counselor = spec.counseling
+      ? await ensureStaff(
+          tx,
+          ctx,
+          spec,
+          { key: "counselor", gender: staffGender, phone: pilotPhone(spec.phoneBlock, 4), schoolId, roles: [{ roleCode: "counselor", schoolId }] },
+          pilotName(staffGender, k("counselor"), 0),
+          secretHash,
+          created,
+        )
+      : null;
     const allocation = allocateOfferings(spec);
     const teachers: TeacherOut[] = [];
     for (const [t, offeringKeys] of allocation.entries()) {
@@ -777,7 +806,7 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
         }
       }
     }
-    return { admin, principal, vice, teachers, classIds, offeringIds, subjectNames, allocation };
+    return { admin, principal, vice, counselor, teachers, classIds, offeringIds, subjectNames, allocation };
   });
 
   // The primary learning objectives («کارنامهٴ توصیفی»), now that the درس rows exist to link (every pilot org gets
@@ -910,6 +939,9 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
   // ---- 6. «کارنامهٴ توصیفی»: sample ratings for مهر in the دبستان, by each class's own آموزگار ----
   if (spec.primary) await seedReportCards(db, orgId, spec, structure, ctxCache);
 
+  // ---- 7. «مشاوره»: the counselor's sample notes, one teacher's report and one open referral ----
+  if (structure.counselor) await seedCounseling(db, orgId, spec, { ...structure, counselor: structure.counselor }, opts.scale, ctxCache);
+
   const counts = await withOrg(db, orgId, async (tx) => {
     const count = async (table: string, where = ""): Promise<number> => {
       const res = await tx.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table} ${where}`));
@@ -927,6 +959,9 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
       attendanceSessions: await count("academic.attendance_session"),
       attendanceEntries: await count("academic.attendance_entry"),
       objectiveRatings: await count("academic.objective_rating"),
+      counselorNotes: await count("counseling.counselor_note"),
+      teacherReports: await count("counseling.teacher_report"),
+      referrals: await count("counseling.referral"),
       workItems: await count("workspace.work_item"),
       assignees: await count("workspace.work_item_assignee"),
       comments: await count("workspace.work_item_comment"),
@@ -936,7 +971,19 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
     };
   });
 
-  return { primary: spec.primary === true, org: spec.name, school: spec.school.name, code: spec.school.code, admin: structure.admin, principal: structure.principal, vice: structure.vice, teachers: structure.teachers, classes, counts };
+  return {
+    primary: spec.primary === true,
+    org: spec.name,
+    school: spec.school.name,
+    code: spec.school.code,
+    admin: structure.admin,
+    principal: structure.principal,
+    vice: structure.vice,
+    counselor: structure.counselor,
+    teachers: structure.teachers,
+    classes,
+    counts,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1049,6 +1096,89 @@ async function seedReportCards(db: Db, orgId: string, spec: PilotOrgSpec, struct
   }
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// «مشاوره» (owner, 2026-10-13): a counselor's sample file
+// ---------------------------------------------------------------------------------------------------------------
+
+/** The counselor's sample notes, per picked student (`counselingPicks`, in order). */
+export const SAMPLE_NOTES: ReadonlyArray<ReadonlyArray<{ kind: NoteKind; visibility: NoteVisibility; body: string }>> = [
+  [
+    { kind: "academic", visibility: "counselors_and_principal", body: "جلسهٴ اول: از افت نمرهٴ ریاضی نگران است. قرار شد برنامهٴ مطالعهٴ هفتگی بنویسد و هفتهٴ بعد با هم مرورش کنیم." },
+    { kind: "family", visibility: "counselors", body: "تماس با مادر: خانواده تابستان جابه‌جا شده و هنوز به محلهٴ تازه عادت نکرده است. این یادداشت فقط برای مشاوران است." },
+  ],
+  [{ kind: "behavioral", visibility: "counselors_and_principal", body: "در دو هفتهٴ اخیر چند بار با تأخیر به زنگ اول رسیده است. گفت‌وگو شد؛ پیگیری با معاون پیشنهاد می‌شود." }],
+  [{ kind: "general", visibility: "counselors_and_principal", body: "برای انتخاب رشتهٴ سال آینده مردد است؛ آزمون رغبت‌سنجی در آبان انجام شود." }],
+];
+
+/** The one sample report a teacher of the first picked student sends the counselor. */
+export const SAMPLE_TEACHER_REPORT = { kind: "academic" as const, body: "در دو هفتهٴ گذشته تمرین‌ها را تحویل نداده و در کلاس کم‌حرف‌تر از قبل است." };
+
+/** The one open «ارجاع به مدیریت» (about the second picked student). */
+export const SAMPLE_REFERRAL = {
+  subject: "غیبت‌های پیاپی و افت درسی",
+  description: "در سه هفتهٴ گذشته چند روز غیبت داشته و نمره‌های کلاسی‌اش پایین آمده است. لطفاً در جلسهٴ هفتگی با ولی او هماهنگی شود.",
+};
+
+/** The counselor's students: the first student of the first, the middle and the last class (their student numbers). */
+export function counselingPicks(spec: PilotOrgSpec, scale: number): Array<{ cls: string; studentNumber: string }> {
+  const perClass = studentsPerClass(scale, spec);
+  const indexes = [...new Set([0, Math.floor(spec.classes.length / 2), spec.classes.length - 1])];
+  return indexes.map((ci) => ({ cls: spec.classes[ci].name, studentNumber: String(14051001 + ci * perClass) }));
+}
+
+/**
+ * Through the real services with each actor's REAL ctx (scope rule + audit): the counselor's sample notes (one of
+ * them «فقط مشاوران»), a teacher of the first picked student's class reporting on them, and the counselor's open
+ * «ارجاع به مدیریت» about the second (an `admin_request` to the principal and the vice principal). Idempotent: notes
+ * are counted per (student, author), the report and the referral looked up before they are written.
+ */
+async function seedCounseling(
+  db: Db,
+  orgId: string,
+  spec: PilotOrgSpec,
+  structure: { counselor: StaffOut; teachers: TeacherOut[]; allocation: string[][] },
+  scale: number,
+  ctxCache: Map<string, ActorCtx>,
+): Promise<void> {
+  await withOrg(db, orgId, async (tx) => {
+    const cctx = await actorCtx(tx, orgId, structure.counselor.personId, ctxCache);
+    const picked: Array<{ cls: string; studentProfileId: string }> = [];
+    for (const p of counselingPicks(spec, scale)) {
+      const [sp] = await tx.select({ id: studentProfile.id }).from(studentProfile).where(eq(studentProfile.studentNumber, p.studentNumber)).limit(1);
+      if (sp) picked.push({ cls: p.cls, studentProfileId: sp.id });
+    }
+    for (const [i, s] of picked.entries()) {
+      const [{ n }] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(counselorNote)
+        .where(and(eq(counselorNote.studentProfileId, s.studentProfileId), eq(counselorNote.authorPersonId, structure.counselor.personId)));
+      for (const note of (SAMPLE_NOTES[i] ?? []).slice(Number(n))) await createCounselorNote(tx, cctx, { studentProfileId: s.studentProfileId, ...note });
+    }
+    const first = picked[0];
+    if (first) {
+      const t = structure.allocation.findIndex((keys) => keys.some((key) => key.startsWith(`${first.cls}:`)));
+      if (t !== -1) {
+        const teacher = structure.teachers[t];
+        const [has] = await tx
+          .select({ id: teacherReport.id })
+          .from(teacherReport)
+          .where(and(eq(teacherReport.studentProfileId, first.studentProfileId), eq(teacherReport.authorPersonId, teacher.personId)))
+          .limit(1);
+        if (!has) await createTeacherReport(tx, await actorCtx(tx, orgId, teacher.personId, ctxCache), { studentProfileId: first.studentProfileId, ...SAMPLE_TEACHER_REPORT });
+      }
+    }
+    const second = picked[1] ?? picked[0];
+    if (second) {
+      const [has] = await tx
+        .select({ id: referral.id })
+        .from(referral)
+        .where(and(eq(referral.studentProfileId, second.studentProfileId), eq(referral.kind, "management")))
+        .limit(1);
+      if (!has) await referToManagement(tx, cctx, { studentProfileId: second.studentProfileId, subject: SAMPLE_REFERRAL.subject, description: SAMPLE_REFERRAL.description, urgent: false });
+    }
+  });
+}
+
 export interface PilotCounts extends Record<string, number> {
   organizations: number;
   schools: number;
@@ -1058,7 +1188,27 @@ export interface PilotCounts extends Record<string, number> {
 
 /** Global counts (as app_owner, per pilot organization so FORCE RLS lets us see the rows). */
 export async function pilotCounts(db: Db): Promise<PilotCounts> {
-  const totals: PilotCounts = { organizations: 0, schools: 0, classGroups: 0, offerings: 0, staff: 0, students: 0, accounts: 0, classEnrollments: 0, teacherAssignments: 0, timetableSlots: 0, attendanceSessions: 0, attendanceEntries: 0, objectiveRatings: 0, workItems: 0, comments: 0, notifications: 0 };
+  const totals: PilotCounts = {
+    organizations: 0,
+    schools: 0,
+    classGroups: 0,
+    offerings: 0,
+    staff: 0,
+    students: 0,
+    accounts: 0,
+    classEnrollments: 0,
+    teacherAssignments: 0,
+    timetableSlots: 0,
+    attendanceSessions: 0,
+    attendanceEntries: 0,
+    objectiveRatings: 0,
+    counselorNotes: 0,
+    teacherReports: 0,
+    referrals: 0,
+    workItems: 0,
+    comments: 0,
+    notifications: 0,
+  };
   const orgs = await db.select({ id: organization.id }).from(organization).where(inArray(organization.slug, SEEDED_PILOT_ORGS.map((o) => o.slug)));
   totals.organizations = orgs.length;
   for (const { id } of orgs) {
@@ -1079,6 +1229,9 @@ export async function pilotCounts(db: Db): Promise<PilotCounts> {
       totals.attendanceSessions += await count("academic.attendance_session");
       totals.attendanceEntries += await count("academic.attendance_entry");
       totals.objectiveRatings += await count("academic.objective_rating");
+      totals.counselorNotes += await count("counseling.counselor_note");
+      totals.teacherReports += await count("counseling.teacher_report");
+      totals.referrals += await count("counseling.referral");
       totals.workItems += await count("workspace.work_item");
       totals.comments += await count("workspace.work_item_comment");
       totals.notifications += await count("notif.notification");
@@ -1221,7 +1374,15 @@ export function renderAccountsMarkdown(result: SeedPilotResult): string {
     lines.push("| نقش | نام | ورود |", "|---|---|---|");
     lines.push(`| مدیر سازمان | ${s.admin.name} | \`${national(s.admin.phone)}\` |`);
     lines.push(`| مدیر مدرسه | ${s.principal.name} | \`${national(s.principal.phone)}\` |`);
-    lines.push(`| معاون | ${s.vice.name} | \`${national(s.vice.phone)}\` |`, "");
+    lines.push(`| معاون | ${s.vice.name} | \`${national(s.vice.phone)}\` |`);
+    if (s.counselor) lines.push(`| مشاور | ${s.counselor.name} | \`${national(s.counselor.phone)}\` |`);
+    lines.push("");
+    if (s.counselor) {
+      lines.push(
+        "«مشاوره» در خانهٴ مشاور، مدیر و معاون: پروندهٴ چند دانش‌آموز با یادداشت نمونه (یکی «فقط مشاوران»)، یک گزارش دبیر و یک «ارجاع به مدیریت» باز که در «پنل من» مدیر و معاون است.",
+        "",
+      );
+    }
     lines.push("### دبیران", "", "| نام | ورود | درس‌ها |", "|---|---|---|");
     for (const t of s.teachers) lines.push(`| ${t.name} | \`${national(t.phone)}\` | ${t.offerings.join("، ")} |`);
     lines.push("", "### دانش‌آموزان (سه نفر اول هر کلاس)", "", "| کلاس | نام | ورود |", "|---|---|---|");
@@ -1243,6 +1404,7 @@ function printSummary(result: SeedPilotResult): void {
     );
     console.log(`  phases: structure+staff ${(s.counts.structureMs / 1000).toFixed(1)} s · students ${(s.counts.studentsMs / 1000).toFixed(1)} s · teacher tasks + student reactions ${(s.counts.teacherItemsMs / 1000).toFixed(1)} s · staff items ${(s.counts.staffItemsMs / 1000).toFixed(1)} s`);
     console.log(`  admin ${s.admin.name} ${national(s.admin.phone)} · principal ${s.principal.name} ${national(s.principal.phone)} · vice ${s.vice.name} ${national(s.vice.phone)}`);
+    if (s.counselor) console.log(`  counselor ${s.counselor.name} ${national(s.counselor.phone)} · ${s.counts.counselorNotes} notes, ${s.counts.teacherReports} teacher reports, ${s.counts.referrals} referrals`);
     for (const t of s.teachers) console.log(`  teacher ${t.name.padEnd(22)} ${national(t.phone)}  ${t.offerings.join("، ")}`);
     for (const c of s.classes) console.log(`  class ${c.name}: ${c.students.map((st) => `${st.name} (${loginId(st.loginIdentifier)})`).join(" · ")}`);
   }

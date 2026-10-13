@@ -11,7 +11,7 @@ import * as schema from "@/db/schema";
 import { withTenant } from "@/db/client";
 import { runMigrations } from "../../scripts/migrate";
 import { seedCatalog } from "../../scripts/seed";
-import { ALLAMEH, DABESTAN, FARZANEGAN, SEEDED_PILOT_ORGS, expectedCounts, pilotCounts, pilotId, pilotPhone, resetPilot, seedPilot, studentsPerClass } from "../../scripts/seed-pilot";
+import { ALLAMEH, DABESTAN, FARZANEGAN, SAMPLE_NOTES, SEEDED_PILOT_ORGS, expectedCounts, pilotCounts, pilotId, pilotPhone, resetPilot, seedPilot, studentsPerClass } from "../../scripts/seed-pilot";
 import { OWNER_URL } from "./env";
 import { dropAppSchemas, seed } from "./global-setup";
 import { asAppRw } from "./helpers";
@@ -54,7 +54,13 @@ describe("seed:pilot", () => {
       expect(first.attendanceEntries).toBeLessThanOrEqual(first.attendanceSessions * Math.max(...sizes));
       // «کارنامهٴ توصیفی»: the دبستان's sample مهر ratings exist, and the second run added none.
       expect(first.objectiveRatings).toBeGreaterThan(0);
-      expect(first.staff).toBe(plan.teachers + 3 * SEEDED_PILOT_ORGS.length); // + admin, principal, vice per school
+      expect(first.staff).toBe(plan.teachers + 3 * SEEDED_PILOT_ORGS.length + plan.counselors); // + admin, principal, vice per school, + the counselors
+      // «مشاوره» (2026-10-13): each counseling pilot has its counselor's sample notes, one teacher report and one open referral.
+      const counselingOrgs = SEEDED_PILOT_ORGS.filter((o) => o.counseling).length;
+      expect(plan.counselors).toBe(counselingOrgs);
+      expect(first.counselorNotes).toBe(counselingOrgs * SAMPLE_NOTES.reduce((n, notes) => n + notes.length, 0));
+      expect(first.teacherReports).toBe(counselingOrgs);
+      expect(first.referrals).toBe(counselingOrgs);
       expect(first.accounts).toBe(first.students + first.staff);
       expect(first.workItems).toBe(plan.workItems);
       expect(first.comments).toBeGreaterThan(0);
@@ -82,7 +88,7 @@ describe("seed:pilot", () => {
       expect(reset.organizations).toBe(SEEDED_PILOT_ORGS.length);
       expect(reset.deleted["tenancy.organization"]).toBe(SEEDED_PILOT_ORGS.length);
       expect(reset.deleted["iam.user_account"]).toBe(first.accounts);
-      expect(await pilotCounts(db)).toMatchObject({ organizations: 0, students: 0, workItems: 0, notifications: 0 });
+      expect(await pilotCounts(db)).toMatchObject({ organizations: 0, students: 0, workItems: 0, notifications: 0, counselorNotes: 0, referrals: 0 });
       const after = await pool.query<{ n: string }>("select count(*) as n from tenancy.organization");
       expect(Number(after.rows[0].n)).toBe(Number(before.rows[0].n) - SEEDED_PILOT_ORGS.length);
       const gone = await pool.query<{ n: string }>("select count(*) as n from iam.user_account where login_identifier like '+98935%'");
