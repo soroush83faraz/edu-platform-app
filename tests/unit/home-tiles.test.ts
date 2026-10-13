@@ -83,7 +83,8 @@ describe("homeTilesFor", () => {
   it("a vice principal of ONE school gets exactly the principal's tiles — «زنگ‌بندی» of that school included (catalog permissions)", () => {
     const vice = homeTilesFor(principal, has(VICE_PERMS));
     expect(vice).toEqual(homeTilesFor(principal, has(PRINCIPAL_PERMS)));
-    expect(codes(vice)).toEqual(["inbox", "admin-attendance", "schools", "periods"]);
+    // «مشاوره» (2026-10-13): both read their school's counseling files.
+    expect(codes(vice)).toEqual(["inbox", "admin-attendance", "schools", "periods", "counseling"]);
     expect(tile(vice, "periods")).toMatchObject({ href: "/admin/schools/s1/periods" });
     // Two schools: the same plural «مدرسه‌ها» and no زنگ‌بندی tile as a principal of two.
     expect(homeTilesFor(twoSchools, has(VICE_PERMS))).toEqual(homeTilesFor(twoSchools, has(PRINCIPAL_PERMS)));
@@ -198,10 +199,10 @@ describe("homeTilesFor — hub layout", () => {
     expect(hrefs(tiles)).toEqual(["/inbox", "/classes/offerings", "/classes/timetable", "/attendance"]);
   });
 
-  it("organization admin: پنل من · مدرسه‌ها · دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها — no «نمای کلی», no «حضور و غیاب»", () => {
+  it("organization admin: پنل من · مدرسه‌ها · دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها · مشاوره — no «نمای کلی», no «حضور و غیاب»", () => {
     const tiles = homeTilesFor(orgAdmin, has(ORG_PERMS), hub);
-    expect(labels(tiles)).toEqual(["پنل من", "مدرسه‌ها", "دانش‌آموزان", "کارکنان", "کلاس‌ها", "نقش‌ها"]);
-    expect(hrefs(tiles)).toEqual(["/inbox", "/admin/schools", "/admin/students", "/admin/staff", "/admin/classes", "/admin/roles"]);
+    expect(labels(tiles)).toEqual(["پنل من", "مدرسه‌ها", "دانش‌آموزان", "کارکنان", "کلاس‌ها", "نقش‌ها", "مشاوره"]);
+    expect(hrefs(tiles)).toEqual(["/inbox", "/admin/schools", "/admin/students", "/admin/staff", "/admin/classes", "/admin/roles", "/counseling"]);
     // Attendance is per school (owner, 2026-09-27): «مدرسه‌ها» → the school → «حضور و غیاب» (the school hub's door).
     expect(codes(tiles)).not.toContain("admin-attendance");
     expect(codes(homeTilesFor({ ...orgAdmin, isTeacher: true }, has([...ORG_PERMS, ...TEACHER_PERMS]), hub))).not.toContain("admin-attendance");
@@ -210,10 +211,10 @@ describe("homeTilesFor — hub layout", () => {
     expect(hrefs(tiles)).not.toContain("/admin");
   });
 
-  it("principal of ONE school: پنل من · مدرسه · دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها · برنامهٴ کلاسی · حضور و غیاب", () => {
+  it("principal of ONE school: پنل من · مدرسه · دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها · برنامهٴ کلاسی · مشاوره · حضور و غیاب", () => {
     for (const perms of [PRINCIPAL_PERMS, VICE_PERMS]) {
       const tiles = homeTilesFor(principal, has(perms), hub);
-      expect(labels(tiles)).toEqual(["پنل من", "مدرسه", "دانش‌آموزان", "کارکنان", "کلاس‌ها", "نقش‌ها", "برنامهٴ کلاسی", "حضور و غیاب"]);
+      expect(labels(tiles)).toEqual(["پنل من", "مدرسه", "دانش‌آموزان", "کارکنان", "کلاس‌ها", "نقش‌ها", "برنامهٴ کلاسی", "مشاوره", "حضور و غیاب"]);
       expect(tile(tiles, "schools")?.href).toBe("/admin/schools/s1");
       expect(tile(tiles, "periods")?.href).toBe("/admin/schools/s1/periods");
       expect(tile(tiles, "admin-attendance")?.href).toBe("/admin/attendance");
@@ -252,6 +253,7 @@ describe("homeTilesFor — hub layout", () => {
       "کلاس‌ها",
       "نقش‌ها",
       "برنامهٴ کلاسی",
+      "مشاوره",
       "حضور و غیاب",
       "گزارش حضور و غیاب",
     ]);
@@ -403,6 +405,27 @@ describe("showUpcomingOnHome (owner, 2026-09-27)", () => {
   });
 });
 
+describe("«مشاوره» on Home (owner, 2026-10-13)", () => {
+  const COUNSELOR_PERMS = catalogPerms("counselor");
+  const noHat: TileHats = { isStudent: false, isTeacher: false, isAdmin: false, adminScope: null };
+  const hub = { variant: "hub" } as const;
+
+  it("the counselor — no student, teacher or admin hat — gets the one «مشاوره» tile, in both layouts", () => {
+    for (const opts of [{}, hub]) {
+      const tiles = homeTilesFor(noHat, has(COUNSELOR_PERMS), opts);
+      expect(codes(tiles)).toEqual(["counseling"]);
+      expect(tiles[0]).toMatchObject({ labelFa: "مشاوره", href: "/counseling" });
+    }
+  });
+
+  it("a teacher and a student never get it (no `counseling.case.read`); a counselor who also teaches gets both hats' tiles", () => {
+    expect(codes(homeTilesFor(teacher, has(catalogPerms("teacher")), hub))).not.toContain("counseling");
+    expect(codes(homeTilesFor(student, has(catalogPerms("student")), hub))).not.toContain("counseling");
+    const both = homeTilesFor(teacher, has([...catalogPerms("teacher"), ...COUNSELOR_PERMS]), hub);
+    expect(codes(both)).toEqual(["inbox", "my-offerings", "teaching-week", "counseling", "attendance"]);
+  });
+});
+
 describe("upcomingTilesFor", () => {
   const soon = (hats: TileHats) => upcomingTilesFor(hats).map((t) => t.labelFa);
 
@@ -414,7 +437,7 @@ describe("upcomingTilesFor", () => {
       "برنامهٴ امتحانی",
       "محتوای آموزشی",
       "پیام‌ها",
-      "مشاوره",
+      "نوبت مشاوره",
       "کیف امتیازی",
       "اعتراض نمره",
       "حساب مالی",
@@ -444,7 +467,7 @@ describe("upcomingTilesFor", () => {
         "درخواست‌ها",
         "برنامهٴ امتحانی",
         "پیام‌ها",
-        "مشاوره",
+        "نوبت مشاوره",
         "حساب مالی",
       ]);
     }

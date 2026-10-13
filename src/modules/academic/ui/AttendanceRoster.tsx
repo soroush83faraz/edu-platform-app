@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, CircleCheck, Clock, TriangleAlert, UserRoundCheck } from "lucide-react";
+import { Check, CircleCheck, Clock, MessageSquarePlus, TriangleAlert, UserRoundCheck } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -30,8 +31,11 @@ const CHOICES: Array<{ status: AttendanceStatus; className: string }> = [
  * primary action. Nothing is saved until that button: the whole roll call goes in ONE action (the service upserts
  * the session and its entries in one transaction, so a second save UPDATES instead of duplicating). A saved roll
  * call reopens with its marks pre-filled and the «ثبت‌شده در …» line above the list.
+ *
+ * `reportToCounselor` (a teacher — `counseling.teacher_report.write`; owner 2026-10-13): each student's name row ends
+ * with «گزارش به مشاور», a 44 px link to that student's report page (which itself checks the teaching).
  */
-export function AttendanceRoster({ data }: { data: SessionForTaking }) {
+export function AttendanceRoster({ data, reportToCounselor = false }: { data: SessionForTaking; reportToCounselor?: boolean }) {
   const router = useRouter();
   const [marks, setMarks] = useState<Record<string, Mark>>(() =>
     Object.fromEntries(data.rows.map((r) => [r.studentProfileId, { status: r.status, minutesLate: r.minutesLate }])),
@@ -95,11 +99,24 @@ export function AttendanceRoster({ data }: { data: SessionForTaking }) {
                 <p className="min-w-0 truncate text-row font-medium text-text">
                   <bdi>{r.fullName}</bdi>
                 </p>
-                {r.studentNumber ? (
-                  <bdi dir="ltr" className="tabular shrink-0 text-meta text-text-faint">
-                    {toFaDigits(r.studentNumber)}
-                  </bdi>
-                ) : null}
+                <span className="flex shrink-0 items-center gap-1">
+                  {r.studentNumber ? (
+                    <bdi dir="ltr" className="tabular text-meta text-text-faint">
+                      {toFaDigits(r.studentNumber)}
+                    </bdi>
+                  ) : null}
+                  {reportToCounselor ? (
+                    <Link
+                      prefetch={false}
+                      href={`/counseling/report/${r.studentProfileId}`}
+                      aria-label={`گزارش به مشاور دربارهٴ ${r.fullName}`}
+                      title="گزارش به مشاور"
+                      className="pressable -me-2 grid size-11 place-items-center rounded-xl text-text-muted hover:bg-surface-sunken hover:text-text"
+                    >
+                      <MessageSquarePlus className="size-5" strokeWidth={1.75} aria-hidden />
+                    </Link>
+                  ) : null}
+                </span>
               </div>
               <div role="group" aria-label={`وضعیت ${r.fullName}`} className="grid grid-cols-4 gap-1 rounded-xl bg-surface-sunken p-1">
                 {CHOICES.map((c) => {

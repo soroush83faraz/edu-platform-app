@@ -8,9 +8,11 @@ import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { addDaysIso, isFutureIso, tehranToday, weekdayOfIso } from "@/lib/attendance";
 import { formatJalaliDateTime, isoDateToJalali } from "@/lib/format";
+import { requireContext } from "@/lib/ctx";
 import { formatTimeRangeFa, WEEKDAY_LABELS } from "@/lib/timetable";
 import { attendanceSessionQuery } from "@/modules/academic/queries";
 import { AttendanceRoster } from "@/modules/academic/ui/AttendanceRoster";
+import { canAtAnyScope } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "ثبت حضور و غیاب" };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -44,6 +46,8 @@ export default async function TakeAttendancePage({
     notFound();
   }
   const data = result.data;
+  // The session's own context (cached per request — `getRequestContext`), no extra query.
+  const reportToCounselor = canAtAnyScope((await requireContext()).assignments, "counseling.teacher_report.write");
   const dayName = WEEKDAY_LABELS[weekdayOfIso(date) ?? 0];
   const prev = addDaysIso(date, -1);
   const next = addDaysIso(date, 1);
@@ -145,7 +149,9 @@ export default async function TakeAttendancePage({
         </p>
       ) : null}
 
-      <AttendanceRoster data={data} />
+      {/* «گزارش به مشاور» on each row for a teacher (owner, 2026-10-13: the one place a teacher already sees their
+          students); the report page itself checks that they teach the student. */}
+      <AttendanceRoster data={data} reportToCounselor={reportToCounselor} />
     </ContentWidth>
   );
 }

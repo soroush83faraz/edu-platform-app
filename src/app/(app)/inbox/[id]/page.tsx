@@ -1,5 +1,6 @@
-import { Ban, CalendarClock, CircleCheck, Play } from "lucide-react";
+import { Ban, CalendarClock, ChevronLeft, CircleCheck, FolderOpen, MessageSquareReply, Play } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { Chip, type ChipTone } from "@/components/Chip";
@@ -11,8 +12,11 @@ import { RelativeTime } from "@/components/RelativeTime";
 import { formatDueLongFa, formatNumberFa } from "@/lib/format";
 import { personalItemLabel, workItemStatusLabel, workItemWords } from "@/lib/work-item-words";
 import { offeringLinkQuery } from "@/modules/academic/queries";
+import { counselingLinkQuery } from "@/modules/counseling";
+import { Button } from "@/components/ui/button";
 import { workItemDetailQuery } from "@/modules/workspace/queries";
 import type { StatusCategory } from "@/modules/workspace/repo";
+import { statusCodesOf } from "@/modules/workspace/status-codes";
 import { CompletableTitle, CompletionProvider } from "@/modules/workspace/ui/Completion";
 import { WorkItemActions } from "@/modules/workspace/ui/WorkItemActions";
 
@@ -36,7 +40,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     notFound(); // NOT_FOUND and FORBIDDEN alike: the page never distinguishes "not yours" from "does not exist"
   }
-  const { item, creatorName, assignees, watchers, transitions, myInbox, myAssigneeState, viewer } = result.data;
+  const { item, creatorName, assignees, watchers, transitions, statuses, myInbox, myAssigneeState, viewer } = result.data;
   const words = workItemWords(viewer.voice);
   // The item's own name for this reader: a personal کار is the student's «تسک» or the catalog name, anything
   // given to someone is «تکلیف» / «تسک» (the chip below and the action row's dialogs say the same word).
@@ -65,6 +69,14 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
   // reader may open it (the subject page's own gate); anything else → «پنل من».
   const subject = item.classOfferingId ? await offeringLinkQuery({ offeringId: item.classOfferingId }) : null;
   const back = subject?.ok ? { href: `/subjects/${subject.data.offeringId}`, label: subject.data.subjectName } : { href: "/inbox", label: "پنل من" };
+  // An item the counselor opened about a student (a confidential item): the way into «مشاوره» for THIS reader — a
+  // teacher the report request went to → «گزارش به مشاور»; the school's management → the student's file.
+  const counseling = item.isConfidential ? await counselingLinkQuery({ workItemId: item.id }) : null;
+  const counselingLink = counseling?.ok ? counseling.data : null;
+  // An administrative request (the counselor's «ارجاع به مدیریت»): its addressee answers it, and the answer — the
+  // note of the transition that closed it — is shown to everyone who reads the item.
+  const answerable = item.typeCode === "admin_request";
+  const answer = answerable && item.statusCategory === "done" ? (transitions.find((t) => t.note) ?? null) : null;
 
   return (
     <ContentWidth size="reading" className="gap-4">
@@ -134,8 +146,38 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
           words={words}
           noun={noun}
           inboxState={myInbox?.state ?? null}
+          statusCodes={statusCodesOf(statuses)}
+          answerable={answerable}
         />
       </header>
+
+      {counselingLink?.kind === "report" ? (
+        <Button asChild variant="outline" className="w-full sm:w-auto sm:self-start">
+          <Link prefetch={false} href={counselingLink.href}>
+            <MessageSquareReply aria-hidden />
+            ثبت گزارش برای مشاور — <bdi>{counselingLink.studentName}</bdi>
+          </Link>
+        </Button>
+      ) : counselingLink?.kind === "file" ? (
+        <Link prefetch={false} href={counselingLink.href} className="surface-link pressable surface-panel flex min-h-12 items-center gap-3 px-4 py-2 text-sm font-medium text-text">
+          <FolderOpen className="size-5 shrink-0 text-text-muted" strokeWidth={1.75} aria-hidden />
+          <span className="min-w-0 flex-1 truncate">
+            پروندهٴ مشاورهٴ <bdi>{counselingLink.studentName}</bdi>
+          </span>
+          <ChevronLeft className="size-4 shrink-0 text-text-faint" aria-hidden />
+        </Link>
+      ) : null}
+
+      {answer?.note ? (
+        <section aria-label="پاسخ" className="surface-panel flex flex-col gap-1 px-4 py-3">
+          <p className="text-meta text-text-muted">
+            پاسخ · <bdi>{answer.byName}</bdi> · <RelativeTime at={answer.at} mode="time" />
+          </p>
+          <p className="text-sm leading-7 whitespace-pre-wrap text-text">
+            <bdi>{answer.note}</bdi>
+          </p>
+        </section>
+      ) : null}
 
       {item.description ? (
         <section className="surface-work p-4">

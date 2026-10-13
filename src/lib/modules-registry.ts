@@ -4,6 +4,7 @@ import {
   Bell,
   BookOpenCheck,
   CalendarCheck,
+  CalendarHeart,
   CalendarDays,
   ClipboardCheck,
   ClipboardList,
@@ -68,7 +69,7 @@ export const PHASES: Record<
   1: {
     title: "فاز ۱ — اکنون فعال",
     months: "شهریور ۱۴۰۵",
-    summary: "ورود امن، پنل من، اعلان‌ها، برنامهٴ کلاسی، حضور و غیاب و مدیریت ساختار مدرسه؛ نصب روی گوشی.",
+    summary: "ورود امن، پنل من، اعلان‌ها، برنامهٴ کلاسی، حضور و غیاب، پروندهٴ مشاوره و مدیریت ساختار مدرسه؛ نصب روی گوشی.",
   },
   2: {
     title: "فاز ۲",
@@ -79,7 +80,7 @@ export const PHASES: Record<
   3: {
     title: "فاز ۳",
     months: "آذر تا دی ۱۴۰۵",
-    summary: "آزمون، گفت‌وگو، مشاوره و انگیزش دانش‌آموزان.",
+    summary: "آزمون، گفت‌وگو، نوبت مشاوره و انگیزش دانش‌آموزان.",
   },
   4: {
     title: "فاز ۴",
@@ -163,6 +164,18 @@ export const MODULES: readonly ModuleEntry[] = [
     phase: 1,
     competitorTerm: "کارنامهٴ توصیفی",
     descriptionFa: "برای دبستان: آموزگار هر ماه هدف‌های آموزشی هر درس را با «خیلی خوب، خوب، قابل قبول، نیاز به تلاش» ثبت می‌کند؛ دانش‌آموز کارنامهٴ خودش را می‌بیند و مدرسه کارنامه را چاپ می‌کند.",
+  },
+  {
+    // Delivered in phase 1 (owner, 2026-10-13): the counselor's student file — the foundation of «مشاوره»; booking a
+    // session («نوبت مشاوره») stays in phase 3, below.
+    code: "counseling",
+    labelFa: "مشاوره",
+    href: "/counseling",
+    icon: Handshake,
+    permission: "counseling.case.read",
+    phase: 1,
+    competitorTerm: "مشاوره",
+    descriptionFa: "پروندهٴ مشاورهٴ هر دانش‌آموز: یادداشت محرمانهٴ مشاور، گزارش دبیران و ارجاع به مدیریت. نوبت‌دهی و ارتباط با والدین در فازهای بعد.",
   },
   {
     code: "classbook",
@@ -276,14 +289,15 @@ export const MODULES: readonly ModuleEntry[] = [
     soonFor: "everyone",
   },
   {
-    code: "counseling",
-    labelFa: "مشاوره",
+    // The file is live in phase 1 («مشاوره» above); what remains here is booking a session with the counselor.
+    code: "counseling-appointments",
+    labelFa: "نوبت مشاوره",
     href: "/roadmap#phase-3",
-    icon: Handshake,
+    icon: CalendarHeart,
     phase: 3,
     month: "دی",
     competitorTerm: "مشاوره",
-    descriptionFa: "نوبت و پروندهٴ مشاوره، محرمانه.",
+    descriptionFa: "نوبت‌گرفتن دانش‌آموز و ولی از مشاور، با یادآوری.",
     soonFor: ["student", "admin"],
   },
   {
@@ -502,6 +516,18 @@ export const HOME_TILES: readonly HomeTile[] = [
   },
   // No «راه‌اندازی مدرسه» tile (round 7): the setup checklist is an admin SECTION now, beside «مدرسه‌ها» —
   // one door, and it is inside /admin where the rest of the organization admin's setup work already is.
+  {
+    // «مشاوره» (owner, 2026-10-13): the students' counseling files — the counselor's own school; the principal's and
+    // vice principal's schools (read only); every school for the organization admin. The counselor wears no
+    // student / teacher / admin hat, so the tile is for EVERYONE holding `counseling.case.read` — the permission
+    // its page checks.
+    code: "counseling",
+    labelFa: "مشاوره",
+    href: "/counseling",
+    icon: Handshake,
+    role: "everyone",
+    permission: "counseling.case.read",
+  },
 ];
 
 function homeTile(code: string): HomeTile {
@@ -564,6 +590,10 @@ export const HUB_TILES: readonly HomeTile[] = [
   sectionTile("classes"),
   sectionTile("roles"),
   homeTile("periods"),
+
+  // «مشاوره» (owner, 2026-10-13): the counselor's door — and the principal's / vice principal's / organization
+  // admin's, who read the files of their schools — after the admin's own tiles.
+  homeTile("counseling"),
 
   // «کارنامهٴ توصیفی» (primary classes only, owner 2026-10-13): the آموزگار / principal / vice enter and print the
   // monthly descriptive report card; a primary student reads their own as «کارنامهٴ من». Two audiences, two pages.
