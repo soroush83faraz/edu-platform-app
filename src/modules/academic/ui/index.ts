@@ -2,3 +2,4 @@
 export { AttendanceRoster } from "./AttendanceRoster";
 export { TimetableEditor } from "./TimetableEditor";
 export { PeriodsEditor } from "./PeriodsEditor";
+export { RatingRoster } from "./RatingRoster";

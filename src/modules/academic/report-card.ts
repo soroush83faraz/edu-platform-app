@@ -584,3 +584,34 @@ export async function classReportCards(tx: Tx, ctx: ReportCtx, input: { classGro
     cards: roster.map((r) => buildCard(cg, r, months, input.month, objectives, ratings.get(r.studentProfileId))),
   };
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Home: who gets the «کارنامهٴ توصیفی» / «کارنامهٴ من» tiles
+// ---------------------------------------------------------------------------------------------------------------
+
+export interface ReportCardReach {
+  /** A teacher of a primary class, or an admin of a school with one (any class the caller may rate or read). */
+  staff: boolean;
+  /** A student whose class's پایه has learning objectives. */
+  student: boolean;
+}
+
+/**
+ * Whether the caller's Home shows the report-card tiles: staff = `listRatableClasses` is not empty (only asked when
+ * the caller holds the permission at a scope that is not their own student profile); student = their active class
+ * has a پایه with objectives.
+ */
+export async function reportCardReach(tx: Tx, ctx: ReportCtx): Promise<ReportCardReach> {
+  const staffish = ctx.assignments.some((a) => a.scopeType !== "student" && a.permissions.includes("academic.objective_rating.read"));
+  const staff = staffish ? (await listRatableClasses(tx, ctx)).length > 0 : false;
+  const res = await tx.execute<{ ok: boolean }>(sql`
+    select exists (
+      select 1
+      from iam.student_profile sp
+      join academic.class_enrollment ce on ce.student_profile_id = sp.id and ce.status = 'active'
+      join tenancy.class_group cg on cg.id = ce.class_group_id
+      join academic.learning_objective lo on lo.grade_level_id = cg.grade_level_id and lo.status = 'active'
+      where sp.person_id = ${ctx.personId}::uuid and sp.status = 'active'
+    ) as ok`);
+  return { staff, student: Boolean(res.rows[0]?.ok) };
+}

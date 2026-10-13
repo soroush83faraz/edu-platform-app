@@ -85,3 +85,10 @@ export function defaultReportMonth(available: readonly number[], current: number
     return da - db || schoolMonthIndex(a) - schoolMonthIndex(b);
   })[0];
 }
+
+/** A `?month=` search param → a Jalali month 1..12, or undefined (the page / service picks the month). */
+export function monthParam(raw: string | undefined): number | undefined {
+  if (!raw || !/^\d{1,2}$/.test(raw)) return undefined;
+  const m = Number(raw);
+  return m >= 1 && m <= 12 ? m : undefined;
+}

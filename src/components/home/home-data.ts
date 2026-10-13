@@ -6,7 +6,7 @@ import { cache } from "react";
 import type { Ctx } from "@/lib/ctx";
 import { homeTilesFor, showUpcomingOnHome, upcomingTilesFor, type HomeTile, type UpcomingTile } from "@/lib/modules-registry";
 import { getUiVariant, type UiVariant } from "@/lib/ui-variant";
-import { myClassQuery, myTimetableQuery } from "@/modules/academic/queries";
+import { myClassQuery, myTimetableQuery, reportCardReachQuery } from "@/modules/academic/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 import { hatsQuery, type Hats } from "@/modules/iam/hats";
 import type { Permission } from "@/modules/iam/permissions";
@@ -58,7 +58,10 @@ export const resolveHomeTiles = cache(async (ctx: Ctx): Promise<HomeTiles> => {
   const adminScope = hats?.adminScope ?? null;
   // The experimental «hub» layout (no nav) turns every former nav destination into a tile; classic is unchanged.
   const variant = await getUiVariant();
-  const tileHats = { isStudent, isTeacher, isAdmin: adminScope !== null, adminScope, singleSchoolId: hats?.adminSingleSchoolId ?? null };
+  // The report-card tiles exist for primary classes only: one more read, and only for someone who holds the permission.
+  const reach = has("academic.objective_rating.read") ? await reportCardReachQuery() : null;
+  const reportCard = reach?.ok ? reach.data : { staff: false, student: false };
+  const tileHats = { isStudent, isTeacher, isAdmin: adminScope !== null, adminScope, singleSchoolId: hats?.adminSingleSchoolId ?? null, reportCard };
   const tiles = homeTilesFor(tileHats, has, { variant });
   const upcoming = variant === "hub" && showUpcomingOnHome(tileHats) ? upcomingTilesFor(tileHats) : [];
   return { tiles, upcoming, hats, isStudent, isTeacher, variant };

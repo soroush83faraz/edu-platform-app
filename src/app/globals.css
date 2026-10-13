@@ -1158,7 +1158,8 @@ html[data-splash-water="on"] :is(.splash-fill, .splash-ripple, .splash-wash) {
   }
 }
 
-/* Credentials sheets (/admin/…/credentials): A4, RTL, 3×4 cut-out slips per page; the app frame disappears. */
+/* Credentials sheets (/admin/…/credentials) and the report cards (/report-card/…/print): A4, RTL; the app frame
+   disappears. */
 @media print {
   @page {
     size: A4;
@@ -1183,5 +1184,13 @@ html[data-splash-water="on"] :is(.splash-fill, .splash-ripple, .splash-wash) {
   .print-slip {
     break-inside: avoid;
     border: 1px dashed #99a1b3 !important;
+  }
+  /* «کارنامهٴ توصیفی»: one student per A4 page; a درس table never splits across pages. */
+  .print-avoid {
+    break-inside: avoid;
+  }
+  .print-card {
+    border: 0 !important;
+    box-shadow: none !important;
   }
 }

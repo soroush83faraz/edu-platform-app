@@ -20,7 +20,7 @@ import {
   SchoolIdInput,
   StudentAttendanceInput,
 } from "./dto";
-import { classReportCards, classReportOverview, getRatingSheet, listRatableClasses, myReportCard } from "./report-card";
+import { classReportCards, classReportOverview, getRatingSheet, listRatableClasses, myReportCard, reportCardReach } from "./report-card";
 import { findStudentProfile, getMyClass, listClassesForPicker } from "./repo";
 import { getClassTimetable, getMyTimetable, getOfferingLink, getOfferingPage } from "./service";
 
@@ -119,7 +119,10 @@ export const attendanceClassesQuery = defineQuery({ schema: AttendanceReportInpu
 // «کارنامهٴ توصیفی» (descriptive report card) — the service decides the scope inside the transaction (NOT_FOUND)
 // ---------------------------------------------------------------------------------------------------------------
 
-export type { ClassReportOverview, ClassStudentSummary, ClassSubjectProgress, RatableClass, RatingSheet, ReportCardSubject, SheetRow, StudentReportCard } from "./report-card";
+export type { ClassReportOverview, ClassStudentSummary, ClassSubjectProgress, RatableClass, RatingSheet, ReportCardReach, ReportCardSubject, SheetRow, StudentReportCard } from "./report-card";
+
+/** Whether Home shows «کارنامهٴ توصیفی» (staff of a primary class) / «کارنامهٴ من» (a primary student). */
+export const reportCardReachQuery = defineQuery({ permission: "academic.objective_rating.read", scope: "any" }, async (tx, _input, ctx) => reportCardReach(tx, ctx));
 
 /** The classes whose report cards the caller may open (admins: their schools; teachers: the classes they teach). */
 export const reportCardClassesQuery = defineQuery({ permission: "academic.objective_rating.read", scope: "any" }, async (tx, _input, ctx) => listRatableClasses(tx, ctx));

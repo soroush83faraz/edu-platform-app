@@ -1,5 +1,6 @@
 import {
   AlarmClock,
+  Award,
   Bell,
   BookOpenCheck,
   CalendarCheck,
@@ -16,6 +17,7 @@ import {
   Megaphone,
   MessagesSquare,
   NotebookPen,
+  NotebookText,
   Presentation,
   Scale,
   School,
@@ -345,6 +347,11 @@ export interface TileHats {
   adminScope: TileAdminScope | null;
   /** The one school a school-scoped admin holds (`Hats.adminSingleSchoolId`) — null for org and multi-school scopes. */
   singleSchoolId?: string | null;
+  /**
+   * «کارنامهٴ توصیفی» exists only for primary classes (`reportCardReachQuery`): `staff` = the person may open a
+   * primary class's report cards (its teacher, or an admin of its school); `student` = their own class is primary.
+   */
+  reportCard?: { staff: boolean; student: boolean };
 }
 
 export interface HomeTile {
@@ -380,6 +387,8 @@ export interface HomeTile {
    * «مدرسه‌ها» for «مدرسه».
    */
   oneSchool?: { href: (schoolId: string) => string; only?: boolean; label?: boolean };
+  /** Shown only when `hats.reportCard[this]` is true — the report-card tiles are for primary classes only. */
+  reportCard?: "staff" | "student";
   /** The glyph implies a direction (send, arrows) and must flip in RTL. */
   mirror?: boolean;
   /**
@@ -545,6 +554,19 @@ export const HUB_TILES: readonly HomeTile[] = [
   sectionTile("roles"),
   homeTile("periods"),
 
+  // «کارنامهٴ توصیفی» (primary classes only, owner 2026-10-13): the آموزگار / principal / vice enter and print the
+  // monthly descriptive report card; a primary student reads their own as «کارنامهٴ من». Two audiences, two pages.
+  {
+    code: "report-card",
+    labelFa: "کارنامهٴ توصیفی",
+    href: "/report-card",
+    icon: NotebookText,
+    role: ["teacher", "admin"],
+    permission: "academic.objective_rating.read",
+    reportCard: "staff",
+  },
+  { code: "my-report-card", labelFa: "کارنامهٴ من", href: "/report-card/me", icon: Award, role: "student", permission: "academic.objective_rating.read", reportCard: "student" },
+
   // «حضور و غیاب» last, for every role. The admin's report reads «گزارش حضور و غیاب», on a report glyph, for an
   // admin who also takes or reads a roll call (the teacher/student tile before it keeps the name and the glyph).
   homeTile("attendance"),
@@ -580,6 +602,7 @@ export function homeTilesFor(
       (!t.exceptRole || !wearsOne(t.exceptRole)) &&
       (!t.permission || has(t.permission)) &&
       (!t.adminScope || hats.adminScope === t.adminScope) &&
+      (!t.reportCard || hats.reportCard?.[t.reportCard] === true) &&
       (!t.oneSchool?.only || schoolId !== null),
   ).map((t) => {
     return t.oneSchool && schoolId
