@@ -11,7 +11,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "@/db/schema";
 import { IMPLICIT_PERMISSIONS, PERMISSIONS } from "@/modules/iam/permissions";
 import { buildSeedCatalog } from "../../scripts/build-seed-catalog";
-import { formatCatalogSummary } from "../../scripts/catalog";
+import { NON_MANAGER_PERMS, formatCatalogSummary } from "../../scripts/catalog";
 import { runMigrations } from "../../scripts/migrate";
 import { DANESH, NOTIFICATION_TYPES, SYSTEM_ROLES, SYSTEM_WORK_ITEM_TYPES, catalogCounts, demoId, seedCatalog, seedDemo } from "../../scripts/seed";
 import { OWNER_URL } from "./env";
@@ -63,14 +63,21 @@ describe("seed --catalog", () => {
       expect(todoStatuses.rows.map((r) => r.code)).toEqual(["open", "in_progress", "done", "cancelled"]);
 
       // Owner, 2026-09-27: the seeded «معاون» holds exactly the permissions of «مدیر مدرسه» — every permission a
-      // role can carry — while the other roles stay narrower.
-      const roleCarried = PERMISSIONS.map((p) => p.code as string).filter((c) => !(IMPLICIT_PERMISSIONS as readonly string[]).includes(c)).sort();
+      // MANAGER role can carry (all but the counselor's own writes and the teacher's report, 2026-10-13) — while the
+      // other roles stay narrower.
+      const roleCarried = PERMISSIONS.map((p) => p.code as string)
+        .filter((c) => !(IMPLICIT_PERMISSIONS as readonly string[]).includes(c) && !(NON_MANAGER_PERMS as readonly string[]).includes(c))
+        .sort();
       expect(await permsOf(pool, "school_principal")).toEqual(roleCarried);
       expect(await permsOf(pool, "vice_principal")).toEqual(roleCarried);
-      for (const code of ["teacher", "student", "guardian_full"]) {
+      for (const code of ["teacher", "student", "guardian_full", "counselor"]) {
         const held = await permsOf(pool, code);
         for (const p of ["iam.admin.access", "iam.role_assignment.write", "tenancy.structure.write", "integ.import.write"]) expect(held, `${code} ${p}`).not.toContain(p);
       }
+      // «مشاور»: the file and its own writes, no workspace permission (a school-scoped one would be broad).
+      expect(await permsOf(pool, "counselor")).toEqual(
+        ["academic.objective_rating.read", "counseling.case.read", "counseling.note.write", "counseling.referral.create", "notif.notification.read"].sort(),
+      );
     } finally {
       await pool.end();
     }

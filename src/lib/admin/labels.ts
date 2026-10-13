@@ -3,6 +3,7 @@ const ROLE_LABELS: Record<string, string> = {
   org_admin: "مدیر سازمان",
   school_principal: "مدیر مدرسه",
   vice_principal: "معاون",
+  counselor: "مشاور",
   teacher: "دبیر",
   student: "دانش‌آموز",
   guardian_full: "ولی",

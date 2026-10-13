@@ -34,13 +34,25 @@ export interface Queryable {
 // data
 // ---------------------------------------------------------------------------------------------------------------
 
-const ALL_ROLE_PERMS: Permission[] = PERMISSIONS.map((p) => p.code).filter((c) => !IMPLICIT_PERMISSIONS.includes(c));
+/**
+ * Capabilities of the «مشاور» and «دبیر» hats that NO manager role carries (owner, 2026-10-13 — «مشاوره», the
+ * confidentiality model in docs/decisions.md): the counselor's notes and referrals, and the teacher's report to the
+ * counselor. The school's management READS the student file (the notes their visibility allows) and RECEIVES
+ * referrals (`counseling.referral.receive`); it never writes in the counselor's or a teacher's name. A principal who
+ * also teaches gets the report through their teacher role, a principal who is also the school's counselor through
+ * the `counselor` role — never through the manager hat.
+ */
+export const NON_MANAGER_PERMS: readonly Permission[] = ["counseling.note.write", "counseling.referral.create", "counseling.teacher_report.write"];
+
+/** Every manager permission: the whole catalog but the implicit `iam.account.self` and `NON_MANAGER_PERMS`. */
+export const ALL_ROLE_PERMS: Permission[] = PERMISSIONS.map((p) => p.code).filter((c) => !IMPLICIT_PERMISSIONS.includes(c) && !NON_MANAGER_PERMS.includes(c));
 /**
  * The two SCHOOL managers — «مدیر مدرسه» and «معاون» — hold the very same permissions (owner, 2026-09-27: the vice
- * principal has exactly the principal's capabilities, inside their own school). What either of them may do is
+ * principal has exactly the principal's capabilities, inside their own school — «مشاوره» included: both READ the
+ * student file and receive referrals, neither writes a counselor's note). What either of them may do is
  * decided by the permission AND the scope of the assignment — `can()` at the school, `getAdminScope` for people and
  * structure — never by the role code:
- *   • `iam.role_assignment.write` held at a school grants and revokes `vice_principal` there only; `school_principal`
+ *   • `iam.role_assignment.write` held at a school grants and revokes `vice_principal` and `counselor` there only; `school_principal`
  *     needs it at the ORGANIZATION (only the organization admin appoints principals) and `org_admin` is nobody's to
  *     give (`resolveRoleGrant` / `revokeRoleAssignment`, docs/admin.md «ماتریس اعطای نقش»);
  *   • `tenancy.structure.write` never creates a school (`createNeedsOrgScope`) nor edits the organization's درس‌ها
@@ -72,6 +84,19 @@ export const SYSTEM_ROLES: SystemRole[] = [
   { code: "school_principal", name: "مدیر مدرسه", description: "همهٴ دسترسی‌ها در سطح یک مدرسه", allowedScopeTypes: ["school"], permissions: SCHOOL_MANAGER_PERMS },
   { code: "vice_principal", name: "معاون", description: "همهٴ دسترسی‌های مدیر مدرسه، در سطح همان مدرسه", allowedScopeTypes: ["school", "branch"], permissions: SCHOOL_MANAGER_PERMS },
   {
+    // «مشاور» (owner, 2026-10-13): granted and revoked on /admin/roles by the very people who grant «معاون» (a school
+    // manager at their own school, the organization admin anywhere — `SCHOOL_GRANTABLE_ROLES`). School-scoped only.
+    // NO `workspace.*` permission, deliberately: a school-scoped holder of `workspace.work_item.read` / `.create` /
+    // `.update` is a BROAD holder (`canBroadly`) — it would read every item of the organization and manage any of them.
+    // The counselor's referrals are opened by the counseling service (participants-only items) and followed in the
+    // student file. `academic.objective_rating.read` opens a primary student's report card from that file.
+    code: "counselor",
+    name: "مشاور",
+    description: "پروندهٴ مشاورهٴ دانش‌آموزان مدرسهٴ خود",
+    allowedScopeTypes: ["school"],
+    permissions: ["counseling.case.read", "counseling.note.write", "counseling.referral.create", "notif.notification.read", "academic.objective_rating.read"],
+  },
+  {
     code: "teacher",
     name: "معلم",
     description: "کارتابل درس‌های خود",
@@ -87,6 +112,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
       "academic.attendance.write",
       "academic.objective_rating.read",
       "academic.objective_rating.write",
+      // «گزارش به مشاور» about a student of the teacher's OWN classes (the service checks the teaching, NOT_FOUND
+      // otherwise); the teacher reads back only the reports they wrote — never a counselor's note.
+      "counseling.teacher_report.write",
     ],
   },
   {

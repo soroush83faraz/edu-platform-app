@@ -19,14 +19,16 @@ const ROLE_ABOUT: Record<string, string> = {
   org_admin: "همهٴ مدرسه‌های سازمان را مدیریت می‌کند.",
   school_principal: "مدرسهٴ خودش را مدیریت می‌کند: کلاس‌ها، کارکنان، دانش‌آموزان، برنامه و حضور و غیاب.",
   vice_principal: "همان کارهای مدیر مدرسه را در همان مدرسه انجام می‌دهد.",
+  counselor: "پروندهٴ مشاورهٴ دانش‌آموزان مدرسهٴ خود را دارد: یادداشت محرمانه، گزارش دبیران و ارجاع به مدیریت.",
   teacher: "تکالیف و حضور و غیاب کلاس‌هایی که درس می‌دهد؛ با سپردن درس به او خودکار داده می‌شود.",
   student: "تکالیف، برنامهٴ هفتگی و حضور و غیاب خودش؛ با ثبت‌نام در کلاس خودکار داده می‌شود.",
 };
 
 /**
  * /admin/roles — the ONE door for manager roles (owner, 2026-09-27: the staff pages show a colleague's roles, they
- * never change them): «معاون جدید» / «نقش جدید» grants (`GrantRoleButton`, only with something to grant and someone
- * to grant it to), «لغو» revokes where the caller may; then the system roles, read-only.
+ * never change them) and, since 2026-10-13, for the school's «مشاور»: «معاون جدید» / «نقش جدید» grants
+ * (`GrantRoleButton`, only with something to grant and someone to grant it to), «لغو» revokes where the caller may;
+ * then the system roles, read-only.
  */
 export default async function RolesPage() {
   const result = await rolesPageQuery();
@@ -41,16 +43,16 @@ export default async function RolesPage() {
     <div className="flex flex-col gap-5">
       <AdminHeader
         title="نقش‌ها"
-        description="نقش مدیر و معاون فقط از همین صفحه داده و لغو می‌شود؛ نقش دبیر و دانش‌آموز خودکار از کلاس‌ها و درس‌ها می‌آید."
+        description="نقش مدیر، معاون و مشاور فقط از همین صفحه داده و لغو می‌شود؛ نقش دبیر و دانش‌آموز خودکار از کلاس‌ها و درس‌ها می‌آید."
         actions={canGrant ? <GrantRoleButton roleGrant={roleGrant} candidates={candidates} /> : null}
       />
 
       <section aria-labelledby="assignments-heading" className="flex flex-col gap-2">
         <h3 id="assignments-heading" className="text-section font-semibold text-text">
-          مدیران و معاونان <span className="tabular">({formatNumberFa(assignments.length)})</span>
+          مدیران، معاونان و مشاوران <span className="tabular">({formatNumberFa(assignments.length)})</span>
         </h3>
         {assignments.length === 0 ? (
-          <p className="surface-work px-4 py-6 text-center text-sm text-text-muted">{canGrant ? `هنوز نقش مدیر یا معاونی داده نشده؛ با «${grantTitle}» بدهید.` : "هنوز نقش مدیر یا معاونی داده نشده."}</p>
+          <p className="surface-work px-4 py-6 text-center text-sm text-text-muted">{canGrant ? `هنوز نقشی از این دست داده نشده؛ با «${grantTitle}» بدهید.` : "هنوز نقشی از این دست داده نشده."}</p>
         ) : (
           <ul className="surface-work divide-y divide-line/70">
             {assignments.map((a) => (

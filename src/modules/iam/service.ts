@@ -70,8 +70,11 @@ export const MESSAGES = {
   roleRevokeForbidden: "شما اجازهٴ لغو این نقش را ندارید.",
   derivedRoleNotRevocable: "این نقش از درس‌هایی که به این فرد سپرده شده می‌آید و از این‌جا لغو نمی‌شود.",
   studentProfileMismatch: "پروندهٴ دانش‌آموزی به این فرد تعلق ندارد.",
-  /** A manager role (مدیر مدرسه / معاون / مدیر سازمان) goes to an active colleague only — never a student (verifier, 2026-09-27). */
-  managerRoleNeedsStaff: "نقش مدیریتی فقط به کارکنان فعال داده می‌شود.",
+  /**
+   * A manager role (مدیر مدرسه / معاون / مدیر سازمان) — and the «مشاور» role (2026-10-13) — goes to an active colleague
+   * only, never a student (verifier, 2026-09-27).
+   */
+  managerRoleNeedsStaff: "این نقش فقط به کارکنان فعال داده می‌شود.",
   /** No new account, password or unlock for a removed person (src/modules/iam/removal.ts) — it would reopen their login. */
   personRemoved: PERSON_REMOVED_MESSAGE,
   changed: "— تغییر داده شده",
@@ -423,10 +426,13 @@ export async function unlockAccount(tx: Tx, ctx: IamCtx, input: { userAccountId:
 // roles
 // ---------------------------------------------------------------------------------------------------------------
 
-export const ASSIGNABLE_ROLES = ["org_admin", "school_principal", "vice_principal"] as const;
+export const ASSIGNABLE_ROLES = ["org_admin", "school_principal", "vice_principal", "counselor"] as const;
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
-/** Manager roles scoped to a school (they need a `schoolId`), in picker order. */
-export const SCHOOL_ROLES: readonly AssignableRole[] = ["school_principal", "vice_principal"];
+/**
+ * Roles scoped to a school (they need a `schoolId`), in picker order: the two managers and, since 2026-10-13, the
+ * school's «مشاور» (`counselor` — a staff role like the managers, granted from the same /admin/roles door).
+ */
+export const SCHOOL_ROLES: readonly AssignableRole[] = ["school_principal", "vice_principal", "counselor"];
 /**
  * Owner's matrix (docs/admin.md «ماتریس اعطای نقش»): `school_principal` is granted and revoked by an
  * ORGANIZATION-scoped holder of `iam.role_assignment.write` only — a principal cannot mint or unseat a principal.
@@ -440,8 +446,9 @@ export const ORG_GRANTED_ROLES: readonly AssignableRole[] = ["school_principal"]
  * What a SCHOOL-scoped holder of `iam.role_assignment.write` — a principal or a vice principal, who hold the same
  * permissions (owner, 2026-09-27) — may grant/revoke, at their own schools only. `school_principal` is not in it
  * (`ORG_GRANTED_ROLES`), so no school manager can mint or unseat a principal, and neither can reach another school.
+ * `counselor` (owner, 2026-10-13): «who may grant it = the same people who may grant vice_principal».
  */
-export const SCHOOL_GRANTABLE_ROLES: readonly AssignableRole[] = ["vice_principal"];
+export const SCHOOL_GRANTABLE_ROLES: readonly AssignableRole[] = ["vice_principal", "counselor"];
 
 /**
  * Pure mirror of the permission step of `resolveRoleGrant` / `revokeRoleAssignment` for the UI (the grant picker and

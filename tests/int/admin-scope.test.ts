@@ -521,10 +521,10 @@ describe("admin scope hardening", () => {
         { value: f.SCHOOL_A, label: "مدرسه الف" },
         { value: w.s2.schoolId, label: "دبیرستان دوم" },
       ];
-      expect(roleGrantOptions(vice.assignments, schools)).toEqual({ roles: ["vice_principal"], schools: [schools[1]] });
-      expect(roleGrantOptions(principal.assignments, schools)).toEqual({ roles: ["vice_principal"], schools: [schools[1]] });
+      expect(roleGrantOptions(vice.assignments, schools)).toEqual({ roles: ["vice_principal", "counselor"], schools: [schools[1]] });
+      expect(roleGrantOptions(principal.assignments, schools)).toEqual({ roles: ["vice_principal", "counselor"], schools: [schools[1]] });
       // No picker offers «مدیر سازمان» — not even the organization admin's.
-      expect(roleGrantOptions(orgAdmin.assignments, schools)).toEqual({ roles: ["school_principal", "vice_principal"], schools });
+      expect(roleGrantOptions(orgAdmin.assignments, schools)).toEqual({ roles: ["school_principal", "vice_principal", "counselor"], schools });
       throw new Rollback();
     });
   });

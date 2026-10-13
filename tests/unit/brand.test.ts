@@ -128,7 +128,10 @@ describe("roleHatsFor — the hats the emblem speaks for", () => {
     expect(roleHatsFor([a("custom_admin", "school", [ADMIN])])).toEqual(["principal"]);
     expect(roleHatsFor([a("custom_admin", "branch", [ADMIN])])).toEqual(["principal"]);
     // A narrow assignment WITHOUT admin access is no admin hat at all.
-    expect(roleHatsFor([a("counselor", "school", ["workspace.work_item.read"])])).toEqual([]);
+    expect(roleHatsFor([a("librarian", "school", ["workspace.work_item.read"])])).toEqual([]);
+    // «مشاور» (2026-10-13) is a hat of its own — named by its role, never an admin hat (no admin access).
+    expect(roleHatsFor([a("counselor", "school", ["counseling.case.read", "counseling.note.write"])])).toEqual(["counselor"]);
+    expect(roleHatsFor([a("counselor", "school", []), a("teacher", "class_offering", [])])).toEqual(["counselor", "teacher"]);
   });
 
   it("a multi-hat person is introduced by the highest hat, the rest follow in order", () => {
@@ -142,8 +145,8 @@ describe("roleHatsFor — the hats the emblem speaks for", () => {
   });
 
   it("ROLE_ORDER is the whole mapping, highest first, and every hat has a Persian label", () => {
-    expect(ROLE_ORDER).toEqual(["org_admin", "principal", "vice", "teacher", "student", "guardian"]);
-    expect(ROLE_ORDER.map((k) => ROLE_LABELS[k])).toEqual(["مدیر سازمان", "مدیر مدرسه", "معاون", "دبیر", "دانش‌آموز", "ولی"]);
+    expect(ROLE_ORDER).toEqual(["org_admin", "principal", "vice", "counselor", "teacher", "student", "guardian"]);
+    expect(ROLE_ORDER.map((k) => ROLE_LABELS[k])).toEqual(["مدیر سازمان", "مدیر مدرسه", "معاون", "مشاور", "دبیر", "دانش‌آموز", "ولی"]);
   });
 });
 

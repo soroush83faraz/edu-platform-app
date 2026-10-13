@@ -5,15 +5,16 @@ import type { Assignment } from "@/modules/iam/can";
  * `navRoleFor` / `getAdminScope` read, so the shell pays no extra query. Finer than `NavRole`: the owner wants
  * the emblem to say WHICH admin you are, not just «admin».
  */
-export type RoleKey = "org_admin" | "principal" | "vice" | "teacher" | "student" | "guardian";
+export type RoleKey = "org_admin" | "principal" | "vice" | "counselor" | "teacher" | "student" | "guardian";
 
 /** Highest first — a multi-hat person is introduced by `hats[0]` and the rest ride in the tooltip. */
-export const ROLE_ORDER: readonly RoleKey[] = ["org_admin", "principal", "vice", "teacher", "student", "guardian"];
+export const ROLE_ORDER: readonly RoleKey[] = ["org_admin", "principal", "vice", "counselor", "teacher", "student", "guardian"];
 
 export const ROLE_LABELS: Record<RoleKey, string> = {
   org_admin: "مدیر سازمان",
   principal: "مدیر مدرسه",
   vice: "معاون",
+  counselor: "مشاور",
   teacher: "دبیر",
   student: "دانش‌آموز",
   guardian: "ولی",
@@ -40,6 +41,8 @@ export function roleHatsFor(assignments: readonly RoleHatSource[]): RoleKey[] {
     else if (a.roleCode === "school_principal") hats.add("principal");
     else if (a.roleCode === "vice_principal") hats.add("vice");
     else if (admin) hats.add("principal");
+    // «مشاور» (2026-10-13): a staff hat without admin access — named by its role, like the teacher's.
+    if (a.roleCode === "counselor") hats.add("counselor");
     if (a.roleCode === "teacher") hats.add("teacher");
     if (a.roleCode === "student") hats.add("student");
     if (a.roleCode === "guardian") hats.add("guardian");

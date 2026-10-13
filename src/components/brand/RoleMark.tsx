@@ -1,15 +1,16 @@
-import { ClipboardCheck, GraduationCap, Landmark, type LucideIcon, Presentation, School, Users } from "lucide-react";
+import { ClipboardCheck, GraduationCap, Landmark, type LucideIcon, MessageCircleHeart, Presentation, School, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { type RoleKey, roleHatsLabel } from "./roles";
 
 /** Where the mark is drawn: the phone header square, the Home banner's white plate, the desktop rail's school line. */
 export type RoleMarkTone = "header" | "plate" | "line";
 
-/** One glyph per hat — the mark says WHICH kind of account you are signed in as. Nothing else uses these six. */
+/** One glyph per hat — the mark says WHICH kind of account you are signed in as. Nothing else uses these seven. */
 const ROLE_GLYPHS: Record<RoleKey, LucideIcon> = {
   org_admin: Landmark,
   principal: School,
   vice: ClipboardCheck,
+  counselor: MessageCircleHeart,
   teacher: Presentation,
   student: GraduationCap,
   guardian: Users,

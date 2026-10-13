@@ -7,7 +7,7 @@
 // for ANOTHER school, the organization and a student it must answer «no» for both (negative cross-school cases).
 // The database-backed half (services, NOT_FOUND vs FORBIDDEN, nothing written) is tests/int/admin-scope.test.ts.
 import { describe, expect, it } from "vitest";
-import { SYSTEM_ROLES } from "../../scripts/catalog";
+import { NON_MANAGER_PERMS, SYSTEM_ROLES } from "../../scripts/catalog";
 import { roleHatsFor } from "@/components/brand/roles";
 import { resourceOpGate, type AnyResourceDef, type ResourceOp } from "@/lib/admin/defineResource";
 import { homeTilesFor, type TileHats } from "@/lib/modules-registry";
@@ -46,12 +46,20 @@ const FOREIGN_CHAINS: Record<string, ScopeChain> = {
   student: [{ scopeType: "student", id: "sp-1" }, { scopeType: "organization", id: ORG }],
 };
 const ROLE_PERMS: Permission[] = PERMISSION_CODES.filter((p) => !IMPLICIT_PERMISSIONS.includes(p));
+/** What a manager role can carry: everything but the counselor's own writes and the teacher's report (2026-10-13). */
+const MANAGER_PERMS: Permission[] = ROLE_PERMS.filter((p) => !NON_MANAGER_PERMS.includes(p));
 
 describe("the catalog: a vice principal is a principal of their school", () => {
-  it("vice_principal and school_principal carry the same permission set — every permission a role can carry", () => {
+  it("vice_principal and school_principal carry the same permission set — every MANAGER permission (the counselor's writes and the teacher's report excepted)", () => {
     expect(sorted(VICE)).toEqual(sorted(PRINCIPAL));
-    expect(sorted(PRINCIPAL)).toEqual(sorted(ROLE_PERMS));
+    expect(sorted(PRINCIPAL)).toEqual(sorted(MANAGER_PERMS));
     expect(new Set(VICE).size).toBe(VICE.length);
+    // «مشاوره» (owner, 2026-10-13): both READ the file and receive referrals; neither writes in the counselor's name.
+    for (const p of ["counseling.case.read", "counseling.referral.receive"] as Permission[]) expect(PRINCIPAL).toContain(p);
+    for (const p of NON_MANAGER_PERMS) {
+      expect(PRINCIPAL, p).not.toContain(p);
+      expect(role("org_admin").permissions, p).not.toContain(p);
+    }
   });
 
   it("both stay SCHOOL roles: never organization-scoped; the organization admin alone is", () => {
@@ -70,11 +78,15 @@ describe("the catalog: a vice principal is a principal of their school", () => {
 });
 
 describe("canPure over the whole catalog: same answer for the vice principal and the principal of school A", () => {
-  it("inside school A (the school, its branch, a class offering) both hold EVERY permission", () => {
+  it("inside school A (the school, its branch, a class offering) both hold EVERY manager permission — and none of the counselor's or teacher's own", () => {
     for (const [name, chain] of Object.entries(OWN_CHAINS)) {
-      for (const p of ROLE_PERMS) {
+      for (const p of MANAGER_PERMS) {
         expect(canPure(viceA, chain, p), `vice · ${name} · ${p}`).toBe(true);
         expect(canPure(principalA, chain, p), `principal · ${name} · ${p}`).toBe(true);
+      }
+      for (const p of NON_MANAGER_PERMS) {
+        expect(canPure(viceA, chain, p), `vice · ${name} · ${p}`).toBe(false);
+        expect(canPure(principalA, chain, p), `principal · ${name} · ${p}`).toBe(false);
       }
     }
   });
@@ -128,10 +140,15 @@ describe("the role matrix (UI mirror of assignRole / revokeRoleAssignment)", () 
       expect(canManageRole(manager, "school_principal", SCHOOL_A)).toBe(false);
       expect(canManageRole(manager, "school_principal", SCHOOL_B)).toBe(false);
       expect(canManageRole(manager, "org_admin", null)).toBe(false);
-      expect(roleGrantOptions(manager, schools)).toEqual({ roles: ["vice_principal"], schools: [schools[0]] });
+      // «مشاور» (2026-10-13) is granted by the very people who grant «معاون», at the same schools.
+      expect(canManageRole(manager, "counselor", SCHOOL_A)).toBe(true);
+      expect(canManageRole(manager, "counselor", SCHOOL_B)).toBe(false);
+      expect(canManageRole(manager, "counselor", null)).toBe(false);
+      expect(roleGrantOptions(manager, schools)).toEqual({ roles: ["vice_principal", "counselor"], schools: [schools[0]] });
     }
-    // The organization admin still appoints principals and vice principals everywhere; «مدیر سازمان» nobody.
-    expect(roleGrantOptions(orgAdmin, schools)).toEqual({ roles: ["school_principal", "vice_principal"], schools });
+    // The organization admin still appoints principals, vice principals and counselors everywhere; «مدیر سازمان» nobody.
+    expect(roleGrantOptions(orgAdmin, schools)).toEqual({ roles: ["school_principal", "vice_principal", "counselor"], schools });
+    expect(canManageRole(orgAdmin, "counselor", SCHOOL_B)).toBe(true);
     expect(canManageRole(orgAdmin, "org_admin", null)).toBe(false);
   });
 
@@ -176,5 +193,37 @@ describe("the admin surfaces read permissions, so the vice principal sees the pr
     expect(vice).toEqual(homeTilesFor(hats, has(PRINCIPAL)));
     expect(vice.map((t) => t.code)).toEqual(["inbox", "admin-attendance", "schools", "periods"]);
     expect(vice.find((t) => t.code === "periods")?.href).toBe(`/admin/schools/${SCHOOL_A}/periods`);
+  });
+});
+
+describe("«مشاور» (counselor, owner 2026-10-13): a school role that reads and writes the counseling file — and nothing broad", () => {
+  const counselorA = at("counselor", "school", SCHOOL_A);
+  const COUNSELOR = role("counselor").permissions;
+
+  it("school-scoped only; the file's read and the counselor's own writes; NO workspace permission (a school-scoped one would be BROAD)", () => {
+    expect(role("counselor").allowedScopeTypes).toEqual(["school"]);
+    for (const p of ["counseling.case.read", "counseling.note.write", "counseling.referral.create"] as Permission[]) expect(COUNSELOR).toContain(p);
+    expect(COUNSELOR.filter((p) => p.startsWith("workspace."))).toEqual([]);
+    expect(COUNSELOR).not.toContain("iam.admin.access");
+    expect(COUNSELOR).not.toContain("counseling.referral.receive");
+    for (const p of PERMISSION_CODES.filter((x) => x.startsWith("workspace."))) expect(canBroadly(counselorA, p), p).toBe(false);
+    expect(isOrganizationAdmin(counselorA)).toBe(false);
+    expect(navRoleFor(counselorA)).toBe(null);
+    expect(roleHatsFor(counselorA)).toEqual(["counselor"]);
+  });
+
+  it("their school's chains only: school B, the organization level and a student chain get nothing", () => {
+    for (const p of COUNSELOR) {
+      for (const [name, chain] of Object.entries(OWN_CHAINS)) expect(canPure(counselorA, chain, p), `${name} · ${p}`).toBe(true);
+      for (const [name, chain] of Object.entries(FOREIGN_CHAINS)) expect(canPure(counselorA, chain, p), `${name} · ${p}`).toBe(false);
+    }
+  });
+
+  it("teachers report to the counselor but read no file; students and guardians hold no counseling permission at all", () => {
+    expect(role("teacher").permissions).toContain("counseling.teacher_report.write");
+    for (const p of ["counseling.case.read", "counseling.note.write", "counseling.referral.create", "counseling.referral.receive"] as Permission[]) {
+      expect(role("teacher").permissions, p).not.toContain(p);
+    }
+    for (const code of ["student", "guardian_full"]) expect(role(code).permissions.filter((p) => p.startsWith("counseling.")), code).toEqual([]);
   });
 });

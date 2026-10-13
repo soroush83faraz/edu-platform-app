@@ -30,6 +30,15 @@ export const PERMISSIONS = [
   { code: "workspace.work_item.assign_class", module: "workspace", name: "ارسال کار به کلاس", isSensitive: false },
   { code: "notif.notification.read", module: "notif", name: "مشاهدهٴ اعلان‌ها", isSensitive: false },
   { code: "integ.import.write", module: "integ", name: "ورود اطلاعات از اکسل", isSensitive: true },
+  // «مشاوره» (owner, 2026-10-13; docs/decisions.md «مشاوره — فاز ۱»). Read = the student file (profile, academic summary,
+  // the notes its visibility allows, teacher reports, referrals) — the counselor and the school's management.
+  // The counselor's own writes and the teacher's report are NEVER a manager's (scripts/catalog.ts `NON_MANAGER_PERMS`).
+  { code: "counseling.case.read", module: "counseling", name: "مشاهدهٴ پروندهٴ مشاوره", isSensitive: true },
+  { code: "counseling.note.write", module: "counseling", name: "ثبت یادداشت مشاور", isSensitive: true },
+  { code: "counseling.referral.create", module: "counseling", name: "ارجاع به مدیریت و درخواست گزارش از دبیر", isSensitive: true },
+  /** Who a referral «ارجاع به مدیریت» is addressed to: the school's managers (the organization admin when it has none). */
+  { code: "counseling.referral.receive", module: "counseling", name: "دریافت ارجاع مشاور", isSensitive: false },
+  { code: "counseling.teacher_report.write", module: "counseling", name: "ثبت گزارش برای مشاور", isSensitive: false },
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number]["code"];
