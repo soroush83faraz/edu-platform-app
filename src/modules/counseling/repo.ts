@@ -613,5 +613,3 @@ export async function findReferralIdOfWorkItem(tx: Tx, workItemId: string): Prom
   const res = await tx.execute<{ id: string }>(sql`select r.id from counseling.referral r where r.work_item_id = ${workItemId}::uuid limit 1`);
   return res.rows[0]?.id ?? null;
 }
-
-export { iso as isoDate };
