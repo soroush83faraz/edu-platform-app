@@ -79,7 +79,7 @@ describe("app_backup (dump role)", () => {
                  or has_table_privilege('app_backup', c.oid, 'DELETE') or has_table_privilege('app_backup', c.oid, 'TRUNCATE')) as can_write
            from pg_class c join pg_namespace n on n.oid = c.relnamespace
           where c.relkind = 'r'
-            and n.nspname in ('drizzle','tenancy','iam','academic','workspace','notif','files','audit','config','integ')
+            and n.nspname in ('drizzle','tenancy','iam','academic','workspace','notif','files','audit','config','integ','counseling')
           order by 1`,
       );
       expect(acl.rows.length).toBeGreaterThanOrEqual(24); // 23 app tables + drizzle.__drizzle_migrations

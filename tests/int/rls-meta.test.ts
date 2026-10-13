@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { asAppRw } from "./helpers";
 
-const TENANT_SCHEMAS = ["tenancy", "iam", "academic", "workspace", "notif", "files", "audit", "config", "integ"];
+const TENANT_SCHEMAS = ["tenancy", "iam", "academic", "workspace", "notif", "files", "audit", "config", "integ", "counseling"];
 
 /**
  * tenancy (11 - organization; school_period since 0015) + iam (13 - user_account, auth_identity, user_session,
  * login_attempt, permission, role_permission) + academic 8 (timetable_slot since 0015; attendance_session +
  * attendance_entry since 0016; learning_objective + objective_rating since 0017) + workspace (9 - work_item_status) + notif (3 - notification_type) + files 1 +
- * audit 1 + config 2 + integ 3.
+ * audit 1 + config 2 + integ 3 + counseling 3 (counselor_note, teacher_report, referral since 0018).
  */
-const EXPECTED_TENANT_TABLES = 10 + 7 + 8 + 8 + 2 + 1 + 1 + 2 + 3;
+const EXPECTED_TENANT_TABLES = 10 + 7 + 8 + 8 + 2 + 1 + 1 + 2 + 3 + 3;
 
 /** Tables whose organization_id is nullable: NULL rows are shared system templates (read-only for tenants). */
 const NULLABLE_ORG_TABLES = ["iam.role", "workspace.work_item_type"];
@@ -139,6 +139,7 @@ describe("RLS meta-checks (catalog)", () => {
         { schema: "academic", n: 8 },
         { schema: "audit", n: 1 },
         { schema: "config", n: 2 },
+        { schema: "counseling", n: 3 },
         { schema: "files", n: 1 },
         { schema: "iam", n: 13 },
         { schema: "integ", n: 3 },

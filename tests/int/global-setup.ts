@@ -8,7 +8,7 @@ import { OWNER_URL } from "./env";
 import { runMigrations } from "../../scripts/migrate";
 import * as f from "./fixtures";
 
-const APP_SCHEMAS = ["drizzle", "app", "tenancy", "iam", "academic", "workspace", "notif", "files", "audit", "config", "integ"];
+const APP_SCHEMAS = ["drizzle", "app", "tenancy", "iam", "academic", "workspace", "notif", "files", "audit", "config", "integ", "counseling"];
 
 export default async function setup(): Promise<void> {
   await dropAppSchemas();

@@ -91,6 +91,12 @@ export const workItem = workspace.table(
     idempotencyKey: uuid("idempotency_key"),
     /** The درس the item belongs to — set by `createWorkItem` for `class_offering` recipients (migration 0015); null otherwise. */
     classOfferingId: uuid("class_offering_id"),
+    /**
+     * Participants only (migration 0018): the item is visible to its creator and to the people it was given to /
+     * who watch it — the BROAD `workspace.work_item.read` of managers does not reach it (`canViewWorkItem`), and its
+     * title never enters the audit trail. Set by `createConfidentialWorkItem` (the counselor's referrals).
+     */
+    isConfidential: boolean("is_confidential").notNull().default(false),
     ...timestamps(),
   },
   (t) => [

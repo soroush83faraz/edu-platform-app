@@ -41,7 +41,7 @@ select c.relnamespace::regnamespace || '.' || c.relname
 from pg_class c
 join pg_attribute a on a.attrelid = c.oid and a.attname = 'organization_id' and not a.attisdropped
 where c.relkind = 'r'
-  and c.relnamespace::regnamespace::text in ('tenancy','iam','academic','workspace','notif','files','audit','config','integ')
+  and c.relnamespace::regnamespace::text in ('tenancy','iam','academic','workspace','notif','files','audit','config','integ','counseling')
   and (not c.relrowsecurity or not c.relforcerowsecurity
        or not exists (select 1 from pg_policy p where p.polrelid = c.oid));
 ```
