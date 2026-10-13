@@ -154,6 +154,17 @@ export const MODULES: readonly ModuleEntry[] = [
     descriptionFa: "ثبت زنگ به زنگ در کلاس، «حضور و غیاب من» برای دانش‌آموز، و گزارش درصد غیبت برای مدیر. اطلاع به والدین در فاز بعد.",
   },
   {
+    // Delivered in phase 1 (owner, 2026-10-13): the primary-school monthly descriptive report card.
+    code: "report-card",
+    labelFa: "کارنامهٴ توصیفی",
+    href: "/report-card",
+    icon: NotebookText,
+    permission: "academic.objective_rating.read",
+    phase: 1,
+    competitorTerm: "کارنامهٴ توصیفی",
+    descriptionFa: "برای دبستان: آموزگار هر ماه هدف‌های آموزشی هر درس را با «خیلی خوب، خوب، قابل قبول، نیاز به تلاش» ثبت می‌کند؛ دانش‌آموز کارنامهٴ خودش را می‌بیند و مدرسه کارنامه را چاپ می‌کند.",
+  },
+  {
     code: "classbook",
     labelFa: "دفتر کلاسی",
     href: "/roadmap#phase-2",

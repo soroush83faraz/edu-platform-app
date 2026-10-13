@@ -51,7 +51,7 @@ CREATE INDEX "learning_objective_org_subject_idx" ON "academic"."learning_object
 CREATE INDEX "objective_rating_org_objective_idx" ON "academic"."objective_rating" USING btree ("organization_id","learning_objective_id");--> statement-breakpoint
 CREATE INDEX "objective_rating_org_student_idx" ON "academic"."objective_rating" USING btree ("organization_id","student_profile_id");
 --> statement-breakpoint
--- «کارنامهٴ توصیفی» (docs/report-card.md; docs/decisions.md «کارنامهٴ توصیفی»):
+-- «کارنامهٴ توصیفی» (docs/decisions.md «کارنامهٴ توصیفی»):
 -- 1) academic.learning_objective — the primary-school learning objectives of ONE organisation: پایه (composite FK to
 --    its grade_level) × Jalali month (1..12) × canonical درس name (+ the organisation's subject row when one matches,
 --    nullable) × position. Natural key = the position (organization, grade, month, subject_name, sort_order): the

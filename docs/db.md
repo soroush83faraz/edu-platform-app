@@ -25,7 +25,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
   - `tenant_isolation_update` — `FOR UPDATE USING (… = current_org) WITH CHECK (… = current_org)` و `tenant_isolation_delete` — `FOR DELETE USING (… = current_org)`: **هیچ سیاستی برای `app_rw` ردیف NULL را هدف UPDATE/DELETE قرار نمی‌دهد** (سیاست قبلیِ `FOR ALL` با `USING (… IS NULL OR …)` اجازه می‌داد هر مستأجر الگوها را حذف یا با `SET organization_id = خودش` تصاحب کند — رفع‌شده در `0004`).
   - `system_templates` — `TO app_owner USING (organization_id IS NULL) WITH CHECK (organization_id IS NULL)`: فقط seed (`app_owner`) الگوها را می‌نویسد.
   تست‌ها: `tests/int/rls-templates.test.ts` و `rls-meta.test.ts` (نام و شکل سیاست‌ها را از کاتالوگ بررسی می‌کند).
-- جدول‌های سراسری (بدون RLS): `tenancy.organization`, `iam.user_account`, `iam.auth_identity`, `iam.user_session`, `iam.login_attempt`, `iam.permission`, `iam.role_permission`, `workspace.work_item_status`, `notif.notification_type`. چهار تای آخر **کاتالوگ‌های seed** هستند و برای `app_rw` فقط‌خواندنی‌اند (`REVOKE INSERT, UPDATE, DELETE` داخل `app.apply_grants()`، مهاجرت `0011`).
+- جدول‌های سراسری (بدون RLS): `tenancy.organization`, `iam.user_account`, `iam.auth_identity`, `iam.user_session`, `iam.login_attempt`, `iam.permission`, `iam.role_permission`, `workspace.work_item_status`, `notif.notification_type`. چهار تای آخر **کاتالوگ‌های seed** هستند و برای `app_rw` فقط‌خواندنی‌اند (`REVOKE INSERT, UPDATE, DELETE` داخل `app.apply_grants()`، مهاجرت `0011`). جدول مستأجریِ `academic.learning_objective` هم کاتالوگ seed است و همین‌طور فقط‌خواندنی (مهاجرت `0017`).
   - **چرا `work_item_status` و `notification_type` سراسری‌اند:** هر دو کاتالوگِ ثابتِ محصول‌اند، نه دادهٴ مستأجر. وضعیت‌ها زیرِ `work_item_type` تعریف می‌شوند (تا وقتی نوعِ اختصاصیِ مستأجر نداریم، همهٴ نوع‌ها سیستمی‌اند و `organization_id` روی وضعیت هم بی‌معنا می‌شد) و کدهای اعلان (`work_item.assigned`, …) را کد برنامه تولید می‌کند. RLS نداشتن یعنی هر مستأجر همهٴ ردیف‌ها را می‌بیند — که همان مطلوب است — و نداشتنِ مجوز نوشتن یعنی هیچ مستأجری نمی‌تواند آن‌ها را تغییر دهد. اگر روزی نوعِ اختصاصی مستأجر اضافه شد، `work_item_status` باید `organization_id` (nullable مثل نوعش) بگیرد.
   - **`audit.audit_log` فقط‌افزودنی است:** `app_rw` فقط `SELECT, INSERT` دارد (`REVOKE UPDATE, DELETE` داخل `apply_grants()`)؛ برنامه هیچ راهی برای بازنویسی تاریخچه ندارد. تست: `tests/int/audit.test.ts`.
 - چون `FORCE` روی مالک هم اعمال می‌شود، **seed هم باید قبل از نوشتن در جدول‌های مستأجری `set_config('app.current_org_id', …, true)` بزند** (نمونه: `tests/int/global-setup.ts`).
@@ -46,7 +46,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 
 ## جدول‌ها و کلید طبیعی
 
-شمار جدول‌ها: **۴۹** (tenancy ۱۱ · iam ۱۳ · academic ۶ · workspace ۹ · notif ۳ · files ۱ · audit ۱ · config ۲ · integ ۳). جدول‌های مستأجری (زیر RLS): ۴۰. (`school_period` و `timetable_slot` از مهاجرت `0015`؛ `attendance_session` و `attendance_entry` از `0016`.)
+شمار جدول‌ها: **۵۱** (tenancy ۱۱ · iam ۱۳ · academic ۸ · workspace ۹ · notif ۳ · files ۱ · audit ۱ · config ۲ · integ ۳). جدول‌های مستأجری (زیر RLS): ۴۲. (`school_period` و `timetable_slot` از مهاجرت `0015`؛ `attendance_session` و `attendance_entry` از `0016`؛ `learning_objective` و `objective_rating` از `0017`.)
 
 ### tenancy (۱۱)
 | جدول | کلید طبیعی / یکتایی | یادداشت |
@@ -79,7 +79,7 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 | role_permission | `(role_id, permission_code)` (PK) | فقط‌خواندنی برای app_rw؛ ایندکس `(permission_code)` |
 | role_assignment | `(person_id, role_id, scope_type, scope_id) WHERE revoked_at IS NULL` | `scope_id` تولیدی = `coalesce(…, organization_id)`؛ CHECK قوس انحصاری (دقیقاً ستونِ متناظر با `scope_type` پر باشد)؛ CHECK `valid_to IS NULL OR valid_from <= valid_to`؛ `role_id` فقط الگو یا نقشِ همان سازمان (تریگر `role_assignment_role_tenant_trg`)؛ ایندکس‌های `(role_id)` و `(organization_id, <scope>_id) WHERE … IS NOT NULL` برای هر ستون scope |
 
-### academic (۶)
+### academic (۸)
 | جدول | کلید طبیعی / یکتایی | یادداشت |
 |---|---|---|
 | school_enrollment | `(organization_id, student_profile_id, academic_year_id)` | `status ∈ registered,active,transferred_out,withdrawn,graduated`؛ `starts_on <= ends_on`؛ FK ترکیبی به student_profile, school, academic_year, grade_level؛ `grade_level_id` از `0012` nullable است: دانش‌آموزِ بدون کلاس یک ردیف `registered` بدون پایه برای سال جاری مدرسه می‌گیرد (لنگر دامنه) و `enrollStudent` با اولین کلاس آن را پر و `active` می‌کند |
@@ -88,6 +88,8 @@ PostgreSQL 16 · Drizzle ORM · مهاجرت‌ها SQL کامیت‌شده در
 | timetable_slot | `(organization_id, class_group_id, weekday, period_no)` | برنامهٴ هفتگی (مهاجرت `0015`): هر خانه → `class_offering` + `room` اختیاری؛ `weekday` ۰..۶، `period_no` ۱..۱۲ (عدد، نه FK به `school_period`). پاک کردن خانه = حذف ردیف |
 | attendance_session | `(organization_id, class_group_id, date, period_no)` **NULLS NOT DISTINCT** | حضور و غیاب (مهاجرت `0016`؛ docs/attendance.md): `period_no` خالی = ثبت روزانه، و چون کلید `NULLS NOT DISTINCT` است ثبت دوباره همان ردیف را به‌روز می‌کند؛ `class_offering_id` درس همان زنگ (nullable)، `taken_by_person_id` / `taken_at` امضای ثبت؛ ایندکس‌های `(organization_id, date)` و `(organization_id, class_offering_id)` |
 | attendance_entry | `(organization_id, attendance_session_id, student_profile_id)` | `status ∈ present,absent,late,excused`؛ `minutes_late` ۰..۶۰۰ (فقط روی `late`)؛ `note` تا ۳۰۰ نویسه؛ ایندکس `(organization_id, student_profile_id, status)` برای «حضور و غیاب من» و جمع‌های گزارش. سرویس `takeAttendance` (`src/modules/academic/attendance.ts`) |
+| learning_objective | `(organization_id, grade_level_id, month, subject_name, sort_order)` (موقعیت) | «کارنامهٴ توصیفی» (مهاجرت `0017`؛ docs/decisions.md «کارنامهٴ توصیفی»): هدف‌های آموزشی دبستان هر سازمان — پایه (FK ترکیبی) × ماه جلالی (CHECK ۱..۱۲) × نام یکسان درس + `subject_id` اختیاری (FK ترکیبی به درسِ همنام سازمان) × ترتیب؛ `domain ∈ knowledge,application,reasoning` یا NULL؛ `status/archived_at`. **فقط seed کاتالوگ می‌نویسد** (`scripts/objectives-catalog.ts` از `scripts/data/primary-objectives.json`)؛ برای `app_rw` فقط‌خواندنی (`REVOKE` داخل `apply_grants()`، مهاجرت `0017`). تغییر متن = به‌روزرسانی همان ردیف؛ سطرِ حذف‌شده بایگانی می‌شود، هرگز حذف نمی‌شود |
+| objective_rating | `(organization_id, academic_year_id, student_profile_id, learning_objective_id)` | سطح هر دانش‌آموز در هر هدف در یک سال: `rating ∈ very_good,good,acceptable,needs_effort`؛ `rated_by_person_id` / `rated_at` آخرین ثبت؛ ثبت دوباره = upsert، پاک کردن = DELETE (هر دو در `audit_log` با فهرست تغییرها، `academic.objective_rating.saved`). سرویس `saveObjectiveRatings` (`src/modules/academic/report-card.ts`) |
 
 ### workspace (۹)
 | جدول | کلید طبیعی / یکتایی | یادداشت |

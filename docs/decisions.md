@@ -1644,3 +1644,51 @@ Owner, from the approved mock `docs/mockups/class-page-v3.html` (screens 1–4).
   it (`offeringLinkQuery` → `getOfferingLink`, the subject page's own gate, `openOffering`), else to «پنل من».
 - Tests: `unified-list` (unit: tags, ordering, progress text, list shape, day cells), `navigation-feel` (row files);
   `timetable` (int: `order: "recent"`, `openCountsByOffering`, `getOfferingLink`).
+
+## 2026-10-13 — «کارنامهٴ توصیفی»: the primary report card (migration 0017)
+
+Owner: primary schools (دبستان, پایه ۱–۶) rate each student every month on that month's learning objectives per
+درس with «خیلی خوب / خوب / قابل قبول / نیاز به تلاش»; the class's آموزگار and the principal / vice record and
+correct. Docs: the school's data review **docs/primary-objectives-review.md**, docs/db.md.
+
+- **The school's documents are data, converted once and reviewable.** Six Word files → text
+  (`scripts/data/primary-objectives-source.txt`, committed) → `scripts/build-primary-objectives.ts` (pure rules in
+  `scripts/primary-objectives-parse.ts`) → `scripts/data/primary-objectives.json` (2538 objectives) + the review
+  (counts, the درس-name mapping, every tag form, every text change, 13 lines for the school to confirm). The
+  converter keeps the school's wording: the domain tag is moved into its own field, orthography is unified (ZWNJ,
+  ی/ک), and only listed, certain typos are fixed; judgement calls (4 misplaced lines, 4 bidi-scrambled lines, 2
+  merged lines) are explicit tables in the parser and are flagged in the review. A unit test asserts the committed
+  JSON equals a fresh parse, so the JSON is never hand-edited.
+- **Objectives are a per-organisation catalog, seeded, read-only for the app.** `academic.learning_objective` has
+  `organization_id` + RLS like every tenant table (composite FK to the org's grade_level; nullable composite FK to
+  its subject), but only the catalog seed writes it — `app.apply_grants()` (re-created in 0017 with one more
+  REVOKE) keeps app_rw on SELECT, like the global catalogs. **Natural key = position** `(grade, month, درس,
+  sort_order)`, chosen over a content hash because the owner asked that a corrected wording update in place and keep
+  its ratings; the cost — a reordered source would re-point ratings — is mitigated by the deterministic converter and
+  the review diff, and every wording change is audited with old and new text. Lines the documents drop are archived,
+  never deleted. Installed for every organisation with the G1–G6 پایه‌ها (i.e. all, after the fixed catalog), so a
+  primary school created tomorrow has its objectives without a deploy. The pg-only seed bundle now inlines `.json`.
+- **Ratings:** `academic.objective_rating` UNIQUE `(org, year, student, objective)`; a sheet (class × month × درس)
+  is saved in ONE action — upsert with ON CONFLICT, `null` = DELETE, unchanged pairs skipped, one audit row with
+  every change and none for a no-op. No history table (like attendance: the audit log is the trail).
+- **Scope = the class.** `academic.objective_rating.read/.write`: teacher both (held at their offering), student read
+  (own profile), org admin / principal / vice through «every role permission» (mirrors attendance, incl. org admin
+  write). The service lets ANY teacher of an open offering of the class rate the whole class — in دبستان one
+  آموزگار teaches every درس, and a درس with its own teacher may rate too; finer per-درس restriction was rejected
+  as not matching how primary schools work. Out of scope = NOT_FOUND.
+- **Colours** (`src/lib/objective-rating.ts`): خیلی خوب = success, خوب = primary, قابل قبول = the info-soft surface
+  with navy text, نیاز به تلاش = yellow warning FILL with navy text. `success` here breaks the «success only for
+  100 %» rule on purpose (the owner's mapping: the top level is the «done well» state); red is never used — needing
+  effort is not a failure.
+- **UI** mirrors the attendance roster: one card per student, a four-way 44 px segmented control per objective (tap
+  the pressed one to clear), «همه خیلی خوب» per student, the same sticky save bar (classes of 08f2c59) with
+  «۱۸ از ۲۴ دانش‌آموز ثبت شده»; month switcher opening on the current Jalali month or the nearest one with
+  objectives; A4 print per student. Home tiles «کارنامهٴ توصیفی» (staff) / «کارنامهٴ من» (student) appear only for
+  primary classes (`TileHats.reportCard` from one extra query), before «حضور و غیاب».
+  Routes: `/report-card` (class picker), `/report-card/[class]?month=` (درس‌ها + progress), `…/rate?month=&subject=`
+  (entry roster), `…/summary` («کارنامهٴ کلاس»), `…/print` (A4, one card per page, `&student=` for one),
+  `/report-card/me` («کارنامهٴ من»). Code: `src/modules/academic/report-card.ts`, `src/lib/objective-rating.ts`,
+  `src/modules/academic/ui/{RatingRoster,ReportCardParts}.tsx`; tests `tests/unit/{primary-objectives-parse,
+  objective-rating,report-card-tiles}.test.ts`, `tests/int/{objectives-catalog,report-card,seed-pilot}.test.ts`.
+- **Pilot:** a fourth pilot tenant «دبستان پیشگامان» (one school per pilot organisation is how the specs work, and the
+  secondary pilots and their demo extras stay untouched), with sample مهر ratings written through the service.
