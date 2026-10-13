@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { Chip, type ChipTone } from "@/components/Chip";
-import { PriorityDot } from "@/components/RowMark";
+import { PriorityDot, RowMark } from "@/components/RowMark";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PRIORITY_LABELS } from "@/components/priority";
@@ -160,7 +160,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
         </Button>
       ) : counselingLink?.kind === "file" ? (
         <Link prefetch={false} href={counselingLink.href} className="surface-link pressable surface-panel flex min-h-12 items-center gap-3 px-4 py-2 text-sm font-medium text-text">
-          <FolderOpen className="size-5 shrink-0 text-text-muted" strokeWidth={1.75} aria-hidden />
+          <RowMark icon={FolderOpen} />
           <span className="min-w-0 flex-1 truncate">
             پروندهٴ مشاورهٴ <bdi>{counselingLink.studentName}</bdi>
           </span>
