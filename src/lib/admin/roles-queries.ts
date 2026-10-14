@@ -15,7 +15,8 @@ export const rolesPageQuery = defineQuery({ permission: "iam.person.read", scope
   const scope = await getAdminScope(tx, ctx);
   const schools = (await listSchools(tx)).filter((s) => isInScope(scope, s.id)).map((s) => ({ value: s.id, label: s.name }));
   const roleGrant = roleGrantOptions(ctx.assignments, schools);
-  const candidates = roleGrant.roles.length > 0 ? await roleGrantCandidates(tx, scope) : [];
+  // Never the caller: nobody grants themselves a role (`assignRole` refuses it, MESSAGES.selfGrantForbidden).
+  const candidates = roleGrant.roles.length > 0 ? (await roleGrantCandidates(tx, scope)).filter((c) => c.value !== ctx.personId) : [];
   const templates = await tx
     .select({
       code: role.code,

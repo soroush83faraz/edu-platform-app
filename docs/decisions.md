@@ -1703,7 +1703,8 @@ docs/workspace.md (confidential items, administrative requests).
 
 - **Role `counselor` («مشاور»), school-scoped only**, granted and revoked on /admin/roles by exactly the people who
   grant «معاون» (`SCHOOL_GRANTABLE_ROLES`: a principal / vice principal at their own school, the organization admin
-  anywhere); a staff role (`assignRole` refuses a non-colleague like for the managers). Permissions:
+  anywhere); a staff role (`assignRole` refuses a non-colleague like for the managers); never to oneself and never
+  to a manager of the same school (2026-10-14, «security review» below). Permissions:
   `counseling.case.read` (the file), `counseling.note.write`, `counseling.referral.create`, `notif.notification.read`,
   `academic.objective_rating.read` (a primary student's report card from the file). **No `workspace.*` permission
   on purpose:** a school-scoped holder of `workspace.work_item.read/create/update` is a BROAD holder (`canBroadly`)
@@ -1776,3 +1777,23 @@ docs/workspace.md (confidential items, administrative requests).
   counselor-only account stays 0 (`inboxSummaryQuery` needs `workspace.work_item.read`). Tests:
   `tests/unit/counseling-policy.test.ts`, `tests/int/counseling.test.ts` (written; not run in this session —
   Docker was down).
+
+## 2026-10-14 — «مشاوره» / «کارنامهٴ توصیفی»: security review fixes (before the first deploy of 0017/0018)
+
+A fresh-context security review of the two unshipped features found five defects; each is fixed in its own commit.
+
+- **D1 — no manager is ever a counselor of their own school.** A principal, vice principal or organization admin
+  could grant THEMSELVES «مشاور» (`SCHOOL_GRANTABLE_ROLES` contains it) and then read the «فقط مشاوران» notes and
+  write notes in a counselor's name — both the service and the RESTRICTIVE policies of 0018 decide by the roles the
+  reader holds, so the role was the whole key. Now (a) **nobody grants themselves any role** through `assignRole`
+  (`resolveRoleGrant` step 5, FORBIDDEN «نمی‌توانید به خودتان نقش بدهید.»; the one exception stays the seeds'
+  `org_admin` bootstrap), and /admin/roles no longer offers the caller in its colleague picker; (b) **«مشاور» and a
+  manager role exclude each other per school** (`counselorExclusivityConflict`): «مشاور» at S is refused to a person
+  holding `org_admin` (it covers every school) or `school_principal` / `vice_principal` at S (school- or
+  branch-scoped), and a manager role at S (or `org_admin`, anywhere) to a counselor of S — VALIDATION on `personId`
+  («نقش «مشاور» به مدیر سازمان یا مدیر و معاونِ همان مدرسه داده نمی‌شود.» / «این همکار «مشاور» است؛ …»). A
+  counselor of school B may still be a manager of school A. To make (b) hold under concurrency, `assignRole` now
+  locks the person row FOR NO KEY UPDATE (`lockPersonForRoleGrant`) instead of FOR SHARE: it still waits for a
+  removal, and two grants to one person now run one after the other (tests/int/concurrency.test.ts C4b proves the
+  wait; with FOR SHARE both grants landed). No existing flow relied on a self-grant (seeds and tests grant to others;
+  the bootstrap is `org_admin`). Tests: `tests/int/counseling.test.ts` (the reviewer's probe), C4b.

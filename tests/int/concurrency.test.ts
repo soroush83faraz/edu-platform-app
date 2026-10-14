@@ -6,6 +6,7 @@
 //   C2 enrolling a class-less student while they are removed: refused, no class, the school stays withdrawn;
 //   C3 a teaching / C4 a manager role / C5 a temporary password for a colleague being removed: refused, nothing live,
 //      the account stays disabled;
+//   C4b «مشاور» and «معاون» of one school granted to one colleague at once: the second waits and is refused;
 //   C6 a class work item created while a student is removed: the student is not an assignee and is not notified;
 //   C7 a work item for named persons, one of them being removed: refused like any inactive recipient, nothing written;
 //   C8 an edit racing «اتمام»: waits and is refused, never written to the closed item — or goes first and is kept;
@@ -292,6 +293,18 @@ describe("concurrency: a removal against the doors that would bring the person b
     expect(r.waited).toBe(true);
     expectRejected(r.second, isError("VALIDATION", MESSAGES.managerRoleNeedsStaff));
     expect(await liveRolesOf(c.personId)).toEqual([]);
+  });
+
+  it("C4b: «مشاور» and «معاون» of the same school granted to one colleague at once: the second waits, reads the first and is refused — never both", async () => {
+    const c = await newStaff("سپیده");
+    const r = await race(
+      (tx) => assignRole(tx, orgAdmin, { personId: c.personId, roleCode: "counselor", schoolId: f.SCHOOL_A }),
+      (tx) => assignRole(tx, orgAdmin, { personId: c.personId, roleCode: "vice_principal", schoolId: f.SCHOOL_A }),
+    );
+    expect(r.waited).toBe(true);
+    expect(r.first.created).toBe(true);
+    expectRejected(r.second, isError("VALIDATION", MESSAGES.managerNotForCounselor));
+    expect(await liveRolesOf(c.personId)).toEqual([{ id: r.first.roleAssignmentId }]);
   });
 
   it("C5: a temporary password set while the person is removed is refused — the account stays disabled, no printable password", async () => {

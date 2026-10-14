@@ -40,7 +40,7 @@ import {
 import type { Assignment } from "@/modules/iam/can";
 import { PERMISSIONS } from "@/modules/iam/permissions";
 import { listValidAssignments } from "@/modules/iam/repo";
-import { assignRole, createStaff, createStudent, revokeRoleAssignment } from "@/modules/iam/service";
+import { MESSAGES, assignRole, createStaff, createStudent, revokeRoleAssignment } from "@/modules/iam/service";
 import { createAcademicYear, createClassGroup, createClassOffering, createSchool } from "@/modules/tenancy/service";
 import { canViewWorkItem, changeStatus } from "@/modules/workspace/service";
 import { runMigrations } from "../../scripts/migrate";
@@ -69,7 +69,7 @@ const bootstrap: Actor = {
 };
 const tenant = { orgId: f.ORG_A, personId: f.PERSON_A2 };
 
-const isError = (code: string) => (e: unknown) => AppError.is(e) && e.code === code;
+const isError = (code: string, message?: string) => (e: unknown) => AppError.is(e) && e.code === code && (message === undefined || e.message === message);
 /** A savepoint, so a failing statement never poisons the test's transaction. */
 const sub = <T>(tx: Tx, fn: (sp: Tx) => Promise<T>) => tx.transaction((sp) => fn(sp));
 
@@ -311,6 +311,52 @@ describe("«مشاوره» — the counseling file", () => {
       await expect(sub(tx, (sp) => as(sp, w.principalB, (t) => getStudentFile(t, w.principalB, w.studentA1.studentProfileId)))).rejects.toSatisfy(isError("NOT_FOUND"));
       await as(tx, w.counselorA, (t) => updateCounselorNote(t, w.counselorA, { noteId: shared.id, visibility: "counselors_and_principal" }));
       expect(await countAs(tx, w.principalB, "counselor_note")).toBe(0);
+    });
+  });
+
+  it("no manager becomes a counselor of their own school: no self-grant, «مشاور» and a manager role exclude each other — a plain colleague still becomes one", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const secret = await as(tx, w.counselorA, (t) => createCounselorNote(t, w.counselorA, note(w, w.studentA1.studentProfileId, "counselors")));
+      const grant = (who: Actor, personId: string, roleCode: "counselor" | "vice_principal" | "school_principal", schoolId = f.SCHOOL_A) =>
+        sub(tx, (sp) => assignRole(sp, who, { personId, roleCode, schoolId }));
+
+      // The reviewer's probe: the principal, the vice principal and the organization admin each grant themselves «مشاور».
+      for (const mgr of [w.principalA, w.viceA, w.admin]) {
+        await expect(grant(mgr, mgr.personId, "counselor")).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.selfGrantForbidden));
+      }
+      // Self-grant is refused for every role, not only «مشاور» (the vice principal re-granting their own role too).
+      await expect(grant(w.viceA, w.viceA.personId, "vice_principal")).rejects.toSatisfy(isError("FORBIDDEN", MESSAGES.selfGrantForbidden));
+      // Nor through a colleague: the principal gives «مشاور» to the vice principal, the organization admin to the
+      // principal — both managers of school A.
+      await expect(grant(w.principalA, w.viceA.personId, "counselor")).rejects.toSatisfy(isError("VALIDATION", MESSAGES.counselorNotForManager));
+      await expect(grant(w.admin, w.principalA.personId, "counselor")).rejects.toSatisfy(isError("VALIDATION", MESSAGES.counselorNotForManager));
+      // …and the other way round: A's counselor is made vice principal or principal of A.
+      await expect(grant(w.principalA, w.counselorA.personId, "vice_principal")).rejects.toSatisfy(isError("VALIDATION", MESSAGES.managerNotForCounselor));
+      await expect(grant(w.admin, w.counselorA.personId, "school_principal")).rejects.toSatisfy(isError("VALIDATION", MESSAGES.managerNotForCounselor));
+      // A new colleague registered with both roles at once gets neither (createStaff is one transaction).
+      await expect(
+        sub(tx, (sp) =>
+          createStaff(sp, w.admin, { firstName: "پری", lastName: "دوکاره", phone: "09127400099", createAccount: false, roles: [{ roleCode: "vice_principal", schoolId: f.SCHOOL_A }, { roleCode: "counselor", schoolId: f.SCHOOL_A }] }),
+        ),
+      ).rejects.toSatisfy(isError("VALIDATION", MESSAGES.counselorNotForManager));
+
+      // Nothing was granted: management still reads no «فقط مشاوران» note and writes no note — service and database.
+      for (const mgr of [w.principalA, w.viceA, w.admin]) {
+        const again = await actor(tx, mgr.personId);
+        expect(again.assignments.map((a) => a.roleCode)).not.toContain("counselor");
+        expect((await as(tx, again, (t) => getStudentFile(t, again, w.studentA1.studentProfileId))).notes.map((n) => n.id)).not.toContain(secret.id);
+        expect(await countAs(tx, again, "counselor_note")).toBe(0);
+        await expect(sub(tx, (sp) => as(sp, again, (t) => createCounselorNote(t, again, note(w, w.studentA1.studentProfileId, "counselors"))))).rejects.toSatisfy(isError("FORBIDDEN"));
+      }
+
+      // The ordinary grant still works: the principal makes a plain colleague (a teacher of A) «مشاور» — who now reads
+      // the counselors-only note; another school's counselor may still be a manager HERE (the rule is per school).
+      const made = await assignRole(tx, w.principalA, { personId: w.teacherA2.personId, roleCode: "counselor", schoolId: f.SCHOOL_A });
+      expect(made.created).toBe(true);
+      const newCounselor = await actor(tx, w.teacherA2.personId);
+      expect((await as(tx, newCounselor, (t) => getStudentFile(t, newCounselor, w.studentA1.studentProfileId))).notes.map((n) => n.id)).toEqual([secret.id]);
+      expect((await assignRole(tx, w.admin, { personId: w.counselorB.personId, roleCode: "vice_principal", schoolId: f.SCHOOL_A })).created).toBe(true);
     });
   });
 

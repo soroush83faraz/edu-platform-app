@@ -38,9 +38,11 @@
 // would make the person live again reads «is this person still here?» only under a lock on that same row, so it waits
 // for a removal in flight and then sees `archived`, and a removal that starts later waits for it and ends what it wrote:
 //   • FOR SHARE (`lockPersonForShare`, ./repo) in front of the one-person checks — `enrollStudent`, `moveEnrollment`,
-//     `assignTeacher` (academic/service), `assignRole`, `createAccountForPerson`, the temporary password and the unlock
+//     `assignTeacher` (academic/service), `createAccountForPerson`, the temporary password and the unlock
 //     (`requireAccountInOrg`, ./service). The importer, «افزودن تدریس», the offerings form and the placement all reach
 //     the database through these;
+//   • FOR NO KEY UPDATE (`lockPersonForRoleGrant`, ./repo) in front of `assignRole`'s checks: it waits for the removal
+//     like FOR SHARE does, and also serialises two role grants to one person (the «مشاور» / manager exclusivity);
 //   • FOR KEY SHARE on the recipients of a new work item (the class roster, the named persons — workspace/repo
 //     `RecipientReadOptions`): a whole class at once, so the weakest mode that still waits for FOR UPDATE.
 // So this lock must stay FOR UPDATE: FOR NO KEY UPDATE would not wait for the KEY SHARE readers, nor they for it.

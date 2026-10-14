@@ -39,8 +39,10 @@ export interface Queryable {
  * confidentiality model in docs/decisions.md): the counselor's notes and referrals, and the teacher's report to the
  * counselor. The school's management READS the student file (the notes their visibility allows) and RECEIVES
  * referrals (`counseling.referral.receive`); it never writes in the counselor's or a teacher's name. A principal who
- * also teaches gets the report through their teacher role, a principal who is also the school's counselor through
- * the `counselor` role — never through the manager hat.
+ * also teaches gets the report through their teacher role — never through the manager hat. A principal, vice
+ * principal or organization admin is never ALSO a counselor of the same school (2026-10-14: `assignRole` refuses
+ * either role to a holder of the other there, and nobody grants themselves a role), so the counselors-only notes
+ * stay out of management's reach.
  */
 export const NON_MANAGER_PERMS: readonly Permission[] = ["counseling.note.write", "counseling.referral.create", "counseling.teacher_report.write"];
 

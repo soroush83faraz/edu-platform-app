@@ -19,7 +19,7 @@ import { can, canAtAnyScope, resolveScopeChain, type Assignment } from "./can";
 import { PERSON_REMOVED_MESSAGE } from "./messages";
 import { generateInitialPassword, hashPassword } from "./password";
 import type { Permission } from "./permissions";
-import { findAccountByIdentifier, lockPersonForShare } from "./repo";
+import { findAccountByIdentifier, lockPersonForRoleGrant, lockPersonForShare } from "./repo";
 import { clearRecentFailures } from "./throttle";
 import { authIdentity, contactPoint, organizationMembership, person, role, roleAssignment, staffProfile, studentProfile, userAccount, userSession } from "./schema";
 
@@ -75,6 +75,19 @@ export const MESSAGES = {
    * only, never a student (verifier, 2026-09-27).
    */
   managerRoleNeedsStaff: "این نقش فقط به کارکنان فعال داده می‌شود.",
+  /**
+   * Nobody grants themselves a role (2026-10-14): a principal or vice principal who put «مشاور» on their own manager
+   * hat would read the counselors-only notes of their school and write notes in a counselor's name. The one exception
+   * is the organization admin's bootstrap (`resolveRoleGrant` 1b) — the seeds creating an organization's first admin.
+   */
+  selfGrantForbidden: "نمی‌توانید به خودتان نقش بدهید.",
+  /**
+   * «مشاور» and a manager role (مدیر سازمان / مدیر مدرسه / معاون) never sit on one person at one school
+   * (2026-10-14): the counselors-only notes are kept from the school's management, and management never writes in
+   * the counselor's name. `counselorNotForManager` refuses the counselor role, `managerNotForCounselor` the manager one.
+   */
+  counselorNotForManager: "نقش «مشاور» به مدیر سازمان یا مدیر و معاونِ همان مدرسه داده نمی‌شود.",
+  managerNotForCounselor: "این همکار «مشاور» است؛ نقش مدیریتی در مدرسه‌ای که در آن مشاور است به او داده نمی‌شود.",
   /** No new account, password or unlock for a removed person (src/modules/iam/removal.ts) — it would reopen their login. */
   personRemoved: PERSON_REMOVED_MESSAGE,
   changed: "— تغییر داده شده",
@@ -536,7 +549,11 @@ interface ResolvedRoleGrant {
  *      only the organization admin appoints principals — a principal may not mint a principal), at the school for
  *      `vice_principal`; for the `student` role `iam.person.write` at any scope (the role is the marker of a
  *      registered student, not an admin capability — the person must additionally be in scope, which `assignRole`
- *      checks once the person exists). docs/admin.md «ماتریس اعطای نقش».
+ *      checks once the person exists). docs/admin.md «ماتریس اعطای نقش»;
+ *   5. the role does not go to the caller themself (FORBIDDEN, `selfGrantForbidden`), whatever the role — the
+ *      `org_admin` bootstrap of 1b is the one exception. Checked after 4, so a caller who lacks the permission still
+ *      hears which permission it is (nothing is hidden from someone asking about themself).
+ * The «مشاور» / manager exclusivity needs the person's own roles, so `assignRole` checks it once the person is locked.
  */
 async function resolveRoleGrant(tx: Tx, ctx: IamCtx, input: Omit<AssignRoleInput, "personId"> & { personId?: string }): Promise<ResolvedRoleGrant> {
   const adminScope = await getAdminScope(tx, ctx);
@@ -568,7 +585,48 @@ async function resolveRoleGrant(tx: Tx, ctx: IamCtx, input: Omit<AssignRoleInput
     if (target.scopeType !== "school") throw validation(undefined, MESSAGES.roleScopeNotAllowed);
     if (!(await can(tx, ctx, "iam.role_assignment.write", { scopeType: "school", id: target.schoolId }))) throw forbidden(MESSAGES.roleGrantForbidden);
   }
+  if (input.personId === ctx.personId && input.roleCode !== "org_admin") throw forbidden(MESSAGES.selfGrantForbidden);
   return { roleId: tpl.id, target, adminScope };
+}
+
+/** The manager roles «مشاور» is exclusive with (`counselorExclusivityConflict`). */
+const MANAGER_ROLE_CODES: readonly string[] = ["org_admin", "school_principal", "vice_principal"];
+
+/**
+ * Separation of duties (2026-10-14): «مشاور» and a manager role never sit on one person at one school — the
+ * counselors-only notes are hidden from the school's management (the counseling service AND the RESTRICTIVE policies
+ * of migration 0018, which both decide by the roles the reader holds), so a manager who also held «مشاور» there
+ * would read them and write notes in a counselor's name. Which side refuses the grant, or null:
+ *   • `counselor` at school S — the person holds `org_admin` (it covers every school) or `school_principal` /
+ *     `vice_principal` at S (school-scoped, or branch-scoped at one of S's branches) → `counselorNotForManager`;
+ *   • `school_principal` / `vice_principal` at S — the person is a counselor at S; `org_admin` (the bootstrap) — the
+ *     person is a counselor anywhere → `managerNotForCounselor`.
+ * A live role = not revoked and not ended (`valid_to` null or today or later — a future-dated one counts: it will be
+ * live). Read under `assignRole`'s lock on the person row, so two grants to the same person cannot both pass.
+ */
+async function counselorExclusivityConflict(tx: Tx, personId: string, roleCode: string, target: RoleTarget): Promise<string | null> {
+  const atSchool = (schoolId: string) =>
+    sql`((ra.scope_type = 'school' and ra.school_id = ${schoolId}::uuid)
+        or (ra.scope_type = 'branch' and exists (select 1 from tenancy.branch b where b.id = ra.branch_id and b.school_id = ${schoolId}::uuid)))`;
+  const live = (codes: readonly string[], where: SQL) =>
+    tx.execute<{ id: string }>(sql`
+      select ra.id
+      from iam.role_assignment ra
+      join iam.role r on r.id = ra.role_id
+      where ra.person_id = ${personId}::uuid
+        and ra.revoked_at is null
+        and (ra.valid_to is null or ra.valid_to >= current_date)
+        and r.code = any(${sql.param([...codes], undefined)}::text[])
+        and ${where}
+      limit 1`);
+  if (roleCode === "counselor") {
+    if (target.scopeType !== "school") return null;
+    const managers = await live(MANAGER_ROLE_CODES, sql`(ra.scope_type = 'organization' or ${atSchool(target.schoolId)})`);
+    return managers.rows.length > 0 ? MESSAGES.counselorNotForManager : null;
+  }
+  if (!MANAGER_ROLE_CODES.includes(roleCode)) return null;
+  const counselors = await live(["counselor"], target.scopeType === "school" ? atSchool(target.schoolId) : sql`true`);
+  return counselors.rows.length > 0 ? MESSAGES.managerNotForCounselor : null;
 }
 
 /**
@@ -593,13 +651,16 @@ async function isActiveStaff(tx: Tx, personId: string): Promise<boolean> {
  * (`org_admin` bootstrap, `school_principal`, `vice_principal`) additionally needs an active colleague
  * (`isActiveStaff`): a student, a guardian-only person or a colleague who has left is refused with a field error
  * (VALIDATION on `personId`, nothing written) — the person is already known to be in the caller's scope, so the
- * answer reveals nothing the caller's own lists do not. Those checks run under the person row's FOR SHARE lock: a
- * removal running at the same moment is waited for and then refused, never left holding a live role (./removal).
+ * answer reveals nothing the caller's own lists do not. So is «مشاور» for a manager of that school or a manager role
+ * for its counselor (`counselorExclusivityConflict`). Those checks run under the person row's lock
+ * (`lockPersonForRoleGrant`, FOR NO KEY UPDATE): a removal running at the same moment is waited for and then refused,
+ * never left holding a live role (./removal), and a second grant to the same person waits for the first and reads
+ * its role — «مشاور» and «معاون» granted at once never both land.
  */
 export async function assignRole(tx: Tx, ctx: IamCtx, input: AssignRoleInput): Promise<{ roleAssignmentId: string; created: boolean }> {
   const { roleId, target, adminScope } = await resolveRoleGrant(tx, ctx, input);
   await requirePersonInScope(tx, adminScope, input.personId);
-  await lockPersonForShare(tx, input.personId);
+  await lockPersonForRoleGrant(tx, input.personId);
   if (target.scopeType === "student") {
     // A profile of another person would hand `personId` the reach over that student's items.
     const [sp] = await tx.select({ personId: studentProfile.personId }).from(studentProfile).where(eq(studentProfile.id, target.studentProfileId)).limit(1);
@@ -608,6 +669,9 @@ export async function assignRole(tx: Tx, ctx: IamCtx, input: AssignRoleInput): P
     // A manager role is a STAFF role: it would give a student the school's whole admin surface (people, accounts,
     // roles, structure) and every work item of the organization.
     throw fieldError("personId", MESSAGES.managerRoleNeedsStaff);
+  } else {
+    const conflictMessage = await counselorExclusivityConflict(tx, input.personId, input.roleCode, target);
+    if (conflictMessage) throw fieldError("personId", conflictMessage);
   }
   const { scopeId, ...scope } = target;
   const existing = await tx

@@ -106,6 +106,19 @@ export async function lockPersonForShare(tx: Tx, personIds: string | SQLWrapper)
     .for("share");
 }
 
+/**
+ * Tenant-bound. FOR NO KEY UPDATE on one person row — `assignRole`'s lock (2026-10-14), in place of FOR SHARE: it
+ * still waits for a removal in flight (FOR UPDATE) and makes a later one wait, and on top of that two role grants to
+ * the SAME person run one after the other, so the second reads the role the first wrote (the «مشاور» / manager
+ * exclusivity of ./service). It neither waits for nor holds up the FOR KEY SHARE readers (work-item recipients,
+ * foreign-key checks). On a person other transactions can see it must be this transaction's FIRST lock on the row:
+ * after a FOR SHARE of its own it would be a lock upgrade, which two such transactions would deadlock on (a person
+ * created in the same transaction — `createStaff`, `createStudent` — is invisible to everyone else, so no contention).
+ */
+export async function lockPersonForRoleGrant(tx: Tx, personId: string): Promise<void> {
+  await tx.select({ id: person.id }).from(person).where(eq(person.id, personId)).for("no key update");
+}
+
 /** Global. Replaces the password hash and clears the forced-change flag in one go. */
 export async function setPassword(tx: Tx, userAccountId: string, secretHash: string): Promise<void> {
   await tx
