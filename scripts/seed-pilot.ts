@@ -31,6 +31,7 @@ import { Pool } from "pg";
 import * as schema from "../src/db/schema";
 import { findAttendanceSession, listClassRoster, listClassSlots } from "../src/modules/academic/repo";
 import { takeAttendance } from "../src/modules/academic/attendance";
+import { canonicalSubject } from "../src/modules/academic/primary-objectives";
 import { saveObjectiveRatings } from "../src/modules/academic/report-card";
 import { tehranToday } from "../src/lib/attendance";
 import { assignTeacher, setTimetableSlot } from "../src/modules/academic/service";
@@ -1063,17 +1064,21 @@ export function sampleRatingFor(key: string): "very_good" | "good" | "acceptable
 export const sampleSheetSkipped = (key: string): boolean => hashInt(`skip:${key}`, 100) < 15;
 
 /**
- * Every class of a primary pilot school: its آموزگار (the teacher of its فارسی) rates the roster on every درس of مهر
- * through the real service with their own ctx (scope rule + audit). Idempotent by the service itself: a pair that
- * already has the same level is not written, and a save that changes nothing writes no audit row.
+ * Every class of a primary pilot school is rated on every درس of مهر through the real service, each درس by the one
+ * who may write it (`maySubjectWrite`, owner 2026-10-14) with their own ctx (scope rule + audit): the teacher of that
+ * درس in the class — the آموزگار (the teacher of its فارسی) for most, the ورزش teacher for «تربیت بدنی» — and the
+ * آموزگار for a درس no offering of the class carries («شایستگی‌های عمومی»). Idempotent by the service itself: a pair
+ * that already has the same level is not written, and a save that changes nothing writes no audit row.
  */
 async function seedReportCards(db: Db, orgId: string, spec: PilotOrgSpec, structure: { classIds: Record<string, string>; teachers: TeacherOut[]; allocation: string[][] }, ctxCache: Map<string, ActorCtx>): Promise<void> {
   for (const c of spec.classes) {
     const classGroupId = structure.classIds[c.name];
-    const t = structure.allocation.findIndex((keys) => keys.includes(`${c.name}:FA`));
-    if (t === -1) continue;
+    const teacherOf = (code: string) => structure.allocation.findIndex((keys) => keys.includes(`${c.name}:${code}`));
+    const homeroom = teacherOf("FA");
+    if (homeroom === -1) continue;
+    // The canonical درس of each of the class's pilot درس‌ها → its code (an offering of the class).
+    const codeOf = new Map(spec.subjects.filter((s) => c.subjects.includes(s.code)).map((s) => [canonicalSubject(s.name), s.code] as const));
     await withOrg(db, orgId, async (tx) => {
-      const ctx = await actorCtx(tx, orgId, structure.teachers[t].personId, ctxCache);
       const objectives = await tx.execute<{ id: string; subject_name: string; sort_order: number }>(sql`
         select lo.id, lo.subject_name, lo.sort_order
         from academic.learning_objective lo
@@ -1083,6 +1088,10 @@ async function seedReportCards(db: Db, orgId: string, spec: PilotOrgSpec, struct
       const roster = await listClassRoster(tx, classGroupId, tehranToday());
       const subjects = [...new Set(objectives.rows.map((o) => o.subject_name))];
       for (const subjectName of subjects) {
+        const code = codeOf.get(subjectName);
+        const t = code === undefined ? homeroom : teacherOf(code);
+        if (t === -1) continue;
+        const ctx = await actorCtx(tx, orgId, structure.teachers[t].personId, ctxCache);
         const entries = roster.flatMap((r) =>
           sampleSheetSkipped(`${spec.key}:${r.personId}:${subjectName}`)
             ? []

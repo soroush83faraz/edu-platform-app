@@ -156,7 +156,7 @@ export function RatingRoster({ data }: { data: RatingSheet }) {
       ) : (
         <p className="flex items-start gap-2 px-1 text-meta text-text-muted">
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning-text" aria-hidden />
-          شما این کارنامه را فقط می‌بینید؛ ثبت آن با آموزگار کلاس یا مدیر و معاون مدرسه است.
+          {data.writesOtherSubjects ? "شما این درس را فقط می‌بینید؛ ثبت آن با دبیرِ همین درس یا مدیر و معاون مدرسه است." : "شما این کارنامه را فقط می‌بینید؛ ثبت آن با آموزگار کلاس یا مدیر و معاون مدرسه است."}
         </p>
       )}
     </div>

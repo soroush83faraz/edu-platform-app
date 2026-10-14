@@ -1673,9 +1673,9 @@ correct. Docs: the school's data review **docs/primary-objectives-review.md**, d
   every change and none for a no-op. No history table (like attendance: the audit log is the trail).
 - **Scope = the class.** `academic.objective_rating.read/.write`: teacher both (held at their offering), student read
   (own profile), org admin / principal / vice through «every role permission» (mirrors attendance, incl. org admin
-  write). The service lets ANY teacher of an open offering of the class rate the whole class — in دبستان one
-  آموزگار teaches every درس, and a درس with its own teacher may rate too; finer per-درس restriction was rejected
-  as not matching how primary schools work. Out of scope = NOT_FOUND.
+  write). ANY teacher of an open offering of the class READS the whole class; since 2026-10-14 (security review,
+  D3 below) a teacher WRITES only the درس‌ها they teach there and those the class has no offering of — in دبستان
+  the آموزگار teaches (so writes) every درس, the ورزش teacher writes ورزش. Out of scope = NOT_FOUND.
 - **Colours** (`src/lib/objective-rating.ts`): خیلی خوب = success, خوب = primary, قابل قبول = the info-soft surface
   with navy text, نیاز به تلاش = yellow warning FILL with navy text. `success` here breaks the «success only for
   100 %» rule on purpose (the owner's mapping: the top level is the «done well» state); red is never used — needing
@@ -1797,3 +1797,15 @@ A fresh-context security review of the two unshipped features found five defects
   removal, and two grants to one person now run one after the other (tests/int/concurrency.test.ts C4b proves the
   wait; with FOR SHARE both grants landed). No existing flow relied on a self-grant (seeds and tests grant to others;
   the bootstrap is `org_admin`). Tests: `tests/int/counseling.test.ts` (the reviewer's probe), C4b.
+- **D3 — a teacher writes only their own درس‌ها of the class** (owner-aligned narrowing). `saveObjectiveRatings` let
+  any teacher of any open offering of a class write EVERY درس of it — the ورزش teacher could overwrite ریاضی. Now
+  (`maySubjectWrite`, src/lib/objective-rating.ts, unit-tested): the class's management (write held at the class or
+  above) writes every درس; a teacher writes درس X when they teach an open offering of X in the class — the درس row
+  the objectives link, or a row named X or one of its spellings (`canonicalSubject`) — and a درس with NO open offering
+  in the class («شایستگی‌های عمومی» has no درس row) is written by any teacher of the class. Reads are unchanged. A
+  teacher saving a درس that is not theirs gets FORBIDDEN «ثبت کارنامهٴ این درس با دبیرِ همین درس یا مدیر و معاون مدرسه
+  است.» (they read the sheet anyway, so nothing is revealed; no write at all in the class stays NOT_FOUND). UI: the
+  class page marks the درس‌ها the viewer does not write «فقط مشاهده», their roster opens read-only and says whose درس
+  it is (`writesOtherSubjects`). The pilot seed now rates each درس through its own writer (the ورزش teacher rates
+  «تربیت بدنی», the آموزگار the rest). Tests: `tests/int/report-card.test.ts` «who writes which درس»,
+  `tests/unit/objective-rating.test.ts`, `tests/int/seed-pilot.test.ts`.

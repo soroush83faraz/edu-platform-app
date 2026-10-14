@@ -3,19 +3,33 @@
 // shape as attendance: `(tx, ctx, input)` inside the caller's tenant transaction, explicit column selects, `audit()`
 // in the one mutation, and every scope decision INSIDE the transaction — out of scope is NOT_FOUND, never FORBIDDEN.
 //
-// The scope rule (owner, 2026-10-13): a report card belongs to a CLASS. Admins (org admin, principal, vice) hold
-// `academic.objective_rating.*` at the school, so `can(..., class_group)` answers for them; a teacher holds it at
-// their `class_offering`, and ANY open offering of the class lets them rate the WHOLE class — in دبستان one آموزگار
-// teaches everything, and a درس with its own teacher (ورزش, قرآن) may rate too. A student reads their OWN profile
-// (`can(..., student)`). Anything else — a teacher of another class, the principal of another school, another
-// tenant (RLS) — is NOT_FOUND.
+// The scope rule (owner, 2026-10-13; writing narrowed 2026-10-14): a report card belongs to a CLASS. Admins (org
+// admin, principal, vice) hold `academic.objective_rating.*` at the school, so `can(..., class_group)` answers for
+// them — they read and write every درس. A teacher holds it at their `class_offering`: ANY open offering of the class
+// lets them READ the whole class, but they WRITE only the درس‌ها they teach there, plus the درس‌ها the class has no
+// open offering of (`maySubjectWrite`, src/lib/objective-rating.ts) — the دبستان's آموزگار teaches every درس and
+// writes them all, the ورزش teacher writes ورزش (and «شایستگی‌های عمومی», which no offering carries), never ریاضی.
+// A student reads their OWN profile (`can(..., student)`). Anything else — a teacher of another class, the principal
+// of another school, another tenant (RLS) — is NOT_FOUND; a reader of the class saving a درس that is not theirs is
+// FORBIDDEN (they already see the sheet, so nothing is revealed).
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { tehranToday } from "@/lib/attendance";
-import { notFound, validation } from "@/lib/errors";
+import { forbidden, notFound, validation } from "@/lib/errors";
 import { tehranJalaliMonth } from "@/lib/format";
-import { defaultReportMonth, emptyRatingCounts, isObjectiveRating, isSheetComplete, tallyRatings, type ObjectiveRating, type RatingCounts } from "@/lib/objective-rating";
+import {
+  defaultReportMonth,
+  emptyRatingCounts,
+  isObjectiveRating,
+  isSheetComplete,
+  maySubjectWrite,
+  tallyRatings,
+  type ClassWriteRights,
+  type ObjectiveRating,
+  type OfferingSubject,
+  type RatingCounts,
+} from "@/lib/objective-rating";
 import { can, canPure } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
 import { jalaliMonthName, schoolMonthIndex, subjectOrder, type ObjectiveDomain } from "./primary-objectives";
@@ -27,6 +41,8 @@ export type ReportCtx = TimetableCtx;
 type RatingPermission = Extract<Permission, "academic.objective_rating.read" | "academic.objective_rating.write">;
 
 export const REPORT_CARD_MESSAGES = {
+  /** A teacher of the class saving a درس another teacher of the class teaches (`maySubjectWrite`). */
+  notYourSubject: "ثبت کارنامهٴ این درس با دبیرِ همین درس یا مدیر و معاون مدرسه است.",
   noObjectives: "برای این درس در این ماه هدفی ثبت نشده است.",
   objectiveNotInSheet: "این هدف به این درس و این ماه تعلق ندارد.",
   notInRoster: "برای کسی که در این کلاس ثبت‌نام فعال ندارد نمی‌توان کارنامه ثبت کرد.",
@@ -90,17 +106,32 @@ async function findReportClass(tx: Tx, classGroupId: string): Promise<ReportClas
     : null;
 }
 
-async function openOfferingIds(tx: Tx, classGroupId: string): Promise<string[]> {
-  const res = await tx.execute<{ id: string }>(sql`select o.id from tenancy.class_offering o where o.class_group_id = ${classGroupId}::uuid and o.status <> 'closed'`);
-  return res.rows.map((r) => r.id);
+/** The class's open offerings with their درس row — what `maySubjectWrite` matches a درس of the report card against. */
+async function openOfferings(tx: Tx, classGroupId: string): Promise<OfferingSubject[]> {
+  const res = await tx.execute<{ id: string; subject_id: string | null; subject_name: string | null }>(sql`
+    select o.id, o.subject_id, s.name as subject_name
+    from tenancy.class_offering o
+    left join tenancy.subject s on s.id = o.subject_id
+    where o.class_group_id = ${classGroupId}::uuid and o.status <> 'closed'`);
+  return res.rows.map((r) => ({ offeringId: r.id, subjectId: r.subject_id, subjectName: r.subject_name }));
 }
 
-/** Holds `permission` at the class (admins, a class-scoped teacher) or at ANY open offering of it (its teachers)? */
-export async function classAccess(tx: Tx, ctx: ReportCtx, classGroupId: string, permission: RatingPermission): Promise<boolean> {
-  if (await can(tx, ctx, permission, { scopeType: "class_group", id: classGroupId })) return true;
-  const offerings = await openOfferingIds(tx, classGroupId);
-  return offerings.some((id) => canPure(ctx.assignments, [{ scopeType: "class_offering", id }], permission));
+/** What the caller holds in one class: READ (at the class or above, or at ANY open offering), and the write rights. */
+export interface ClassRights extends ClassWriteRights {
+  read: boolean;
 }
+
+export async function classRights(tx: Tx, ctx: ReportCtx, classGroupId: string): Promise<ClassRights> {
+  const offerings = await openOfferings(tx, classGroupId);
+  const at = (o: OfferingSubject, p: RatingPermission) => canPure(ctx.assignments, [{ scopeType: "class_offering", id: o.offeringId }], p);
+  const ref = { scopeType: "class_group" as const, id: classGroupId };
+  const read = (await can(tx, ctx, "academic.objective_rating.read", ref)) || offerings.some((o) => at(o, "academic.objective_rating.read"));
+  const writeAll = await can(tx, ctx, "academic.objective_rating.write", ref);
+  return { read, writeAll, mine: offerings.filter((o) => at(o, "academic.objective_rating.write")), offerings };
+}
+
+/** Writes at least one درس of the class (the class-level «canWrite» of the pickers and the overview). */
+const writesSomething = (r: ClassWriteRights): boolean => r.writeAll || r.mine.length > 0;
 
 // ---------------------------------------------------------------------------------------------------------------
 // objectives of a پایه
@@ -179,6 +210,7 @@ export interface RatableClass {
   schoolName: string;
   gradeName: string;
   students: number;
+  /** The caller writes at least one درس of the class (which ones: `classReportOverview`). */
   canWrite: boolean;
 }
 
@@ -237,22 +269,26 @@ export interface RatingSheet {
   rows: SheetRow[];
   /** Students with every objective of the sheet rated. */
   complete: number;
+  /** The caller may write THIS درس (`maySubjectWrite`). */
   canWrite: boolean;
+  /** Read-only here, yet the caller writes another درس of the class (the roster says whose درس this is). */
+  writesOtherSubjects: boolean;
   /** The last save of this sheet («آخرین ثبت …»). */
   saved: { at: Date; byName: string | null } | null;
 }
 
 /**
  * The roster of one sheet with every saved rating pre-filled. Read scope: `academic.objective_rating.read` at the
- * class or any of its open offerings; `canWrite` the same with `.write`. A درس without objectives that month gives
- * an empty `objectives` (the page shows the empty state naming the پایه and month).
+ * class or any of its open offerings; `canWrite` = the caller may write this درس (`maySubjectWrite`). A درس without
+ * objectives that month gives an empty `objectives` (the page shows the empty state naming the پایه and month).
  */
 export async function getRatingSheet(tx: Tx, ctx: ReportCtx, input: { classGroupId: string; month: number; subjectName: string }): Promise<RatingSheet> {
   const cg = await findReportClass(tx, input.classGroupId);
   if (!cg) throw notFound();
-  if (!(await classAccess(tx, ctx, cg.id, "academic.objective_rating.read"))) throw notFound();
-  const canWrite = await classAccess(tx, ctx, cg.id, "academic.objective_rating.write");
+  const rights = await classRights(tx, ctx, cg.id);
+  if (!rights.read) throw notFound();
   const objectives = (await listObjectives(tx, cg.gradeLevelId, input.month)).filter((o) => o.subjectName === input.subjectName);
+  const canWrite = maySubjectWrite(rights, { name: input.subjectName, subjectId: objectives[0]?.subjectId ?? null });
   const roster = await listClassRoster(tx, cg.id, tehranToday());
   const ratings = await ratingsOf(
     tx,
@@ -291,6 +327,7 @@ export async function getRatingSheet(tx: Tx, ctx: ReportCtx, input: { classGroup
     rows,
     complete: rows.filter((r) => isSheetComplete(ids, r.ratings)).length,
     canWrite,
+    writesOtherSubjects: !canWrite && writesSomething(rights),
     saved,
   };
 }
@@ -323,13 +360,16 @@ export interface SaveRatingsResult {
  * `null` loses its rating (DELETE). Validates that every objective is an ACTIVE objective of this class's پایه for
  * that month and درس, and every student has an active enrollment in the class. One audit row
  * (`academic.objective_rating.saved`) carries each change with its old and new level; a save that changes
- * nothing writes nothing. Write scope: `academic.objective_rating.write` at the class or any of its open offerings.
+ * nothing writes nothing. Write scope: `academic.objective_rating.write` at the class or any of its open offerings
+ * (NOT_FOUND otherwise), and THIS درس must be the caller's (`maySubjectWrite` — FORBIDDEN otherwise).
  */
 export async function saveObjectiveRatings(tx: Tx, ctx: ReportCtx, input: SaveRatingsInput): Promise<SaveRatingsResult> {
   const cg = await findReportClass(tx, input.classGroupId);
   if (!cg) throw notFound();
-  if (!(await classAccess(tx, ctx, cg.id, "academic.objective_rating.write"))) throw notFound();
+  const rights = await classRights(tx, ctx, cg.id);
+  if (!writesSomething(rights)) throw notFound();
   const objectives = (await listObjectives(tx, cg.gradeLevelId, input.month)).filter((o) => o.subjectName === input.subjectName);
+  if (!maySubjectWrite(rights, { name: input.subjectName, subjectId: objectives[0]?.subjectId ?? null })) throw forbidden(REPORT_CARD_MESSAGES.notYourSubject);
   if (objectives.length === 0) fail("subjectName", REPORT_CARD_MESSAGES.noObjectives);
   const objectiveIds = new Set(objectives.map((o) => o.id));
   const roster = await listClassRoster(tx, cg.id, tehranToday());
@@ -426,6 +466,8 @@ export interface ClassSubjectProgress {
   objectives: number;
   /** Students with every objective of this درس rated. */
   complete: number;
+  /** The caller may write this درس (`maySubjectWrite`); its roster opens read-only otherwise. */
+  canWrite: boolean;
 }
 
 export interface ClassStudentSummary {
@@ -448,19 +490,21 @@ export interface ClassReportOverview {
   students: ClassStudentSummary[];
   /** Total objectives of the month. */
   objectives: number;
+  /** The caller writes at least one درس of the class (each درس says whether it is one: `subjects[].canWrite`). */
   canWrite: boolean;
 }
 
 /**
- * One class in one month: its درس‌ها with how many students are fully rated, and each student's counts of the four
- * levels across the month. `month` omitted = the current Jalali month when the پایه has objectives for it, else the
- * nearest month that has some (`defaultReportMonth`). Read scope as `getRatingSheet`.
+ * One class in one month: its درس‌ها with how many students are fully rated (and whether the caller writes each), and
+ * each student's counts of the four levels across the month. `month` omitted = the current Jalali month when the پایه
+ * has objectives for it, else the nearest month that has some (`defaultReportMonth`). Read scope as `getRatingSheet`.
  */
 export async function classReportOverview(tx: Tx, ctx: ReportCtx, input: { classGroupId: string; month?: number }, now = new Date()): Promise<ClassReportOverview> {
   const cg = await findReportClass(tx, input.classGroupId);
   if (!cg) throw notFound();
-  if (!(await classAccess(tx, ctx, cg.id, "academic.objective_rating.read"))) throw notFound();
-  const canWrite = await classAccess(tx, ctx, cg.id, "academic.objective_rating.write");
+  const rights = await classRights(tx, ctx, cg.id);
+  if (!rights.read) throw notFound();
+  const canWrite = writesSomething(rights);
   const months = await availableMonths(tx, cg.gradeLevelId);
   const month = input.month ?? defaultReportMonth(months, tehranJalaliMonth(now));
   const objectives = month === null ? [] : await listObjectives(tx, cg.gradeLevelId, month);
@@ -479,6 +523,7 @@ export async function classReportOverview(tx: Tx, ctx: ReportCtx, input: { class
       subjectId: g.subjectId,
       objectives: ids.length,
       complete: roster.filter((r) => isSheetComplete(ids, Object.fromEntries(ratings.get(r.studentProfileId) ?? []))).length,
+      canWrite: maySubjectWrite(rights, { name: g.name, subjectId: g.subjectId }),
     };
   });
   const students = roster.map((r) => {
@@ -564,7 +609,7 @@ export async function myReportCard(tx: Tx, ctx: ReportCtx, input: { month?: numb
 export async function classReportCards(tx: Tx, ctx: ReportCtx, input: { classGroupId: string; month: number; studentProfileId?: string }, now = new Date()): Promise<{ classGroup: ReportClass; monthName: string; cards: StudentReportCard[] }> {
   const cg = await findReportClass(tx, input.classGroupId);
   if (!cg) throw notFound();
-  if (!(await classAccess(tx, ctx, cg.id, "academic.objective_rating.read"))) throw notFound();
+  if (!(await classRights(tx, ctx, cg.id)).read) throw notFound();
   const months = await availableMonths(tx, cg.gradeLevelId);
   const objectives = await listObjectives(tx, cg.gradeLevelId, input.month);
   let roster = await listClassRoster(tx, cg.id, tehranToday(now));

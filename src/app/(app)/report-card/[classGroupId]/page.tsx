@@ -20,8 +20,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /**
  * One class's report card for a month: the month switcher, then its درس‌ها — each with how many students are fully
- * rated — leading to the entry roster, then «کارنامهٴ کلاس» (the per-student summary) and «چاپ کارنامه‌ها». Out of
- * the caller's scope = «چنین صفحه‌ای پیدا نشد» (the service answers NOT_FOUND).
+ * rated — leading to the entry roster (read-only, marked «فقط مشاهده», for a درس another teacher of the class
+ * teaches), then «کارنامهٴ کلاس» (the per-student summary) and «چاپ کارنامه‌ها». Out of the caller's scope =
+ * «چنین صفحه‌ای پیدا نشد» (the service answers NOT_FOUND).
  */
 export default async function ClassReportPage({ params, searchParams }: { params: Promise<{ classGroupId: string }>; searchParams: Promise<{ month?: string }> }) {
   const { classGroupId } = await params;
@@ -87,6 +88,8 @@ export default async function ClassReportPage({ params, searchParams }: { params
                         کامل
                       </Chip>
                     ) : null}
+                    {/* A teacher writes only the درس‌ها they teach here (and those no offering carries); the rest open read-only. */}
+                    {d.canWrite && !s.canWrite ? <Chip className="shrink-0">فقط مشاهده</Chip> : null}
                     <ChevronLeft className="size-4 shrink-0 text-text-faint" aria-hidden />
                   </Link>
                 </li>

@@ -103,8 +103,9 @@ export const SYSTEM_ROLES: SystemRole[] = [
     name: "معلم",
     description: "کارتابل درس‌های خود",
     allowedScopeTypes: ["class_offering", "class_group"],
-    // «کارنامهٴ توصیفی»: held at the teacher's class_offering; the service lets ANY teacher of an open offering of a
-    // class rate that whole class (the primary آموزگار teaches everything; a درس with its own teacher can rate too).
+    // «کارنامهٴ توصیفی»: held at the teacher's class_offering; ANY teacher of an open offering of a class READS that
+    // whole class, and writes the درس‌ها they teach there plus those no offering of the class carries (2026-10-14,
+    // `maySubjectWrite`: the primary آموزگار teaches everything; the ورزش teacher writes ورزش, never ریاضی).
     permissions: [
       ...WORK_ITEM_ALL,
       "notif.notification.read",

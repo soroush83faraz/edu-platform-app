@@ -1,5 +1,6 @@
 // «کارنامهٴ توصیفی» — the pure half: the four levels (labels, colours), the counts, the «ثبت‌شده» rule, the month a
-// page opens on, and the Zod inputs of the report-card action and queries (`.strict()`, Persian messages).
+// page opens on, who writes which درس (`maySubjectWrite`), and the Zod inputs of the report-card action and queries
+// (`.strict()`, Persian messages).
 import { describe, expect, it } from "vitest";
 import {
   OBJECTIVE_RATINGS,
@@ -10,6 +11,8 @@ import {
   emptyRatingCounts,
   isObjectiveRating,
   isSheetComplete,
+  maySubjectWrite,
+  offeringIsOfSubject,
   ratedTotal,
   ratingSummaryFa,
   tallyRatings,
@@ -100,5 +103,34 @@ describe("report-card inputs", () => {
     expect(ReportPrintInput.parse({ classGroupId: CG, month: 7, studentProfileId: SP }).studentProfileId).toBe(SP);
     expect(MyReportCardInput.parse({})).toEqual({});
     expect(() => MyReportCardInput.parse({ studentProfileId: SP })).toThrow();
+  });
+});
+
+describe("who writes which درس of a class (maySubjectWrite)", () => {
+  const MATH_ROW = "0199a000-0009-7000-8000-0000000000aa";
+  const math = { offeringId: "o-math", subjectId: MATH_ROW, subjectName: "ریاضی" };
+  const pe = { offeringId: "o-pe", subjectId: "s-pe", subjectName: "ورزش" };
+  const offerings = [math, pe];
+  const MATH = { name: "ریاضی", subjectId: MATH_ROW };
+  const PE = { name: "تربیت بدنی", subjectId: null };
+  const COMPETENCE = { name: "شایستگی‌های عمومی", subjectId: null };
+
+  it("matches an offering by the linked درس row or by a spelling of the درس", () => {
+    expect(offeringIsOfSubject(math, MATH)).toBe(true);
+    expect(offeringIsOfSubject(pe, PE)).toBe(true); // «ورزش» is a spelling of «تربیت بدنی»
+    expect(offeringIsOfSubject({ offeringId: "o2", subjectId: "other-row", subjectName: "ریاضیات" }, MATH)).toBe(true);
+    expect(offeringIsOfSubject(pe, MATH)).toBe(false);
+    expect(offeringIsOfSubject({ offeringId: "o3", subjectId: null, subjectName: null }, COMPETENCE)).toBe(false);
+  });
+
+  it("management writes every درس; a teacher their own درس and the ones no offering carries; nobody else anything", () => {
+    const admin = { writeAll: true, mine: [], offerings };
+    const peTeacher = { writeAll: false, mine: [pe], offerings };
+    const homeroom = { writeAll: false, mine: [math], offerings };
+    const reader = { writeAll: false, mine: [], offerings };
+    for (const s of [MATH, PE, COMPETENCE]) expect(maySubjectWrite(admin, s)).toBe(true);
+    expect([MATH, PE, COMPETENCE].map((s) => maySubjectWrite(peTeacher, s))).toEqual([false, true, true]);
+    expect([MATH, PE, COMPETENCE].map((s) => maySubjectWrite(homeroom, s))).toEqual([true, false, true]);
+    for (const s of [MATH, PE, COMPETENCE]) expect(maySubjectWrite(reader, s)).toBe(false);
   });
 });

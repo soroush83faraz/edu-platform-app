@@ -6,7 +6,7 @@
 // Colour (docs/decisions.md «کارنامهٴ توصیفی»): «خیلی خوب» = success, «خوب» = primary, «قابل قبول» = the soft info
 // surface with navy text, «نیاز به تلاش» = the yellow warning FILL with navy text (CLAUDE.md: yellow is a fill,
 // never text). No red: needing effort is not a failure, and red already means «a problem» in the product.
-import { schoolMonthIndex } from "@/modules/academic/primary-objectives";
+import { canonicalSubject, schoolMonthIndex } from "@/modules/academic/primary-objectives";
 
 export const OBJECTIVE_RATINGS = ["very_good", "good", "acceptable", "needs_effort"] as const;
 export type ObjectiveRating = (typeof OBJECTIVE_RATINGS)[number];
@@ -91,4 +91,54 @@ export function monthParam(raw: string | undefined): number | undefined {
   if (!raw || !/^\d{1,2}$/.test(raw)) return undefined;
   const m = Number(raw);
   return m >= 1 && m <= 12 ? m : undefined;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// who writes which درس (owner, 2026-10-14)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** An open offering of a class as the write rule sees it: the offering and its درس row (`tenancy.subject`). */
+export interface OfferingSubject {
+  offeringId: string;
+  subjectId: string | null;
+  subjectName: string | null;
+}
+
+/** A درس of the report card: its canonical name (`learning_objective.subject_name`) and the درس row its objectives link. */
+export interface ReportSubject {
+  name: string;
+  subjectId: string | null;
+}
+
+/**
+ * Is the offering one of درس `subject`? Its درس row is the one the objectives link (`subjectId`), or a row whose name
+ * is that درس or one of its spellings (`canonicalSubject` — an organisation with «ریاضی» and «ریاضیات» rows links the
+ * objectives to one of them, and an offering of the other is still ریاضی).
+ */
+export function offeringIsOfSubject(offering: OfferingSubject, subject: ReportSubject): boolean {
+  if (subject.subjectId !== null && offering.subjectId === subject.subjectId) return true;
+  return offering.subjectName !== null && canonicalSubject(offering.subjectName) === subject.name;
+}
+
+/** What the caller holds in ONE class (report-card `classRights`). */
+export interface ClassWriteRights {
+  /** `academic.objective_rating.write` at the class or above — the organisation admin, the principal, the vice. */
+  writeAll: boolean;
+  /** The class's open offerings at which the caller holds the write permission (their teaching). */
+  mine: readonly OfferingSubject[];
+  /** Every open offering of the class. */
+  offerings: readonly OfferingSubject[];
+}
+
+/**
+ * May the caller write درس `subject` of the class? (Owner, 2026-10-14 — narrowed from «any teacher of the class writes
+ * every درس», which let the ورزش teacher overwrite ریاضی.) The class's management writes every درس; a teacher writes a
+ * درس they teach in this class (one of `mine` is of it), and a درس the class has NO open offering of — e.g.
+ * «شایستگی‌های عمومی», which no درس row carries — is written by any teacher of the class. Everyone else writes nothing.
+ */
+export function maySubjectWrite(rights: ClassWriteRights, subject: ReportSubject): boolean {
+  if (rights.writeAll) return true;
+  if (rights.mine.length === 0) return false;
+  if (rights.mine.some((o) => offeringIsOfSubject(o, subject))) return true;
+  return !rights.offerings.some((o) => offeringIsOfSubject(o, subject));
 }
