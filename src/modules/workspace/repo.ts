@@ -557,7 +557,10 @@ export interface WorkItemCore {
   createdByPersonId: string;
   /** Set when the item was given to a class (its درس) — its recipients are that class's students. */
   classOfferingId: string | null;
-  /** Participants only (migration 0018): the managers' broad read does not reach it (`canViewWorkItem`). */
+  /**
+   * Participants only open it (migration 0018): the managers' broad read does not reach it (`canViewWorkItem`). The
+   * counseling student file still lists the referral behind it to its school's case readers (`listReferrals`).
+   */
   isConfidential: boolean;
   createdAt: Date;
   updatedAt: Date;

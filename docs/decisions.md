@@ -1749,9 +1749,10 @@ docs/workspace.md (confidential items, administrative requests).
   the school has none, VALIDATION when nobody; «درخواست گزارش از دبیر» = a `task` to some of the student's current
   teachers (anyone else = INVALID_REFERENCE). Both through `createConfidentialWorkItem` (workspace): recipients
   authorised and locked FOR KEY SHARE by the caller first (person rows before work items), the item flagged
-  **`work_item.is_confidential`** (additive column) — participants only: `canViewWorkItem`'s broad managers' read
-  skips it, like a personal item — so a principal of another school or an unaddressed organisation admin gets
-  NOT_FOUND. Idempotency key per form. The file shows each referral's live status («در انتظار / در جریان /
+  **`work_item.is_confidential`** (additive column) — participants only OPEN it: `canViewWorkItem`'s broad managers'
+  read skips it, like a personal item — so a principal of another school or an unaddressed organisation admin gets
+  NOT_FOUND on the work item. The student file is a separate, intended audience: every case reader of the school
+  sees its referral list — title, status, addressees, the closing answer — addressed or not (D2 below). Idempotency key per form. The file shows each referral's live status («در انتظار / در جریان /
   انجام‌شده / بسته‌شده») and, for management, the decision = the note of the addressee's answer that closed it
   (since 2026-10-14 — it was the latest transition's note of any kind; D5 below).
 - **Administrative requests became answerable in «پنل من»:** an `admin_request` is closed by its FIRST answer
@@ -1853,3 +1854,15 @@ A fresh-context security review of the two unshipped features found five defects
   `CONFIDENTIAL_NOTE_MESSAGE`): the only UI note on these items was already «ثبت پاسخ», so nothing legitimate is lost,
   and the item's trail can no longer hold a text that reads like a decision. Tests: `tests/int/counseling.test.ts`
   («the file shows only the answer that closed a referral»).
+- **D2 — documentation: what «confidential» means for a referral.** The docstrings said an organisation admin who is
+  not an addressee gets NOT_FOUND, while the student file shows referral titles and answers to every case reader of
+  the school. Both are intended and now say so (`canViewWorkItem`, `createConfidentialWorkItem`, the counseling
+  service header, docs/workspace.md): the WORK ITEM is participants-only (its creator and addressees open it, see its
+  description and trail, act on it; anyone else — a principal of another school, the organisation admin it was not
+  addressed to — gets NOT_FOUND), and the STUDENT FILE lists every referral of the school — title, status, addressees,
+  the answer that closed it — to every case reader of that school (its counselors, principal, vice principals and the
+  organisation admin), addressed or not. Checked for a leak beyond that: every work-item list is participant-based
+  (inbox rows, the creator), the managers' broad read exists only in `canViewWorkItem` and skips confidential items,
+  `listReferrals` never selects the description, the audit rows carry lengths, the referral row's RLS admits the
+  school's case readers and the addressees only — no code change. `tests/int/counseling.test.ts` now pins it (the
+  unaddressed organisation admin reads the referral in the file, NOT_FOUND on the item).

@@ -6,8 +6,9 @@
 // watcher) and to holders of a BROAD `workspace.work_item.read` (organization/school/branch scoped roles — admins,
 // principals, vice principals — see all items of the organization; per-school partitioning is a later block) —
 // except a personal `todo` (single self-assignee), which only its owner sees, and a CONFIDENTIAL item
-// (`is_confidential`, migration 0018 — the counselor's referrals), which only its participants see. Everyone else gets
-// NOT_FOUND, never FORBIDDEN, so the existence of an item is not leaked.
+// (`is_confidential`, migration 0018 — the counselor's referrals), which only its participants OPEN (the student file
+// of «مشاوره» lists it to the case readers of its school — see `canViewWorkItem`). Everyone else gets NOT_FOUND, never
+// FORBIDDEN, so the existence of an item is not leaked.
 import { and, asc, eq, exists, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
@@ -74,7 +75,11 @@ function nouns(ctx: WorkspaceCtx): WorkItemWords {
  * open or reopen it (QA round 1 m5; widened from `todo` only in round 2). A CONFIDENTIAL item (the counselor's
  * «ارجاع به مدیریت» / «درخواست گزارش از دبیر», `createConfidentialWorkItem`) is the same for everyone but its
  * participants — its creator and the people with an inbox row for it: a principal of another school, or the
- * organization admin it was not addressed to, gets NOT_FOUND like for any unknown id.
+ * organization admin it was not addressed to, gets NOT_FOUND here like for any unknown id, so they can neither open
+ * the item (its description, its trail) nor act on it. This is about the WORK ITEM only: the student file of
+ * «مشاوره» (counseling `listReferrals`) lists every referral of the school — its title, status, addressees and the
+ * answer that closed it — to every case reader of that school (its counselors, principal and vice principals, and the
+ * organization admin), addressed or not (docs/decisions.md «security review fixes», D2).
  */
 export async function canViewWorkItem(tx: Tx, ctx: WorkspaceCtx, workItemId: string): Promise<WorkItemCore> {
   const item = await findWorkItemCore(tx, workItemId);
@@ -344,8 +349,10 @@ export interface ConfidentialWorkItemInput {
  * A work item another module opens on behalf of its own, already-checked capability — today the counselor's
  * «ارجاع به مدیریت» and «درخواست گزارش از دبیر» (src/modules/counseling/service.ts). Not reachable from any
  * workspace action: the calling module authorises the actor and the recipients (`ConfidentialWorkItemInput`).
- * The item is CONFIDENTIAL — participants only (`canViewWorkItem`), so its title and description (about a student)
- * never reach a manager it was not addressed to — and its audit row carries lengths, never the text. Otherwise the
+ * The item is CONFIDENTIAL — only its participants open it (`canViewWorkItem`): a manager it was not addressed to
+ * never opens it, and its description and trail stay with its participants; its title, status, addressees and closing
+ * answer are ALSO listed in the student file to the case readers of the student's school (counseling
+ * `listReferrals`) — the calling module's own audience. Its audit rows carry lengths, never the text. Otherwise the
  * same item as `createWorkItem` writes: the recipients' inbox rows and bells, the creator's watcher row, the first
  * transition. An idempotency key that already created an item hands that item back (`duplicate`).
  */

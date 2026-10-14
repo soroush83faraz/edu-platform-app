@@ -16,7 +16,9 @@
 //     reads back only their own reports;
 //   • a referral goes to the school's management (`counseling.referral.receive` there — else the organization admin),
 //     a report request to some of the student's current teachers — both as CONFIDENTIAL work items
-//     (`createConfidentialWorkItem`: participants only, audited without their text).
+//     (`createConfidentialWorkItem`: only participants open the item, audited without its text). The file lists every
+//     referral of the school — title, status, addressees, the answer that closed it — to every case reader of the
+//     school, addressed or not; opening the work item itself stays with its participants (`canViewWorkItem`).
 // The database checks the same thing once more for app_rw (the RESTRICTIVE policies of migration 0018).
 import { eq, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
@@ -453,7 +455,7 @@ export interface ReferralResult {
 /**
  * «ارجاع به مدیریت»: an `admin_request` to the school's management (`managementOfSchool` — its principal and vice
  * principals, else the organization admin; VALIDATION when there is nobody), CONFIDENTIAL — only they and the
- * counselor see it. They handle it in «پنل من»; the first answer closes it and its note is the decision the file shows.
+ * counselor open the item; the school's other case readers see it in the student file (title, status, answer). They handle it in «پنل من»; the first answer closes it and its note is the decision the file shows.
  * Recipients are locked (FOR KEY SHARE) before the item is written — person rows before work items.
  */
 export async function referToManagement(tx: Tx, ctx: CounselingCtx, input: ReferInput): Promise<ReferralResult> {

@@ -516,6 +516,11 @@ describe("«مشاوره» — the counseling file", () => {
       expect(after.referrals.map((r) => [r.statusCategory, r.answer, r.answerBy])).toEqual([["done", "با ولی تماس گرفته شد", "مریم رضایی"]]);
       // The principal reads the referral in the file too; another school's counselor does not see a row of it.
       expect((await as(tx, w.principalA, (t) => getStudentFile(t, w.principalA, w.studentA2.studentProfileId))).referrals).toHaveLength(1);
+      // The organization admin it was not addressed to is a case reader of the school: the file lists it — title,
+      // status, the answer — although the work item itself stays NOT_FOUND for them (checked above).
+      expect((await as(tx, w.admin, (t) => getStudentFile(t, w.admin, w.studentA2.studentProfileId))).referrals.map((r) => [r.workItemId, r.answer])).toEqual([
+        [ref.workItemId, "با ولی تماس گرفته شد"],
+      ]);
       expect(await countAs(tx, w.counselorB, "referral")).toBe(0);
 
       // A replayed form (same key) gives back the same referral, not a second one.
