@@ -1,5 +1,6 @@
 // GET /api/inbox/summary → { overdue, dueToday, unread, unreadNotifications } for the badge poller. Same gate as
-// every page (defineQuery: session → must-change → permission); never cached.
+// every page (defineQuery: session → must-change → permission; each count behind its own permission — a counselor
+// without `workspace.*` still gets the bell, `inboxSummaryQuery`); never cached.
 import { NextResponse } from "next/server";
 import { HTTP_STATUS } from "@/lib/errors";
 import { inboxSummaryQuery } from "@/modules/workspace/queries";

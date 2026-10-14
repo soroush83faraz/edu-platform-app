@@ -218,6 +218,10 @@ export const NOTIFICATION_TYPES: SystemNotificationType[] = [
   { code: "work_item.due_extended", module: "workspace", name: "مهلت کار تغییر کرد" },
   { code: "work_item.updated", module: "workspace", name: "کار ویرایش شد" },
   { code: "work_item.due_soon", module: "workspace", name: "مهلت کار نزدیک است", urgency: "high" },
+  // «مشاوره» (owner, 2026-10-14): the counselor's bell — the student's name and the kind of event, never the text.
+  { code: "counseling.referral_answered", module: "counseling", name: "پاسخ مدیریت به ارجاع" },
+  { code: "counseling.report_request_done", module: "counseling", name: "پاسخ دبیر به درخواست گزارش" },
+  { code: "counseling.teacher_report", module: "counseling", name: "گزارش دبیر به مشاور" },
   { code: "account.password_reset", module: "iam", name: "رمز حساب بازنشانی شد", urgency: "high", userCanDisable: false },
   { code: "system.announcement", module: "system", name: "اطلاعیهٴ سامانه", userCanDisable: false },
 ];

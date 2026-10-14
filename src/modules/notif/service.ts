@@ -11,6 +11,9 @@ export type NotificationTypeCode =
   | "work_item.due_extended"
   | "work_item.updated"
   | "work_item.due_soon"
+  | "counseling.referral_answered"
+  | "counseling.report_request_done"
+  | "counseling.teacher_report"
   | "account.password_reset"
   | "system.announcement";
 

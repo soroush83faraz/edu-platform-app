@@ -10,6 +10,7 @@ import {
   NO_REACH,
   NOTE_MAX,
   canEditNote,
+  counselingNotificationTitle,
   groupByGrade,
   inReach,
   initialsOf,
@@ -17,6 +18,7 @@ import {
   noteVisibleTo,
   referralState,
   referralTitle,
+  studentFileHref,
   teacherRequestDescription,
   TEACHER_REQUEST_GUIDE,
   type CounselingStudentRow,
@@ -160,6 +162,14 @@ describe("referrals", () => {
     expect(referralTitle("سارا احمدی", "ب".repeat(400)).length).toBe(200);
     expect(teacherRequestDescription("  وضعیتش چطور است؟ ")).toBe(`وضعیتش چطور است؟\n\n${TEACHER_REQUEST_GUIDE}`);
     expect(teacherRequestDescription(null)).toBe(TEACHER_REQUEST_GUIDE);
+  });
+
+  it("the counselor's bell names the student and the kind of event only, and opens the student's file", () => {
+    expect(counselingNotificationTitle("referral_answered", "سارا احمدی")).toBe("پاسخ مدیریت به ارجاع: سارا احمدی");
+    expect(counselingNotificationTitle("teacher_report", "سارا احمدی")).toBe("گزارش دبیر دربارهٴ سارا احمدی");
+    expect(counselingNotificationTitle("report_request_done", "سارا احمدی")).toBe("پاسخ دبیر به درخواست گزارش: سارا احمدی");
+    expect(counselingNotificationTitle("teacher_report", "ب".repeat(400)).length).toBe(200);
+    expect(studentFileHref(A)).toBe(`/counseling/students/${A}`);
   });
 
   it("an administrative request is closed by its first answer; every other type waits for every assignee", () => {

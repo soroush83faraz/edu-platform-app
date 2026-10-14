@@ -491,6 +491,27 @@ export async function managementOfSchool(tx: Tx, schoolId: string, exceptPersonI
 }
 
 /**
+ * The counselors of a school — whom a teacher's «گزارش به مشاور» is announced to: active persons holding
+ * `counseling.note.write` through a valid assignment AT the school (school-scoped, or branch-scoped at one of its
+ * branches). Management never holds it (catalog `NON_MANAGER_PERMS`). Never `exceptPersonId`.
+ */
+export async function counselorsOfSchool(tx: Tx, schoolId: string, exceptPersonId: string): Promise<string[]> {
+  const res = await tx.execute<{ person_id: string }>(sql`
+    select distinct ra.person_id
+    from iam.role_assignment ra
+    join iam.role_permission rp on rp.role_id = ra.role_id and rp.permission_code = 'counseling.note.write'
+    join iam.person p on p.id = ra.person_id and p.status = 'active'
+    where ra.revoked_at is null
+      and (ra.valid_from is null or ra.valid_from <= current_date)
+      and (ra.valid_to is null or ra.valid_to >= current_date)
+      and ra.person_id <> ${exceptPersonId}::uuid
+      and ((ra.scope_type = 'school' and ra.school_id = ${schoolId}::uuid)
+           or (ra.scope_type = 'branch' and exists (select 1 from tenancy.branch b where b.id = ra.branch_id and b.school_id = ${schoolId}::uuid)))
+    order by ra.person_id`);
+  return res.rows.map((r) => r.person_id);
+}
+
+/**
  * FOR KEY SHARE on the given person rows in ascending id order, returning the ones still active — the recipients of a
  * new work item, read under the lock a removal's FOR UPDATE waits for (workspace/repo `RecipientReadOptions`,
  * iam/removal «Concurrency»: person rows before work items).
@@ -611,11 +632,14 @@ export async function listReferrals(tx: Tx, studentProfileId: string, read: Scho
 }
 
 /** The referral behind a work item, when the current person may read it (RLS: its school's case readers and its addressees). */
-export async function findReferralByWorkItem(tx: Tx, workItemId: string): Promise<{ id: string; kind: ReferralKind; schoolId: string; studentProfileId: string } | null> {
-  const res = await tx.execute<{ id: string; kind: ReferralKind; school_id: string; student_profile_id: string }>(sql`
-    select r.id, r.kind, r.school_id, r.student_profile_id from counseling.referral r where r.work_item_id = ${workItemId}::uuid limit 1`);
+export async function findReferralByWorkItem(
+  tx: Tx,
+  workItemId: string,
+): Promise<{ id: string; kind: ReferralKind; schoolId: string; studentProfileId: string; createdByPersonId: string } | null> {
+  const res = await tx.execute<{ id: string; kind: ReferralKind; school_id: string; student_profile_id: string; created_by_person_id: string }>(sql`
+    select r.id, r.kind, r.school_id, r.student_profile_id, r.created_by_person_id from counseling.referral r where r.work_item_id = ${workItemId}::uuid limit 1`);
   const r = res.rows[0];
-  return r ? { id: r.id, kind: r.kind, schoolId: r.school_id, studentProfileId: r.student_profile_id } : null;
+  return r ? { id: r.id, kind: r.kind, schoolId: r.school_id, studentProfileId: r.student_profile_id, createdByPersonId: r.created_by_person_id } : null;
 }
 
 /** Is `personId` an assignee of the work item? */

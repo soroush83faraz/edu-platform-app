@@ -1866,3 +1866,40 @@ A fresh-context security review of the two unshipped features found five defects
   `listReferrals` never selects the description, the audit rows carry lengths, the referral row's RLS admits the
   school's case readers and the addressees only — no code change. `tests/int/counseling.test.ts` now pins it (the
   unaddressed organisation admin reads the referral in the file, NOT_FOUND on the item).
+
+## 2026-10-14 — «مشاوره»: the counselor's bell
+
+Owner: the counselor hears, in the in-app bell, of (1) management's answer to a «ارجاع به مدیریت», (2) a teacher's
+«گزارش به مشاور» about a student of their school, (3) a teacher's answer to a «درخواست گزارش از دبیر». Each opens the
+student's file (`/counseling/students/<id>`).
+
+- **Three catalog types, module `counseling`** (`scripts/catalog.ts`, installed by `seed --catalog` on deploy; the
+  `NotificationTypeCode` union follows): `counseling.referral_answered` «پاسخ مدیریت به ارجاع: <نام>»,
+  `counseling.report_request_done` «پاسخ دبیر به درخواست گزارش: <نام>», `counseling.teacher_report` «گزارش دبیر دربارهٴ
+  <نام>». **Title = the student's name + the kind of event; no body** (`counselingNotificationTitle`, policy.ts): never
+  the answer's, report's or request's text, never the referral subject — a notification row lives outside the
+  RESTRICTIVE policies of 0018. The recipients already read that name in the file.
+- **Who.** (1) the counselor who referred, on the addressee's answer that closes the `admin_request` (first answer,
+  `closesOnFirstAnswer`; «در حال بررسی» is no answer); (2) every current counselor of the school the report is filed at
+  (`counselorsOfSchool`: active holders of `counseling.note.write` at that school or one of its branches — management
+  never holds it), read FOR KEY SHARE; (3) the counselor who asked, on EACH addressed teacher's «انجام شد». Never the
+  actor (a teacher who is also a counselor of the school does not hear of their own report); (1)/(3) only while the
+  asker is still a counselor of that school; the workspace notify policy (`notifiable`) applies. Deduped: a report once
+  per counselor (`counseling:report:<id>`), an answer once per answering row and its `responded_at`
+  (`counseling:<referral>:answered:<actor>:<iso>`), so a reopened request answered again is a new event.
+- **Where it runs.** (2) in `createTeacherReport`. (1)/(3) in workspace `changeStatus`: the addressees answer in
+  «پنل من», a workspace surface, so the assignee path calls `notifyConfidentialAnswer` (src/modules/counseling/notify.ts)
+  for a confidential item — workspace → counseling/notify → counseling/repo, no import cycle (counseling/service →
+  workspace/service is the other direction and never reaches back). This is the one exception to «an assignee's own
+  «انجام شد» notifies no one» (round 7): the counselor holds no `workspace.*` and has no other place to see it.
+  `lockItemPeople` now also takes the creator of a CONFIDENTIAL item FOR KEY SHARE before the item's lock — the new
+  recipient — keeping person rows before work items.
+- **The bell for a counselor-only account.** `inboxSummaryQuery` (badge, bell, Home strip, GET /api/inbox/summary) was
+  gated on `workspace.work_item.read`, so a counselor got FORBIDDEN and a bell stuck at zero. It is now open to every
+  signed-in person (`iam.account.self`) and each half needs its own permission at any scope: the work counts
+  `workspace.work_item.read`, the unread-notification count `notif.notification.read`; the half one may not read is
+  zero. No workspace permission was granted to anyone. /notifications and marking read already needed only
+  `notif.notification.read`.
+- Tests: `tests/int/counseling.test.ts` «the counselor's bell» (the three events, recipients and non-recipients, no
+  secret text in any notification, dedupe, a teacher-counselor not self-notified, the counselor's unread count),
+  `tests/unit/inbox-summary.test.ts` (the split gate), `tests/unit/counseling-policy.test.ts` (titles).

@@ -75,10 +75,18 @@ export const workItemDetailQuery = defineQuery({ schema: WorkItemIdInput, permis
   getWorkItemDetail(tx, ctx, input.workItemId),
 );
 
-/** `{ overdue, dueToday, unread, unreadNotifications }` — the badge, the Home strip and GET /api/inbox/summary. */
-export const inboxSummaryQuery = defineQuery({ permission: "workspace.work_item.read", scope: "any" }, async (tx, _input, ctx): Promise<InboxSummary> => {
-  const counts = await inboxCounts(tx, ctx.personId);
-  const unreadNotifications = await unreadNotificationCount(tx, ctx.personId);
+const NO_WORK_COUNTS = { overdue: 0, dueToday: 0, unread: 0 } as const;
+
+/**
+ * `{ overdue, dueToday, unread, unreadNotifications }` — the badge, the bell, the Home strip and GET
+ * /api/inbox/summary, for every signed-in person (`iam.account.self`). Each half needs its OWN permission, at any
+ * scope (both are the caller's own rows): the work counts `workspace.work_item.read`, the bell
+ * `notif.notification.read` — so a counselor, who holds no `workspace.*` (catalog «مشاور»), still gets their bell;
+ * the half a person may not read is zero.
+ */
+export const inboxSummaryQuery = defineQuery({ permission: "iam.account.self" }, async (tx, _input, ctx): Promise<InboxSummary> => {
+  const counts = canAtAnyScope(ctx.assignments, "workspace.work_item.read") ? await inboxCounts(tx, ctx.personId) : NO_WORK_COUNTS;
+  const unreadNotifications = canAtAnyScope(ctx.assignments, "notif.notification.read") ? await unreadNotificationCount(tx, ctx.personId) : 0;
   return { ...counts, unreadNotifications };
 });
 

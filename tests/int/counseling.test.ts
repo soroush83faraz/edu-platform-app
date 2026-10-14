@@ -12,6 +12,8 @@
 //   • «ارجاع به مدیریت» is a confidential admin_request to the school's principal and vice principal (the organization
 //     admin when the school has neither), closed by the first answer, whose note the file shows; a principal of
 //     another school cannot open it; «درخواست گزارش از دبیر» goes to the student's current teachers only;
+//   • the counselor's bell: management's answer to a referral, a teacher's report, a teacher's answer to a report
+//     request — the student's name and the kind of event, never the text; counted without any workspace permission;
 //   • tenant isolation (another organization sees nothing, writes nothing).
 // The catalog (roles + permissions) is seeded in beforeAll; every write runs inside a withTenant transaction that
 // ends with Rollback; afterAll re-creates the fixture database (later files assert exact template lists).
@@ -37,9 +39,11 @@ import {
   requestTeacherReport,
   updateCounselorNote,
 } from "@/modules/counseling/service";
-import type { Assignment } from "@/modules/iam/can";
+import { notifyConfidentialAnswer } from "@/modules/counseling/notify";
+import { type Assignment, canAtAnyScope } from "@/modules/iam/can";
 import { PERMISSIONS } from "@/modules/iam/permissions";
 import { listValidAssignments } from "@/modules/iam/repo";
+import { unreadCount } from "@/modules/notif/repo";
 import { MESSAGES, assignRole, createStaff, createStudent, revokeRoleAssignment } from "@/modules/iam/service";
 import { createAcademicYear, createClassGroup, createClassOffering, createSchool } from "@/modules/tenancy/service";
 import { CONFIDENTIAL_NOTE_MESSAGE, canViewWorkItem, changeStatus } from "@/modules/workspace/service";
@@ -619,6 +623,64 @@ describe("«مشاوره» — the counseling file", () => {
       expect(r).toMatchObject({ kind: "teacher", statusCategory: "done" });
       expect(r?.assignees).toEqual([expect.objectContaining({ personId: w.teacherA1.personId, state: "done" })]);
       expect(file.reports.map((x) => x.body)).toEqual(["پاسخ به درخواست"]);
+    });
+  });
+
+  it("the counselor's bell: management's answer, a teacher's report, a teacher's answer — the student's name only, the file as the link, never to the actor", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const MARK = "متن-محرمانه-۷۷";
+      const sid = w.studentA1.studentProfileId;
+      const file = `/counseling/students/${sid}`;
+      const bell = (who: Actor) =>
+        tx
+          .select({ typeCode: notification.typeCode, title: notification.title, body: notification.body, deepLink: notification.deepLink, sourceId: notification.sourceId })
+          .from(notification)
+          .where(and(eq(notification.recipientPersonId, who.personId), like(notification.typeCode, "counseling.%")));
+      const ofType = async (who: Actor, typeCode: string) => (await bell(who)).filter((n) => n.typeCode === typeCode);
+
+      // 1) «ارجاع به مدیریت»: «در حال بررسی» is no answer; the principal's «ثبت پاسخ» reaches the counselor who referred.
+      const ref = await as(tx, w.counselorA, (t) => referToManagement(t, w.counselorA, { studentProfileId: sid, subject: `موضوع ${MARK}`, description: `شرح ${MARK}` }));
+      await as(tx, w.viceA, (t) => changeStatus(t, w.viceA, { workItemId: ref.workItemId, toStatusCode: "in_review" }));
+      expect(await bell(w.counselorA)).toEqual([]);
+      await as(tx, w.principalA, (t) => changeStatus(t, w.principalA, { workItemId: ref.workItemId, toStatusCode: "answered", note: `پاسخ ${MARK}` }));
+      expect(await bell(w.counselorA)).toEqual([{ typeCode: "counseling.referral_answered", title: "پاسخ مدیریت به ارجاع: آوا باقری", body: null, deepLink: file, sourceId: ref.referralId }]);
+      // The colleague counselor did not refer, management answered: nobody else hears of it.
+      for (const other of [w.counselorA2, w.principalA, w.viceA, w.admin]) expect(await bell(other)).toEqual([]);
+
+      // 2) «گزارش به مشاور»: every counselor of A — never B's counselor, the teacher, or management.
+      const report = await as(tx, w.teacherA1, (t) => createTeacherReport(t, w.teacherA1, { studentProfileId: sid, kind: "behavioral", body: `گزارش ${MARK}` }));
+      for (const c of [w.counselorA, w.counselorA2]) {
+        expect(await ofType(c, "counseling.teacher_report")).toEqual([{ typeCode: "counseling.teacher_report", title: "گزارش دبیر دربارهٴ آوا باقری", body: null, deepLink: file, sourceId: report.id }]);
+      }
+      for (const other of [w.counselorB, w.teacherA1, w.principalA, w.viceA, w.admin]) expect(await bell(other)).toEqual([]);
+
+      // 3) «درخواست گزارش از دبیر»: the teacher's «انجام شد» reaches the counselor who asked (here the colleague) only.
+      const req = await as(tx, w.counselorA2, (t) => requestTeacherReport(t, w.counselorA2, { studentProfileId: sid, teacherPersonIds: [w.teacherA1.personId], message: `پیام ${MARK}` }));
+      await as(tx, w.teacherA1, (t) => changeStatus(t, w.teacherA1, { workItemId: req.workItemId, toStatusCode: "done" }));
+      expect(await ofType(w.counselorA2, "counseling.report_request_done")).toEqual([
+        { typeCode: "counseling.report_request_done", title: "پاسخ دبیر به درخواست گزارش: آوا باقری", body: null, deepLink: file, sourceId: req.referralId },
+      ]);
+      expect((await bell(w.counselorA)).map((n) => n.typeCode).sort()).toEqual(["counseling.referral_answered", "counseling.teacher_report"]);
+      // Deduped per answer: the same answer announced again writes nothing.
+      const [row] = await tx.select({ respondedAt: workItemAssignee.respondedAt }).from(workItemAssignee).where(and(eq(workItemAssignee.workItemId, req.workItemId), eq(workItemAssignee.personId, w.teacherA1.personId)));
+      expect(await as(tx, w.teacherA1, (t) => notifyConfidentialAnswer(t, w.teacherA1, { workItemId: req.workItemId, closed: true, respondedAt: row.respondedAt }))).toBe(0);
+
+      // A teacher who is ALSO a counselor of A reports: their colleagues hear of it, they themselves do not.
+      await assignRole(tx, w.principalA, { personId: w.teacherA1.personId, roleCode: "counselor", schoolId: f.SCHOOL_A });
+      const both = await actor(tx, w.teacherA1.personId);
+      await as(tx, both, (t) => createTeacherReport(t, both, { studentProfileId: sid, kind: "academic", body: `دوم ${MARK}` }));
+      expect(await bell(both)).toEqual([]);
+      expect(await ofType(w.counselorA, "counseling.teacher_report")).toHaveLength(2);
+
+      // No notification anywhere carries the subject, the description, the answer, the message or a report's text.
+      const leaked = await tx.execute<{ n: number }>(sql`select count(*)::int as n from notif.notification where coalesce(title, '') || coalesce(body, '') like ${`%${MARK}%`}`);
+      expect(leaked.rows[0].n).toBe(0);
+
+      // The bell of a counselor-only account: no workspace permission, and the unread count is theirs.
+      expect(canAtAnyScope(w.counselorA.assignments, "workspace.work_item.read")).toBe(false);
+      expect(canAtAnyScope(w.counselorA.assignments, "notif.notification.read")).toBe(true);
+      expect(await as(tx, w.counselorA, (t) => unreadCount(t, w.counselorA.personId))).toBe(3);
     });
   });
 

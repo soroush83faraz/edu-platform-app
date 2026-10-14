@@ -180,6 +180,27 @@ export function teacherRequestTitle(studentName: string): string {
   return `درخواست گزارش مشاور — ${studentName}`.slice(0, 200);
 }
 
+/**
+ * The counselor's bell (owner, 2026-10-14): what happened and about whom — the student's name and the kind of event,
+ * NEVER a note's, a report's or an answer's text, nor a referral's subject (a notification row is a copy that lives
+ * outside the RESTRICTIVE policies of 0018). Every one of them opens the student's file.
+ */
+export type CounselingEvent = "referral_answered" | "teacher_report" | "report_request_done";
+
+export function counselingNotificationTitle(event: CounselingEvent, studentName: string): string {
+  const title = {
+    referral_answered: `پاسخ مدیریت به ارجاع: ${studentName}`,
+    teacher_report: `گزارش دبیر دربارهٴ ${studentName}`,
+    report_request_done: `پاسخ دبیر به درخواست گزارش: ${studentName}`,
+  }[event];
+  return title.slice(0, 200);
+}
+
+/** Where a counselor's notification leads: the student's «پروندهٴ مشاوره». */
+export function studentFileHref(studentProfileId: string): string {
+  return `/counseling/students/${studentProfileId}`;
+}
+
 /** The fixed last paragraph of a report request: how the teacher answers it. */
 export const TEACHER_REQUEST_GUIDE = "لطفاً گزارش خود را با «ثبت گزارش برای مشاور» در همین صفحه بفرستید و بعد «انجام شد» را بزنید.";
 

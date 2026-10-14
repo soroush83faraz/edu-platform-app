@@ -32,6 +32,7 @@ import { can, canAtAnyScope, type Assignment, type CanContext } from "@/modules/
 import type { Permission } from "@/modules/iam/permissions";
 import { getPermissionScope } from "@/modules/iam/service";
 import { createConfidentialWorkItem } from "@/modules/workspace/service";
+import { notifyTeacherReport } from "./notify";
 import {
   type CounselingViewer,
   type GradeGroup,
@@ -377,7 +378,10 @@ export async function getTeacherReportPage(tx: Tx, ctx: CounselingCtx, studentPr
   };
 }
 
-/** «گزارش به مشاور»: a teacher of the student files a short academic / behavioural report for the school's counselors. */
+/**
+ * «گزارش به مشاور»: a teacher of the student files a short academic / behavioural report for the school's counselors,
+ * who hear of it in their bell (`notifyTeacherReport` — the student's name, never the report's text).
+ */
 export async function createTeacherReport(tx: Tx, ctx: CounselingCtx, input: { studentProfileId: string; kind: ReportKind; body: string }): Promise<{ id: string }> {
   const { student, classOfferingId } = await requireTaughtStudent(tx, ctx, input.studentProfileId);
   const body = cleanBody(input.body, REPORT_MAX);
@@ -393,6 +397,7 @@ export async function createTeacherReport(tx: Tx, ctx: CounselingCtx, input: { s
     { studentProfileId: student.studentProfileId, schoolId: student.schoolId, classOfferingId, kind: input.kind, length: body.length },
     tx,
   );
+  await notifyTeacherReport(tx, ctx, { id: row.id, schoolId: student.schoolId, studentProfileId: student.studentProfileId, studentName: fullName(student) });
   return { id: row.id };
 }
 

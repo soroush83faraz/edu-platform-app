@@ -19,6 +19,7 @@ import { can, canAtAnyScope, canBroadly, type CanContext } from "@/modules/iam/c
 import { type WorkItemVoice, type WorkItemWords, createVoice, workItemStatusLabel, workItemVoice, workItemWords } from "@/lib/work-item-words";
 import { person, staffProfile } from "@/modules/iam/schema";
 import { getPermissionScope } from "@/modules/iam/service";
+import { notifyConfidentialAnswer } from "@/modules/counseling/notify";
 import { notifyMany } from "@/modules/notif/service";
 import type { Recipients } from "./dto";
 import { closesOnFirstAnswer, managesItem } from "./manage-policy";
@@ -115,13 +116,19 @@ async function lockWorkItem(tx: Tx, workItemId: string): Promise<WorkItemCore> {
  * they would invert the lock order and deadlock with a removal, which holds its person FOR UPDATE and then locks that
  * person's open items. Here a removal in flight is waited for first, and one that starts later waits for this
  * transaction. Assignee rows are never added to an existing item, so the set read here covers every later recipient.
+ * The creator of a CONFIDENTIAL item too: an addressee's answer notifies the counselor who asked
+ * (counseling `notifyConfidentialAnswer`).
  */
 async function lockItemPeople(tx: Tx, ctx: WorkspaceCtx, workItemId: string): Promise<void> {
   const assignees = tx.select({ id: workItemAssignee.personId }).from(workItemAssignee).where(eq(workItemAssignee.workItemId, workItemId));
+  const confidentialCreator = tx
+    .select({ id: workItem.createdByPersonId })
+    .from(workItem)
+    .where(and(eq(workItem.id, workItemId), eq(workItem.isConfidential, true)));
   await tx
     .select({ id: person.id })
     .from(person)
-    .where(or(eq(person.id, ctx.personId), inArray(person.id, assignees)))
+    .where(or(eq(person.id, ctx.personId), inArray(person.id, assignees), inArray(person.id, confidentialCreator)))
     .orderBy(asc(person.id))
     .for("key share");
 }
@@ -504,7 +511,8 @@ async function setItemStatus(tx: Tx, ctx: WorkspaceCtx, item: WorkItemCore, to: 
  * pending, cancelled is the UI's «حذف» (soft: nothing is deleted, «بازیابی» brings it back). An assignee who did not
  * create the item takes the assignee path whatever their hats — a principal given a تسک by the organization admin
  * marks their own row only. An assignee's own completion notifies no one (owner, round 7); the giver reads the n/m
- * on the item. On a CONFIDENTIAL item a note rides only on an addressee's closing answer (`CONFIDENTIAL_NOTE_MESSAGE`,
+ * on the item — except on a CONFIDENTIAL item: the counselor who asked has no workspace view to read it in, so the
+ * answer reaches their bell (counseling `notifyConfidentialAnswer`, owner 2026-10-14). On a CONFIDENTIAL item a note rides only on an addressee's closing answer (`CONFIDENTIAL_NOTE_MESSAGE`,
  * VALIDATION otherwise).
  */
 export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatusInput): Promise<ChangeStatusResult> {
@@ -528,6 +536,8 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
   let itemChanged = false;
   let recipients: string[] = [];
   let withdrawnAssignees: WithdrawnFromItem[] = [];
+  /** An addressee's own «انجام شد» / «ثبت پاسخ» (the assignee path) — on a confidential item, the counselor hears of it. */
+  let answered = false;
 
   if (manager) {
     if (target.id === item.statusId) throw validation(undefined, "وضعیت تغییری نکرده است.");
@@ -574,7 +584,9 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
         await setItemStatus(tx, ctx, item, target, note);
         itemChanged = true;
       }
-      // An assignee's «انجام شد» is silent for everyone (owner, round 7): the giver reads the n/m on the item.
+      answered = true;
+      // An assignee's «انجام شد» is silent for everyone (owner, round 7): the giver reads the n/m on the item — except
+      // on a confidential item, whose creator (the counselor) is told below, by name of the student only.
     } else {
       throw forbidden(`فقط دهندهٴ ${nouns(ctx).singular} می‌تواند آن را بازیابی یا حذف کند.`);
     }
@@ -583,6 +595,10 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
   const assignees = await listAssignees(tx, item.id);
   const done = assignees.filter((a) => a.state === "done").length;
   const myStateAfter = assignees.find((a) => a.personId === ctx.personId)?.state ?? null;
+  if (answered && item.isConfidential) {
+    const respondedAt = assignees.find((a) => a.personId === ctx.personId)?.respondedAt ?? null;
+    await notifyConfidentialAnswer(tx, ctx, { workItemId: item.id, closed: itemChanged, respondedAt });
+  }
   if (recipients.length > 0) {
     const actorName = (await findPersonName(tx, ctx.personId)) ?? "";
     const progress = assignees.length > 1 ? ` (${formatNumberFa(done)}/${formatNumberFa(assignees.length)})` : "";

@@ -7,7 +7,9 @@
 Files: `schema.ts` (Drizzle tables re-exported from src/db/schema/counseling.ts), `policy.ts` (the pure rules: reach,
 note visibility, grouping by پایه, referral states and strings — unit-tested), `dto.ts` (Zod `.strict()` inputs),
 `repo.ts` (queries; take `tx`), `service.ts` (business rules; `(tx, ctx, input)`), `queries.ts` / `actions.ts`
-(`defineQuery` / `defineAction`), `ui/` (the forms of the file and of the teacher's report page).
+(`defineQuery` / `defineAction`), `notify.ts` (the counselor's bell: management's answer to a referral, a teacher's
+answer to a report request — both called from workspace `changeStatus` — and a teacher's new report; the student's
+name and the kind of event only, linking to the file), `ui/` (the forms of the file and of the teacher's report page).
 
 Confidentiality: the service's reach (NOT_FOUND outside it) AND the RESTRICTIVE RLS policies of 0018 for app_rw;
 audit rows carry ids, kinds and lengths — never a note's, a report's or a referral's text.
