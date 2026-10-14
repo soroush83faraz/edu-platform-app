@@ -8,7 +8,7 @@
 // The fixture organisation has no objectives, and app_rw may not write them (seed-managed), so beforeAll inserts
 // three as app_owner for پایهٔ اول / مهر and afterAll removes them; every other write happens inside a withTenant
 // transaction that ends with Rollback.
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { withTenant, type Tx } from "@/db/client";
@@ -46,6 +46,8 @@ const MONTH = 7;
 const OBJ_MATH_1 = "0199a000-00aa-7000-8000-0000000000a1";
 const OBJ_MATH_2 = "0199a000-00aa-7000-8000-0000000000a2";
 const OBJ_QURAN_1 = "0199a000-00aa-7000-8000-0000000000a3";
+/** An ARCHIVED ریاضی objective of the same month — a wording the school's documents replaced (migration 0019). */
+const OBJ_MATH_OLD = "0199a000-00aa-7000-8000-0000000000a4";
 
 async function owner<T>(fn: (c: Client) => Promise<T>): Promise<T> {
   const c = new Client({ connectionString: OWNER_URL });
@@ -77,13 +79,17 @@ beforeAll(async () => {
         [id, f.ORG_A, f.GRADE_A, MONTH, subject, subject === "ریاضی" ? f.SUBJECT_A : null, domain, text, order],
       );
     }
+    await c.query(
+      "insert into academic.learning_objective (id, organization_id, grade_level_id, month, subject_name, subject_id, domain, text, sort_order, status, archived_at) values ($1, $2, $3, $4, 'ریاضی', $5, null, 'عددهای یک تا سه را می‌شناسد', 2, 'archived', now())",
+      [OBJ_MATH_OLD, f.ORG_A, f.GRADE_A, MONTH, f.SUBJECT_A],
+    );
   });
 });
 
 afterAll(async () => {
   await owner(async (c) => {
-    await c.query("delete from academic.objective_rating where learning_objective_id = any($1::uuid[])", [[OBJ_MATH_1, OBJ_MATH_2, OBJ_QURAN_1]]);
-    await c.query("delete from academic.learning_objective where id = any($1::uuid[])", [[OBJ_MATH_1, OBJ_MATH_2, OBJ_QURAN_1]]);
+    await c.query("delete from academic.objective_rating where learning_objective_id = any($1::uuid[])", [[OBJ_MATH_1, OBJ_MATH_2, OBJ_QURAN_1, OBJ_MATH_OLD]]);
+    await c.query("delete from academic.learning_objective where id = any($1::uuid[])", [[OBJ_MATH_1, OBJ_MATH_2, OBJ_QURAN_1, OBJ_MATH_OLD]]);
   });
 });
 
@@ -270,6 +276,42 @@ describe("reading report cards", () => {
       await expect(getRatingSheet(tx, student, sheet)).rejects.toSatisfy(isCode("NOT_FOUND"));
       await expect(classReportOverview(tx, principalElsewhere, { classGroupId: f.CLASS_GROUP_A1 }, NOW)).rejects.toSatisfy(isCode("NOT_FOUND"));
       await expect(classReportCards(tx, teacher, { classGroupId: f.CLASS_GROUP_A2, month: MONTH }, NOW)).rejects.toSatisfy(isCode("NOT_FOUND"));
+    });
+  });
+});
+
+describe("an archived objective (a replaced wording, migration 0019)", () => {
+  it("keeps its rating on the student's card, marked, and in the month's levels — the roster and a save offer the active wording only", async () => {
+    await rolledBack(async (tx) => {
+      await setUpClass(tx);
+      await saveObjectiveRatings(tx, teacher, both("very_good", "good"));
+      // The rating the student got on the former wording before the school replaced it.
+      await tx.execute(
+        sql`insert into academic.objective_rating (id, organization_id, academic_year_id, student_profile_id, learning_objective_id, rating, rated_by_person_id)
+            values (app.uuid_generate_v7(), ${f.ORG_A}::uuid, ${f.YEAR_A}::uuid, ${f.STUDENT_A1}::uuid, ${OBJ_MATH_OLD}::uuid, 'needs_effort', ${f.PERSON_A2}::uuid)`,
+      );
+      // The entry roster: the active wording only; a save naming the archived objective is refused.
+      expect((await getRatingSheet(tx, teacher, sheet)).objectives.map((o) => o.id)).toEqual([OBJ_MATH_1, OBJ_MATH_2]);
+      await expect(saveObjectiveRatings(tx, teacher, { ...sheet, entries: [{ studentProfileId: f.STUDENT_A1, learningObjectiveId: OBJ_MATH_OLD, rating: "good" }] })).rejects.toSatisfy(
+        isCode("VALIDATION", REPORT_CARD_MESSAGES.objectiveNotInSheet),
+      );
+      // The card (the student's own, and the printable one): the archived objective with its level, marked, after
+      // the active objective at its position.
+      const expected = [
+        [OBJ_MATH_1, "very_good", false],
+        [OBJ_MATH_2, "good", false],
+        [OBJ_MATH_OLD, "needs_effort", true],
+      ];
+      const mine = await myReportCard(tx, student, { month: MONTH }, NOW);
+      expect(mine!.subjects.find((x) => x.name === "ریاضی")!.objectives.map((o) => [o.id, o.rating, o.archived])).toEqual(expected);
+      expect(mine!.counts).toEqual({ very_good: 1, good: 1, acceptable: 0, needs_effort: 1 });
+      const printed = (await classReportCards(tx, admin, { classGroupId: f.CLASS_GROUP_A1, month: MONTH }, NOW)).cards[0];
+      expect(printed.subjects.find((x) => x.name === "ریاضی")!.objectives.map((o) => [o.id, o.rating, o.archived])).toEqual(expected);
+      // The class's month: the levels count it, the progress does not (two active objectives, the student is complete).
+      const o = await classReportOverview(tx, principal, { classGroupId: f.CLASS_GROUP_A1, month: MONTH }, NOW);
+      expect(o.subjects.find((x) => x.name === "ریاضی")).toMatchObject({ objectives: 2, complete: 1 });
+      expect(o.students[0]).toMatchObject({ counts: { very_good: 1, good: 1, acceptable: 0, needs_effort: 1 }, missing: 1 });
+      expect(o.objectives).toBe(3);
     });
   });
 });

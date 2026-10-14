@@ -1662,11 +1662,11 @@ correct. Docs: the school's data review **docs/primary-objectives-review.md**, d
 - **Objectives are a per-organisation catalog, seeded, read-only for the app.** `academic.learning_objective` has
   `organization_id` + RLS like every tenant table (composite FK to the org's grade_level; nullable composite FK to
   its subject), but only the catalog seed writes it — `app.apply_grants()` (re-created in 0017 with one more
-  REVOKE) keeps app_rw on SELECT, like the global catalogs. **Natural key = position** `(grade, month, درس,
-  sort_order)`, chosen over a content hash because the owner asked that a corrected wording update in place and keep
-  its ratings; the cost — a reordered source would re-point ratings — is mitigated by the deterministic converter and
-  the review diff, and every wording change is audited with old and new text. Lines the documents drop are archived,
-  never deleted. Installed for every organisation with the G1–G6 پایه‌ها (i.e. all, after the fixed catalog), so a
+  REVOKE) keeps app_rw on SELECT, like the global catalogs. ~~Natural key = position `(grade, month, درس,
+  sort_order)`~~ — **replaced by a content key in migration 0019** (2026-10-14, «security review fixes» D4 below): a
+  line inserted or removed mid-document re-pointed every later rating onto its neighbour's wording. A spelling fix
+  still updates in place and keeps its ratings (the owner's original wish); a change of words is a new objective.
+  Lines the documents drop are archived, never deleted. Installed for every organisation with the G1–G6 پایه‌ها (i.e. all, after the fixed catalog), so a
   primary school created tomorrow has its objectives without a deploy. The pg-only seed bundle now inlines `.json`.
 - **Ratings:** `academic.objective_rating` UNIQUE `(org, year, student, objective)`; a sheet (class × month × درس)
   is saved in ONE action — upsert with ON CONFLICT, `null` = DELETE, unchanged pairs skipped, one audit row with
@@ -1809,3 +1809,36 @@ A fresh-context security review of the two unshipped features found five defects
   it is (`writesOtherSubjects`). The pilot seed now rates each درس through its own writer (the ورزش teacher rates
   «تربیت بدنی», the آموزگار the rest). Tests: `tests/int/report-card.test.ts` «who writes which درس»,
   `tests/unit/objective-rating.test.ts`, `tests/int/seed-pilot.test.ts`.
+- **D4 — the learning objectives are keyed by their content, not their position (migration 0019).** The catalog seed
+  matched a document line to a row by `(organisation, پایه, month, درس, sort_order)` and rewrote that row's text in
+  place, so inserting or removing ONE line in a corrected document moved every later line onto its neighbour's row and
+  silently re-labelled the ratings already given. Now:
+  - **Migration 0019** (`drizzle/0019_objective_text_key.sql`, generated, then hand-ordered): `app.objective_text_hash(text)`
+    (IMMUTABLE SQL: md5 of the wording with ي ى ك ة ۀ / أ إ آ ٱ folded to their Persian base letter, Persian/Arabic
+    digits to ASCII, whitespace / ZWNJ / bidi marks / tatweel / diacritics incl. the written hamza / punctuation removed,
+    Latin lower-cased); `learning_objective.text_hash` `GENERATED ALWAYS AS (app.objective_text_hash(text)) STORED NOT
+    NULL` — adding it computes every existing row (the backfill); `learning_objective_text_uq UNIQUE (organization_id,
+    grade_level_id, month, subject_name, text_hash)` over every row, active or archived; then `DROP CONSTRAINT
+    learning_objective_slot_uq`. Dropping a constraint is not additive; it is justified because the position key IS
+    the defect (kept, it would refuse the rows the content key needs — an archived line keeps its old `sort_order`
+    while another line takes that position; an insert mid-list moves every later `sort_order`) and because 0017 has
+    never been applied in production, so no deployed code or production row depends on it — this is the table's first
+    production shape. The new unique is added before the old is dropped. Never change `app.objective_text_hash` in
+    place: stored values are not recomputed (PG16, cf. 0013); a new normalisation drops and re-adds the column.
+  - **The seed** (`scripts/objectives-catalog.ts`) asks the database for the JSON's hashes (the same function, so seed
+    and column cannot disagree) and matches by `(پایه, month, درس, text_hash)`: same key + other text (a spelling fix)
+    or domain → update in place, audited, ratings stay; same key, other position → `sort_order` only (`reordered` in
+    the summary, no row audit); new key → insert; an active row whose key the JSON lacks → archived (audited); an
+    archived row whose wording returns → revived with its ratings. The same wording twice in one درس and month throws
+    before anything is written. The summary line gained `reordered N`.
+  - **Report cards** (`src/modules/academic/report-card.ts`): a student's card for a month (`myReportCard`, the A4
+    `classReportCards`) shows every active objective plus each ARCHIVED one THAT student was rated on that year, in
+    muted text with «هدفِ پیشین» (screen) / «(هدفِ پیشین)» (print); the class's month counts those levels in each
+    student's tally while its progress («n از m», «missing») stays on the active objectives. The entry roster and
+    `saveObjectiveRatings` offer and accept active objectives only — a rating on a replaced wording can no longer be
+    changed, it stays as given. A month whose objectives were ALL archived is not in the month switcher (edge case;
+    its ratings stay in the database).
+  - Tests: `tests/int/objectives-catalog.test.ts` (a line inserted mid-list keeps every rating on its own wording; a
+    spelling fix keeps the row; a reworded line is a new row and the old keeps its rating on the card; the original
+    document revives; a duplicate line is refused), `tests/int/report-card.test.ts` («an archived objective»),
+    `tests/int/seed.test.ts` (summary line), `tests/int/seed-pilot.test.ts`.

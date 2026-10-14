@@ -161,7 +161,7 @@ describe("seed --catalog", () => {
       const [systemLine, orgLine, objectivesLine, ...rest] = run.stdout.trim().split(/\r?\n/);
       expect(systemLine).toBe(formatCatalogSummary(counts));
       expect(orgLine).toMatch(/^\[seed\] organization catalog: \d+ organizations; created \d+ levels, \d+ grades, \d+ years, \d+ terms;/);
-      expect(objectivesLine).toMatch(/^\[seed\] learning objectives: \d+ organizations \(\d+ without primary grades\); created \d+, updated 0, archived 0,/);
+      expect(objectivesLine).toMatch(/^\[seed\] learning objectives: \d+ organizations \(\d+ without primary grades\); created \d+, updated 0, reordered 0, archived 0,/);
       expect(rest).toEqual([]);
       expect(path.basename(out)).toBe("seed-catalog.js");
 

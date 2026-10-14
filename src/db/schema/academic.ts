@@ -288,8 +288,12 @@ export const attendanceEntry = academic.table(
  * READ it (`app.apply_grants()`, migration 0017). `subject_name` is the canonical درس name
  * (src/modules/academic/primary-objectives.ts); `subject_id` links the organisation's own `tenancy.subject` row when
  * one matches that name (nullable — a درس like «شایستگی‌های عمومی» has no subject row). The natural key is the
- * POSITION `(grade, month, subject_name, sort_order)`: a corrected wording updates the row in place and its ratings
- * stay; a line the documents no longer have is archived (`status`/`archived_at`), never deleted.
+ * CONTENT `(grade, month, subject_name, text_hash)` (migration 0019; it was the position until then): `text_hash` is
+ * generated from the wording by `app.objective_text_hash` — orthography (spacing, ZWNJ, ی/ک, diacritics, punctuation,
+ * digit script) does not count, any change of words does. So a reworded objective is a NEW row and the old one is
+ * archived with its ratings (past report cards still show what was rated); a line inserted or removed mid-list only
+ * moves `sort_order`, a plain column. A line the documents no longer have is archived (`status`/`archived_at`), never
+ * deleted.
  */
 export const learningObjective = academic.table(
   "learning_objective",
@@ -304,14 +308,22 @@ export const learningObjective = academic.table(
     /** knowledge / application / reasoning («دانشی / کاربردی / استدلالی»); NULL = the school gave no domain. */
     domain: text("domain"),
     text: text("text").notNull(),
-    /** 1-based position inside (grade, month, درس) — the documents' order. */
+    /**
+     * `GENERATED ALWAYS AS (app.objective_text_hash(text)) STORED` — the md5 of the wording with its orthography
+     * folded (migration 0019): the content half of the natural key. Never change that function in place: stored
+     * values are not recomputed, so a new normalisation needs the column dropped and re-added in the same migration.
+     */
+    textHash: text("text_hash")
+      .notNull()
+      .generatedAlwaysAs(sql`app.objective_text_hash(text)`),
+    /** 1-based position inside (grade, month, درس) — the documents' order; a plain column, not part of the key. */
     sortOrder: smallint("sort_order").notNull(),
     status: text("status").notNull().default("active"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     ...timestamps(),
   },
   (t) => [
-    unique("learning_objective_slot_uq").on(t.organizationId, t.gradeLevelId, t.month, t.subjectName, t.sortOrder),
+    unique("learning_objective_text_uq").on(t.organizationId, t.gradeLevelId, t.month, t.subjectName, t.textHash),
     unique("learning_objective_org_id_uq").on(t.organizationId, t.id),
     index("learning_objective_org_subject_idx").on(t.organizationId, t.subjectId),
     check("learning_objective_month_chk", sql`${t.month} BETWEEN 1 AND 12`),

@@ -62,7 +62,16 @@ export function noObjectivesFa(gradeName: string, month: number | null): string 
   return month === null ? `برای ${gradeLabelFa(gradeName)} هدف آموزشی‌ای ثبت نشده است.` : `برای ${gradeLabelFa(gradeName)} در ماه ${jalaliMonthName(month)} هدفی ثبت نشده است.`;
 }
 
-/** One درس of a student's card: the درس as a header row (its نشان), then each objective with its domain and level. */
+/**
+ * The quiet mark of an archived objective on a card (`archived`: the school's documents reworded or dropped it after
+ * the student was rated on it — the level stays with the wording it was given on).
+ */
+export const ARCHIVED_OBJECTIVE_FA = "هدفِ پیشین";
+
+/**
+ * One درس of a student's card: the درس as a header row (its نشان), then each objective with its domain and level — an
+ * archived one in muted text with «هدفِ پیشین» beside its domain.
+ */
 export function CardSubject({ subject }: { subject: ReportCardSubject }) {
   const summary = ratingSummaryFa(subject.counts);
   return (
@@ -78,8 +87,10 @@ export function CardSubject({ subject }: { subject: ReportCardSubject }) {
         {subject.objectives.map((o) => (
           <li key={o.id} className="flex items-start justify-between gap-3 px-4 py-3">
             <div className="flex min-w-0 flex-col gap-0.5">
-              <p className="text-sm text-text">{o.text}</p>
-              {o.domain ? <p className="text-meta text-text-faint">{DOMAIN_LABELS_FA[o.domain]}</p> : null}
+              <p className={cn("text-sm", o.archived ? "text-text-muted" : "text-text")}>{o.text}</p>
+              {o.domain || o.archived ? (
+                <p className="text-meta text-text-faint">{[o.domain ? DOMAIN_LABELS_FA[o.domain] : null, o.archived ? ARCHIVED_OBJECTIVE_FA : null].filter(Boolean).join(" · ")}</p>
+              ) : null}
             </div>
             <RatingPill rating={o.rating} className="mt-0.5" />
           </li>
@@ -91,8 +102,9 @@ export function CardSubject({ subject }: { subject: ReportCardSubject }) {
 
 /**
  * The printable A4 report card of ONE student for one month: school, student, class, پایه, year and month at the
- * top, then every درس as a table (هدف · حیطه · سطح). Each card starts a new page (`print-page`). On screen it is a
- * white sheet; in print the app frame disappears (globals.css @media print).
+ * top, then every درس as a table (هدف · حیطه · سطح; an archived objective the student was rated on says
+ * «(هدفِ پیشین)»). Each card starts a new page (`print-page`). On screen it is a white sheet; in print the app frame
+ * disappears (globals.css @media print).
  */
 export function PrintableCard({ card }: { card: StudentReportCard }) {
   const cg = card.classGroup;
@@ -138,7 +150,10 @@ export function PrintableCard({ card }: { card: StudentReportCard }) {
           <tbody>
             {s.objectives.map((o) => (
               <tr key={o.id}>
-                <td className="border border-line px-2 py-1.5 align-top">{o.text}</td>
+                <td className="border border-line px-2 py-1.5 align-top">
+                  {o.text}
+                  {o.archived ? <span className="text-meta text-text-muted"> ({ARCHIVED_OBJECTIVE_FA})</span> : null}
+                </td>
                 <td className="border border-line px-2 py-1.5 align-top text-meta text-text-muted">{o.domain ? DOMAIN_LABELS_FA[o.domain] : "—"}</td>
                 <td className="border border-line px-2 py-1.5 align-top">{o.rating ? RATING_LABELS[o.rating] : "—"}</td>
               </tr>

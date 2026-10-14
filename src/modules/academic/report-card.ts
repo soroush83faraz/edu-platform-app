@@ -145,18 +145,67 @@ export interface ObjectiveRow {
   domain: ObjectiveDomain | null;
   text: string;
   sortOrder: number;
+  /**
+   * An objective the school's documents no longer have — reworded (a new row carries the new wording) or dropped
+   * (migration 0019: the catalog is keyed by content). Only a report card shows one, and only where it was rated.
+   */
+  archived: boolean;
 }
 
+type ObjectiveDbRow = { id: string; month: number; subject_name: string; subject_id: string | null; domain: string | null; text: string; sort_order: number; status: string };
+
+/** Report-card order: school month, the درس's place on the card, its name, the document's order — the active row first on a tie. */
+function toObjectiveRows(rows: readonly ObjectiveDbRow[]): ObjectiveRow[] {
+  return rows
+    .map((r) => ({
+      id: r.id,
+      month: Number(r.month),
+      subjectName: r.subject_name,
+      subjectId: r.subject_id,
+      domain: (r.domain as ObjectiveDomain | null) ?? null,
+      text: r.text,
+      sortOrder: Number(r.sort_order),
+      archived: r.status !== "active",
+    }))
+    .sort(
+      (a, b) =>
+        schoolMonthIndex(a.month) - schoolMonthIndex(b.month) ||
+        subjectOrder(a.subjectName) - subjectOrder(b.subjectName) ||
+        a.subjectName.localeCompare(b.subjectName, "fa") ||
+        a.sortOrder - b.sortOrder ||
+        Number(a.archived) - Number(b.archived),
+    );
+}
+
+/** The ACTIVE objectives of a پایه (one month, or all) — what the entry roster offers and a save accepts. */
 async function listObjectives(tx: Tx, gradeLevelId: string, month: number | null): Promise<ObjectiveRow[]> {
   const monthFilter = month === null ? sql`true` : sql`lo.month = ${month}`;
-  const res = await tx.execute<{ id: string; month: number; subject_name: string; subject_id: string | null; domain: string | null; text: string; sort_order: number }>(sql`
-    select lo.id, lo.month, lo.subject_name, lo.subject_id, lo.domain, lo.text, lo.sort_order
+  const res = await tx.execute<ObjectiveDbRow>(sql`
+    select lo.id, lo.month, lo.subject_name, lo.subject_id, lo.domain, lo.text, lo.sort_order, lo.status
     from academic.learning_objective lo
-    where lo.grade_level_id = ${gradeLevelId}::uuid and lo.status = 'active' and ${monthFilter}
-    order by lo.month, lo.subject_name, lo.sort_order`);
-  return res.rows
-    .map((r) => ({ id: r.id, month: Number(r.month), subjectName: r.subject_name, subjectId: r.subject_id, domain: (r.domain as ObjectiveDomain | null) ?? null, text: r.text, sortOrder: Number(r.sort_order) }))
-    .sort((a, b) => schoolMonthIndex(a.month) - schoolMonthIndex(b.month) || subjectOrder(a.subjectName) - subjectOrder(b.subjectName) || a.subjectName.localeCompare(b.subjectName, "fa") || a.sortOrder - b.sortOrder);
+    where lo.grade_level_id = ${gradeLevelId}::uuid and lo.status = 'active' and ${monthFilter}`);
+  return toObjectiveRows(res.rows);
+}
+
+/**
+ * What the report cards of `studentIds` show for one month: the ACTIVE objectives, plus every ARCHIVED one of that
+ * month some of them was rated on this academic year — a rating stays with the wording it was given on, so a
+ * reworded or dropped objective keeps appearing (marked) on the cards that rated it (`buildCard` picks per student).
+ */
+async function listCardObjectives(tx: Tx, gradeLevelId: string, month: number, academicYearId: string, studentIds: readonly string[]): Promise<ObjectiveRow[]> {
+  const rated =
+    studentIds.length === 0
+      ? sql`false`
+      : sql`exists (
+          select 1 from academic.objective_rating r
+          where r.learning_objective_id = lo.id and r.academic_year_id = ${academicYearId}::uuid
+            and r.student_profile_id = any(${sql.param([...studentIds], undefined)}::uuid[]))`;
+  const res = await tx.execute<ObjectiveDbRow>(sql`
+    select lo.id, lo.month, lo.subject_name, lo.subject_id, lo.domain, lo.text, lo.sort_order, lo.status
+    from academic.learning_objective lo
+    where lo.grade_level_id = ${gradeLevelId}::uuid and lo.month = ${month}
+      and (lo.status = 'active' or ${rated})`);
+  return toObjectiveRows(res.rows);
 }
 
 /** Months (school-year order) in which the پایه has objectives. */
@@ -507,13 +556,17 @@ export async function classReportOverview(tx: Tx, ctx: ReportCtx, input: { class
   const canWrite = writesSomething(rights);
   const months = await availableMonths(tx, cg.gradeLevelId);
   const month = input.month ?? defaultReportMonth(months, tehranJalaliMonth(now));
-  const objectives = month === null ? [] : await listObjectives(tx, cg.gradeLevelId, month);
   const roster = await listClassRoster(tx, cg.id, tehranToday(now));
+  const rosterIds = roster.map((r) => r.studentProfileId);
+  // Progress (درس‌ها, «missing») counts the ACTIVE objectives; a student's levels also count the archived ones they
+  // were rated on — exactly what their card shows.
+  const cardObjectives = month === null ? [] : await listCardObjectives(tx, cg.gradeLevelId, month, cg.academicYearId, rosterIds);
+  const objectives = cardObjectives.filter((o) => !o.archived);
   const ratings = await ratingsOf(
     tx,
     cg.academicYearId,
-    roster.map((r) => r.studentProfileId),
-    objectives.map((o) => o.id),
+    rosterIds,
+    cardObjectives.map((o) => o.id),
   );
   const groups = groupBySubject(objectives);
   const subjects = groups.map((g) => {
@@ -529,7 +582,8 @@ export async function classReportOverview(tx: Tx, ctx: ReportCtx, input: { class
   const students = roster.map((r) => {
     const mine = ratings.get(r.studentProfileId);
     const counts = mine ? tallyRatings([...mine.values()]) : emptyRatingCounts();
-    return { studentProfileId: r.studentProfileId, fullName: r.fullName, studentNumber: r.studentNumber, counts, missing: objectives.length - (mine?.size ?? 0) };
+    const ratedActive = mine ? objectives.filter((o) => mine.has(o.id)).length : 0;
+    return { studentProfileId: r.studentProfileId, fullName: r.fullName, studentNumber: r.studentNumber, counts, missing: objectives.length - ratedActive };
   });
   return { classGroup: cg, months, month, monthName: month === null ? "" : jalaliMonthName(month), subjects, students, objectives: objectives.length, canWrite };
 }
@@ -541,7 +595,8 @@ export async function classReportOverview(tx: Tx, ctx: ReportCtx, input: { class
 export interface ReportCardSubject {
   name: string;
   subjectId: string | null;
-  objectives: Array<{ id: string; text: string; domain: ObjectiveDomain | null; rating: ObjectiveRating | null }>;
+  /** `archived`: an objective the documents no longer have, shown because the student was rated on it (always rated). */
+  objectives: Array<{ id: string; text: string; domain: ObjectiveDomain | null; rating: ObjectiveRating | null; archived: boolean }>;
   counts: RatingCounts;
 }
 
@@ -557,9 +612,14 @@ export interface StudentReportCard {
   counts: RatingCounts;
 }
 
+/**
+ * One student's card: every ACTIVE objective of the month (rated or not) and the ARCHIVED ones THIS student was rated
+ * on (`listCardObjectives` loads them for the whole roster) — never another student's former objective.
+ */
 function buildCard(cg: ReportClass, student: { studentProfileId: string; fullName: string; studentNumber: string | null }, months: number[], month: number | null, objectives: readonly ObjectiveRow[], mine: Map<string, ObjectiveRating> | undefined): StudentReportCard {
-  const subjects = groupBySubject(objectives).map((g) => {
-    const rows = g.objectives.map((o) => ({ id: o.id, text: o.text, domain: o.domain, rating: mine?.get(o.id) ?? null }));
+  const shown = objectives.filter((o) => !o.archived || mine?.has(o.id));
+  const subjects = groupBySubject(shown).map((g) => {
+    const rows = g.objectives.map((o) => ({ id: o.id, text: o.text, domain: o.domain, rating: mine?.get(o.id) ?? null, archived: o.archived }));
     return { name: g.name, subjectId: g.subjectId, objectives: rows, counts: tallyRatings(rows.map((r) => r.rating)) };
   });
   return {
@@ -591,7 +651,7 @@ export async function myReportCard(tx: Tx, ctx: ReportCtx, input: { month?: numb
   const months = await availableMonths(tx, cg.gradeLevelId);
   if (months.length === 0) return null;
   const month = input.month ?? defaultReportMonth(months, tehranJalaliMonth(now));
-  const objectives = month === null ? [] : await listObjectives(tx, cg.gradeLevelId, month);
+  const objectives = month === null ? [] : await listCardObjectives(tx, cg.gradeLevelId, month, cg.academicYearId, [mine.id]);
   const ratings = await ratingsOf(
     tx,
     cg.academicYearId,
@@ -611,12 +671,18 @@ export async function classReportCards(tx: Tx, ctx: ReportCtx, input: { classGro
   if (!cg) throw notFound();
   if (!(await classRights(tx, ctx, cg.id)).read) throw notFound();
   const months = await availableMonths(tx, cg.gradeLevelId);
-  const objectives = await listObjectives(tx, cg.gradeLevelId, input.month);
   let roster = await listClassRoster(tx, cg.id, tehranToday(now));
   if (input.studentProfileId) {
     roster = roster.filter((r) => r.studentProfileId === input.studentProfileId);
     if (roster.length === 0) throw notFound();
   }
+  const objectives = await listCardObjectives(
+    tx,
+    cg.gradeLevelId,
+    input.month,
+    cg.academicYearId,
+    roster.map((r) => r.studentProfileId),
+  );
   const ratings = await ratingsOf(
     tx,
     cg.academicYearId,
