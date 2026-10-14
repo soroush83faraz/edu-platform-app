@@ -54,10 +54,11 @@ describe("primary learning objectives catalog", () => {
 
   it("installs پایهٔ اول for the fixture organisation, links its matching درس, and a second run writes nothing", async () => {
     await owner(async (c) => {
-      // A «ریاضیات» درس row in ORG_A: the alias links every ریاضی objective to it.
+      // A «ریاضیات» درس row in ORG_A: the alias links every ریاضی objective to it. The fixture already has a
+      // «ریاضی» (code MATH) and the link takes the first match by code, so this row's code must sort before it.
       await c.query("BEGIN");
       await c.query("select set_config('app.current_org_id', $1, true)", [f.ORG_A]);
-      const mathId = (await c.query("insert into tenancy.subject (id, organization_id, name, code) values (app.uuid_generate_v7(), $1, 'ریاضیات', 'MTH-P') returning id", [f.ORG_A])).rows[0].id as string;
+      const mathId = (await c.query("insert into tenancy.subject (id, organization_id, name, code) values (app.uuid_generate_v7(), $1, 'ریاضیات', 'A-MTH') returning id", [f.ORG_A])).rows[0].id as string;
       await c.query("COMMIT");
 
       const first = await ensureOrgObjectivesWith(c, f.ORG_A);

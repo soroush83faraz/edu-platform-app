@@ -128,9 +128,17 @@ describe("seed --catalog", () => {
 
   it("the compiled scripts/seed-catalog.js (pg only, the deploy's `seed` service) prints the same summary and changes nothing after the TS seed", async () => {
     const { out, modules } = buildSeedCatalog();
-    // Only the entry, the catalog, the permission catalog and the fixed مقطع/پایه/سال data reach the bundle — no
-    // drizzle, no zod, no schema.
-    expect(modules.sort()).toEqual(["scripts/catalog", "scripts/seed-catalog", "src/modules/iam/permissions", "src/modules/tenancy/fixed-catalog"]);
+    // Only the entry, the catalog, the permission catalog, the fixed مقطع/پایه/سال data and the primary learning
+    // objectives (JSON + its import-free name table) reach the bundle — no drizzle, no zod, no schema.
+    expect(modules.sort()).toEqual([
+      "scripts/catalog",
+      "scripts/data/primary-objectives.json",
+      "scripts/objectives-catalog",
+      "scripts/seed-catalog",
+      "src/modules/academic/primary-objectives",
+      "src/modules/iam/permissions",
+      "src/modules/tenancy/fixed-catalog",
+    ]);
 
     const pool = new Pool({ connectionString: OWNER_URL, max: 1 });
     try {
@@ -149,9 +157,11 @@ describe("seed --catalog", () => {
       expect(run.status).toBe(0);
       // Line 1: the system catalog, unchanged by the TS seed that ran first. Line 2: the organizations' fixed
       // structure catalog (the fixture organizations get their مقطع/پایه/سال here; afterAll rebuilds the fixtures).
-      const [systemLine, orgLine, ...rest] = run.stdout.trim().split(/\r?\n/);
+      // Line 3: the primary learning objectives, installed for the organizations whose پایه‌ها line 2 just created.
+      const [systemLine, orgLine, objectivesLine, ...rest] = run.stdout.trim().split(/\r?\n/);
       expect(systemLine).toBe(formatCatalogSummary(counts));
       expect(orgLine).toMatch(/^\[seed\] organization catalog: \d+ organizations; created \d+ levels, \d+ grades, \d+ years, \d+ terms;/);
+      expect(objectivesLine).toMatch(/^\[seed\] learning objectives: \d+ organizations \(\d+ without primary grades\); created \d+, updated 0, archived 0,/);
       expect(rest).toEqual([]);
       expect(path.basename(out)).toBe("seed-catalog.js");
 
