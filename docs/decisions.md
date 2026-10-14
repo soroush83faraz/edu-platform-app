@@ -1752,7 +1752,8 @@ docs/workspace.md (confidential items, administrative requests).
   **`work_item.is_confidential`** (additive column) — participants only: `canViewWorkItem`'s broad managers' read
   skips it, like a personal item — so a principal of another school or an unaddressed organisation admin gets
   NOT_FOUND. Idempotency key per form. The file shows each referral's live status («در انتظار / در جریان /
-  انجام‌شده / بسته‌شده») and, for management, the decision = the item's latest transition note.
+  انجام‌شده / بسته‌شده») and, for management, the decision = the note of the addressee's answer that closed it
+  (since 2026-10-14 — it was the latest transition's note of any kind; D5 below).
 - **Administrative requests became answerable in «پنل من»:** an `admin_request` is closed by its FIRST answer
   (`closesOnFirstAnswer` — a request to an office is answered once by whichever addressee), the addressee's button is
   «ثبت پاسخ» with an optional answer (the transition note), shown on the item as «پاسخ». The action row now sends the
@@ -1842,3 +1843,13 @@ A fresh-context security review of the two unshipped features found five defects
     spelling fix keeps the row; a reworded line is a new row and the old keeps its rating on the card; the original
     document revives; a duplicate line is refused), `tests/int/report-card.test.ts` («an archived objective»),
     `tests/int/seed.test.ts` (summary line), `tests/int/seed-pilot.test.ts`.
+- **D5 — the file shows only the answer that closed a referral.** `listReferrals` took the note of the item's latest
+  transition of ANY kind, so an addressee (a teacher of a report request, a manager setting «در حال بررسی») could put a
+  crafted text into the student file where «پاسخ مدیریت» is read. Now `ReferralRow.answer` (was `lastNote`) is the
+  latest transition's note only when that transition took the item to a done status, was made by one of its
+  addressees and the type is closed by its first answer (`closesOnFirstAnswer` — «ارجاع به مدیریت»); otherwise null —
+  a reopened request shows no answer, a report request never shows one (teachers answer with «گزارش به مشاور»). And
+  `changeStatus` refuses a note on any OTHER transition of a confidential item (VALIDATION
+  `CONFIDENTIAL_NOTE_MESSAGE`): the only UI note on these items was already «ثبت پاسخ», so nothing legitimate is lost,
+  and the item's trail can no longer hold a text that reads like a decision. Tests: `tests/int/counseling.test.ts`
+  («the file shows only the answer that closed a referral»).

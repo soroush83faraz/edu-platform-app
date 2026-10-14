@@ -467,6 +467,14 @@ export interface ChangeStatusInput {
   note?: string | null;
 }
 
+/**
+ * A note on a CONFIDENTIAL item is accepted with one transition only: an addressee's answer that closes it
+ * (`closesOnFirstAnswer` — «ثبت پاسخ» of «ارجاع به مدیریت»), the decision the student file shows. Any other note
+ * (a «در حال بررسی» with text, a teacher's «انجام شد» with text, a creator's reopening with text) would sit in the
+ * item's trail beside — or in place of — that answer (security review 2026-10-14, D5).
+ */
+export const CONFIDENTIAL_NOTE_MESSAGE = "روی این مورد محرمانه فقط «ثبت پاسخ» متن می‌پذیرد.";
+
 export interface ChangeStatusResult {
   statusCode: string;
   /** Item status changed (as opposed to only the caller's own assignee state). */
@@ -489,7 +497,8 @@ async function setItemStatus(tx: Tx, ctx: WorkspaceCtx, item: WorkItemCore, to: 
  * pending, cancelled is the UI's «حذف» (soft: nothing is deleted, «بازیابی» brings it back). An assignee who did not
  * create the item takes the assignee path whatever their hats — a principal given a تسک by the organization admin
  * marks their own row only. An assignee's own completion notifies no one (owner, round 7); the giver reads the n/m
- * on the item.
+ * on the item. On a CONFIDENTIAL item a note rides only on an addressee's closing answer (`CONFIDENTIAL_NOTE_MESSAGE`,
+ * VALIDATION otherwise).
  */
 export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatusInput): Promise<ChangeStatusResult> {
   await canViewWorkItem(tx, ctx, input.workItemId);
@@ -505,6 +514,9 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
 
   const mine = await findMyAssigneeRow(tx, ctx.personId, item.id);
   const manager = managesItem(ctx, item, mine !== null);
+  if (note !== null && item.isConfidential && !(!manager && mine !== null && target.category === "done" && closesOnFirstAnswer(item.typeCode))) {
+    throw validation({ fieldErrors: { note: [CONFIDENTIAL_NOTE_MESSAGE] } }, CONFIDENTIAL_NOTE_MESSAGE);
+  }
   const before = { statusCode: item.statusCode, myState: mine?.state ?? null };
   let itemChanged = false;
   let recipients: string[] = [];

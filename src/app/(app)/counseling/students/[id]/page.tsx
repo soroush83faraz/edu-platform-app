@@ -147,25 +147,25 @@ export default async function StudentFilePage({ params }: { params: Promise<{ id
                         <p className="text-meta text-text-muted">
                           {REFERRAL_KIND_LABELS[r.kind]} · <bdi>{r.createdByName}</bdi> · <RelativeTime at={r.createdAt} mode="time" />
                         </p>
-                        {r.kind === "management" && r.lastNote ? (
+                        {r.kind === "management" && r.answer ? (
                           <div className="surface-panel flex flex-col gap-1 px-3 py-2">
                             <p className="text-meta text-text-muted">
                               پاسخ مدیریت
-                              {r.lastNoteBy ? (
+                              {r.answerBy ? (
                                 <>
                                   {" · "}
-                                  <bdi>{r.lastNoteBy}</bdi>
+                                  <bdi>{r.answerBy}</bdi>
                                 </>
                               ) : null}
-                              {r.lastNoteAt ? (
+                              {r.answerAt ? (
                                 <>
                                   {" · "}
-                                  <RelativeTime at={r.lastNoteAt} mode="time" />
+                                  <RelativeTime at={r.answerAt} mode="time" />
                                 </>
                               ) : null}
                             </p>
                             <p className="text-sm leading-7 whitespace-pre-wrap text-text">
-                              <bdi>{r.lastNote}</bdi>
+                              <bdi>{r.answer}</bdi>
                             </p>
                           </div>
                         ) : null}

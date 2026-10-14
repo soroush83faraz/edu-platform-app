@@ -7,6 +7,7 @@ import type { Tx } from "@/lib/actions";
 import { toAsciiDigits } from "@/lib/normalize";
 import { person } from "@/modules/iam/schema";
 import { liveSchoolEnrollmentSql } from "@/modules/iam/service";
+import { closesOnFirstAnswer } from "@/modules/workspace/manage-policy";
 import type { StatusCategory } from "@/modules/workspace/repo";
 import type { CounselingStudentRow, NoteKind, NoteVisibility, ReferralKind, ReportKind, SchoolReach } from "./policy";
 
@@ -514,14 +515,24 @@ export interface ReferralRow {
   title: string;
   priority: string;
   statusCategory: StatusCategory;
-  /** The item's latest transition note — for «ارجاع به مدیریت», the management's answer. */
-  lastNote: string | null;
-  lastNoteBy: string | null;
-  lastNoteAt: Date | null;
+  /**
+   * «پاسخ مدیریت»: the note of the answer that CLOSED the request — the item's latest transition, when it took the
+   * item to a done status, was made by one of its addressees (an assignee) and the item's type is closed by its first
+   * answer (`closesOnFirstAnswer`: an `admin_request`, i.e. «ارجاع به مدیریت»). Null otherwise: an open or reopened
+   * item, a report request (teachers answer with a «گزارش به مشاور»), or a transition by anyone else — no other note
+   * of the item ever reaches the file (security review 2026-10-14, D5).
+   */
+  answer: string | null;
+  answerBy: string | null;
+  answerAt: Date | null;
   assignees: Array<{ personId: string; name: string; state: "pending" | "accepted" | "done" }>;
 }
 
-/** The referrals on a student of the schools in `read` reach, newest first, with their work item's live status. */
+/**
+ * The referrals on a student of the schools in `read` reach, newest first, with their work item's live status and
+ * the answer that closed it (`answer`). Every case reader of the school sees this list — title, status, addressees
+ * and that answer — although only the item's participants can open the work item itself (`canViewWorkItem`).
+ */
 export async function listReferrals(tx: Tx, studentProfileId: string, read: SchoolReach): Promise<ReferralRow[]> {
   const res = await tx.execute<{
     id: string;
@@ -533,19 +544,30 @@ export async function listReferrals(tx: Tx, studentProfileId: string, read: Scho
     title: string;
     priority: string;
     category: StatusCategory;
+    type_code: string;
     last_note: string | null;
     last_note_by: string | null;
     last_note_at: string | null;
+    last_category: StatusCategory | null;
+    last_by_addressee: boolean | null;
   }>(sql`
     select r.id, r.kind, r.work_item_id, r.created_at, cp.first_name, cp.last_name, wi.title, wi.priority, s.category,
-           lt.note as last_note, lt.by_name as last_note_by, lt.at as last_note_at
+           ty.code as type_code,
+           lt.note as last_note, lt.by_name as last_note_by, lt.at as last_note_at, lt.category as last_category, lt.by_addressee as last_by_addressee
     from counseling.referral r
     join workspace.work_item wi on wi.id = r.work_item_id
+    join workspace.work_item_type ty on ty.id = wi.type_id
     join workspace.work_item_status s on s.id = wi.status_id
     join iam.person cp on cp.id = r.created_by_person_id
     left join lateral (
-      select t.note, t.at, bp.first_name || ' ' || bp.last_name as by_name
+      -- The LATEST transition only (the item's current state): an answer counts while it is what closed the item.
+      select t.note, t.at, bp.first_name || ' ' || bp.last_name as by_name, ts.category,
+             exists (
+               select 1 from workspace.work_item_assignee a
+               where a.work_item_id = wi.id and a.person_id = t.by_person_id and a.role = 'assignee'
+             ) as by_addressee
       from workspace.work_item_transition t
+      join workspace.work_item_status ts on ts.id = t.to_status_id
       join iam.person bp on bp.id = t.by_person_id
       where t.work_item_id = wi.id
       order by t.at desc, t.id desc
@@ -569,20 +591,23 @@ export async function listReferrals(tx: Tx, studentProfileId: string, read: Scho
       people.set(r.work_item_id, list);
     }
   }
-  return res.rows.map((r) => ({
-    id: r.id,
-    kind: r.kind,
-    workItemId: r.work_item_id,
-    createdAt: new Date(r.created_at),
-    createdByName: `${r.first_name} ${r.last_name}`,
-    title: r.title,
-    priority: r.priority,
-    statusCategory: r.category,
-    lastNote: r.last_note,
-    lastNoteBy: r.last_note ? r.last_note_by : null,
-    lastNoteAt: r.last_note && r.last_note_at ? new Date(r.last_note_at) : null,
-    assignees: people.get(r.work_item_id) ?? [],
-  }));
+  return res.rows.map((r) => {
+    const answered = closesOnFirstAnswer(r.type_code) && r.last_category === "done" && r.last_by_addressee === true && !!r.last_note;
+    return {
+      id: r.id,
+      kind: r.kind,
+      workItemId: r.work_item_id,
+      createdAt: new Date(r.created_at),
+      createdByName: `${r.first_name} ${r.last_name}`,
+      title: r.title,
+      priority: r.priority,
+      statusCategory: r.category,
+      answer: answered ? r.last_note : null,
+      answerBy: answered ? r.last_note_by : null,
+      answerAt: answered && r.last_note_at ? new Date(r.last_note_at) : null,
+      assignees: people.get(r.work_item_id) ?? [],
+    };
+  });
 }
 
 /** The referral behind a work item, when the current person may read it (RLS: its school's case readers and its addressees). */

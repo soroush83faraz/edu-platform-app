@@ -21,7 +21,7 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { withTenant, type Tx } from "@/db/client";
 import * as schema from "@/db/schema";
-import { auditLog, notification, workItem, workItemAssignee, workItemType } from "@/db/schema";
+import { auditLog, notification, staffProfile, workItem, workItemAssignee, workItemTransition, workItemType } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { assignTeacher } from "@/modules/academic/service";
 import {
@@ -42,7 +42,7 @@ import { PERMISSIONS } from "@/modules/iam/permissions";
 import { listValidAssignments } from "@/modules/iam/repo";
 import { MESSAGES, assignRole, createStaff, createStudent, revokeRoleAssignment } from "@/modules/iam/service";
 import { createAcademicYear, createClassGroup, createClassOffering, createSchool } from "@/modules/tenancy/service";
-import { canViewWorkItem, changeStatus } from "@/modules/workspace/service";
+import { CONFIDENTIAL_NOTE_MESSAGE, canViewWorkItem, changeStatus } from "@/modules/workspace/service";
 import { runMigrations } from "../../scripts/migrate";
 import { seedCatalog } from "../../scripts/seed";
 import { OWNER_URL } from "./env";
@@ -498,7 +498,7 @@ describe("«مشاوره» — the counseling file", () => {
       expect(await as(tx, w.teacherA1, (t) => counselingLinkForWorkItem(t, w.teacherA1, ref.workItemId))).toBe(null);
 
       const before = await as(tx, w.counselorA, (t) => getStudentFile(t, w.counselorA, w.studentA2.studentProfileId));
-      expect(before.referrals.map((r) => [r.kind, r.statusCategory, r.lastNote])).toEqual([["management", "todo", null]]);
+      expect(before.referrals.map((r) => [r.kind, r.statusCategory, r.answer])).toEqual([["management", "todo", null]]);
 
       // The principal answers in «پنل من»: the first answer closes it for both; the vice principal's turn is over.
       const answered = await as(tx, w.principalA, (t) => changeStatus(t, w.principalA, { workItemId: ref.workItemId, toStatusCode: "answered", note: "با ولی تماس گرفته شد" }));
@@ -513,7 +513,7 @@ describe("«مشاوره» — the counseling file", () => {
       expect(trail[0].after).toMatchObject({ statusCode: "answered", noteLength: "با ولی تماس گرفته شد".length });
       expect(trail[0].after).not.toHaveProperty("note");
       const after = await as(tx, w.counselorA, (t) => getStudentFile(t, w.counselorA, w.studentA2.studentProfileId));
-      expect(after.referrals.map((r) => [r.statusCategory, r.lastNote, r.lastNoteBy])).toEqual([["done", "با ولی تماس گرفته شد", "مریم رضایی"]]);
+      expect(after.referrals.map((r) => [r.statusCategory, r.answer, r.answerBy])).toEqual([["done", "با ولی تماس گرفته شد", "مریم رضایی"]]);
       // The principal reads the referral in the file too; another school's counselor does not see a row of it.
       expect((await as(tx, w.principalA, (t) => getStudentFile(t, w.principalA, w.studentA2.studentProfileId))).referrals).toHaveLength(1);
       expect(await countAs(tx, w.counselorB, "referral")).toBe(0);
@@ -526,6 +526,51 @@ describe("«مشاوره» — the counseling file", () => {
 
       // Management does not refer: the capability is the counselor's.
       await expect(sub(tx, (sp) => as(sp, w.principalA, (t) => referToManagement(t, w.principalA, { studentProfileId: w.studentA2.studentProfileId, subject: "x" })))).rejects.toSatisfy(isError("FORBIDDEN"));
+    });
+  });
+
+  it("the file shows only the answer that closed a referral — a note on any other transition of a confidential item is refused", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const refused = isError("VALIDATION", CONFIDENTIAL_NOTE_MESSAGE);
+      const sid = w.studentA2.studentProfileId;
+      const ref = await as(tx, w.counselorA, (t) => referToManagement(t, w.counselorA, { studentProfileId: sid, subject: "پیگیری" }));
+      const answerOf = async (workItemId: string) => (await as(tx, w.counselorA, (t) => getStudentFile(t, w.counselorA, sid))).referrals.find((r) => r.workItemId === workItemId)!;
+
+      // An addressee's «در حال بررسی» with a crafted text: refused; without text it goes through, and the file shows
+      // no answer for it (the item is not closed).
+      await expect(sub(tx, (sp) => as(sp, w.viceA, (t) => changeStatus(t, w.viceA, { workItemId: ref.workItemId, toStatusCode: "in_review", note: "تصمیم: اخراج" })))).rejects.toSatisfy(refused);
+      await as(tx, w.viceA, (t) => changeStatus(t, w.viceA, { workItemId: ref.workItemId, toStatusCode: "in_review" }));
+      expect(await answerOf(ref.workItemId)).toMatchObject({ statusCategory: "doing", answer: null, answerBy: null });
+
+      // The principal's «ثبت پاسخ» closes it: that note is the answer.
+      await as(tx, w.principalA, (t) => changeStatus(t, w.principalA, { workItemId: ref.workItemId, toStatusCode: "answered", note: "جلسه با ولی گذاشته شد" }));
+      expect(await answerOf(ref.workItemId)).toMatchObject({ statusCategory: "done", answer: "جلسه با ولی گذاشته شد", answerBy: "مریم رضایی" });
+
+      // The counselor who also teaches holds `workspace.work_item.update` and created the item, so they manage it:
+      // reopening WITH a text (a forged «answer») is refused; reopening without one goes through — and the file then
+      // shows no answer at all, never a note the addressees did not close the request with.
+      const [st] = await tx.select({ id: staffProfile.id }).from(staffProfile).where(eq(staffProfile.personId, w.counselorA.personId));
+      await assignTeacher(tx, w.admin, { staffProfileId: st.id, classOfferingId: f.OFFERING_A1, role: "assistant" });
+      const counselorTeacher = await actor(tx, w.counselorA.personId);
+      await expect(sub(tx, (sp) => as(sp, counselorTeacher, (t) => changeStatus(t, counselorTeacher, { workItemId: ref.workItemId, toStatusCode: "answered", note: "پاسخ ساختگی" })))).rejects.toSatisfy(refused);
+      await expect(sub(tx, (sp) => as(sp, counselorTeacher, (t) => changeStatus(t, counselorTeacher, { workItemId: ref.workItemId, toStatusCode: "open", note: "پاسخ ساختگی" })))).rejects.toSatisfy(refused);
+      await as(tx, counselorTeacher, (t) => changeStatus(t, counselorTeacher, { workItemId: ref.workItemId, toStatusCode: "open" }));
+      expect(await answerOf(ref.workItemId)).toMatchObject({ statusCategory: "todo", answer: null });
+
+      // A report request: the teacher answers with a «گزارش به مشاور»; a text on «انجام شد» is refused, and the file
+      // never shows a note for it.
+      const req = await as(tx, w.counselorA, (t) => requestTeacherReport(t, w.counselorA, { studentProfileId: sid, teacherPersonIds: [w.teacherA2.personId] }));
+      await expect(sub(tx, (sp) => as(sp, w.teacherA2, (t) => changeStatus(t, w.teacherA2, { workItemId: req.workItemId, toStatusCode: "done", note: "این دانش‌آموز تقلب کرده" })))).rejects.toSatisfy(refused);
+      await as(tx, w.teacherA2, (t) => changeStatus(t, w.teacherA2, { workItemId: req.workItemId, toStatusCode: "done" }));
+      expect(await answerOf(req.workItemId)).toMatchObject({ kind: "teacher", statusCategory: "done", answer: null });
+
+      // Nothing refused reached the item's trail: its only notes are the principal's answer.
+      const notes = await tx
+        .select({ note: workItemTransition.note })
+        .from(workItemTransition)
+        .where(and(sql`${workItemTransition.workItemId} in (${ref.workItemId}::uuid, ${req.workItemId}::uuid)`, sql`${workItemTransition.note} is not null`));
+      expect(notes.map((n) => n.note)).toEqual(["جلسه با ولی گذاشته شد"]);
     });
   });
 
