@@ -30,8 +30,9 @@ export type RoleHatSource = Pick<Assignment, "roleCode" | "scopeType" | "permiss
  * an ORGANIZATION-scoped `iam.admin.access` is «مدیر سازمان» (`isOrganizationAdmin`), `school_principal` — or any
  * other narrower assignment carrying admin access — is «مدیر مدرسه», and `vice_principal` is «معاون». That last
  * split is the person's TITLE only: the two school managers hold the same permissions (owner, 2026-09-27), so
- * nothing but this label (and its glyph) may branch on it. «ولی» has no assignments before phase 2; the code is
- * here so the mapping is complete and testable. Returns `[]` for an account with no hat (the nav shows «راهنما»).
+ * nothing but this label (and its glyph) may branch on it. «ولی» is the derived `guardian_full` assignment of a live
+ * guardian link (2026-10-18, src/modules/iam/guardian.ts) — `guardian` stays accepted as its old spelling. Returns `[]`
+ * for an account with no hat (the nav shows «راهنما»).
  */
 export function roleHatsFor(assignments: readonly RoleHatSource[]): RoleKey[] {
   const hats = new Set<RoleKey>();
@@ -45,7 +46,7 @@ export function roleHatsFor(assignments: readonly RoleHatSource[]): RoleKey[] {
     if (a.roleCode === "counselor") hats.add("counselor");
     if (a.roleCode === "teacher") hats.add("teacher");
     if (a.roleCode === "student") hats.add("student");
-    if (a.roleCode === "guardian") hats.add("guardian");
+    if (a.roleCode === "guardian" || a.roleCode === "guardian_full") hats.add("guardian");
   }
   return ROLE_ORDER.filter((key) => hats.has(key));
 }

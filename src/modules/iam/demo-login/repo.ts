@@ -167,7 +167,7 @@ export async function listDemoManagerHats(tx: Tx): Promise<DemoManagerHat[]> {
     where ra.revoked_at is null
       and (ra.valid_from is null or ra.valid_from <= current_date)
       and (ra.valid_to is null or ra.valid_to >= current_date)
-      and r.code not in ('teacher', 'student', 'guardian')
+      and r.code not in ('teacher', 'student', 'guardian', 'guardian_full')
     group by ra.id, ra.person_id, r.code, ra.scope_type, ra.school_id, b.school_id, cgb.school_id, ob.school_id
   `);
   const out: DemoManagerHat[] = [];

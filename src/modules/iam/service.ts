@@ -479,7 +479,10 @@ export function canManageRole(assignments: readonly Assignment[], roleCode: stri
   return holders.some((a) => a.scopeType === "school" && a.scopeId === schoolId);
 }
 
-/** The only role codes `assignRole` writes; `teacher` is derived by `assignTeacher`, guardian roles are phase 2. */
+/**
+ * The only role codes `assignRole` writes; `teacher` is derived by `assignTeacher`, «ولی» (`guardian_full`) by a live guardian
+ * link (./guardian `linkGuardian`) — neither is ever granted by hand.
+ */
 const MANUAL_ROLE_CODES: ReadonlySet<string> = new Set<string>([...ASSIGNABLE_ROLES, "student"]);
 
 export interface AssignRoleInput {
@@ -514,7 +517,7 @@ export function roleGrantOptions<S extends { value: string }>(assignments: reado
   return { roles: [...SCHOOL_GRANTABLE_ROLES], schools: grantable };
 }
 
-async function findSystemRole(tx: Tx, code: string): Promise<{ id: string; allowedScopeTypes: string[] }> {
+export async function findSystemRole(tx: Tx, code: string): Promise<{ id: string; allowedScopeTypes: string[] }> {
   const rows = await tx.select({ id: role.id, allowedScopeTypes: role.allowedScopeTypes }).from(role).where(and(isNull(role.organizationId), eq(role.code, code))).limit(1);
   if (!rows[0]) throw invalidReference(`نقش سیستمی «${code}» یافت نشد.`);
   return rows[0];
@@ -772,14 +775,14 @@ export interface PersonNameInput {
   gender?: "female" | "male" | null;
 }
 
-function cleanNames(input: PersonNameInput): { firstName: string; lastName: string } {
+export function cleanNames(input: PersonNameInput): { firstName: string; lastName: string } {
   const firstName = normalizeFa(input.firstName);
   const lastName = normalizeFa(input.lastName);
   if (!firstName || !lastName) throw fieldError(firstName ? "lastName" : "firstName", MESSAGES.nameRequired);
   return { firstName, lastName };
 }
 
-function cleanPhone(raw: string | null | undefined, field: string): string | null {
+export function cleanPhone(raw: string | null | undefined, field: string): string | null {
   if (raw == null || raw.trim() === "") return null;
   const phone = normalizePhoneIR(raw);
   if (!phone) throw fieldError(field, MESSAGES.phoneInvalid);
@@ -805,7 +808,7 @@ export interface CreateStudentInput extends PersonNameInput {
 }
 
 /** `<base>`, then `<base>-01` … `<base>-05`: the first generated username that is free in the GLOBAL account table. */
-async function freeGeneratedUsername(tx: Tx, base: string): Promise<ResolvedIdentifier> {
+export async function freeGeneratedUsername(tx: Tx, base: string): Promise<ResolvedIdentifier> {
   for (let i = 0; i <= GENERATED_USERNAME_RETRIES; i++) {
     const candidate = i === 0 ? base : `${base}-${String(i).padStart(2, "0")}`;
     if (!(await findAccountByIdentifier(tx, candidate))) return { loginIdentifier: candidate, phoneE164: null };

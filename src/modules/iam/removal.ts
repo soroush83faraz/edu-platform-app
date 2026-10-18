@@ -7,6 +7,9 @@
 //   • staff: every live teacher_assignment ended through `endTeacherAssignment` (its derived `teacher` role is revoked
 //     with it, audited there), staff_profile.left_on = today (Tehran);
 //   • every role_assignment still live is revoked (manager roles, the student's own `student` marker);
+//   • «اولیا» (2026-10-18, ./guardian): a removed STUDENT's live guardian links end with their derived «ولی» roles, and
+//     a guardian-only person left without a live child here loses their login (each audited `iam.guardian.access_closed`);
+//     a removed COLLEAGUE who is also a guardian has their own links ended (their login dies with the removal anyway);
 //   • login: membership 'left', user_account 'disabled', every live session revoked, the encrypted initial password
 //     of the credentials sheet cleared. The account row and its identifier stay (history; restore is by hand);
 //   • OPEN work items somebody else gave them (owner, 2026-10-07): their unfinished assignee row is taken out
@@ -62,6 +65,7 @@ import { endTeacherAssignment } from "@/modules/academic/service";
 import { branch, classGroup, classOffering } from "@/modules/tenancy/schema";
 import { withdrawRemovedAssignee } from "@/modules/workspace/service";
 import { can, canAtAnyScope } from "./can";
+import { endGuardianLinksOfGuardian, endGuardianLinksOfStudent } from "./guardian";
 import { revokeAllForUser } from "./repo";
 import { authIdentity, organizationMembership, person, role, roleAssignment, staffProfile, studentProfile, userAccount } from "./schema";
 import { getPermissionScope, liveSchoolEnrollmentSql, ORG_GRANTED_ROLES, requirePersonInScope, roleAssignmentSchoolId, type IamCtx } from "./service";
@@ -175,9 +179,9 @@ async function planRemoval(tx: Tx, ctx: IamCtx, personId: string, kind: RemovalK
   }
 
   for (const r of roles) {
-    // A derived teacher role ends with its teaching (below); the student's own marker was granted with the
-    // person (`iam.person.write`, `resolveRoleGrant`) and goes with them.
-    if (r.sourceType === "teacher_assignment") continue;
+    // A derived teacher role ends with its teaching (below), a derived «ولی» role with its guardian link (./guardian);
+    // the student's own marker was granted with the person (`iam.person.write`, `resolveRoleGrant`) and goes with them.
+    if (r.sourceType === "teacher_assignment" || r.sourceType === "guardian_relationship") continue;
     if (r.roleCode === "student" && r.scopeType === "student" && sp && r.studentProfileId === sp.id) continue;
     // The revoke rule of /admin/roles (`revokeRoleAssignment`): `school_principal` at the organization, every other
     // role at its school; a role whose school cannot be named needs the organization-level permission.
@@ -280,6 +284,11 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
     }
   }
 
+  // «اولیا»: the student's guardian links (and the guardians' rows, locked ascending — person rows before the work items
+  // below), and a removed colleague's own links as a guardian.
+  const guardians = plan.student ? await endGuardianLinksOfStudent(tx, ctx, plan.student.id) : { endedLinkIds: [], revokedRoleAssignmentIds: [], closedGuardianPersonIds: [] };
+  const asGuardian = await endGuardianLinksOfGuardian(tx, personId);
+
   // Open work items: out of the giver's count (header). Before the archive below; the order does not matter otherwise.
   const work = await withdrawRemovedAssignee(tx, ctx, personId);
 
@@ -331,6 +340,7 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
     roleAssignments: derivedRoles + revokedRoleIds.length,
     sessions: revokedSessions,
     workItems: work.withdrawn.length,
+    guardianLinks: guardians.endedLinkIds.length + asGuardian.endedLinkIds.length,
   };
   const changed =
     personChanged ||
@@ -370,6 +380,11 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
         // Open items they were taken out of — a restore re-inserts these assignee rows (role 'assignee', this state).
         withdrawnWorkItemAssignees: work.withdrawn,
         completedWorkItemIds: work.completedWorkItemIds,
+        // «اولیا»: the links that ended (the student's guardians, or theirs as a guardian), the derived roles revoked with
+        // them and the guardians whose login closed (each has its own `iam.guardian.access_closed` row).
+        endedGuardianLinkIds: [...guardians.endedLinkIds, ...asGuardian.endedLinkIds],
+        revokedGuardianRoleAssignmentIds: [...guardians.revokedRoleAssignmentIds, ...asGuardian.revokedRoleAssignmentIds],
+        closedGuardianPersonIds: guardians.closedGuardianPersonIds,
       },
       tx,
     );

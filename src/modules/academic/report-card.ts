@@ -31,6 +31,7 @@ import {
   type RatingCounts,
 } from "@/lib/objective-rating";
 import { can, canPure } from "@/modules/iam/can";
+import { notifyGuardiansOfReportCard } from "@/modules/iam/guardian-notify";
 import type { Permission } from "@/modules/iam/permissions";
 import { jalaliMonthName, schoolMonthIndex, subjectOrder, type ObjectiveDomain } from "./primary-objectives";
 import { findClassOfStudentProfile, findStudentProfile, listClassRoster } from "./repo";
@@ -492,6 +493,15 @@ export async function saveObjectiveRatings(tx: Tx, ctx: ReportCtx, input: SaveRa
       tx,
     );
   }
+  // «اولیا»: the first level written for a child in a month tells their guardians — once per child per month and year.
+  if (writes.length > 0) {
+    await notifyGuardiansOfReportCard(tx, ctx, {
+      academicYearId: cg.academicYearId,
+      month: input.month,
+      monthName: jalaliMonthName(input.month),
+      studentProfileIds: writes.map((w) => w.studentProfileId),
+    });
+  }
 
   // Completion after the save (what the page's progress line shows).
   const after = await ratingsOf(
@@ -644,22 +654,31 @@ export async function myReportCard(tx: Tx, ctx: ReportCtx, input: { month?: numb
   const mine = await findStudentProfile(tx, ctx.personId);
   if (!mine) return null;
   if (!(await can(tx, ctx, "academic.objective_rating.read", { scopeType: "student", id: mine.id }))) return null;
-  const cls = await findClassOfStudentProfile(tx, mine.id);
+  return studentReportCard(tx, mine, input, now);
+}
+
+/**
+ * ONE student's card for a month — the body of «کارنامهٴ من», shared with a guardian's «کارنامه» of a child
+ * (src/modules/iam/guardian-views.ts). NO authorization here: the caller has decided the reader may see this student.
+ * Null when the student has no class or their پایه has no objectives (not a primary class).
+ */
+export async function studentReportCard(tx: Tx, student: { id: string; fullName: string }, input: { month?: number }, now = new Date()): Promise<StudentReportCard | null> {
+  const cls = await findClassOfStudentProfile(tx, student.id);
   if (!cls) return null;
   const cg = await findReportClass(tx, cls.classGroupId);
   if (!cg) return null;
   const months = await availableMonths(tx, cg.gradeLevelId);
   if (months.length === 0) return null;
   const month = input.month ?? defaultReportMonth(months, tehranJalaliMonth(now));
-  const objectives = month === null ? [] : await listCardObjectives(tx, cg.gradeLevelId, month, cg.academicYearId, [mine.id]);
+  const objectives = month === null ? [] : await listCardObjectives(tx, cg.gradeLevelId, month, cg.academicYearId, [student.id]);
   const ratings = await ratingsOf(
     tx,
     cg.academicYearId,
-    [mine.id],
+    [student.id],
     objectives.map((o) => o.id),
   );
-  const number = await tx.execute<{ student_number: string | null }>(sql`select student_number from iam.student_profile where id = ${mine.id}::uuid`);
-  return buildCard(cg, { studentProfileId: mine.id, fullName: mine.fullName, studentNumber: number.rows[0]?.student_number ?? null }, months, month, objectives, ratings.get(mine.id));
+  const number = await tx.execute<{ student_number: string | null }>(sql`select student_number from iam.student_profile where id = ${student.id}::uuid`);
+  return buildCard(cg, { studentProfileId: student.id, fullName: student.fullName, studentNumber: number.rows[0]?.student_number ?? null }, months, month, objectives, ratings.get(student.id));
 }
 
 /**

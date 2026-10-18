@@ -79,8 +79,19 @@ export interface PersonReach {
   selfId: string;
 }
 
+/**
+ * A guardian-only person («اولیا», 2026-10-18: a guardian link and neither a student nor a staff profile) is nobody's
+ * work-item recipient in phase 1 — the guardian reads the child's تکالیف, never receives a کار of their own — so
+ * the reach leaves them out even for the organization admin (whose scope is everyone). A colleague who is also a
+ * parent stays reachable as the colleague.
+ */
+const NOT_GUARDIAN_ONLY = sql`not (
+  exists (select 1 from iam.guardian_link rgl where rgl.guardian_person_id = iam.person.id)
+  and not exists (select 1 from iam.student_profile rsp where rsp.person_id = iam.person.id)
+  and not exists (select 1 from iam.staff_profile rst where rst.person_id = iam.person.id))`;
+
 function inReach(reach: PersonReach): SQL {
-  return sql`(${person.id} = ${reach.selfId}::uuid or ${personInScopeSql(reach.scope, "iam.person.id")})`;
+  return sql`(${person.id} = ${reach.selfId}::uuid or (${personInScopeSql(reach.scope, "iam.person.id")} and ${NOT_GUARDIAN_ONLY}))`;
 }
 
 /**

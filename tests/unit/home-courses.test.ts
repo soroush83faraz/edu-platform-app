@@ -27,7 +27,7 @@ const { subjectHue, teacherOfferingHues } = await import("@/lib/subject-stamp");
 type Ctx = import("@/lib/ctx").Ctx;
 
 const ctx = { assignments: [{ roleCode: "x", roleId: "r", scopeType: "school", scopeId: "s", permissions: ["workspace.work_item.read"] }] } as unknown as Ctx;
-const baseHats = { isStudent: false, studentClass: null, teachingOfferings: [], adminScope: null, adminSingleSchoolId: null };
+const baseHats = { isStudent: false, studentClass: null, teachingOfferings: [], adminScope: null, adminSingleSchoolId: null, isGuardian: false };
 const STUDENT_CLASS = {
   classGroupName: "۱۰/۱",
   schoolName: "دبیرستان نمونه",

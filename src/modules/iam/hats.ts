@@ -6,6 +6,7 @@ import { defineQuery, type Tx } from "@/lib/actions";
 import type { Ctx } from "@/lib/ctx";
 import { teacherOfferingHues, type HueOffering, type OfferingHues } from "@/lib/subject-stamp";
 import { canAtAnyScope } from "./can";
+import { isGuardian } from "./guardian-views";
 import { getAdminScope, type AdminScope } from "./service";
 
 export interface TeachingOffering {
@@ -30,6 +31,12 @@ export interface Hats {
    * for a scope spanning two or more schools. Free: `getAdminScope` already returned the ids.
    */
   adminSingleSchoolId: string | null;
+  /**
+   * The «ولی» hat (2026-10-18): the session carries a derived guardian assignment (a live link to a child). Free — read
+   * from the assignments; Home then reads the children (`myChildrenQuery`) and stacks their section under the other
+   * hats'. A colleague who is also a parent wears both, each with its own permissions (the guardian's reach one child).
+   */
+  isGuardian: boolean;
 }
 
 async function studentClassOf(tx: Tx, personId: string): Promise<Hats["studentClass"]> {
@@ -122,7 +129,7 @@ export async function getHats(tx: Tx, ctx: Pick<Ctx, "orgId" | "personId" | "ass
       adminScope = null; // admin permission at a scope that maps to no school → no admin section
     }
   }
-  return { isStudent: student, studentClass, teachingOfferings, adminScope, adminSingleSchoolId };
+  return { isStudent: student, studentClass, teachingOfferings, adminScope, adminSingleSchoolId, isGuardian: isGuardian(ctx) };
 }
 
 /** Every member may ask which hats they wear (`iam.account.self` is implicit). */

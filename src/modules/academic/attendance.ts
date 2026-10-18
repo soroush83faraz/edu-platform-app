@@ -27,6 +27,7 @@ import {
   type AttendanceStatus,
 } from "@/lib/attendance";
 import { can } from "@/modules/iam/can";
+import { notifyGuardiansOfAbsence } from "@/modules/iam/guardian-notify";
 import { classOffering } from "@/modules/tenancy/schema";
 import {
   countClassAttendanceByDate,
@@ -257,6 +258,8 @@ export async function takeAttendance(tx: Tx, ctx: AttendanceCtx, input: TakeAtte
     { classGroupId: cg.id, date, periodNo, classOfferingId: offeringId, counts, removed: gone.length },
     tx,
   );
+  // «اولیا»: the guardians of every child marked absent hear it — once per child per roll call (deduped).
+  await notifyGuardiansOfAbsence(tx, ctx, { attendanceSessionId: sessionId, absentStudentProfileIds: wanted.filter((e) => e.status === "absent").map((e) => e.studentProfileId) });
   return { sessionId, created: before === null, counts, takenAt };
 }
 

@@ -606,6 +606,26 @@ export async function getMyTimetable(tx: Tx, ctx: TimetableCtx, now = new Date()
   return { student, teacher, today: clock.weekday, nowMinutes: clock.minutes, currentPeriodNo, nextPeriodNo };
 }
 
+/**
+ * ONE student's class week (the `student` half of «برنامهٴ من», never a teaching half) — what a guardian reads for a
+ * child (src/modules/iam/guardian-views.ts). NO authorization here: the caller has already decided that the reader
+ * may see this student (the guardian's live link + `can(academic.timetable.read, { student })`).
+ */
+export async function getStudentTimetable(tx: Tx, studentPersonId: string, now = new Date()): Promise<MyTimetable> {
+  const clock = tehranClock(now);
+  const cls = await findStudentClass(tx, studentPersonId);
+  let student: MyTimetable["student"] = null;
+  let ref: PeriodRow[] = [];
+  if (cls) {
+    const periods = (await listPeriodsOfSchools(tx, [cls.schoolId])).get(cls.schoolId) ?? [];
+    const slots = await listClassSlots(tx, cls.classGroupId);
+    student = { classGroupName: cls.classGroupName, schoolName: cls.schoolName, periods, days: toDays(slots, () => periods, () => cls.schoolId) };
+    ref = periods;
+  }
+  const { currentPeriodNo, nextPeriodNo } = currentPeriodOf(ref, clock.minutes);
+  return { student, teacher: null, today: clock.weekday, nowMinutes: clock.minutes, currentPeriodNo, nextPeriodNo };
+}
+
 /** The one gate of the subject page (see `getOfferingPage`): the offering and the viewer's relation, or NOT_FOUND. */
 async function openOffering(tx: Tx, ctx: TimetableCtx, offeringId: string): Promise<{ offering: OfferingFacts; isTeacher: boolean; isStudent: boolean }> {
   const offering = await findOfferingFacts(tx, offeringId);
