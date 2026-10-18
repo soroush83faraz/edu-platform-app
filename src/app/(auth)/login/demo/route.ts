@@ -12,10 +12,9 @@ import { clientIpFrom } from "@/lib/request";
 
 export function GET(request: NextRequest): NextResponse {
   const { outcome, cookie } = demoUnlockDecision(demoConfig(), request.nextUrl.searchParams.get("key"), Date.now());
-  const target = request.nextUrl.clone();
-  target.pathname = "/login";
-  target.search = "";
-  const res = NextResponse.redirect(target, 303);
+  // A RELATIVE Location: the standalone server sees itself as http://0.0.0.0:3000 (HOSTNAME/PORT), so an absolute
+  // URL built from request.nextUrl sent the browser to 0.0.0.0:3000 behind Caddy or the :9444 proxy (2026-10-18).
+  const res = new NextResponse(null, { status: 303, headers: { Location: "/login" } });
   res.headers.set("Cache-Control", "no-store");
   res.headers.set("Referrer-Policy", "no-referrer");
   if (cookie) res.cookies.set(cookie.name, cookie.value, cookie.options);

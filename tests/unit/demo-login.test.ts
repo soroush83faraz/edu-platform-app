@@ -127,13 +127,13 @@ describe("the /login/demo route", () => {
     for (const key of [null, "nope", `${KEY}x`]) {
       const res = await hit(key);
       expect(res.status).toBe(303);
-      expect(res.headers.get("location")).toBe("http://localhost:3000/login");
+      expect(res.headers.get("location")).toBe("/login");
       expect(res.headers.get("set-cookie")).toBeNull();
       expect(res.headers.get("cache-control")).toBe("no-store");
     }
     const res = await hit(KEY);
     expect(res.status).toBe(303);
-    expect(res.headers.get("location")).toBe("http://localhost:3000/login");
+    expect(res.headers.get("location")).toBe("/login");
     const setCookie = res.headers.get("set-cookie") ?? "";
     expect(setCookie).toMatch(/^demo=v1\.\d{10}\.[A-Za-z0-9_-]{43};/);
     expect(setCookie).toMatch(/HttpOnly/i);
