@@ -142,11 +142,18 @@ export const SYSTEM_ROLES: SystemRole[] = [
     ],
   },
   {
+    // «ولی» (owner, 2026-10-18 — docs/decisions.md «اولیا — فاز ۱»): never granted by hand. Each LIVE guardian link
+    // (iam.guardian_link) derives one assignment scoped to that child's student_profile (`source_type
+    // 'guardian_relationship'`), so every permission below reaches ONE child and nothing above it (a `student` scope
+    // is never broad: `canBroadly` / `getPermissionScope` ignore it). READ-ONLY on purpose: no `workspace.*` write and
+    // no `workspace.work_item.comment` (removed 2026-10-18) — nothing a guardian does changes the child's data. The
+    // guardian pages (src/modules/iam/guardian-views.ts) require the live link as well as `can(..., { student })`, so an
+    // organization-scoped admin who also holds these permissions gets no guardian view of a child that is not theirs.
     code: "guardian_full",
     name: "ولی",
-    description: "مشاهدهٴ کارتابل فرزند",
+    description: "مشاهدهٴ تکالیف، حضور و غیاب، کارنامه و برنامهٴ کلاسی فرزند (فقط خواندنی)",
     allowedScopeTypes: ["student", "family"],
-    permissions: ["workspace.work_item.read", "workspace.work_item.comment", "notif.notification.read", "academic.timetable.read"],
+    permissions: ["workspace.work_item.read", "notif.notification.read", "academic.timetable.read", "academic.attendance.read", "academic.objective_rating.read"],
   },
 ];
 
@@ -222,6 +229,10 @@ export const NOTIFICATION_TYPES: SystemNotificationType[] = [
   { code: "counseling.referral_answered", module: "counseling", name: "پاسخ مدیریت به ارجاع" },
   { code: "counseling.report_request_done", module: "counseling", name: "پاسخ دبیر به درخواست گزارش" },
   { code: "counseling.teacher_report", module: "counseling", name: "گزارش دبیر به مشاور" },
+  // «اولیا» (owner, 2026-10-18): the guardian's bell — the child's name and the kind of event only, never a note,
+  // a درس or a level (src/modules/iam/guardian-notify.ts).
+  { code: "guardian.child_absent", module: "guardian", name: "غیبت فرزند" },
+  { code: "guardian.report_card", module: "guardian", name: "کارنامهٴ ماهانهٴ فرزند" },
   { code: "account.password_reset", module: "iam", name: "رمز حساب بازنشانی شد", urgency: "high", userCanDisable: false },
   { code: "system.announcement", module: "system", name: "اطلاعیهٴ سامانه", userCanDisable: false },
 ];

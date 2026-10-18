@@ -3,6 +3,7 @@
 export {
   authIdentity,
   contactPoint,
+  guardianLink,
   loginAttempt,
   organizationMembership,
   permission,

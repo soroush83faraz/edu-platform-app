@@ -14,6 +14,8 @@ export type NotificationTypeCode =
   | "counseling.referral_answered"
   | "counseling.report_request_done"
   | "counseling.teacher_report"
+  | "guardian.child_absent"
+  | "guardian.report_card"
   | "account.password_reset"
   | "system.announcement";
 

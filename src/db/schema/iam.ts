@@ -215,6 +215,51 @@ export const studentProfile = iam.table(
 );
 
 /**
+ * «اولیا» (migration 0020; docs/decisions.md 2026-10-18 «اولیا — فاز ۱»): a guardian is a `person` of the organization
+ * linked to each child's `student_profile` — one person (and one login) per guardian phone across siblings. A LIVE link
+ * (`status = 'active'`) carries a DERIVED role assignment (`guardian_full`, scope_type `student`, source_type
+ * `guardian_relationship`, source_id = this row), so authorization reads `role_assignment` like everywhere else and
+ * `can(..., { student })` works unchanged; the guardian pages ALSO require the live link itself (src/modules/iam/
+ * guardian.ts). Ending a link = `status 'archived'` + `archived_at` + the derived role revoked — never a DELETE
+ * (revoked from app_rw in `app.apply_grants()`, 0020). `relation` is per link (a father of two is «پدر» twice).
+ * At most one live PRIMARY guardian per student (`guardian_link_primary_uq`).
+ */
+export const guardianLink = iam.table(
+  "guardian_link",
+  {
+    id: id(),
+    organizationId: orgFk(),
+    guardianPersonId: uuid("guardian_person_id").notNull(),
+    studentProfileId: uuid("student_profile_id").notNull(),
+    relation: text("relation").notNull(),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    status: text("status").notNull().default("active"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    ...timestamps(),
+  },
+  (t) => [
+    unique("guardian_link_org_id_uq").on(t.organizationId, t.id),
+    uniqueIndex("guardian_link_live_uq").on(t.organizationId, t.guardianPersonId, t.studentProfileId).where(sql`${t.status} = 'active'`),
+    uniqueIndex("guardian_link_primary_uq").on(t.organizationId, t.studentProfileId).where(sql`${t.isPrimary} AND ${t.status} = 'active'`),
+    index("guardian_link_org_student_idx").on(t.organizationId, t.studentProfileId),
+    index("guardian_link_org_guardian_idx").on(t.organizationId, t.guardianPersonId),
+    check("guardian_link_relation_chk", sql`${t.relation} IN ('father', 'mother', 'guardian', 'other')`),
+    check("guardian_link_status_chk", sql`${t.status} IN ('active', 'archived')`),
+    check("guardian_link_archived_chk", sql`(${t.status} = 'archived') = (${t.archivedAt} IS NOT NULL)`),
+    foreignKey({
+      name: "guardian_link_guardian_fk",
+      columns: [t.organizationId, t.guardianPersonId],
+      foreignColumns: [person.organizationId, person.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "guardian_link_student_fk",
+      columns: [t.organizationId, t.studentProfileId],
+      foreignColumns: [studentProfile.organizationId, studentProfile.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
  * `school_id` (migration 0012) is the staff member's PRIMARY school — the positive anchor the admin scope rule
  * uses for staff (docs/admin.md «قانون دامنه»). Derived teacher roles never anchor a person; a school-scoped
  * admin reaches staff only through this column or a manual school/branch-scoped role. NULL = anchored nowhere
