@@ -16,7 +16,7 @@ type SearchParams = Record<string, string | string[] | undefined>;
  * relative path (`safeNextPath`), never an absolute URL. `?demo=<key>` = the owner unlocking «ورود آزمایشی» on this
  * device: forwarded to /login/demo (a page cannot set a cookie) whether or not the feature is on, so the answer is
  * the same either way. The «ورود آزمایشی» list is read only when its gate is open (`loadDemoDirectory`: NOT_FOUND
- * otherwise, and then no pill renders).
+ * otherwise, and then no pill renders) — for EVERY visitor in the pilot's open mode (DEMO_LOGIN_OPEN=1).
  */
 export default async function LoginPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const sp = await searchParams;

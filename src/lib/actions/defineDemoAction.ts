@@ -4,8 +4,10 @@
 //
 // Before it even parses the input it requires the whole gate (src/lib/demo-login/gate): DEMO_LOGIN=1 with a complete
 // configuration AND a valid, unexpired unlock cookie (`__Host-demo`, minted by /login/demo for the right
-// DEMO_LOGIN_KEY). Anything less answers NOT_FOUND — byte-for-byte what a feature that does not exist answers, so a
-// stranger learns neither that it is on nor which input it would take. Then the `.strict()` schema, then the handler.
+// DEMO_LOGIN_KEY) — or, instead of the cookie, the pilot's explicit open mode DEMO_LOGIN_OPEN=1 (owner 2026-10-18:
+// the panel for every visitor; `tools.open` tells the handler). Anything less answers NOT_FOUND — byte-for-byte what
+// a feature that does not exist answers, so a stranger learns neither that it is on nor which input it would take.
+// Then the `.strict()` schema, then the handler. Open mode changes nothing below the gate.
 //
 // The handler's tools are definePublicAction's (`globalTx`, `bindAccount`) plus `demoOrgTx(orgId, fn)`: a tenant
 // transaction that opens ONLY for an organization whose slug is on the allow-list — verified inside that very
@@ -24,6 +26,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export interface DemoTools {
   requestId: string;
+  /** DEMO_LOGIN_OPEN=1: the gate admitted this request without an unlock cookie (tighter per-IP cap, audited). */
+  open: boolean;
   /** DEMO_LOGIN_ORGS, in the order written. */
   allowedOrgSlugs: readonly string[];
   /** = withoutTenant: global tables only (organization, user_account, user_session, …). */
@@ -55,6 +59,7 @@ export function defineDemoAction<S extends z.ZodType, R>(
       };
       const data = await handler(input, {
         requestId,
+        open: cfg.open,
         allowedOrgSlugs: cfg.orgSlugs,
         globalTx: withoutTenant,
         bindAccount: bindAccountContext,

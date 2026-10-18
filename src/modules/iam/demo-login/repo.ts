@@ -14,10 +14,19 @@ import type { DemoManagerHat, DemoManagerHatKey, DemoPerson, DemoSchoolFacts, De
 export const DEMO_SESSION_LABEL = "demo-login";
 
 /**
- * How many demo sessions may be created in ten minutes — from one IP, and in all. Generous for one owner clicking
- * through views; a runaway script or a leaked unlock cookie hits the wall.
+ * How many demo sessions may be created in ten minutes — from one IP, and in all. Keyed: generous for one owner
+ * clicking through views; a runaway script or a leaked unlock cookie hits the wall. Open mode (DEMO_LOGIN_OPEN=1)
+ * tightens the per-IP cap to 20: there a client proves nothing, and 20 is still one account switch every 30 seconds
+ * for a person trying roles by hand. The global cap stays 200 in both modes — it is what bounds the writes of all
+ * clients together (≤ 200 sessions + 200 audit rows per 10 minutes), and a lower one would only make it cheaper for
+ * a handful of addresses to lock every pilot tester out.
  */
-export const DEMO_RATE = { perIp10m: 30, all10m: 200 } as const;
+export const DEMO_RATE = { perIp10m: 30, perIp10mOpen: 20, all10m: 200 } as const;
+
+/** The caps the demo login applies in this mode. */
+export function demoRateCaps(open: boolean): { perIp10m: number; all10m: number } {
+  return { perIp10m: open ? DEMO_RATE.perIp10mOpen : DEMO_RATE.perIp10m, all10m: DEMO_RATE.all10m };
+}
 
 /** Global. */
 export async function findDemoAccount(tx: Tx, accountId: string): Promise<DemoAccountFacts | null> {

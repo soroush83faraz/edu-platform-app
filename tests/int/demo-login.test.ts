@@ -2,7 +2,9 @@
 // allowed account WITHOUT any password, audits `iam.demo_login` in the account's organization, and refuses — with no
 // session and no audit row — when the switch is off, the unlock cookie is missing/forged/stale, the account belongs
 // to an organization off DEMO_LOGIN_ORGS (or ALSO to one), or the account/person is not live. The panel's list is
-// read the same way. Calls the Server Action directly with the in-memory cookie+header store (no Next server).
+// read the same way. The pilot's open mode (DEMO_LOGIN_OPEN=1) needs neither the cookie nor a key, and changes
+// nothing else but a tighter per-IP cap and `open: true` on the audit row. Calls the Server Action directly with the
+// in-memory cookie+header store (no Next server).
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 
@@ -147,15 +149,35 @@ async function demoAudits(org: string, accountId: string) {
   });
 }
 
+/** Keyed (the default): DEMO_LOGIN_OPEN is removed, whatever a local .env says. */
 function demoOn(orgs = "school-a"): void {
   process.env.DEMO_LOGIN = "1";
   process.env.DEMO_LOGIN_KEY = KEY;
   process.env.DEMO_LOGIN_ORGS = orgs;
+  delete process.env.DEMO_LOGIN_OPEN;
+}
+/** The pilot's open mode (owner 2026-10-18): every visitor, with or without a key. */
+function demoOpen(opts: { key: boolean }, orgs = "school-a"): void {
+  demoOn(orgs);
+  process.env.DEMO_LOGIN_OPEN = "1";
+  if (!opts.key) delete process.env.DEMO_LOGIN_KEY;
 }
 function demoOff(): void {
   delete process.env.DEMO_LOGIN;
+  delete process.env.DEMO_LOGIN_OPEN;
   delete process.env.DEMO_LOGIN_KEY;
   delete process.env.DEMO_LOGIN_ORGS;
+}
+/** `n` demo sessions created just now from `ip` — what the rate limit counts. */
+async function seedDemoSessions(ip: string, n: number): Promise<void> {
+  await asAppOwner((c) =>
+    c.query(
+      `insert into iam.user_session (id, user_account_id, token_hash, current_org_id, ip, device_label, is_public_device, expires_at)
+       select app.uuid_generate_v7(), $1, md5(random()::text || g::text), $2, $3::inet, $4, true, now() + interval '1 hour'
+       from generate_series(1, $5) g`,
+      [allowedTwo.id, f.ORG_A, ip, DEMO_SESSION_LABEL, n],
+    ),
+  );
 }
 /** This browser opened /login?demo=<key>: a valid unlock cookie for the CURRENT configuration. */
 function unlock(): void {
@@ -255,6 +277,7 @@ describe("with the gate open", () => {
     expect(audits).toHaveLength(1);
     expect(audits[0]).toMatchObject({ action: "iam.demo_login", actor_person_id: null, actor_user_id: null, host: "10.7.0.1" });
     expect(audits[0].after).toMatchObject({ personId: allowed.personIds[0], sessionId: rows[0].id, publicDevice: true });
+    expect(audits[0].after).not.toHaveProperty("open"); // keyed rows look as they always did
 
     // No password was involved: the account has no password identity, and no login attempt was recorded.
     await asAppOwner(async (c) => {
@@ -314,14 +337,84 @@ describe("with the gate open", () => {
   it("rate limit: from one IP, demo sessions of the last ten minutes are capped", async () => {
     unlock();
     from("10.7.9.9");
-    await asAppOwner((c) =>
-      c.query(
-        `insert into iam.user_session (id, user_account_id, token_hash, current_org_id, ip, device_label, is_public_device, expires_at)
-         select app.uuid_generate_v7(), $1, md5(random()::text || g::text), $2, '10.7.9.9', $3, true, now() + interval '1 hour'
-         from generate_series(1, $4) g`,
-        [allowedTwo.id, f.ORG_A, DEMO_SESSION_LABEL, DEMO_RATE.perIp10m],
-      ),
-    );
+    await seedDemoSessions("10.7.9.9", DEMO_RATE.perIp10m);
+    const before = (await sessions(allowed.id)).length;
+    expect(await demoLoginAction(form({ accountId: allowed.id }))).toMatchObject({ ok: false, code: "RATE_LIMITED" });
+    expect(await sessions(allowed.id)).toHaveLength(before);
+  });
+});
+
+describe("open mode — DEMO_LOGIN_OPEN=1 (the pilot: the panel for every visitor)", () => {
+  it("no key and no unlock cookie: the list is read, the login signs in, and the audit row says `open: true`", async () => {
+    demoOpen({ key: false });
+    from("10.7.0.20");
+    expect(requestState.cookies.has(DEMO_COOKIE_NAME)).toBe(false);
+
+    const dir = await loadDemoDirectory({});
+    expect(dir.ok).toBe(true);
+    if (!dir.ok) return;
+    const everyId = dir.data.schools.flatMap((s) => s.roles.flatMap((r) => r.groups.flatMap((g) => g.options.map((o) => o.id))));
+    expect(everyId).toContain(allowed.id);
+    for (const refused of [otherOrg.id, disabled.id, mustChange.id, archivedPerson.id]) expect(everyId).not.toContain(refused);
+    expect(dir.data.schools.some((s) => s.key.startsWith(f.ORG_B))).toBe(false);
+
+    expect(await expectRedirect(() => demoLoginAction(form({ accountId: allowed.id })))).toBe("/home");
+    const newest = (await sessions(allowed.id)).at(-1)!;
+    // The same session as when keyed: public device (8 hours, never extended), labelled, in the account's organization.
+    expect(newest).toMatchObject({ revoked_at: null, is_public_device: true, device_label: DEMO_SESSION_LABEL, current_org_id: f.ORG_A, ip: "10.7.0.20" });
+    const call = requestState.setCookieCalls.find((c) => c.name === SESSION_COOKIE_NAME);
+    expect(call && hashToken(call.value)).toBe(newest.token_hash);
+    expect(call!.options).not.toHaveProperty("expires");
+    expect(await getRequestContext()).toMatchObject({ userId: allowed.id, orgId: f.ORG_A, personId: allowed.personIds[0] });
+
+    const row = (await demoAudits(f.ORG_A, allowed.id)).find((a) => a.after.sessionId === newest.id);
+    expect(row).toMatchObject({ action: "iam.demo_login", actor_person_id: null, actor_user_id: null, host: "10.7.0.20" });
+    expect(row!.after).toMatchObject({ personId: allowed.personIds[0], publicDevice: true, open: true });
+  });
+
+  it("with a key configured it is just as open — no cookie needed", async () => {
+    demoOpen({ key: true });
+    from("10.7.0.21");
+    expect(await expectRedirect(() => demoLoginAction(form({ accountId: allowedTwo.id })))).toBe("/home");
+    const newest = (await sessions(allowedTwo.id)).at(-1)!;
+    expect(newest).toMatchObject({ revoked_at: null, ip: "10.7.0.21", device_label: DEMO_SESSION_LABEL });
+  });
+
+  it("every other gate stays: the switch, exactly \"1\", the strict input, the allow-list, the eligibility rule", async () => {
+    from("10.7.0.22");
+    // DEMO_LOGIN off: open mode opens nothing.
+    demoOpen({ key: false });
+    delete process.env.DEMO_LOGIN;
+    expect(await demoLoginAction(form({ accountId: allowed.id }))).toMatchObject({ ok: false, code: "NOT_FOUND" });
+    expect(await loadDemoDirectory({})).toMatchObject({ ok: false, code: "NOT_FOUND" });
+    // Any value but "1" is keyed: no cookie → NOT_FOUND.
+    demoOn();
+    process.env.DEMO_LOGIN_OPEN = "true";
+    expect(await demoLoginAction(form({ accountId: allowed.id }))).toMatchObject({ ok: false, code: "NOT_FOUND" });
+    expect(await loadDemoDirectory({})).toMatchObject({ ok: false, code: "NOT_FOUND" });
+
+    demoOpen({ key: false });
+    expect(await demoLoginAction({ accountId: allowed.id, organizationId: f.ORG_A })).toMatchObject({ ok: false, code: "VALIDATION" });
+    expect(await demoLoginAction({ accountId: "not-a-uuid" })).toMatchObject({ ok: false, code: "VALIDATION" });
+    for (const target of [otherOrg, crossOrg, disabled, mustChange, archivedPerson]) {
+      expect(await demoLoginAction(form({ accountId: target.id }))).toEqual({ ok: false, code: "FORBIDDEN", message: DEMO_LOGIN_REFUSED_MESSAGE });
+    }
+    // Nothing was created from this test's address (otherOrg has a session + audit row from the ORG_B test above).
+    for (const target of [allowed, otherOrg, crossOrg, disabled, mustChange, archivedPerson]) {
+      expect((await sessions(target.id)).filter((s) => s.ip === "10.7.0.22")).toHaveLength(0);
+    }
+    for (const [org, target] of [[f.ORG_B, otherOrg], [f.ORG_A, crossOrg], [f.ORG_B, crossOrg], [f.ORG_A, allowed]] as const) {
+      expect((await demoAudits(org, target.id)).filter((a) => a.host === "10.7.0.22")).toHaveLength(0);
+    }
+  });
+
+  it(`the per-IP cap is tighter: ${DEMO_RATE.perIp10mOpen} demo sessions from one IP pass keyed, and are refused open`, async () => {
+    from("10.7.9.20");
+    await seedDemoSessions("10.7.9.20", DEMO_RATE.perIp10mOpen);
+    unlock(); // keyed: 20 < 30
+    expect(await expectRedirect(() => demoLoginAction(form({ accountId: allowedTwo.id })))).toBe("/home");
+
+    demoOpen({ key: false });
     const before = (await sessions(allowed.id)).length;
     expect(await demoLoginAction(form({ accountId: allowed.id }))).toMatchObject({ ok: false, code: "RATE_LIMITED" });
     expect(await sessions(allowed.id)).toHaveLength(before);

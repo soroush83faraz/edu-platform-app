@@ -21,7 +21,8 @@ function firstAccount(role: DemoRole | undefined): string {
 /**
  * «ورود آزمایشی» (docs/decisions.md 2026-10-18; mock docs/mockups/login-v6.html `.dock`): a small pill at the bottom
  * end corner of /login that opens a panel of three native dropdowns — «مدرسه» → «نقش» → «حساب» — and «ورود». Rendered
- * ONLY when the server found the gate open (DEMO_LOGIN=1 and this device's unlock cookie); the list arrives as props
+ * ONLY when the server found the gate open (DEMO_LOGIN=1 and this device's unlock cookie, or the pilot's open mode
+ * DEMO_LOGIN_OPEN=1 for every visitor); the list arrives as props
  * (labels + account ids) and the action re-checks everything, so this component is a convenience, never a gate.
  * Only the «حساب» select has a `name`: the server receives one user_account id and nothing else.
  */

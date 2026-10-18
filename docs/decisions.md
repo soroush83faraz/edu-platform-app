@@ -1959,6 +1959,7 @@ src/lib/actions) plus its unlock route; CLAUDE.md «Action rules» names the exc
    HMAC key is derived from SESSION_SECRET + DEMO_LOGIN_KEY: never the key, expiry checked on the server, and rotating
    either secret kills every cookie. Every outcome is the same 303 to a clean `/login` (the key leaves the address
    bar; `Referrer-Policy: no-referrer`, `Cache-Control: no-store`). Every demo request re-verifies the cookie.
+   *(The same day the owner added an opt-in open mode, `DEMO_LOGIN_OPEN=1`, that skips this cookie — next entry.)*
 3. **`DEMO_LOGIN_ORGS`** — the organization slugs the demo may sign in to (pilot: `allameh,farzanegan,helli,pishgaman`).
    The list is read in `demoOrgTx`, a tenant transaction that opens only for an allow-listed organization (checked
    inside it). The action refuses any account with ANY membership — whatever its status — outside the list (so a real
@@ -1987,3 +1988,37 @@ src/lib/actions) plus its unlock route; CLAUDE.md «Action rules» names the exc
   (session + cookie + audit for an allowed account with no password identity; refused for another organization's
   account, a cross-organization account, disabled / must-change / removed; NOT_FOUND with the switch off, without or
   with a forged/stale cookie; the rate limit; the list).
+
+## 2026-10-18 — «ورود آزمایشی» open to every visitor during the pilot (`DEMO_LOGIN_OPEN`, owner)
+
+**Owner decision: while the pilot runs on fake data only, the «ورود آزمایشی» pill shows on /login to EVERYONE, without
+the key.** An explicit, opt-in open mode; it goes off with the rest of the feature before real schools.
+
+- **`DEMO_LOGIN_OPEN=1`** (src/lib/env.ts, src/lib/demo-login/config). Exactly `"1"` — any other value or none = keyed,
+  the default — and only with `DEMO_LOGIN=1`. The gate (src/lib/demo-login/gate) then admits every request without the
+  unlock cookie: the panel's list while /login renders and the demo login itself. `DEMO_LOGIN_KEY` becomes optional
+  (env.ts: `DEMO_LOGIN=1` needs `DEMO_LOGIN_ORGS`, and the key unless `DEMO_LOGIN_OPEN=1`; a key that IS set must still
+  be well-formed). With a key, `/login?demo=<key>` mints `__Host-demo` exactly as before and the MAC does not cover the
+  mode, so a device unlocked now keeps the panel once open mode goes off; without a key nothing matches and
+  /login/demo sets nothing.
+- **Nothing else changes:** `DEMO_LOGIN=1`, the allow-list checked inside `demoOrgTx`, the all-memberships eligibility
+  rule, `.strict()` `{ accountId }`, the 8-hour never-extended public-device session, the `iam.demo_login` row. Two
+  additions. The per-IP cap is **20** demo sessions per 10 minutes instead of 30 (`demoRateCaps`): in this mode a
+  client proves nothing, and 20 is still an account switch every 30 s by hand. The global cap stays 200: it bounds
+  what all clients together can write (≤ 200 sessions + 200 audit rows per 10 minutes), and a lower one would only make
+  it cheaper for a few addresses to lock every tester out. And the audit row's `after` and the log lines carry
+  **`open: true`** (keyed rows have no `open` key, as before), so `after->>'open' = 'true'` finds every open-mode login.
+- **Risk, accepted by the owner: anyone who knows the address can enter the fake pilot accounts** — every eligible
+  account of DEMO_LOGIN_ORGS, «مدیر سازمان» included — and so read, change or delete the pilot data, and leave behind
+  a password of their own (a new staff account, or «تعیین رمز موقت» on an existing one) that switching the demo off
+  does not remove. The panel's names, classes and account ids are in every /login response, and every /login view
+  runs the list's queries. What still holds: no account with any membership off the list, and no other tenant, is
+  reachable; the sessions are short and audited; the caps bound the writes. Hence the listed organizations must hold
+  generated people only — a real person's account that belongs to them alone (the owner's included) would be open to
+  anyone.
+- **Off before real schools** (docs/ops/go-live-checklist.md): no `DEMO_LOGIN*` line left, the demo sessions revoked —
+  and, since open mode was on, every session of the listed organizations' accounts revoked and those accounts disabled
+  (or the organizations removed).
+- Tests: `tests/unit/demo-login.test.ts` (open mode on exactly "1", the gate matrix switch × mode × cookie read from
+  process.env, keyless unlock, the cookie outliving the mode, the caps, env validation), `tests/int/demo-login.test.ts`
+  (open mode without key or cookie: list, session, `open: true`; with a key; every other gate; the tighter per-IP cap).

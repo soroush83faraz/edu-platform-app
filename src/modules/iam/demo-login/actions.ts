@@ -1,9 +1,11 @@
 "use server";
 // «ورود آزمایشی» — sign in as a chosen demo account WITHOUT a password (docs/decisions.md 2026-10-18). The second and
 // last pre-authentication action besides login; it goes through `defineDemoAction` (src/lib/actions), so before
-// anything else it needs DEMO_LOGIN=1 and this browser's valid unlock cookie — otherwise NOT_FOUND, exactly what a
-// feature that does not exist answers. The input is ONE user_account id (`.strict()`); the organization and the
-// person come from the database. No password is read, compared or set anywhere on this path.
+// anything else it needs DEMO_LOGIN=1 and this browser's valid unlock cookie — or the pilot's open mode
+// (DEMO_LOGIN_OPEN=1, every visitor) — otherwise NOT_FOUND, exactly what a feature that does not exist answers. The
+// input is ONE user_account id (`.strict()`); the organization and the person come from the database. No password is
+// read, compared or set anywhere on this path. Open mode changes only the per-IP cap (`demoRateCaps`) and adds
+// `open: true` to the audit row and the log lines.
 //
 //   1. global transaction: the demo rate limit (sessions created with DEMO_SESSION_LABEL in 10 minutes, per IP and
 //      in all), the account row, then — bound to THAT row — every membership it has in any organization; the pure
@@ -26,7 +28,7 @@ import { lockPersonForShare } from "../repo";
 import { createSession, readSessionToken, revokeSessionByToken, setSessionCookie } from "../session";
 import { demoTarget, type DemoRefusal } from "./eligibility";
 import { DEMO_ACCOUNT_REQUIRED_MESSAGE, DEMO_LOGIN_REFUSED_MESSAGE } from "./messages";
-import { DEMO_RATE, DEMO_SESSION_LABEL, countRecentDemoSessions, findDemoAccount, isLiveDemoMember, listDemoMemberships } from "./repo";
+import { DEMO_SESSION_LABEL, countRecentDemoSessions, demoRateCaps, findDemoAccount, isLiveDemoMember, listDemoMemberships } from "./repo";
 
 const DemoLoginInput = z.object({ accountId: z.uuid(DEMO_ACCOUNT_REQUIRED_MESSAGE) }).strict();
 
@@ -36,10 +38,13 @@ const demoLoginCore = defineDemoAction({ schema: DemoLoginInput }, async (input,
   const ip = await getClientIp();
   const userAgent = await getUserAgent();
   const now = new Date();
+  const caps = demoRateCaps(tools.open);
+  /** Open mode is marked on every log line and on the audit row; keyed rows stay as before (no `open` key). */
+  const mode = tools.open ? { open: true as const } : {};
 
   const probe = await tools.globalTx(async (tx) => {
     const recent = await countRecentDemoSessions(tx, ip);
-    if (recent.ip >= DEMO_RATE.perIp10m || recent.all >= DEMO_RATE.all10m) return { limited: true as const };
+    if (recent.ip >= caps.perIp10m || recent.all >= caps.all10m) return { limited: true as const };
     const account = await findDemoAccount(tx, input.accountId);
     if (!account) return { limited: false as const, accountId: null, target: demoTarget(null, [], tools.allowedOrgSlugs, now) };
     await tools.bindAccount(tx, account.id);
@@ -47,12 +52,12 @@ const demoLoginCore = defineDemoAction({ schema: DemoLoginInput }, async (input,
     return { limited: false as const, accountId: account.id, target: demoTarget(account, memberships, tools.allowedOrgSlugs, now) };
   });
   if (probe.limited) {
-    logger.warn({ requestId: tools.requestId, ip }, "demo login: rate limited");
+    logger.warn({ requestId: tools.requestId, ip, ...mode }, "demo login: rate limited");
     throw rateLimited();
   }
   if (!probe.target.ok || probe.accountId === null) {
     const reason = probe.target.ok ? "no_account" : probe.target.reason;
-    logger.warn({ requestId: tools.requestId, ip, accountId: input.accountId, reason }, "demo login: refused");
+    logger.warn({ requestId: tools.requestId, ip, accountId: input.accountId, reason, ...mode }, "demo login: refused");
     return { kind: "refused", reason };
   }
   const accountId = probe.accountId;
@@ -79,17 +84,17 @@ const demoLoginCore = defineDemoAction({ schema: DemoLoginInput }, async (input,
       "iam.demo_login",
       { schema: "iam", table: "user_account", id: account.id },
       null,
-      { personId, sessionId: session.id, publicDevice: true, revokedPrevious },
+      { personId, sessionId: session.id, publicDevice: true, revokedPrevious, ...mode },
       tx,
     );
     return { token, expiresAt: session.expiresAt };
   });
   if (!created) {
-    logger.warn({ requestId: tools.requestId, ip, accountId }, "demo login: refused (changed under the request)");
+    logger.warn({ requestId: tools.requestId, ip, accountId, ...mode }, "demo login: refused (changed under the request)");
     return { kind: "refused", reason: "changed" };
   }
   await setSessionCookie(created.token, { isPublicDevice: true, expiresAt: created.expiresAt });
-  logger.info({ requestId: tools.requestId, ip, accountId, organizationId }, "demo login");
+  logger.info({ requestId: tools.requestId, ip, accountId, organizationId, ...mode }, "demo login");
   return { kind: "ok" };
 });
 

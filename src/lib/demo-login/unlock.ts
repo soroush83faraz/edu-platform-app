@@ -10,6 +10,10 @@
 // `exp` (unix seconds, 30 days ahead) is checked on the server too, so a copied cookie dies on its own; rotating
 // DEMO_LOGIN_KEY or SESSION_SECRET invalidates every cookie at once. Name/flags follow the session cookie
 // (src/lib/session-cookie.ts): `__Host-demo` + Secure in production, plain `demo` on http://localhost.
+//
+// Open mode (DEMO_LOGIN_OPEN=1, ./config) needs no cookie, but a configured key keeps working the same way: the MAC
+// does NOT cover the mode, so a device unlocked while the panel was open keeps it after open mode is switched off.
+// Without a key (open mode only) nothing matches and nothing verifies — there is nothing to unlock.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { DemoConfig } from "./config";
 
@@ -42,7 +46,7 @@ function sameBytes(a: Buffer, b: Buffer): boolean {
  * session secret, so neither the length nor the first differing character of the real key shows in the timing.
  */
 export function demoKeyMatches(cfg: DemoConfig, provided: unknown): boolean {
-  if (!cfg.enabled || typeof provided !== "string" || provided.length === 0 || provided.length > DEMO_KEY_PARAM_MAX) return false;
+  if (!cfg.enabled || cfg.key === "" || typeof provided !== "string" || provided.length === 0 || provided.length > DEMO_KEY_PARAM_MAX) return false;
   const mac = (s: string) => createHmac("sha256", cfg.secret).update(`donino/demo-key\0${s}`).digest();
   return sameBytes(mac(provided), mac(cfg.key));
 }
@@ -54,7 +58,7 @@ export function mintDemoUnlock(cfg: DemoConfig, nowMs: number): string {
 
 /** True for a well-formed, unexpired cookie signed for the CURRENT key and secret. Never throws. */
 export function verifyDemoUnlock(cfg: DemoConfig, value: string | undefined | null, nowMs: number): boolean {
-  if (!cfg.enabled || !value) return false;
+  if (!cfg.enabled || cfg.key === "" || !value) return false;
   const m = VALUE_RE.exec(value);
   if (!m) return false;
   const exp = Number(m[1]);
@@ -74,10 +78,11 @@ export type DemoUnlockOutcome = "off" | "bad_key" | "unlocked";
 
 /**
  * What `/login/demo?key=…` does — the route only applies it. Every outcome redirects to `/login` the same way; only
- * `unlocked` carries the cookie, so the response tells a visitor nothing about whether the feature is on.
+ * `unlocked` carries the cookie, so the response tells a visitor nothing about whether the feature is on. `off` =
+ * nothing to unlock: the feature is off, or it is in open mode without a key.
  */
 export function demoUnlockDecision(cfg: DemoConfig, provided: unknown, nowMs: number): { outcome: DemoUnlockOutcome; cookie: DemoCookie | null } {
-  if (!cfg.enabled) return { outcome: "off", cookie: null };
+  if (!cfg.enabled || cfg.key === "") return { outcome: "off", cookie: null };
   if (!demoKeyMatches(cfg, provided)) return { outcome: "bad_key", cookie: null };
   return {
     outcome: "unlocked",

@@ -3,7 +3,9 @@
 // while it renders. EVERY outcome is the same 303 to /login — only the right key, with the feature on, adds the unlock
 // cookie (src/lib/demo-login/unlock: constant-time comparison, an expiring HMAC, never the key itself) — so the
 // response says nothing about whether the feature exists, and the redirect takes the key out of the address bar.
-// Public by design (the proxy treats /login/* as public); no database, no session, never logs the key.
+// In open mode (DEMO_LOGIN_OPEN=1) it works the same when a key is configured — the cookie then outlives open mode —
+// and without a key it sets nothing. Public by design (the proxy treats /login/* as public); no database, no
+// session, never logs the key.
 import { NextResponse, type NextRequest } from "next/server";
 import { demoConfig } from "@/lib/demo-login/gate";
 import { demoUnlockDecision } from "@/lib/demo-login/unlock";
