@@ -80,8 +80,14 @@ async function createAccount(
           [id(5, n), org, personIds[i], `DEMO${n}`],
         );
         await c.query(
-          `INSERT INTO academic.class_enrollment (id, organization_id, class_group_id, student_profile_id) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING`,
-          [id(6, n), org, f.CLASS_GROUP_A1, id(5, n)],
+          `INSERT INTO academic.school_enrollment (id, organization_id, student_profile_id, school_id, academic_year_id, grade_level_id)
+           VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
+          [id(7, n), org, id(5, n), f.SCHOOL_A, f.YEAR_A, f.GRADE_A],
+        );
+        await c.query(
+          `INSERT INTO academic.class_enrollment (id, organization_id, school_enrollment_id, class_group_id, student_profile_id, status)
+           VALUES ($1, $2, $3, $4, $5, 'active') ON CONFLICT (id) DO NOTHING`,
+          [id(6, n), org, id(7, n), f.CLASS_GROUP_A1, id(5, n)],
         );
       }
     }
