@@ -25,6 +25,17 @@ export function relationLabel(value: string): string {
   return isGuardianRelation(value) ? RELATION_LABELS[value] : RELATION_LABELS.other;
 }
 
+/** What happened to the login when a guardian was added (./guardian `addGuardian`) — the admin UI says it in one line. */
+export type GuardianAccountKind = "new_phone" | "new_username" | "existing" | "reopened" | "staff";
+
+export const GUARDIAN_ACCOUNT_NOTES: Record<GuardianAccountKind, string> = {
+  new_phone: "حساب ولی با همین شماره ساخته شد.",
+  new_username: "این شماره نام‌کاربری حساب دیگری است (مثلاً حساب یک دانش‌آموز)؛ برای ولی نام‌کاربری جداگانه ساخته شد.",
+  existing: "این ولی از پیش حساب دارد (برای فرزند دیگری)؛ همان حساب به این دانش‌آموز هم وصل شد.",
+  reopened: "دسترسی این ولی دوباره باز شد؛ رمز اولیهٴ تازه دارد.",
+  staff: "این شماره حساب یکی از همکاران است؛ نقش «ولی» به همان حساب افزوده شد.",
+};
+
 /** What the bulk «ساخت حساب اولیا» writes for a guardian whose relation nobody told the school. */
 export const BULK_RELATION: GuardianRelation = "guardian";
 

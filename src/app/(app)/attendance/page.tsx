@@ -1,4 +1,4 @@
-import { CalendarCheck, CircleCheck, ClipboardList } from "lucide-react";
+import { CalendarCheck, CircleCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -7,13 +7,13 @@ import { EmptyState } from "@/components/EmptyState";
 import { SubjectIcon } from "@/components/SubjectStamp";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { ATTENDANCE_LABELS, ATTENDANCE_TONES, totalOf, type AttendanceStatus } from "@/lib/attendance";
 import { requireContext } from "@/lib/ctx";
 import { formatNumberFa, isoDateToJalali } from "@/lib/format";
 import { offeringHue } from "@/lib/subject-stamp";
 import { getTeacherHues } from "@/lib/teacher-hues";
 import { formatTimeRangeFa, WEEKDAY_LABELS } from "@/lib/timetable";
 import { myAttendanceQuery, teacherDayQuery } from "@/modules/academic/queries";
+import { StudentAttendanceSection } from "@/modules/academic/ui/StudentAttendance";
 import { canAtAnyScope } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "حضور و غیاب" };
@@ -38,9 +38,6 @@ export default async function AttendancePage() {
 
   // Nothing personal to show: an admin belongs in the hub, anyone else gets the empty state.
   if (summary === null && cells.length === 0 && canReport) redirect("/admin/attendance");
-
-  const counts = summary?.counts ?? null;
-  const total = counts ? totalOf(counts) : 0;
 
   return (
     <ContentWidth className="reveal-stagger">
@@ -103,54 +100,13 @@ export default async function AttendancePage() {
         />
       ) : null}
 
-      {summary && counts ? (
-        <>
-          <section aria-labelledby="my-attendance-heading" className="flex flex-col gap-2.5">
-            <h3 id="my-attendance-heading" className="flex items-center gap-1.5 px-1 text-section font-semibold text-text">
-              <ClipboardList className="size-4" strokeWidth={1.75} aria-hidden />
-              حضور و غیاب من
-            </h3>
-            {total === 0 ? (
-              <EmptyState title="هنوز حضور و غیابی برای شما ثبت نشده" description="وقتی دبیر کلاس حضور و غیاب بزند، همین‌جا می‌بینید." className="surface-work py-10" />
-            ) : (
-              // Counts only — no presence / absence percentage for the student (owner 2026-09-27).
-              <dl className="grid grid-cols-4 gap-1.5">
-                {(Object.keys(ATTENDANCE_LABELS) as AttendanceStatus[]).map((s) => (
-                  <div key={s} className="surface-panel flex flex-col items-center gap-0.5 px-1 py-3 text-center">
-                    <dt className="text-meta text-text-muted">{ATTENDANCE_LABELS[s]}</dt>
-                    <dd className="tabular text-lg font-semibold text-text">{formatNumberFa(counts[s])}</dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-          </section>
-
-          {summary.recent.length > 0 ? (
-            <section aria-labelledby="recent-heading" className="flex flex-col gap-2.5">
-              <h3 id="recent-heading" className="px-1 text-section font-semibold text-text">
-                آخرین موردها
-              </h3>
-              <ul className="reveal-rows flex flex-col divide-y divide-line/70 surface-work">
-                {summary.recent.map((r, i) => (
-                  <li key={`${r.date}-${r.periodNo ?? "d"}-${i}`} className="flex min-h-14 items-center gap-3 px-3 py-2">
-                    <div className="flex min-w-0 flex-1 flex-col">
-                      <p className="truncate text-row text-text">
-                        {r.subjectName ? <bdi>{r.subjectName}</bdi> : "حضور و غیاب روزانه"}
-                      </p>
-                      <p className="truncate text-meta text-text-muted">
-                        <span className="tabular">{isoDateToJalali(r.date)}</span>
-                        {r.minutesLate ? <span className="ms-2">{formatNumberFa(r.minutesLate)} دقیقه</span> : null}
-                      </p>
-                    </div>
-                    <Chip tone={ATTENDANCE_TONES[r.status as AttendanceStatus] ?? "neutral"} className="shrink-0">
-                      {ATTENDANCE_LABELS[r.status as AttendanceStatus] ?? r.status}
-                    </Chip>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-        </>
+      {summary ? (
+        <StudentAttendanceSection
+          summary={summary}
+          heading="حضور و غیاب من"
+          emptyTitle="هنوز حضور و غیابی برای شما ثبت نشده"
+          emptyDescription="وقتی دبیر کلاس حضور و غیاب بزند، همین‌جا می‌بینید."
+        />
       ) : null}
 
       {summary === null && cells.length === 0 && !canReport ? (

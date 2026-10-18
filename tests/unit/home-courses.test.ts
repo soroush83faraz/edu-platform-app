@@ -18,6 +18,7 @@ vi.mock("@/modules/academic/queries", () => ({
   myTimetableQuery: vi.fn(async () => ({ ok: true, data: null })),
 }));
 vi.mock("@/modules/workspace/queries", () => ({ homeOpenItemsQuery: vi.fn(async () => ({ ok: true, data: [] })) }));
+vi.mock("@/modules/iam/guardian-queries", () => ({ myChildrenQuery: vi.fn(async () => ({ ok: true, data: [] })) }));
 
 const { HomeCourses, CourseCards, homeCourses } = await import("@/components/home/HomeCourses");
 const { resolveHomeTiles } = await import("@/components/home/home-data");

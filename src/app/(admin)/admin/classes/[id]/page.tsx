@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/AdminPage";
+import { BulkGuardiansButton } from "@/components/admin/BulkGuardiansButton";
 import { Chip } from "@/components/Chip";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,10 @@ import { canAtAnyScope } from "@/modules/iam/can";
 export const metadata: Metadata = { title: "کلاس | مدیریت" };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** /admin/classes/[id] — the class card: roster (active students), offerings summary, credentials sheet. */
+/**
+ * /admin/classes/[id] — the class card: roster (active students), offerings summary, and «ساخت حساب اولیا» (2026-10-18:
+ * the guardians of every student with a «ولی» phone, then their printable sheet `/admin/classes/[id]/guardians`).
+ */
 export default async function ClassPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!UUID_RE.test(id)) notFound();
@@ -50,6 +54,7 @@ export default async function ClassPage({ params }: { params: Promise<{ id: stri
                 برنامهٴ هفتگی
               </Link>
             </Button>
+            {canAddStudent && roster.length > 0 ? <BulkGuardiansButton classGroupId={id} className={cls.name} /> : null}
             {canAddStudent ? (
               <Button asChild>
                 <Link href="/admin/students/new">

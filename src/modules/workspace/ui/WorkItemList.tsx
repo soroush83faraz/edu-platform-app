@@ -38,7 +38,9 @@ export function WorkItemStatusTag({ status, className }: { status: WorkItemListS
  * note / an admin task — then the title (priority dot beside it while open, semibold when unread, muted once
  * finished), ONE meta line — the درس (and, on what I gave, its class) unless the page is the درس's own, the
  * deadline with its calendar glyph (red when overdue), and, on what I gave, «۹ از ۲۴ انجام داده‌اند» over a thin sky
- * bar (just «همه انجام دادند» once everyone has) — and the status tag at the end. The whole row is the link, ≥ 64 px.
+ * bar (just «همه انجام دادند» once everyone has) — and the status tag at the end. The whole row is the link, ≥ 64 px —
+ * except `readOnly` (a guardian's «تکالیف فرزند», 2026-10-18): the same row as a static line, no link and no hover,
+ * since the reader may not open the item itself.
  */
 export function WorkItemRow({
   row,
@@ -48,6 +50,7 @@ export function WorkItemRow({
   mark = true,
   chevron = false,
   hues,
+  readOnly = false,
 }: {
   row: Row;
   words?: WorkItemWords;
@@ -59,6 +62,8 @@ export function WorkItemRow({
   /** An end chevron after the tag (the subject page, whose rows have no mark to read as links). */
   chevron?: boolean;
   hues?: OfferingHues;
+  /** A static row (no link to `/inbox/[id]`, no hover): the reader sees the item but may not open it. */
+  readOnly?: boolean;
 }) {
   const closed = isClosed(row);
   const status = listStatusOf(row);
@@ -99,13 +104,8 @@ export function WorkItemRow({
     );
   }
   const pct = row.assigneesTotal === 0 ? 0 : Math.round((row.assigneesDone / row.assigneesTotal) * 100);
-  return (
-    <li data-row-id={row.id}>
-      <Link
-        prefetch={false}
-        href={`/inbox/${row.id}`}
-        className={cn("pressable flex min-h-16 items-center gap-3 px-3.5 py-3 hover:bg-surface-sunken active:bg-surface-sunken", closed && "bg-surface-sunken/40")}
-      >
+  const body = (
+    <>
         {mark ? <WorkItemMark row={row} label={row.typeCode === "todo" ? personalItemLabel(createVoice, row.typeName) : words.singular} hues={hues} /> : null}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <p className={cn("line-clamp-2 text-row", closed ? "font-medium text-text-muted" : cn("text-text", row.unread ? "font-semibold" : "font-medium"))}>
@@ -128,7 +128,24 @@ export function WorkItemRow({
           ) : null}
         </div>
         <WorkItemStatusTag status={status} />
-        {chevron ? <ChevronLeft className="size-4 shrink-0 text-text-faint" aria-hidden /> : null}
+        {chevron && !readOnly ? <ChevronLeft className="size-4 shrink-0 text-text-faint" aria-hidden /> : null}
+    </>
+  );
+  if (readOnly) {
+    return (
+      <li data-row-id={row.id}>
+        <div className={cn("flex min-h-16 items-center gap-3 px-3.5 py-3", closed && "bg-surface-sunken/40")}>{body}</div>
+      </li>
+    );
+  }
+  return (
+    <li data-row-id={row.id}>
+      <Link
+        prefetch={false}
+        href={`/inbox/${row.id}`}
+        className={cn("pressable flex min-h-16 items-center gap-3 px-3.5 py-3 hover:bg-surface-sunken active:bg-surface-sunken", closed && "bg-surface-sunken/40")}
+      >
+        {body}
       </Link>
     </li>
   );

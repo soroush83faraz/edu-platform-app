@@ -32,8 +32,12 @@ describe("report-card Home tiles (hub)", () => {
       const unknown = { ...hats, reportCard: undefined };
       expect(codes(unknown, perms("school_principal"))).not.toContain("report-card");
     }
-    // A guardian (no report-card permission) never gets it.
-    expect(codes(student, perms("guardian_full"))).not.toContain("my-report-card");
+    // A guardian holds the read permission since 2026-10-18 — for a CHILD (their own «کارنامه» tile lives in the
+    // guardian's Home section) — but wears no student hat of their own: never «کارنامهٴ من», never the staff tile.
+    const guardianOnly: TileHats = { isStudent: false, isTeacher: false, isAdmin: false, adminScope: null, reportCard: { staff: false, student: false } };
+    expect(perms("guardian_full")).toContain("academic.objective_rating.read");
+    expect(codes(guardianOnly, perms("guardian_full"))).not.toContain("my-report-card");
+    expect(codes(guardianOnly, perms("guardian_full"))).not.toContain("report-card");
   });
 
   it("sits before «حضور و غیاب» (still last) with a label and glyph no other tile of that person uses", () => {

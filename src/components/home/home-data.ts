@@ -8,6 +8,7 @@ import { homeTilesFor, showUpcomingOnHome, upcomingTilesFor, type HomeTile, type
 import { getUiVariant, type UiVariant } from "@/lib/ui-variant";
 import { myClassQuery, myTimetableQuery, reportCardReachQuery } from "@/modules/academic/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
+import { myChildrenQuery, type GuardianChild } from "@/modules/iam/guardian-queries";
 import { hatsQuery, type Hats } from "@/modules/iam/hats";
 import type { Permission } from "@/modules/iam/permissions";
 import { homeOpenItemsQuery } from "@/modules/workspace/queries";
@@ -26,6 +27,12 @@ export const getMyTimetable = cache(async () => {
 export const getMyClass = cache(async () => {
   const r = await myClassQuery();
   return r.ok ? r.data : null;
+});
+
+/** «فرزندان» (2026-10-18): a guardian's live children — read only for a session that wears the «ولی» hat. */
+export const getMyChildren = cache(async (): Promise<GuardianChild[]> => {
+  const r = await myChildrenQuery();
+  return r.ok ? r.data : [];
 });
 
 /** «تکالیف نزدیک» — both renderings draw the card (`NearbyCard`), so its list is read once per request too. */

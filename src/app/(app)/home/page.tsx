@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { HomeDashboard } from "@/components/home/dashboard/HomeDashboard";
+import { GuardianHome } from "@/components/home/GuardianHome";
 import { HomeCourses } from "@/components/home/HomeCourses";
 import { HomeGrid } from "@/components/home/HomeGrid";
 import { HubGreeting } from "@/components/home/HubGreeting";
@@ -15,6 +16,8 @@ import { requireContext } from "@/lib/ctx";
 import { getUiVariant } from "@/lib/ui-variant";
 import { isStudentOnly, workItemVoice, workItemWords } from "@/lib/work-item-words";
 import { canAtAnyScope } from "@/modules/iam/can";
+import { childParam } from "@/modules/iam/guardian-policy";
+import { isGuardian } from "@/modules/iam/guardian-views";
 
 export const metadata: Metadata = { title: "خانه" };
 
@@ -28,8 +31,16 @@ export const metadata: Metadata = { title: "خانه" };
  * (`HomeDashboard`: the same tiles with the same card under them, the role panels beside). Each streams in its own <Suspense> behind a
  * same-shape skeleton; `reveal-stagger` lets them rise in — on the first page view of a session only.
  */
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams?: Promise<{ child?: string | string[] }> } = {}) {
   const ctx = await requireContext(); // the (app) layout already redirected anonymous visitors
+  // «اولیا» (2026-10-18): a guardian's section — the children's cards and the selected child's tiles — under the
+  // person's other tiles (a guardian-only Home is the greeting and this section). `?child=` only picks among the
+  // guardian's own children (server-side, `pickChild`).
+  const guardian = isGuardian(ctx) ? (
+    <Suspense fallback={<GridSkeleton />}>
+      <GuardianHome ctx={ctx} selected={childParam((await searchParams)?.child)} />
+    </Suspense>
+  ) : null;
   // The «hub» layout (everyone's since 2026-09-27, docs/decisions-pending/home-hub.md): the greeting card on every
   // size — name, date, school — then the tiles, and nothing else above the fold: no «امروز» line and no «تکالیف
   // نزدیک» card («پنل من» is a tile), no second bell (the top bar has it), no back link (this is Home). Under the
@@ -48,6 +59,7 @@ export default async function HomePage() {
             <HomeDashboard ctx={ctx} />
           </Suspense>
         </div>
+        {guardian}
         <Suspense fallback={<CoursesSkeleton />}>
           <HomeCourses ctx={ctx} />
         </Suspense>
@@ -83,6 +95,7 @@ export default async function HomePage() {
           <HomeDashboard ctx={ctx} />
         </Suspense>
       </div>
+      {guardian}
       <InstallPrompt />
     </ContentWidth>
   );

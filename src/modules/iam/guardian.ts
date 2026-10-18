@@ -42,7 +42,7 @@ import { audit } from "@/lib/audit";
 import { encryptInitialPassword } from "@/lib/crypto";
 import { forbidden, notFound, conflict, validation } from "@/lib/errors";
 import { findClassGroup, findSchoolById } from "@/modules/tenancy/repo";
-import { BULK_RELATION, guardianUsernameBase, isGuardianRelation, placeholderGuardianName, type GuardianRelation } from "./guardian-policy";
+import { BULK_RELATION, guardianUsernameBase, isGuardianRelation, placeholderGuardianName, type GuardianAccountKind, type GuardianRelation } from "./guardian-policy";
 import { generateInitialPassword, hashPassword } from "./password";
 import { revokeAllForUser } from "./repo";
 import { authIdentity, contactPoint, guardianLink, organizationMembership, person, roleAssignment, userAccount } from "./schema";
@@ -80,17 +80,6 @@ export const GUARDIAN_MESSAGES = {
   noAccount: "این ولی حساب کاربری ندارد.",
   closed: "دسترسی این ولی بسته است؛ برای باز شدن دوباره، او را به فرزندش وصل کنید.",
 } as const;
-
-/** What happened to the login when a guardian was added — the admin UI says it in one line. */
-export type GuardianAccountKind = "new_phone" | "new_username" | "existing" | "reopened" | "staff";
-
-export const GUARDIAN_ACCOUNT_NOTES: Record<GuardianAccountKind, string> = {
-  new_phone: "حساب ولی با همین شماره ساخته شد.",
-  new_username: "این شماره نام‌کاربری حساب دیگری است (مثلاً حساب یک دانش‌آموز)؛ برای ولی نام‌کاربری جداگانه ساخته شد.",
-  existing: "این ولی از پیش حساب دارد (برای فرزند دیگری)؛ همان حساب به این دانش‌آموز هم وصل شد.",
-  reopened: "دسترسی این ولی دوباره باز شد؛ رمز اولیهٴ تازه دارد.",
-  staff: "این شماره حساب یکی از همکاران است؛ نقش «ولی» به همان حساب افزوده شد.",
-};
 
 const fieldError = (field: string, message: string) => validation({ fieldErrors: { [field]: [message] } }, message);
 

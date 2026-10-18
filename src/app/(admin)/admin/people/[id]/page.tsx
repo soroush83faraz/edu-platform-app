@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { AdminHeader } from "@/components/admin/AdminPage";
+import { GuardiansCard } from "@/components/admin/GuardiansCard";
 import { AccountCard, EnrollmentCard, RolesCard } from "@/components/admin/PersonPanels";
 import { RemovePersonCard } from "@/components/admin/RemovePersonCard";
 import { StaffForm } from "@/components/admin/StaffForm";
@@ -9,6 +10,7 @@ import { TeachingCard } from "@/components/admin/TeachingCard";
 import { Chip } from "@/components/Chip";
 import { requireContext } from "@/lib/ctx";
 import { formatPhoneFa, toFaDigits } from "@/lib/format";
+import { studentGuardiansQuery } from "@/lib/admin/guardian-queries";
 import { personDetailQuery, teachingOptionsQuery } from "@/lib/admin/people-queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 
@@ -17,8 +19,9 @@ export const metadata: Metadata = { title: "پروندهٴ فرد | مدیریت
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * /admin/people/[id] — the one page for a student or a staff member: edit, account, class, teaching (+ «افزودن تدریس»),
- * roles (read-only) and, last and apart, «حذف دانش‌آموز» / «حذف از کارکنان» when the server says the caller may.
+ * /admin/people/[id] — the one page for a student or a staff member: edit, account, class, «اولیا» (a student's guardians:
+ * add, remove, temporary password — 2026-10-18), teaching (+ «افزودن تدریس»), roles (read-only) and, last and apart,
+ * «حذف دانش‌آموز» / «حذف از کارکنان» when the server says the caller may.
  * A person already removed (reachable by organization admins and their primary school's managers) reads as history:
  * a notice, the facts, no control — every write on them is refused server-side anyway («این شخص حذف شده است.»).
  */
@@ -45,6 +48,8 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const isStudent = detail.kind === "student";
   // «افزودن تدریس» options only for a colleague and a caller who may assign teachers (the action re-checks everything).
   const teachingOptions = detail.kind === "staff" && caps.canTeaching ? await teachingOptionsQuery() : null;
+  // «اولیا»: a live student's guardians (the card stays out of a removed student's history page — their links ended).
+  const guardians = isStudent && !removed && detail.student ? await studentGuardiansQuery({ personId: detail.id }) : null;
   return (
     <div className="flex flex-col gap-4">
       <AdminHeader
@@ -103,6 +108,16 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         <div className="flex flex-col gap-4">
           <AccountCard detail={detail} caps={caps} />
           {isStudent && !removed ? <EnrollmentCard detail={detail} classes={classes} canEnroll={caps.canEnroll} /> : null}
+          {guardians?.ok && detail.student ? (
+            <GuardiansCard
+              studentProfileId={detail.student.studentProfileId}
+              studentName={`${detail.firstName} ${detail.lastName}`}
+              guardianPhone={detail.guardianPhone}
+              rows={guardians.data}
+              canWrite={caps.canWritePerson}
+              canReset={caps.canReset}
+            />
+          ) : null}
           {/* Roles are shown here, never changed here: /admin/roles is their one door (owner, 2026-09-27). */}
           {detail.kind === "staff" && !removed ? <RolesCard detail={detail} caps={caps} /> : null}
         </div>
