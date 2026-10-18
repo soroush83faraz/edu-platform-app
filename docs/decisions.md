@@ -1903,3 +1903,39 @@ student's file (`/counseling/students/<id>`).
 - Tests: `tests/int/counseling.test.ts` «the counselor's bell» (the three events, recipients and non-recipients, no
   secret text in any notification, dedupe, a teacher-counselor not self-notified, the counselor's unread count),
   `tests/unit/inbox-summary.test.ts` (the split gate), `tests/unit/counseling-policy.test.ts` (titles).
+
+## 2026-10-18 — «درِ تیره»: the dark auth door (owner)
+
+**The door (owner decision, 2026-10-18; approved mock `docs/mockups/login-v6.html` + `.png`).** /login and
+/change-password — the `(auth)` route group, nothing else — are a fixed night scene: radial navy (#1A2C9A → #0A1550 →
+#050A26), three soft orbs (persian blue, sky, a little violet), a faint 32 px grid masked to the top, the monogram huge
+and very faint (the mock's `ribbon-bg`, `MONOGRAM_PATH`), and the glass «D» as the hero (`DoninoMark3D`,
+src/components/brand: the monogram extruded in twelve navy layers under a white → ice → sky face, halo, two tilted
+orbits, orbiting dots, two sparkles, a sheen clipped to the D; gradient ids per instance via `useId`).
+
+- **This does not contradict «dark mode is not in Phase 1».** There is no theme, no switch, no `dark:` variant and no
+  `.dark` class: the door is ONE fixed dark picture, and the app behind it stays light. Its palette is scoped to
+  `.auth-night` in globals.css (not in the theme tokens, so no light page can reach for it); `color-scheme: dark` on the
+  door only, so native pickers and autofill match it; the phone status bar is navy there (`viewport.themeColor` of the
+  `(auth)` layout) and canvas everywhere else.
+- **Layout.** Phone: art (170 px; 128 px on screens under 42 rem tall), «دانینو», «مدرسه‌تان، یک‌جا», then the glass
+  card; it fits 320–360 px with no horizontal scroll (the old glow overflowed narrow phones — the sky is now a `fixed`,
+  clipped layer and `<main>` is `overflow-x-clip`). Desktop (`lg:`): two columns, the card at the START (right, in RTL),
+  the 330 px art + «دانینو» (`text-wordmark`, 44/56, a token for this one place) + «تکالیف، حضور و غیاب، کارنامه و
+  مشاوره؛ همهٴ کار مدرسه در یک‌جا.» at the end. No role facts. /change-password: the small art, then one glass card.
+- **Card.** «ورود به حساب», no subtitle; fields with a leading phone / lock glyph, the eye toggle (44 px), dark
+  translucent fields whose ring is the field's own (`:focus-within`, sky); «ورود» on the persian-blue gradient with
+  «در حال ورود…» while pending; «رمز را فراموش کرده‌اید؟ مدیر یا معاون مدرسه رمز موقت می‌دهد.»; «راهنما · حریم خصوصی»
+  under it. LoginForm's behaviour is unchanged (controlled identifier, `dir="ltr"` + `inputMode="tel"`,
+  autocomplete, the one generic error, the `next` hidden field, «خارج شدید.» on `?out=1`).
+- **Contrast and focus.** Text colours are solid (`--auth-text` #EEF2FF, `--auth-muted` #C3CBEA, `--auth-link` #A2D6F9,
+  `--auth-danger` #FF9B8F, `--auth-success` #7EE2B0, `--auth-gold` #FFE27A) and were measured on the rendered pages
+  against the brightest pixel under each text box: every one ≥ 4.5:1 (the lowest, «خارج شدید.» in green, 5.9:1;
+  the labels ≥ 8.3:1; white on the button's glyph band 5.5:1). The card's glass has a faint navy base so an orb behind it cannot
+  wash it out. Focus rings on the door are `--auth-focus` #7CC3FF (the global primary-500 ring is under 3:1 on navy).
+- **Motion, CSS only.** The dots turn as whole SVG boxes (compositor, no repaint; 16 s / 26 s), the sheen crosses the
+  face once every 7 s (its own layer), the orbs drift over ~20 s; all of it is declared only under
+  `prefers-reduced-motion: no-preference`, and the orbs are radial gradients, not blur filters. The button's depth is
+  a navy drop — no coloured glow (the mock's blue shadow was not taken).
+- Tests: `tests/unit/auth-door.test.ts` (the card's words and LoginForm's kept fields, «خارج شدید.», the scoped
+  palette and no `dark:`, logical utilities only, the 3D mark's per-instance ids, motion only under no-preference).

@@ -125,6 +125,9 @@
     --text-2xl--line-height: 2.25rem;
     --text-3xl: 2.125rem;
     --text-3xl--line-height: 2.5rem;
+    /* The «دانینو» wordmark on the auth door at desktop size (44/56) — that one place only (`AuthBrand`). */
+    --text-wordmark: 2.75rem;
+    --text-wordmark--line-height: 3.5rem;
 
     /* Layout: the content column (rail excluded) and the desktop rail. */
     --container-content: 75rem;
@@ -1155,6 +1158,231 @@ html[data-splash-water="on"] :is(.splash-fill, .splash-ripple, .splash-wash) {
 @keyframes splash-lift {
   to {
     translate: 0 -14px;
+  }
+}
+
+/* ---- The auth door — «درِ تیره» (owner, 2026-10-18; docs/decisions.md). /login and /change-password ONLY (the
+   (auth) layout puts `.auth-night` on their <main>): a fixed night scene, NOT a theme — nothing switches, and the app
+   behind the door stays light. Its palette is scoped to `.auth-night` (not in the theme tokens, so no light page can
+   reach for it). Text colours are SOLID and ≥ 4.5:1 on the brightest sky they can sit on; focus rings are the light
+   sky (≥ 3:1 on navy). Motion — the orbit, the sheen, the orb drift — runs only under `no-preference`. ---- */
+@layer components {
+  .auth-night {
+    --auth-night: #050a26;
+    --auth-night-2: #0a1550;
+    --auth-indigo: #1a2c9a;
+    --auth-text: #eef2ff;
+    --auth-muted: #c3cbea;
+    --auth-faint: #8e97bd;
+    --auth-link: #a2d6f9;
+    --auth-sky: #3da9ff;
+    --auth-focus: #7cc3ff;
+    --auth-danger: #ff9b8f;
+    --auth-success: #7ee2b0;
+    --auth-success-soft: rgb(126 226 176 / 0.12);
+    --auth-field: rgb(5 10 38 / 0.55);
+    --auth-line: rgb(255 255 255 / 0.12);
+    color-scheme: dark;
+    color: var(--auth-text);
+  }
+  /* The page behind the scene (iOS overscroll, the area under a short page) is night too, not the white body. */
+  html:has(.auth-night),
+  html:has(.auth-night) body {
+    background-color: #050a26;
+  }
+  .auth-night :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline-color: var(--auth-focus);
+  }
+  .auth-night ::selection {
+    background: var(--auth-sky);
+    color: var(--auth-night);
+  }
+
+  /* The sky: radial night, three soft orbs (radial gradients — no blur filter to repaint), a 32 px grid that fades
+     out below the top, and the monogram huge and faint. */
+  .auth-sky {
+    background: radial-gradient(120% 80% at 50% -10%, var(--auth-indigo) 0%, var(--auth-night-2) 38%, var(--auth-night) 75%);
+  }
+  .auth-orb {
+    position: absolute;
+    border-radius: 9999px;
+    background: radial-gradient(closest-side, var(--orb) 0%, var(--orb) 28%, transparent 100%);
+  }
+  .auth-orb-1 {
+    --orb: rgb(46 78 224 / 0.5);
+  }
+  .auth-orb-2 {
+    --orb: rgb(30 150 252 / 0.3);
+    --drift-x: -16px;
+    --drift-y: 12px;
+  }
+  .auth-orb-3 {
+    --orb: rgb(123 92 255 / 0.26);
+    --drift-x: 10px;
+    --drift-y: 16px;
+  }
+  .auth-grid {
+    background-image:
+      linear-gradient(rgb(255 255 255 / 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(255 255 255 / 0.035) 1px, transparent 1px);
+    background-size: 32px 32px;
+    -webkit-mask-image: radial-gradient(70% 55% at 50% 30%, #000 30%, transparent 80%);
+    mask-image: radial-gradient(70% 55% at 50% 30%, #000 30%, transparent 80%);
+  }
+  .auth-ribbon {
+    color: #fff;
+    opacity: 0.07;
+  }
+
+  /* The glass card. A faint navy base under the glass keeps its text at contrast over any orb behind it. */
+  .auth-glass {
+    position: relative;
+    border-radius: var(--radius-hero);
+    border: 1px solid rgb(255 255 255 / 0.13);
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 0.075), rgb(255 255 255 / 0.04)),
+      rgb(6 12 48 / 0.35);
+    -webkit-backdrop-filter: blur(22px) saturate(140%);
+    backdrop-filter: blur(22px) saturate(140%);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      0 30px 60px rgb(2 6 30 / 0.55);
+  }
+
+  /* A field: leading glyph, the input, an optional trailing button (the eye). The ring belongs to the field, on
+     :focus-within — the bare input inside draws none of its own. */
+  .auth-field {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    min-block-size: 3.25rem;
+    padding-inline: 0.875rem;
+    border-radius: 0.875rem;
+    background: var(--auth-field);
+    border: 1px solid rgb(255 255 255 / 0.1);
+    color: var(--auth-faint);
+    transition-property: border-color, box-shadow, color;
+    transition-duration: var(--duration-base);
+    transition-timing-function: var(--ease-out);
+  }
+  .auth-field:has(> button:last-child) {
+    padding-inline-end: 0.25rem;
+  }
+  .auth-field:focus-within {
+    border-color: var(--auth-sky);
+    box-shadow: 0 0 0 4px rgb(61 169 255 / 0.16);
+    color: var(--auth-sky);
+  }
+  .auth-field[data-invalid] {
+    border-color: var(--auth-danger);
+  }
+  .auth-field > svg {
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    flex: none;
+  }
+  .auth-field input {
+    flex: 1;
+    min-inline-size: 0;
+    padding-block: 0.875rem;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--auth-text);
+    caret-color: var(--auth-sky);
+    font-size: var(--text-base);
+    line-height: 1.5rem;
+  }
+  /* Autofill keeps the dark material (the classic delayed transition; the text colour is forced). */
+  .auth-field input:-webkit-autofill {
+    -webkit-text-fill-color: var(--auth-text);
+    caret-color: var(--auth-text);
+    transition: background-color 600000s 0s, color 600000s 0s;
+  }
+  .auth-field-toggle {
+    display: grid;
+    place-items: center;
+    flex: none;
+    inline-size: 2.75rem;
+    block-size: 2.75rem;
+    border-radius: 0.625rem;
+    color: var(--auth-muted);
+    transition-property: color, background-color;
+    transition-duration: var(--duration-fast);
+  }
+  @media (hover: hover) {
+    .auth-field-toggle:hover {
+      color: var(--auth-text);
+      background: rgb(255 255 255 / 0.06);
+    }
+  }
+
+  /* The ONE primary action: persian blue lit from above. A deep navy drop under it for depth — no coloured glow. */
+  .auth-cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-block-size: 3.375rem;
+    padding-inline: 1.25rem;
+    border-radius: 0.875rem;
+    border: 1px solid rgb(255 255 255 / 0.18);
+    background: linear-gradient(180deg, #4a68ff, #1f3de0 60%, #0a2bc2);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.3),
+      0 10px 24px rgb(3 8 40 / 0.55);
+    color: #fff;
+    font-size: var(--text-base);
+    line-height: 1.5rem;
+    font-weight: 800;
+  }
+  .auth-cta:disabled {
+    opacity: 0.8;
+    cursor: progress;
+  }
+}
+
+@keyframes auth-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+/* The sheen rests off the mark (clipped away) and crosses it once every 7 s. */
+@keyframes auth-sheen {
+  0%,
+  62% {
+    translate: 0 0;
+  }
+  92%,
+  100% {
+    translate: 240px 0;
+  }
+}
+@keyframes auth-drift {
+  to {
+    translate: var(--drift-x, 18px) var(--drift-y, -14px);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mark3d-orbit {
+    animation: auth-spin 16s linear infinite;
+  }
+  .mark3d-orbit-rev {
+    animation: auth-spin 26s linear infinite reverse;
+  }
+  .mark3d-sheen {
+    animation: auth-sheen 7s var(--ease-in-out) infinite;
+  }
+  .auth-orb {
+    animation: auth-drift 22s ease-in-out infinite alternate;
+  }
+  .auth-orb-2 {
+    animation-duration: 27s;
+    animation-delay: -9s;
+  }
+  .auth-orb-3 {
+    animation-duration: 19s;
+    animation-delay: -4s;
   }
 }
 

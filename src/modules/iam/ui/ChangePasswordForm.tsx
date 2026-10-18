@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState } from "react";
-import { Button } from "@/components/ui/button";
 import type { Result } from "@/lib/actions";
 import { changePasswordFormAction } from "../actions";
 import { PasswordInput } from "./PasswordInput";
@@ -28,7 +27,7 @@ export function ChangePasswordForm({ requireCurrent }: ChangePasswordFormProps) 
     <form action={action} className="flex flex-col gap-4" noValidate>
       {requireCurrent ? <PasswordInput name="currentPassword" label="رمز فعلی" autoComplete="current-password" error={currentError} /> : null}
 
-      <ul id="password-hints" className="list-disc ps-5 text-sm text-muted-foreground">
+      <ul id="password-hints" className="list-disc ps-5 text-meta text-(--auth-muted)">
         <li>دست‌کم ۸ نویسه</li>
         <li>نه شمارهٴ موبایل یا نام‌کاربری شما</li>
         <li>نه تکراری یا ترتیبی (مثل ۱۱۱۱۱۱۱۱ یا ۱۲۳۴۵۶۷۸)</li>
@@ -38,13 +37,13 @@ export function ChangePasswordForm({ requireCurrent }: ChangePasswordFormProps) 
       <PasswordInput name="newPassword" label="رمز جدید" autoComplete="new-password" error={newError} describedBy="password-hints" />
       <PasswordInput name="confirm" label="تکرار رمز جدید" autoComplete="new-password" error={confirmError} />
 
-      <p role="alert" aria-live="polite" className="min-h-5 text-sm text-danger">
+      <p role="alert" aria-live="polite" className="text-sm text-(--auth-danger) empty:-mt-4">
         {formError}
       </p>
 
-      <Button type="submit" size="lg" className="h-11 text-base" disabled={pending}>
+      <button type="submit" className="auth-cta pressable mt-1.5 w-full" disabled={pending}>
         {pending ? "در حال ذخیره…" : "ذخیرهٴ رمز جدید"}
-      </Button>
+      </button>
     </form>
   );
 }
