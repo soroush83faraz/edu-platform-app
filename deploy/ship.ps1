@@ -20,8 +20,8 @@ param(
   [string]$Sha = "",
   [string]$RemoteDir = "/srv/school",
   [ValidateSet("registry", "save")][string]$Mode = "registry",
-  [int]$RegistryPort = 5000,   # laptop side: the relay container's published port (the name localhost:<port>/...)
-  [int]$TunnelPort = 5001,     # laptop side: the ssh -L listener the relay forwards to
+  [int]$RegistryPort = 15000,  # (5000/5001 fall inside Windows' Hyper-V excluded port ranges after a reboot) laptop side: the relay container's published port (the name localhost:<port>/...)
+  [int]$TunnelPort = 15001,    # laptop side: the ssh -L listener the relay forwards to
   [switch]$SkipBuild,
   [switch]$NoDeploy
 )
