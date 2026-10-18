@@ -77,6 +77,16 @@ UPDATE iam.user_session SET revoked_at = now() WHERE revoked_at IS NULL
   AND user_account_id = (SELECT id FROM iam.user_account WHERE login_identifier = '+98912…');
 ```
 
+## «ورود آزمایشی» (فقط دورهٴ آزمایشی)
+
+تنها درِ پیش از احراز هویت جز `loginAction` (تصمیم ۲۰۲۶-۱۰-۱۸ در docs/decisions.md): مالک بی‌رمز به هر حساب سازمان‌های دمو وارد می‌شود تا نمای هر نقش و پایه را ببیند. سه دروازه، همه در سرور:
+
+1. `DEMO_LOGIN=1` (پیش‌فرض خاموش؛ مقدار دیگر یا نیمه‌کاره = اپ بالا نمی‌آید). خاموش → نه دکمه، و فهرست و اکشن `NOT_FOUND`.
+2. `DEMO_LOGIN_KEY`: مالک یک‌بار `/login?demo=<کلید>` را باز می‌کند؛ صفحه آن را به `/login/demo` می‌دهد که کلید را در زمان ثابت می‌سنجد و فقط اگر درست باشد کوکی `__Host-demo` (HttpOnly، Secure، SameSite=Lax، Path=/، ۳۰ روز؛ در توسعه `demo`) را می‌گذارد — HMAC با کلیدی برگرفته از SESSION_SECRET و خودِ کلید، با تاریخ انقضا که سرور هم می‌سنجد؛ چرخاندن هر کدام همهٴ کوکی‌ها را باطل می‌کند. پاسخ در همهٴ حالت‌ها همان ۳۰۳ به `/login` است. هر درخواست دمو کوکی را دوباره می‌سنجد (`defineDemoAction`).
+3. `DEMO_LOGIN_ORGS`: فقط حساب‌هایی که **همهٴ** عضویت‌هایشان (با هر وضعیتی) در این سازمان‌هاست؛ حساب غیرفعال/قفل/در انتظار تغییر رمز یا شخص حذف‌شده رد می‌شود (یک پیام). تراکنش‌های سازمانیِ این مسیر (`demoOrgTx`) فقط برای سازمان‌های همین فهرست باز می‌شوند.
+
+ورودی فقط `{ accountId }` (`.strict()`). نشست مثل ورود عادی ساخته می‌شود اما «دستگاه عمومی» (۸ ساعت، بی‌تمدید) و با `device_label = 'demo-login'`؛ نشستِ قبلیِ همان مرورگر باطل می‌شود؛ ممیزی `iam.demo_login` (حساب هدف، شخص، نشست، IP اپراتور) در سازمان هدف، در همان تراکنش. سقف: ۳۰ نشست دمو در ۱۰ دقیقه از یک IP، ۲۰۰ در کل. هیچ رمزی خوانده یا نوشته نمی‌شود. کد: `src/lib/demo-login/*`، `src/lib/actions/defineDemoAction.ts`، `src/modules/iam/demo-login/*`، `src/app/(auth)/login/demo/route.ts`؛ تست‌ها: `tests/unit/demo-login.test.ts`، `tests/int/demo-login.test.ts`.
+
 ## دمو
 
 `SEED_DEMO=1 pnpm seed:demo` (اختیاری: `SEED_DEMO_PASSWORD`, `SEED_DEMO_NO_FORCE=1`). جدول حساب‌ها و رمز یک‌بار چاپ می‌شود؛ اجرای دوباره رمزها را بازنشانی می‌کند.

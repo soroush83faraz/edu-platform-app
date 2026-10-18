@@ -36,6 +36,11 @@ export interface CreateSessionInput {
   isPublicDevice: boolean;
   ip: string | null;
   userAgent: string | null;
+  /**
+   * `user_session.device_label`. Null for a password login; `DEMO_SESSION_LABEL` marks a «ورود آزمایشی» session
+   * (src/modules/iam/demo-login) so the demo rate limit can count them and ops can revoke them all in one statement.
+   */
+  deviceLabel?: string | null;
 }
 
 export async function createSession(tx: Tx, input: CreateSessionInput, now = new Date()): Promise<{ token: string; session: SessionRow }> {
@@ -50,6 +55,7 @@ export async function createSession(tx: Tx, input: CreateSessionInput, now = new
       isPublicDevice: input.isPublicDevice,
       ip: input.ip,
       userAgent: input.userAgent?.slice(0, 512) ?? null,
+      deviceLabel: input.deviceLabel ?? null,
       expiresAt,
       lastSeenAt: now,
     })
@@ -118,6 +124,16 @@ export async function revokeSession(tx: Tx, sessionId: string): Promise<void> {
     .update(userSession)
     .set({ revokedAt: sql`now()` })
     .where(and(eq(userSession.id, sessionId), isNull(userSession.revokedAt)));
+}
+
+/** The live session this browser's cookie names, if any — revoked when a «ورود آزمایشی» replaces it. Returns the count. */
+export async function revokeSessionByToken(tx: Tx, token: string): Promise<number> {
+  const rows = await tx
+    .update(userSession)
+    .set({ revokedAt: sql`now()` })
+    .where(and(eq(userSession.tokenHash, hashToken(token)), isNull(userSession.revokedAt)))
+    .returning({ id: userSession.id });
+  return rows.length;
 }
 
 /** «خروج از همهٴ دستگاه‌ها» / after a password change / a removed person — defined in ./repo (Next-free), re-exported here. */

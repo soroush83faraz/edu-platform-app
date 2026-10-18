@@ -19,3 +19,4 @@ export {
   type Ctx,
 } from "./defineAction";
 export { definePublicAction, type PublicTools } from "./definePublicAction";
+export { defineDemoAction, type DemoTools } from "./defineDemoAction";

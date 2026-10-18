@@ -1180,6 +1180,7 @@ html[data-splash-water="on"] :is(.splash-fill, .splash-ripple, .splash-wash) {
     --auth-danger: #ff9b8f;
     --auth-success: #7ee2b0;
     --auth-success-soft: rgb(126 226 176 / 0.12);
+    --auth-gold: #ffe27a;
     --auth-field: rgb(5 10 38 / 0.55);
     --auth-line: rgb(255 255 255 / 0.12);
     color-scheme: dark;
@@ -1339,6 +1340,15 @@ html[data-splash-water="on"] :is(.splash-fill, .splash-ripple, .splash-wash) {
   .auth-cta:disabled {
     opacity: 0.8;
     cursor: progress;
+  }
+
+  /* «ورود آزمایشی»: the pill and its panel — night glass with a gold hairline (a pilot-only tool, not the product). */
+  .auth-dock {
+    border: 1px solid rgb(255 214 90 / 0.35);
+    background: rgb(10 16 52 / 0.92);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    box-shadow: 0 -10px 30px rgb(0 0 0 / 0.35);
   }
 }
 

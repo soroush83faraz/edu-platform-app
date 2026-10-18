@@ -17,10 +17,10 @@ Service signature: `(tx, ctx, input)`. Repos take `tx`. Explicit column selects,
 - App connects as `app_rw` (NOSUPERUSER NOBYPASSRLS); migrations as `app_owner` (MIGRATION_DATABASE_URL).
 
 ## Action rules
-- Every Server Action and Route Handler goes through `defineAction({ schema, permission, scope }, handler)` in `src/lib/actions`. `permission` is REQUIRED (no anonymous actions except login/health). Order: session → must_change_password → Zod `.strict()` → `can()` → `withTenant` → audit in the same transaction.
+- Every Server Action and Route Handler goes through `defineAction({ schema, permission, scope }, handler)` in `src/lib/actions`. `permission` is REQUIRED (no anonymous actions except login/health — and the pilot-only «ورود آزمایشی» exception below). Order: session → must_change_password → Zod `.strict()` → `can()` → `withTenant` → audit in the same transaction.
 - `organization_id`, `person_id`, `created_by` come ONLY from the session — never from input. Never spread client input into `.set()` / `.values()`; map fields explicitly.
 - Errors leave the boundary only as `AppError` (`src/lib/errors`) with Persian messages. Proxy is a convenience redirect, NOT a security boundary.
-- Auth facts come from `getRequestContext()` (`src/lib/ctx.ts`: cookie → DB session → membership → assignments) — never from proxy headers or the cookie alone. `can(tx, ctx, perm, ref?)` runs inside the action's transaction; login is the only `definePublicAction`.
+- Auth facts come from `getRequestContext()` (`src/lib/ctx.ts`: cookie → DB session → membership → assignments) — never from proxy headers or the cookie alone. `can(tx, ctx, perm, ref?)` runs inside the action's transaction; login is the only `definePublicAction`. **The ONE other pre-auth entry point (explicit exception, pilot only):** «ورود آزمایشی» — `defineDemoAction` (`src/lib/actions`) for `src/modules/iam/demo-login/actions.ts` (+ its server-side list) and the unlock route `src/app/(auth)/login/demo/route.ts`: NOT_FOUND unless `DEMO_LOGIN=1` AND a valid `__Host-demo` unlock cookie (minted only for `/login?demo=<DEMO_LOGIN_KEY>`), input `{ accountId }` only, and only accounts wholly inside `DEMO_LOGIN_ORGS` (docs/decisions.md 2026-10-18). Never add another public entry point or widen this one; it is switched off before real schools (docs/ops/go-live-checklist.md).
 
 ## Frontend rules
 - `<html lang="fa" dir="rtl">` is set ONLY in `src/app/layout.tsx`. Never set `dir` elsewhere except `<bdi dir="ltr">` around phone numbers, codes and URLs.

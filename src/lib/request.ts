@@ -3,12 +3,16 @@
 import { headers } from "next/headers";
 import { isIP } from "node:net";
 
-export async function getClientIp(): Promise<string> {
-  const h = await headers();
+/** The rule itself, for any `Headers` (a Route Handler has the request's own; actions and pages go through `getClientIp`). */
+export function clientIpFrom(h: Pick<Headers, "get">): string {
   const forwarded = h.get("x-forwarded-for");
   const candidate = (forwarded ? forwarded.split(",")[0] : h.get("x-real-ip")) ?? "";
   const ip = candidate.trim();
   return isIP(ip) ? ip : "0.0.0.0";
+}
+
+export async function getClientIp(): Promise<string> {
+  return clientIpFrom(await headers());
 }
 
 export async function getUserAgent(): Promise<string | null> {

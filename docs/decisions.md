@@ -1939,3 +1939,51 @@ orbits, orbiting dots, two sparkles, a sheen clipped to the D; gradient ids per 
   a navy drop — no coloured glow (the mock's blue shadow was not taken).
 - Tests: `tests/unit/auth-door.test.ts` (the card's words and LoginForm's kept fields, «خارج شدید.», the scoped
   palette and no `dark:`, logical utilities only, the 3D mark's per-instance ids, motion only under no-preference).
+
+## 2026-10-18 — «ورود آزمایشی»: the demo quick-login (pilot only)
+
+**«ورود آزمایشی» — sign in as any demo account without a password, for the owner, during the pilot only.** The owner
+is still building the product and wants to see every role and grade. A pill «ورود آزمایشی» (a gold bolt glyph) at the bottom end corner
+of /login opens three native dropdowns — «مدرسه» → «نقش» → «حساب» (teachers «نام — درس کلاس‌ها…», a دبستان's class
+teacher «نام — آموزگار اول الف», students «پایهٴ اول — اول الف — نام» in one `<optgroup>` per پایه) — and «ورود», with
+«فقط برای دورهٴ آزمایشی». It is the ONE pre-authentication action besides login (`defineDemoAction`,
+src/lib/actions) plus its unlock route; CLAUDE.md «Action rules» names the exception. Three gates, all on the server:
+
+1. **`DEMO_LOGIN=1`** (src/lib/env.ts; absent or `0` = off, the default; any other value refuses to boot, and so does
+   `DEMO_LOGIN=1` without a key or an organization). Off → no pill, the panel's list and the action answer NOT_FOUND,
+   and `/login?demo=…` changes nothing.
+2. **`DEMO_LOGIN_KEY`** (24–128 URL-safe characters). The owner opens **`/login?demo=<key>`** once per device. The page
+   forwards it to `/login/demo` (a page cannot set a cookie), which compares it in constant time (both sides HMACed
+   with SESSION_SECRET, `timingSafeEqual`) and, only when it matches, sets **`__Host-demo`** (production; `demo` on
+   http://localhost) — HttpOnly, Secure, SameSite=Lax, Path=/, Max-Age 30 days — holding `v1.<exp>.<HMAC>` where the
+   HMAC key is derived from SESSION_SECRET + DEMO_LOGIN_KEY: never the key, expiry checked on the server, and rotating
+   either secret kills every cookie. Every outcome is the same 303 to a clean `/login` (the key leaves the address
+   bar; `Referrer-Policy: no-referrer`, `Cache-Control: no-store`). Every demo request re-verifies the cookie.
+3. **`DEMO_LOGIN_ORGS`** — the organization slugs the demo may sign in to (pilot: `allameh,farzanegan,helli,pishgaman`).
+   The list is read in `demoOrgTx`, a tenant transaction that opens only for an allow-listed organization (checked
+   inside it). The action refuses any account with ANY membership — whatever its status — outside the list (so a real
+   school's «مدیر سازمان» is unreachable even if the account is shared), and any account that is not `active`, has a
+   live soft lock or a pending forced password change (the demo never skips /change-password and never sets a
+   password), or whose membership/person is no longer live. One FORBIDDEN message for all of them.
+
+- **The action** takes `{ accountId }` only (`.strict()`, a UUID); organization and person come from the database
+  (the same order a password login uses). Phase 1 (global): the rate limit — at most 30 demo sessions per IP and 200 in
+  all per 10 minutes, counted on `user_session.device_label = 'demo-login'` — the account row and, bound to it
+  (`bindAccount`), every membership. Phase 2 (`demoOrgTx`): the person row FOR SHARE (a removal in flight finishes
+  first), the whole rule again on fresh rows, then this browser's previous session revoked, a new session created
+  exactly as login creates one but as a **public-device** session (8 hours, browser-session cookie, never extended)
+  marked `device_label = 'demo-login'`, and **`iam.demo_login`** audited in the target organization (entity = the
+  account; `after` = person, session, `revokedPrevious`; the operator's IP and user agent; no actor) — one transaction.
+  No password is read, compared or written anywhere on the path. Refusals are logged (pino, warn), never audited into a
+  tenant.
+- **The list** is not an endpoint: `loadDemoDirectory` runs on the server while /login renders, behind the same gate,
+  and sends labels + user_account ids only (no phone, username or password).
+- **Off before real schools.** docs/ops/go-live-checklist.md: «DEMO_LOGIN خاموش و DEMO_LOGIN_KEY حذف» and the live demo
+  sessions revoked (`update iam.user_session set revoked_at = now() where device_label = 'demo-login' and revoked_at is null`).
+  The pilot organizations hold generated people only; if a real school ever joins one of them, the list must lose it
+  first.
+- Tests: `tests/unit/demo-login.test.ts` (configuration, key/cookie crypto, the /login/demo route, env validation,
+  the eligibility rule, labels and grouping, the panel's render — one named field), `tests/int/demo-login.test.ts`
+  (session + cookie + audit for an allowed account with no password identity; refused for another organization's
+  account, a cross-organization account, disabled / must-change / removed; NOT_FOUND with the switch off, without or
+  with a forged/stale cookie; the rate limit; the list).

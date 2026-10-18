@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { DEMO_KEY_RE, parseDemoOrgSlugs } from "@/lib/demo-login/config";
 
 /**
  * Typed, validated process environment. Parsed once at import time.
  * Server-only: never import from client components (it would leak nothing, but it would fail to build).
  */
-const EnvSchema = z.object({
+const BaseEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   /** Connection string for the app role (app_rw, NOSUPERUSER NOBYPASSRLS). */
   DATABASE_URL: z.url(),
@@ -36,6 +37,30 @@ const EnvSchema = z.object({
   SEED_DEMO: z.string().optional(),
   SMS_API_KEY: z.string().optional(),
   APP_VERSION: z.string().optional(),
+  /**
+   * «ورود آزمایشی» — the demo quick-login on /login (docs/decisions.md 2026-10-18; src/lib/demo-login). "1" = on;
+   * absent or "0" = off (the default; the go-live checklist turns it off before real schools). Anything else refuses
+   * to boot rather than guess.
+   */
+  DEMO_LOGIN: z.enum(["0", "1"]).optional(),
+  /**
+   * 24–128 URL-safe characters (`[A-Za-z0-9_-]`): the owner opens `/login?demo=<key>` once per device to see the panel.
+   *   node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+   */
+  DEMO_LOGIN_KEY: z.string().regex(DEMO_KEY_RE, "must be 24–128 characters of A–Z a–z 0–9 _ -").optional(),
+  /** Comma-separated organization slugs the demo login may sign in to, e.g. `allameh,farzanegan,helli,pishgaman`. */
+  DEMO_LOGIN_ORGS: z.string().optional(),
+});
+
+/** The demo switch never turns on half-configured: with DEMO_LOGIN=1 the key and at least one valid slug are required. */
+const EnvSchema = BaseEnvSchema.superRefine((e, ctx) => {
+  const slugs = parseDemoOrgSlugs(e.DEMO_LOGIN_ORGS);
+  if (slugs === null) {
+    ctx.addIssue({ code: "custom", path: ["DEMO_LOGIN_ORGS"], message: "every entry must be an organization slug (a-z, 0-9, -; 3–40 characters)" });
+  }
+  if (e.DEMO_LOGIN !== "1") return;
+  if (!e.DEMO_LOGIN_KEY) ctx.addIssue({ code: "custom", path: ["DEMO_LOGIN_KEY"], message: "required when DEMO_LOGIN=1" });
+  if (slugs !== null && slugs.length === 0) ctx.addIssue({ code: "custom", path: ["DEMO_LOGIN_ORGS"], message: "required when DEMO_LOGIN=1" });
 });
 
 export type Env = z.infer<typeof EnvSchema>;

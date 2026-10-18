@@ -13,6 +13,7 @@ vi.mock("@/modules/iam/actions", () => ({
   changePasswordFormAction: async () => null,
   logoutAction: async () => undefined as never,
 }));
+vi.mock("@/modules/iam/demo-login/actions", () => ({ demoLoginFormAction: async () => null }));
 
 const { default: AuthLayout } = await import("@/app/(auth)/layout");
 const { DoninoMark3D } = await import("@/components/brand/DoninoMark3D");
@@ -24,7 +25,7 @@ const render = (el: React.ReactElement) => renderToStaticMarkup(el);
 const css = readFileSync(new URL("../../src/app/globals.css", import.meta.url), "utf8");
 
 describe("the login card", () => {
-  const html = render(createElement(LoginScene, { loggedOut: false, next: "/inbox/0199" }));
+  const html = render(createElement(LoginScene, { loggedOut: false, next: "/inbox/0199", demo: null }));
 
   it("says «ورود به حساب» with no subtitle, the helper line and the two public links", () => {
     expect(html).toContain("ورود به حساب");
@@ -49,7 +50,7 @@ describe("the login card", () => {
   });
 
   it("shows «خارج شدید.» after a logout", () => {
-    const out = render(createElement(LoginScene, { loggedOut: true, next: null }));
+    const out = render(createElement(LoginScene, { loggedOut: true, next: null, demo: null }));
     expect(out).toMatch(/role="status"[^>]*>.*خارج شدید\./);
     expect(out).not.toContain('name="next"');
   });
