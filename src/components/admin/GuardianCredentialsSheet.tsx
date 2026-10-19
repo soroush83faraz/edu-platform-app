@@ -10,7 +10,9 @@ const PER_PAGE = 12;
  * Server-rendered A4 «برگه‌های ورود اولیا» (the students' sheet's twin, same print CSS): one slip per guardian of the
  * class — the guardian's name, «ولیِ» the children in this class, the login and the initial password. The password is
  * decrypted here, right before rendering, and only where the server sent it (a guardian-only account still on its
- * initial password, all of whose children the caller manages); a colleague's slip says to use their own account.
+ * initial password, all of whose children the caller manages); a colleague's slip says to use their own account. A
+ * guardian the caller's schools do not know (D3) gets no name line, and — when the server sent no login either — a
+ * slip that says to use the account they already have.
  */
 export function GuardianCredentialsSheet({ title, schoolName, rows }: { title: string; schoolName: string; rows: GuardianCredentialRow[] }) {
   const pages: GuardianCredentialRow[][] = [];
@@ -40,19 +42,33 @@ function Slip({ row, schoolName }: { row: GuardianCredentialRow; schoolName: str
   return (
     <article className="print-slip flex min-h-44 flex-col gap-1.5 surface-work p-3 text-sm text-text print:min-h-[60mm] print:rounded-none">
       <p className="text-meta text-text-muted">{schoolName}</p>
-      <p className="text-base font-bold">
-        <bdi>
-          {row.firstName} {row.lastName}
-        </bdi>
-      </p>
-      <p className="text-meta text-text-muted">
+      {row.known ? (
+        <p className="text-base font-bold">
+          <bdi>
+            {row.firstName} {row.lastName}
+          </bdi>
+        </p>
+      ) : null}
+      <p className={row.known ? "text-meta text-text-muted" : "text-base font-bold"}>
         ولیِ <bdi>{row.children.join("، ")}</bdi>
       </p>
+      {row.loginIdentifier === null ? (
+        <p className="mt-auto text-meta text-text-muted">با حساب کاربری فعلی خود وارد شوید؛ بخش فرزند در خانه است.</p>
+      ) : (
+        <SlipLogin row={row} loginIdentifier={row.loginIdentifier} password={password} />
+      )}
+    </article>
+  );
+}
+
+function SlipLogin({ row, loginIdentifier, password }: { row: GuardianCredentialRow; loginIdentifier: string; password: string | null }) {
+  return (
+    <>
       <dl className="mt-auto grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
         <dt className="text-text-muted">نام‌کاربری</dt>
         <dd>
           <bdi dir="ltr" className="tabular font-semibold">
-            {formatLoginIdentifierFa(row.loginIdentifier)}
+            {formatLoginIdentifierFa(loginIdentifier)}
           </bdi>
         </dd>
         <dt className="text-text-muted">رمز اولیه</dt>
@@ -69,6 +85,6 @@ function Slip({ row, schoolName }: { row: GuardianCredentialRow; schoolName: str
         </dd>
       </dl>
       <p className="text-[11px] text-text-muted">{row.isStaff ? "با حساب همکاری خود وارد شوید؛ بخش فرزند در خانه است." : "در اولین ورود رمز را تغییر دهید."}</p>
-    </article>
+    </>
   );
 }

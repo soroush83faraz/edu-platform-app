@@ -33,8 +33,15 @@ export function relationLabel(value: string): string {
  */
 export const CREDENTIALS_ORG_ADMIN_ONLY = "رمز و حساب کاربری این فرد را فقط مدیر سازمان تعیین می‌کند.";
 
-/** What happened to the login when a guardian was added (./guardian `addGuardian`) — the admin UI says it in one line. */
-export type GuardianAccountKind = "new_phone" | "new_username" | "existing" | "reopened" | "staff";
+/**
+ * What happened to the login when a guardian was added (./guardian `addGuardian`) — the admin UI says it in one line.
+ * `linked` is the neutral outcome (security review 2026-10-19, D3): the phone led to an existing person the caller's
+ * schools do not already know (another school's parent, a colleague of another school, such a parent's closed
+ * account reopened) — the link is made, but nothing about that person is echoed: not their name, not that they are a
+ * colleague, not that they had children elsewhere. «ثبت‌شده» says no more than «این شماره قبلاً ثبت شده است» already
+ * does on every account form.
+ */
+export type GuardianAccountKind = "new_phone" | "new_username" | "existing" | "reopened" | "staff" | "linked";
 
 export const GUARDIAN_ACCOUNT_NOTES: Record<GuardianAccountKind, string> = {
   new_phone: "حساب ولی با همین شماره ساخته شد.",
@@ -42,6 +49,7 @@ export const GUARDIAN_ACCOUNT_NOTES: Record<GuardianAccountKind, string> = {
   existing: "این ولی از پیش حساب دارد (برای فرزند دیگری)؛ همان حساب به این دانش‌آموز هم وصل شد.",
   reopened: "دسترسی این ولی دوباره باز شد؛ رمز اولیهٴ تازه دارد.",
   staff: "این شماره حساب یکی از همکاران است؛ نقش «ولی» به همان حساب افزوده شد.",
+  linked: "شمارهٴ ثبت‌شده؛ اتصال انجام شد.",
 };
 
 /** What the bulk «ساخت حساب اولیا» writes for a guardian whose relation nobody told the school. */

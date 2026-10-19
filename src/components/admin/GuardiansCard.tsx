@@ -17,8 +17,12 @@ import { ResponsiveModal } from "./ResponsiveModal";
 
 const RELATION_OPTIONS = GUARDIAN_RELATIONS.map((value) => ({ value, label: RELATION_LABELS[value] }));
 
-/** The login state of one guardian, as the account card names it. */
+/**
+ * The login state of one guardian, as the account card names it — none at all for a guardian the caller's schools do
+ * not know and may not act as (the server sent no login or state for them: D3).
+ */
 function AccountChip({ row }: { row: GuardianRow }) {
+  if (!row.known && !row.manageable) return null;
   if (row.isStaff) return <Chip tone="neutral">حساب همکار</Chip>;
   if (!row.loginIdentifier) return <Chip tone="neutral">بدون حساب</Chip>;
   if (row.membershipStatus === "left" || row.accountStatus === "disabled") return <Chip tone="neutral">بسته</Chip>;
@@ -30,8 +34,10 @@ function AccountChip({ row }: { row: GuardianRow }) {
 /**
  * «اولیا» of a student (/admin/people/[id]): the live guardians — name, relation, «ولی اصلی», phone and login — then
  * «افزودن ولی» (name + phone + relation; the server decides whether that phone is a new account, a sibling's guardian,
- * a colleague's account or, when it is someone else's login, a generated username — and says which), «حذف از
- * اولیا» (confirmed) and, for a guardian-only account all of whose children the caller manages, «تعیین رمز موقت».
+ * a colleague's account or, when it is someone else's login, a generated username — and says which, except for a
+ * person the caller's schools do not know: then only «شمارهٴ ثبت‌شده؛ اتصال انجام شد.», and the row reads «ولیِ
+ * <student>» with no login — D3, the server masks it), «حذف از اولیا» (confirmed) and, for a guardian-only account
+ * all of whose children the caller manages, «تعیین رمز موقت».
  * Writes need `iam.person.write` (`canWrite`); the password `iam.account.reset_password` (`canReset`). The server
  * re-checks everything; a password is shown ONCE (`CredentialsDialog`).
  */

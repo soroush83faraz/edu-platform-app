@@ -33,12 +33,13 @@ import { adminResetInitialPassword, adminUnlockAccount, adminUpdatePerson } from
 import { type Assignment, can, canAtAnyScope } from "@/modules/iam/can";
 import { GUARDIAN_MESSAGES, addGuardian, bulkCreateClassGuardians, listClassGuardianCredentials, listGuardiansOfStudent, resetGuardianPassword, unlinkGuardian } from "@/modules/iam/guardian";
 import { notifyGuardiansOfReportCard } from "@/modules/iam/guardian-notify";
+import { GUARDIAN_ACCOUNT_NOTES } from "@/modules/iam/guardian-policy";
 import { listChildWorkItems, listMyChildren, requireChild } from "@/modules/iam/guardian-views";
 import { getHats } from "@/modules/iam/hats";
 import { PERMISSIONS } from "@/modules/iam/permissions";
 import { removePerson } from "@/modules/iam/removal";
 import { listValidAssignments } from "@/modules/iam/repo";
-import { MESSAGES, assignRole, createStaff, createStudent, getAdminScope } from "@/modules/iam/service";
+import { MESSAGES, assignRole, createStaff, createStudent, getAdminScope, setPersonPhones } from "@/modules/iam/service";
 import { createAcademicYear, createClassGroup, createSchool } from "@/modules/tenancy/service";
 import { searchPersons } from "@/modules/workspace/repo";
 import { addComment, changeStatus, createWorkItem, personReach } from "@/modules/workspace/service";
@@ -436,7 +437,7 @@ describe("«اولیا» — guardians", () => {
       // guardians an earlier file left in the fixture class are not ours to assert on).
       const ours = [e164(11), e164(13), "s1-v-g-5"];
       const sheet = await listClassGuardianCredentials(tx, w.admin, f.CLASS_GROUP_A1);
-      const mine = sheet.rows.filter((r) => ours.includes(r.loginIdentifier));
+      const mine = sheet.rows.filter((r) => ours.includes(r.loginIdentifier ?? ""));
       expect(mine.map((r) => r.loginIdentifier).sort()).toEqual([...ours].sort());
       expect(mine.every((r) => r.initialPasswordEnc !== null)).toBe(true);
 
@@ -445,7 +446,7 @@ describe("«اولیا» — guardians", () => {
       await add(tx, w.admin, w.sB, 11);
       const sheetA = await listClassGuardianCredentials(tx, w.principalA, f.CLASS_GROUP_A1);
       expect(sheetA.rows.find((r) => r.guardianPersonId === g11)?.initialPasswordEnc).toBeNull();
-      expect(sheetA.rows.filter((r) => r.guardianPersonId !== g11 && ours.includes(r.loginIdentifier)).every((r) => r.initialPasswordEnc !== null)).toBe(true);
+      expect(sheetA.rows.filter((r) => r.guardianPersonId !== g11 && ours.includes(r.loginIdentifier ?? "")).every((r) => r.initialPasswordEnc !== null)).toBe(true);
       const cardA = await listGuardiansOfStudent(tx, w.principalA, w.s1.personId);
       expect(cardA[0]).toMatchObject({ guardianPersonId: g11, manageable: false });
       await expect(sub(tx, (sp) => resetGuardianPassword(sp, w.principalA, { linkId: cardA[0].linkId }))).rejects.toSatisfy(isError("FORBIDDEN", GUARDIAN_MESSAGES.orgAdminOnly));
@@ -527,7 +528,8 @@ describe("«اولیا» — guardians", () => {
       // Principal A types phone 16 for لیلا: the same person, reopened with a new password for principal A (every live
       // child of G is now A's) — but G's bell has no word of رها and the name school B stored stays.
       const reopened = await add(tx, w.principalA, w.s1, 16, "mother", { firstName: "زهره", lastName: "نیک‌خواه" });
-      expect(reopened).toMatchObject({ guardianPersonId: g.guardianPersonId, renamed: false });
+      expect(reopened).toMatchObject({ guardianPersonId: g.guardianPersonId, renamed: false, accountKind: "linked" });
+      expect(reopened.account?.loginIdentifier).toBe(e164(16)); // the number principal A typed — not renewed
       expect(reopened.account?.initialPassword).toMatch(/^\S{6,}$/);
       expect(await guardianBell(g.guardianPersonId)).toEqual([]);
       const [stored] = await tx.select({ firstName: schema.person.firstName, lastName: schema.person.lastName }).from(schema.person).where(eq(schema.person.id, g.guardianPersonId));
@@ -546,6 +548,71 @@ describe("«اولیا» — guardians", () => {
       await tx.update(userAccount).set({ status: "disabled" }).where(eq(userAccount.id, m17.accountId));
       await expect(sub(tx, (sp) => add(sp, w.principalA, w.s3, 17, "father", { firstName: "حسن", lastName: "کریمی" }))).rejects.toSatisfy(isError("FORBIDDEN", GUARDIAN_MESSAGES.orgAdminOnly));
       expect((await tx.select({ id: guardianLink.id }).from(guardianLink).where(and(eq(guardianLink.guardianPersonId, g17.guardianPersonId), eq(guardianLink.status, "active")))).length).toBe(1);
+    });
+  });
+
+  it("security review D3: a phone never tells a school who a parent is — another school's guardian and colleague are linked with a neutral sentence and listed as «ولیِ <child>»; the organization admin sees them", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      // School B's parent G (phone 16, live child رها) and a colleague of school B (phone 26).
+      const g = await add(tx, w.admin, w.sB, 16, "mother", { firstName: "مریم", lastName: "شریفی" });
+      const tB = await createStaff(tx, w.admin, { firstName: "کاوه", lastName: "صالحی", phone: phone(26), schoolId: w.schoolB.schoolId });
+
+      // Principal A types both numbers for لیلا: the links are made, the outcome says nothing about either person.
+      const toG = await add(tx, w.principalA, w.s1, 16, "mother", { firstName: "زهره", lastName: "نیک‌خواه" });
+      expect(toG).toMatchObject({ guardianPersonId: g.guardianPersonId, accountKind: "linked", account: null, renamed: false, alreadyLinked: false });
+      const toT = await add(tx, w.principalA, w.s1, 26, "father", { firstName: "رضا", lastName: "نیک‌خواه" });
+      expect(toT).toMatchObject({ guardianPersonId: tB.personId, accountKind: "linked", account: null });
+      expect(GUARDIAN_ACCOUNT_NOTES.linked).toBe("شمارهٴ ثبت‌شده؛ اتصال انجام شد.");
+
+      // Principal A's card: «ولیِ لیلا نیک‌خواه» twice, the typed numbers and relations — no stored name, login, state,
+      // colleague or «تعیین رمز موقت».
+      const cardA = await listGuardiansOfStudent(tx, w.principalA, w.s1.personId);
+      expect(cardA.map((r) => [r.firstName, r.lastName, r.phone, r.relation, r.loginIdentifier, r.accountStatus, r.mustChangePassword, r.isStaff, r.known, r.manageable])).toEqual([
+        ["ولیِ لیلا", "نیک‌خواه", e164(16), "mother", null, null, null, false, false, false],
+        ["ولیِ لیلا", "نیک‌خواه", e164(26), "father", null, null, null, false, false, false],
+      ]);
+      expect(JSON.stringify(cardA)).not.toMatch(/مریم|شریفی|کاوه|صالحی/);
+      // The class sheet of A1: no stored name, no login, no password for either.
+      const sheetA = await listClassGuardianCredentials(tx, w.principalA, f.CLASS_GROUP_A1);
+      const theirs = sheetA.rows.filter((r) => r.guardianPersonId === g.guardianPersonId || r.guardianPersonId === tB.personId);
+      expect(theirs).toHaveLength(2);
+      for (const r of theirs) expect(r).toMatchObject({ known: false, firstName: "ولیِ لیلا", lastName: "نیک‌خواه", loginIdentifier: null, initialPasswordEnc: null, isStaff: false });
+      expect(JSON.stringify(theirs)).not.toMatch(/مریم|شریفی|کاوه|صالحی/);
+      // The bulk summary is no oracle either: a class whose «ولی» phone is school B's colleague says «linked», not «همکار».
+      await setPersonPhones(tx, w.admin, w.s2.personId, { guardianPhone: phone(26) });
+      const bulk = await bulkCreateClassGuardians(tx, w.principalA, { classGroupId: f.CLASS_GROUP_A2 });
+      expect(bulk).toMatchObject({ linked: 1, staffLinked: 0, createdAccounts: 0, reopenedAccounts: 0 });
+
+      // The organization admin knows everybody: names, logins and the colleague.
+      const cardOrg = await listGuardiansOfStudent(tx, w.admin, w.s1.personId);
+      expect(cardOrg.find((r) => r.guardianPersonId === tB.personId)).toMatchObject({ firstName: "کاوه", lastName: "صالحی", isStaff: true, known: true, loginIdentifier: e164(26) });
+      expect(cardOrg.find((r) => r.guardianPersonId === g.guardianPersonId)).toMatchObject({ firstName: "مریم", lastName: "شریفی", known: true, loginIdentifier: e164(16) });
+
+      // A colleague OF SCHOOL A (on principal A's own staff list) is no stranger: outcome and card name them.
+      expect((await add(tx, w.principalA, w.s3, w.teacherPhone, "father", { firstName: "علی", lastName: "حسینی" })).accountKind).toBe("staff");
+      expect((await listGuardiansOfStudent(tx, w.principalA, w.s3.personId))[0]).toMatchObject({ firstName: "علی", lastName: "حسینی", isStaff: true, known: true });
+    });
+  });
+
+  it("security review D3: another school's closed USERNAME login reopened by school A is renewed from the new child — the slip names neither school B nor its student", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      // Phone 14 is a school-A student's own login, so school B's parent of رها gets the username `s2-v-g-6` (rule 3).
+      const g = await add(tx, w.admin, w.sB, 14, "father", { firstName: "رضا", lastName: "باقری" });
+      expect(g.account?.loginIdentifier).toBe("s2-v-g-6");
+      await unlinkGuardian(tx, w.admin, { linkId: g.linkId });
+      // Principal A types phone 14 for نگار: the same person (by their own mobile), reopened — with a login of school A.
+      const reopened = await add(tx, w.principalA, w.s3, 14, "father", { firstName: "رضا", lastName: "باقری" });
+      expect(reopened).toMatchObject({ guardianPersonId: g.guardianPersonId, accountKind: "linked" });
+      expect(reopened.account?.loginIdentifier).toBe("s1-v-g-3");
+      expect(await tx.select({ id: userAccount.id }).from(userAccount).where(eq(userAccount.loginIdentifier, "s2-v-g-6"))).toEqual([]);
+      const [audited] = await tx.select({ after: auditLog.after }).from(auditLog).where(and(eq(auditLog.entityId, g.guardianPersonId), eq(auditLog.action, "iam.guardian.access_reopened")));
+      expect(audited.after).toMatchObject({ loginRenewed: true });
+      // Principal A may act as them now (every live child is A's): the slip carries the new login and password.
+      const slip = (await listClassGuardianCredentials(tx, w.principalA, f.CLASS_GROUP_A1)).rows.find((r) => r.guardianPersonId === g.guardianPersonId);
+      expect(slip).toMatchObject({ known: false, loginIdentifier: "s1-v-g-3", firstName: "ولیِ نگار", lastName: "رضایی" });
+      expect(slip?.initialPasswordEnc).not.toBeNull();
     });
   });
 

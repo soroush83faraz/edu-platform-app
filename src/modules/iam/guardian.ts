@@ -345,6 +345,15 @@ interface LinkOutcome {
   alreadyLinked: boolean;
   /** The guardian's closed access was opened again — the new initial password, returned ONCE. */
   reopened: { loginIdentifier: string; initialPassword: string } | null;
+  /** The caller's schools already know this guardian (`guardianKnownSql`) — what the outcome may say about them (D3). */
+  known: boolean;
+}
+
+/** One person's `guardianKnownSql`. */
+async function isGuardianKnown(tx: Tx, scope: AdminScope, personId: string): Promise<boolean> {
+  if (scope.kind === "organization") return true;
+  const res = await tx.execute<{ known: boolean }>(sql`select ${guardianKnownSql(scope, "p.id")} as known from iam.person p where p.id = ${personId}::uuid`);
+  return res.rows[0]?.known === true;
 }
 
 /**
@@ -352,7 +361,8 @@ interface LinkOutcome {
  * must be an active person. An existing live link keeps its row (a changed relation is updated, audited); a new one
  * is primary when the student has no live primary guardian yet, and carries its derived `guardian_full` assignment.
  * A guardian-only person whose access had closed is opened again (`reopenGuardianAccess`) — for a caller who may act
- * as them (`scope`).
+ * as them (`scope`). Whether the caller's schools already know the guardian is read under the guardian's lock (the
+ * new link, of a student in scope, changes nothing about it).
  */
 async function linkGuardian(tx: Tx, ctx: IamCtx, scope: AdminScope, student: StudentFacts, guardianPersonId: string, relation: GuardianRelation): Promise<LinkOutcome> {
   if (guardianPersonId === ctx.personId) throw forbidden(GUARDIAN_MESSAGES.self);
@@ -361,6 +371,7 @@ async function linkGuardian(tx: Tx, ctx: IamCtx, scope: AdminScope, student: Stu
   const [g] = await tx.select({ status: person.status }).from(person).where(eq(person.id, guardianPersonId)).limit(1);
   if (!g) throw notFound();
   if (g.status !== "active") throw conflict(MESSAGES.personRemoved);
+  const known = await isGuardianKnown(tx, scope, guardianPersonId);
 
   const [live] = await tx
     .select({ id: guardianLink.id, relation: guardianLink.relation })
@@ -372,7 +383,7 @@ async function linkGuardian(tx: Tx, ctx: IamCtx, scope: AdminScope, student: Stu
       await tx.update(guardianLink).set({ relation }).where(eq(guardianLink.id, live.id));
       await audit(ctx, "iam.guardian_link.updated", { schema: "iam", table: "guardian_link", id: live.id }, { relation: live.relation }, { relation }, tx);
     }
-    return { linkId: live.id, alreadyLinked: true, reopened: await reopenGuardianAccess(tx, ctx, scope, guardianPersonId) };
+    return { linkId: live.id, alreadyLinked: true, reopened: await reopenGuardianAccess(tx, ctx, scope, student, guardianPersonId, known), known };
   }
 
   const [primary] = await tx
@@ -406,7 +417,7 @@ async function linkGuardian(tx: Tx, ctx: IamCtx, scope: AdminScope, student: Stu
     { guardianPersonId, studentProfileId: student.studentProfileId, relation, isPrimary: link.isPrimary, roleAssignmentId: ra.id },
     tx,
   );
-  return { linkId: link.id, alreadyLinked: false, reopened: await reopenGuardianAccess(tx, ctx, scope, guardianPersonId) };
+  return { linkId: link.id, alreadyLinked: false, reopened: await reopenGuardianAccess(tx, ctx, scope, student, guardianPersonId, known), known };
 }
 
 /** The live derived `guardian_full` assignments of these links, revoked; their ids. */
@@ -509,12 +520,29 @@ async function closeGuardianAccessIfOrphaned(tx: Tx, ctx: IamCtx, guardianPerson
  * the new link included — must be inside the caller's scope (`requireCredentialReach`, FORBIDDEN otherwise; a closed
  * account normally has no live link left, so this refuses only an account disabled under live links of another
  * school). The bell keeps only the live children's notifications (D2 — the former children's are pruned again here, in
- * case any outlived the close). Audited as `iam.guardian.access_reopened` (no secret in it). Null when nothing was
- * closed.
+ * case any outlived the close). When the caller's schools do not know the guardian (`known` false: another school
+ * registered them) and their login is a USERNAME, it was generated from THAT school's code and child
+ * (`<code>-v-<number>`) — printing it on this school's slip would tell them both, so the login is renewed from the new
+ * child, exactly as if created here (D3); a phone login is the number the caller typed and stays. Audited as
+ * `iam.guardian.access_reopened` (no secret in it). Null when nothing was closed.
  */
-async function reopenGuardianAccess(tx: Tx, ctx: IamCtx, scope: AdminScope, guardianPersonId: string): Promise<{ loginIdentifier: string; initialPassword: string } | null> {
+async function reopenGuardianAccess(
+  tx: Tx,
+  ctx: IamCtx,
+  scope: AdminScope,
+  child: StudentFacts,
+  guardianPersonId: string,
+  known: boolean,
+): Promise<{ loginIdentifier: string; initialPassword: string } | null> {
   const [m] = await tx
-    .select({ id: organizationMembership.id, status: organizationMembership.status, userAccountId: organizationMembership.userAccountId, accountStatus: userAccount.status, loginIdentifier: userAccount.loginIdentifier })
+    .select({
+      id: organizationMembership.id,
+      status: organizationMembership.status,
+      userAccountId: organizationMembership.userAccountId,
+      accountStatus: userAccount.status,
+      loginIdentifier: userAccount.loginIdentifier,
+      phoneE164: userAccount.phoneE164,
+    })
     .from(organizationMembership)
     .innerJoin(userAccount, eq(userAccount.id, organizationMembership.userAccountId))
     .where(eq(organizationMembership.personId, guardianPersonId))
@@ -522,6 +550,13 @@ async function reopenGuardianAccess(tx: Tx, ctx: IamCtx, scope: AdminScope, guar
   if (!m || (m.status === "active" && m.accountStatus !== "disabled")) return null;
   if (!(await isGuardianOnly(tx, guardianPersonId))) return null; // a colleague's login is never reopened from here
   await requireCredentialReach(tx, scope, guardianPersonId);
+  let loginIdentifier = m.loginIdentifier;
+  const loginRenewed = !known && m.phoneE164 === null;
+  if (loginRenewed) {
+    const next = await freeGeneratedUsername(tx, guardianUsernameBase(await schoolCodeOf(tx, child.schoolId), child.studentNumber));
+    await tx.update(userAccount).set({ loginIdentifier: next.loginIdentifier }).where(eq(userAccount.id, m.userAccountId));
+    loginIdentifier = next.loginIdentifier;
+  }
   const initialPassword = generateInitialPassword();
   const secretHash = await hashPassword(initialPassword);
   const updated = await tx
@@ -531,7 +566,7 @@ async function reopenGuardianAccess(tx: Tx, ctx: IamCtx, scope: AdminScope, guar
     .returning({ id: authIdentity.id });
   if (!updated[0]) await tx.insert(authIdentity).values({ userAccountId: m.userAccountId, provider: "password", secretHash, initialPasswordEnc: encryptInitialPassword(initialPassword) });
   await tx.update(userAccount).set({ status: "active", mustChangePassword: true, passwordChangedAt: null, failedLoginCount: 0, lockedUntil: null }).where(eq(userAccount.id, m.userAccountId));
-  await clearRecentFailures(tx, m.loginIdentifier);
+  await clearRecentFailures(tx, loginIdentifier);
   await tx.update(organizationMembership).set({ status: "active", leftAt: null }).where(eq(organizationMembership.id, m.id));
   const withdrawnNotifications = await pruneGuardianNotifications(tx, [guardianPersonId]);
   await audit(
@@ -539,10 +574,10 @@ async function reopenGuardianAccess(tx: Tx, ctx: IamCtx, scope: AdminScope, guar
     "iam.guardian.access_reopened",
     { schema: "iam", table: "person", id: guardianPersonId },
     { membershipStatus: m.status, accountStatus: m.accountStatus },
-    { membershipStatus: "active", accountStatus: "active", userAccountId: m.userAccountId, withdrawnNotifications },
+    { membershipStatus: "active", accountStatus: "active", userAccountId: m.userAccountId, withdrawnNotifications, loginRenewed },
     tx,
   );
-  return { loginIdentifier: m.loginIdentifier, initialPassword };
+  return { loginIdentifier, initialPassword };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -560,6 +595,7 @@ export interface AddGuardianInput {
 export interface AddGuardianResult {
   linkId: string;
   guardianPersonId: string;
+  /** `linked` (the neutral sentence) for an existing person the caller's schools do not know — D3. */
   accountKind: GuardianAccountKind;
   /** The guardian was linked to this student already (the relation may have been updated). */
   alreadyLinked: boolean;
@@ -603,10 +639,12 @@ export async function addGuardian(tx: Tx, ctx: IamCtx, input: AddGuardianInput):
       renamed = true;
     }
   }
+  // D3: a person the caller's schools do not know is linked without a word about them (`GUARDIAN_ACCOUNT_NOTES.linked`).
+  const kind: GuardianAccountKind = outcome.reopened ? "reopened" : ensured.kind;
   return {
     linkId: outcome.linkId,
     guardianPersonId: ensured.personId,
-    accountKind: outcome.reopened ? "reopened" : ensured.kind,
+    accountKind: outcome.known ? kind : "linked",
     alreadyLinked: outcome.alreadyLinked,
     renamed,
     account: ensured.account ?? outcome.reopened,
@@ -679,34 +717,49 @@ export async function resetGuardianPassword(tx: Tx, ctx: IamCtx, input: { linkId
 export interface GuardianRow {
   linkId: string;
   guardianPersonId: string;
+  /** The stored name of a guardian the caller's schools know (`known`); otherwise «ولیِ <this student>» (D3). */
   firstName: string;
   lastName: string;
   relation: GuardianRelation;
   isPrimary: boolean;
-  /** The guardian's own mobile (contact point), else the phone of their login. */
+  /**
+   * The number this link is about: the guardian's own mobile (contact point), else their login's phone — for a
+   * guardian the caller does not know, the login's phone first (the number that was typed for this student; a
+   * colleague's other numbers are not the caller's to read).
+   */
   phone: string | null;
+  /** Login and its state: only for a guardian the caller knows or may act as (`manageable`); null otherwise. */
   loginIdentifier: string | null;
   accountStatus: string | null;
   membershipStatus: string | null;
   mustChangePassword: boolean | null;
-  /** A colleague: they sign in with their own staff account (managed on the staff pages). */
+  /** A colleague: they sign in with their own staff account (managed on the staff pages). Never said of a stranger. */
   isStaff: boolean;
-  /** Every live child of the guardian is in the caller's scope — «تعیین رمز موقت» is the caller's to give. */
+  /** The caller's schools already know this guardian (`guardianKnownSql`): their name, login and status are shown. */
+  known: boolean;
+  /** A guardian-only account all of whose live children are in the caller's scope — «تعیین رمز موقت» is the caller's. */
   manageable: boolean;
 }
 
 /**
  * The «اولیا» card of a student (admin scope, NOT_FOUND outside it): the LIVE links, primary first, with what the
- * card shows of each guardian's login. No password, ever.
+ * card shows of each guardian's login. No password, ever. Security review 2026-10-19, D3 — a phone number must not
+ * reveal who a parent is: a guardian the caller's schools do not already know (another school's parent, a colleague
+ * of another school) is listed with the generic «ولیِ <this student>», the number of this link, the relation and
+ * «حذف از اولیا» — never their stored name, login, account state or colleague status; the masked values are not even
+ * read out of the database.
  */
 export async function listGuardiansOfStudent(tx: Tx, ctx: IamCtx, studentPersonId: string): Promise<GuardianRow[]> {
   const scope = await getAdminScope(tx, ctx);
-  await requirePersonInScope(tx, scope, studentPersonId);
+  const student = await requirePersonInScope(tx, scope, studentPersonId);
   const res = await tx.execute<{
     link_id: string;
     guardian_person_id: string;
-    first_name: string;
-    last_name: string;
+    known: boolean;
+    guardian_only: boolean;
+    reach: boolean;
+    first_name: string | null;
+    last_name: string | null;
     relation: string;
     is_primary: boolean;
     phone: string | null;
@@ -714,29 +767,35 @@ export async function listGuardiansOfStudent(tx: Tx, ctx: IamCtx, studentPersonI
     account_status: string | null;
     membership_status: string | null;
     must_change_password: boolean | null;
-    is_staff: boolean;
-    manageable: boolean;
   }>(sql`
-    select gl.id as link_id, gl.guardian_person_id, p.first_name, p.last_name, gl.relation, gl.is_primary,
-      coalesce(
-        (select cp.value from iam.contact_point cp where cp.person_id = p.id and cp.kind = 'mobile' and cp.label is null order by cp.is_primary desc, cp.created_at limit 1),
-        ua.phone_e164
-      ) as phone,
-      ua.login_identifier, ua.status as account_status, m.status as membership_status, ua.must_change_password,
-      not ${guardianOnlySql("p.id")} as is_staff,
-      ${credentialReachSql(scope, "p.id")} as manageable
+    select gl.id as link_id, gl.guardian_person_id, k.known, k.guardian_only, k.reach,
+      case when k.known then p.first_name end as first_name,
+      case when k.known then p.last_name end as last_name,
+      gl.relation, gl.is_primary,
+      case when k.known then coalesce(cpv.value, ua.phone_e164) else coalesce(ua.phone_e164, cpv.value) end as phone,
+      case when k.known or (k.guardian_only and k.reach) then ua.login_identifier end as login_identifier,
+      case when k.known or (k.guardian_only and k.reach) then ua.status end as account_status,
+      case when k.known or (k.guardian_only and k.reach) then m.status end as membership_status,
+      case when k.known or (k.guardian_only and k.reach) then ua.must_change_password end as must_change_password
     from iam.guardian_link gl
     join iam.student_profile sp on sp.id = gl.student_profile_id
     join iam.person p on p.id = gl.guardian_person_id
     left join iam.organization_membership m on m.person_id = p.id
     left join iam.user_account ua on ua.id = m.user_account_id
+    left join lateral (
+      select cp.value from iam.contact_point cp where cp.person_id = p.id and cp.kind = 'mobile' and cp.label is null order by cp.is_primary desc, cp.created_at limit 1
+    ) cpv on true
+    cross join lateral (
+      select ${guardianKnownSql(scope, "p.id")} as known, ${guardianOnlySql("p.id")} as guardian_only, ${credentialReachSql(scope, "p.id")} as reach
+    ) k
     where sp.person_id = ${studentPersonId}::uuid and gl.status = 'active'
     order by gl.is_primary desc, gl.created_at, gl.id`);
+  const generic = placeholderGuardianName(student);
   return res.rows.map((r) => ({
     linkId: r.link_id,
     guardianPersonId: r.guardian_person_id,
-    firstName: r.first_name,
-    lastName: r.last_name,
+    firstName: r.known && r.first_name !== null ? r.first_name : generic.firstName,
+    lastName: r.known && r.last_name !== null ? r.last_name : generic.lastName,
     relation: isGuardianRelation(r.relation) ? r.relation : "other",
     isPrimary: r.is_primary,
     phone: r.phone,
@@ -744,8 +803,9 @@ export async function listGuardiansOfStudent(tx: Tx, ctx: IamCtx, studentPersonI
     accountStatus: r.account_status,
     membershipStatus: r.membership_status,
     mustChangePassword: r.must_change_password,
-    isStaff: r.is_staff,
-    manageable: r.manageable && !r.is_staff,
+    isStaff: r.known && !r.guardian_only,
+    known: r.known,
+    manageable: r.guardian_only && r.reach && r.login_identifier !== null,
   }));
 }
 
@@ -761,13 +821,13 @@ export interface BulkGuardiansResult {
   createdAccounts: number;
   /** Of those, generated usernames (the phone was someone else's login). */
   usernameAccounts: number;
-  /** Closed guardian logins opened again (a new initial password each). */
+  /** Closed guardian logins opened again (a new initial password each) — of guardians the caller's schools know (D3). */
   reopenedAccounts: number;
   /** New links (to a new, an existing or a colleague's account). */
   linked: number;
   /** Students already linked to the guardian of their «ولی» phone (nothing written for them). */
   alreadyLinked: number;
-  /** Links that went to a colleague's account. */
+  /** Links that went to the account of a colleague the caller's schools know (D3: another school's stays «linked»). */
   staffLinked: number;
   noPhone: number;
   invalidPhone: number;
@@ -856,11 +916,13 @@ export async function bulkCreateClassGuardians(tx: Tx, ctx: IamCtx, input: { cla
       result.createdAccounts++;
       if (ensured.kind === "new_username") result.usernameAccounts++;
     }
-    if (outcome.reopened) result.reopenedAccounts++;
+    // D3: «… به حساب همکار» / «… دوباره باز شد» only of guardians the caller's schools know — a one-student class
+    // must not turn the summary into an oracle for «whose number is this?»; any other person is just «linked».
+    if (outcome.reopened && outcome.known) result.reopenedAccounts++;
     if (outcome.alreadyLinked) result.alreadyLinked++;
     else {
       result.linked++;
-      if (ensured.kind === "staff") result.staffLinked++;
+      if (ensured.kind === "staff" && outcome.known) result.staffLinked++;
     }
   }
   await audit(ctx, "iam.guardian.bulk_created", { schema: "tenancy", table: "class_group", id: cg.id }, null, { ...result }, tx);
@@ -869,23 +931,32 @@ export async function bulkCreateClassGuardians(tx: Tx, ctx: IamCtx, input: { cla
 
 export interface GuardianCredentialRow {
   guardianPersonId: string;
+  /** The stored name of a guardian the caller's schools know; otherwise «ولیِ <first child here>» (D3 — the slip then prints no name line). */
   firstName: string;
   lastName: string;
   /** The children IN THIS CLASS, «لیلا نیک‌خواه» each. */
   children: string[];
-  loginIdentifier: string;
+  /**
+   * Null for a guardian the caller neither knows nor may act as (D3: a username another school generated would name
+   * that school and a child of it): the slip tells the parent to use the account they already have.
+   */
+  loginIdentifier: string | null;
   /** Still encrypted (decrypted right before rendering); null when the caller may not read it or it is gone. */
   initialPasswordEnc: string | null;
   mustChangePassword: boolean;
-  /** A colleague's account: the slip says to sign in with their own staff login (no password shown). */
+  /** A colleague's account (of a colleague the caller knows): the slip says to sign in with their own staff login. */
   isStaff: boolean;
+  /** The caller's schools already know this guardian (`guardianKnownSql`). */
+  known: boolean;
 }
 
 /**
  * «برگه‌های ورود اولیا» of a class (admin scope; the class's school in scope, else NOT_FOUND): one slip per guardian
  * with a live link to an active student of the class. The encrypted initial password is read ONLY for a guardian-only
- * account still on it whose every live child is in the caller's scope (`guardianWithinScopeSql`) — never a
- * colleague's, never one that would let a school's manager sign in as a parent of another school's student.
+ * account still on it whose every live child is in the caller's scope (`credentialReachSql`) — never a colleague's,
+ * never one that would let a school's manager sign in as a parent of another school's student. A guardian the
+ * caller's schools do not know (D3) gets a slip with neither their stored name nor — unless the caller may act as
+ * them — their login; the masked values are not read out of the database.
  */
 export async function listClassGuardianCredentials(tx: Tx, ctx: IamCtx, classGroupId: string): Promise<{ className: string; schoolName: string; rows: GuardianCredentialRow[] }> {
   // The sheet reveals passwords: the scope of the permission that resets them (the class credentials sheet's gate).
@@ -896,19 +967,27 @@ export async function listClassGuardianCredentials(tx: Tx, ctx: IamCtx, classGro
   const sch = await findSchoolById(tx, cg.schoolId);
   const res = await tx.execute<{
     guardian_person_id: string;
-    first_name: string;
-    last_name: string;
+    known: boolean;
+    first_name: string | null;
+    last_name: string | null;
+    child_first_name: string;
+    child_last_name: string;
     children: string[];
-    login_identifier: string;
+    login_identifier: string | null;
     must_change_password: boolean;
     is_staff: boolean;
     enc: string | null;
   }>(sql`
-    select g.id as guardian_person_id, g.first_name, g.last_name,
+    select g.id as guardian_person_id, k.known,
+      case when k.known then g.first_name end as first_name,
+      case when k.known then g.last_name end as last_name,
+      (array_agg(sp_person.first_name order by sp_person.last_name, sp_person.first_name))[1] as child_first_name,
+      (array_agg(sp_person.last_name order by sp_person.last_name, sp_person.first_name))[1] as child_last_name,
       array_agg(sp_person.first_name || ' ' || sp_person.last_name order by sp_person.last_name, sp_person.first_name) as children,
-      ua.login_identifier, ua.must_change_password,
-      not ${guardianOnlySql("g.id")} as is_staff,
-      case when ${guardianOnlySql("g.id")} and ua.must_change_password and ${credentialReachSql(scope, "g.id")}
+      case when k.known or (k.guardian_only and k.reach) then ua.login_identifier end as login_identifier,
+      ua.must_change_password,
+      (k.known and not k.guardian_only) as is_staff,
+      case when k.guardian_only and k.reach and ua.must_change_password
         then (select ai.initial_password_enc from iam.auth_identity ai where ai.user_account_id = ua.id and ai.provider = 'password')
         else null end as enc
     from iam.guardian_link gl
@@ -918,22 +997,29 @@ export async function listClassGuardianCredentials(tx: Tx, ctx: IamCtx, classGro
     join iam.person g on g.id = gl.guardian_person_id
     join iam.organization_membership m on m.person_id = g.id and m.status = 'active'
     join iam.user_account ua on ua.id = m.user_account_id and ua.status <> 'disabled'
+    cross join lateral (
+      select ${guardianKnownSql(scope, "g.id")} as known, ${guardianOnlySql("g.id")} as guardian_only, ${credentialReachSql(scope, "g.id")} as reach
+    ) k
     where gl.status = 'active' and sp.status = 'active' and sp_person.status = 'active' and g.status = 'active'
-    group by g.id, g.first_name, g.last_name, ua.id, ua.login_identifier, ua.must_change_password
+    group by g.id, g.first_name, g.last_name, ua.id, ua.login_identifier, ua.must_change_password, k.known, k.guardian_only, k.reach
     order by g.last_name, g.first_name, g.id`);
   return {
     className: cg.name,
     schoolName: sch?.name ?? "",
-    rows: res.rows.map((r) => ({
-      guardianPersonId: r.guardian_person_id,
-      firstName: r.first_name,
-      lastName: r.last_name,
-      children: r.children,
-      loginIdentifier: r.login_identifier,
-      initialPasswordEnc: r.enc,
-      mustChangePassword: r.must_change_password,
-      isStaff: r.is_staff,
-    })),
+    rows: res.rows.map((r) => {
+      const generic = placeholderGuardianName({ firstName: r.child_first_name, lastName: r.child_last_name });
+      return {
+        guardianPersonId: r.guardian_person_id,
+        firstName: r.known && r.first_name !== null ? r.first_name : generic.firstName,
+        lastName: r.known && r.last_name !== null ? r.last_name : generic.lastName,
+        children: r.children,
+        loginIdentifier: r.login_identifier,
+        initialPasswordEnc: r.enc,
+        mustChangePassword: r.must_change_password,
+        isStaff: r.is_staff,
+        known: r.known,
+      };
+    }),
   };
 }
 
