@@ -38,8 +38,11 @@ export const FILE_LIMITS = {
   /** An upload that sends nothing for this long, or takes longer than the total, is aborted. */
   idleTimeoutMs: 60 * 1000,
   totalTimeoutMs: 10 * 60 * 1000,
-  /** Uploads in flight per app process (each holds a file descriptor and a disk stream). */
+  /** Uploads in flight per app process (each holds a file descriptor and a disk stream), and per person. */
   maxConcurrentUploads: 8,
+  maxConcurrentUploadsPerPerson: 2,
+  /** Upload attempts per person per hour, refused ones included (garbage that never reaches the quota). */
+  maxAttemptsPerHour: 60,
 } as const;
 
 /** Persian messages of the file rules (the server's AppErrors and the picker's own pre-checks say the same). */

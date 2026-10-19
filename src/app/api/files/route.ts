@@ -4,7 +4,8 @@
 //   1. same origin only (Origin = PUBLIC_ORIGIN, `Sec-Fetch-Site: same-origin` when sent) — with the custom header a
 //      cross-site page cannot even send the request without a CORS preflight nobody answers; the session cookie is
 //      SameSite=Lax on top;
-//   2. an upload slot of this process (`maxConcurrentUploads`), else 503;
+//   2. an upload slot of this process (`maxConcurrentUploads`), else 503 — and after pass 1, one of the person's two
+//      slots and their hourly attempts (60, refused ones included), else 429;
 //   3. gate pass 1 (defineAction — session, must-change, strict input, permission, then the item rule, the demo-session
 //      refusal and the daily quota: workspace/file-access `authorizeUpload`) BEFORE a byte is read; a Content-Length
 //      over 10 MiB is refused here too;
@@ -23,7 +24,7 @@ import { logger } from "@/lib/logger";
 import { FILE_LIMITS, FILE_MESSAGES } from "@/modules/files/limits";
 import { ReceiveError, receiveToTemp, type Received } from "@/modules/files/receive";
 import { sniffFile } from "@/modules/files/sniff";
-import { discardTemp, freeBytes, removeStored, sweepTemp, tempDir, uploadSlots } from "@/modules/files/storage";
+import { attemptWindow, discardTemp, freeBytes, keyedSlots, removeStored, sweepTemp, tempDir, uploadSlots } from "@/modules/files/storage";
 import { isSameOriginUpload, readUploadRequest } from "@/modules/files/upload-request";
 import { authorizeUploadGate, recordUploadGate } from "@/modules/workspace/file-gates";
 
@@ -31,6 +32,10 @@ export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 const slots = uploadSlots(FILE_LIMITS.maxConcurrentUploads);
+/** Two uploads in flight per person: one account cannot hold every slot of the process with slow bodies. */
+const personSlots = keyedSlots(FILE_LIMITS.maxConcurrentUploadsPerPerson);
+/** Sixty attempts an hour per person, refused ones included. */
+const attempts = attemptWindow(FILE_LIMITS.maxAttemptsPerHour, 60 * 60 * 1000);
 
 function fail(status: number, code: string, message: string): NextResponse {
   return NextResponse.json({ ok: false, code, message }, { status, headers: NO_STORE });
@@ -54,6 +59,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let received: Received | null = null;
   let plannedKey: string | null = null;
   let committed = false;
+  let releasePerson: (() => void) | null = null;
   try {
     // Exactly three inputs (purpose, workItemId, the name) — the strict schema refuses anything malformed; the name never
     // reaches a path.
@@ -62,6 +68,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const ticket = await authorizeUploadGate(raw, announced);
     if (!ticket.ok) return fromResult(ticket);
+    if (!attempts.allow(ticket.data.personId)) return fail(429, "RATE_LIMITED", FA_MESSAGES.RATE_LIMITED);
+    releasePerson = personSlots.tryAcquire(ticket.data.personId);
+    if (!releasePerson) return fail(429, "RATE_LIMITED", FILE_MESSAGES.busy);
     if ((await freeBytes()) < FILE_LIMITS.minFreeDiskBytes) {
       logger.error("files: upload refused — the files volume is below the free-space floor");
       return fail(507, "INTERNAL", FILE_MESSAGES.diskFull);
@@ -108,6 +117,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (received) await discardTemp(received.tempPath);
       if (plannedKey) await removeStored([plannedKey]);
     }
+    releasePerson?.();
     release();
   }
 }

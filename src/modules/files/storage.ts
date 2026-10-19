@@ -108,17 +108,58 @@ export async function sweepTemp(olderThanMs: number): Promise<number> {
 
 /** At most `limit` uploads in flight in this process; `tryAcquire` returns a release, or null when full. */
 export function uploadSlots(limit: number): { tryAcquire: () => (() => void) | null } {
-  let inFlight = 0;
+  const keyed = keyedSlots(limit);
+  return { tryAcquire: () => keyed.tryAcquire("") };
+}
+
+/** At most `limit` in flight per key (one person's parallel uploads); `tryAcquire` returns a release, or null. */
+export function keyedSlots(limit: number): { tryAcquire: (key: string) => (() => void) | null } {
+  const inFlight = new Map<string, number>();
   return {
-    tryAcquire() {
-      if (inFlight >= limit) return null;
-      inFlight++;
+    tryAcquire(key) {
+      const n = inFlight.get(key) ?? 0;
+      if (n >= limit) return null;
+      inFlight.set(key, n + 1);
       let released = false;
       return () => {
         if (released) return;
         released = true;
-        inFlight--;
+        const left = (inFlight.get(key) ?? 1) - 1;
+        if (left <= 0) inFlight.delete(key);
+        else inFlight.set(key, left);
       };
     },
   };
+}
+
+/**
+ * At most `limit` upload ATTEMPTS per key in a sliding `windowMs` — refused ones included (the daily quota counts only
+ * what was recorded, so without this a person could make the server receive and sniff garbage without end). In
+ * memory, per process: enough for the one app instance; a restart forgets it.
+ */
+export function attemptWindow(limit: number, windowMs: number): { allow: (key: string, now?: number) => boolean } {
+  const seen = new Map<string, number[]>();
+  return {
+    allow(key, now = Date.now()) {
+      const recent = (seen.get(key) ?? []).filter((t) => t > now - windowMs);
+      if (recent.length >= limit) {
+        seen.set(key, recent);
+        return false;
+      }
+      recent.push(now);
+      seen.set(key, recent);
+      if (seen.size > 10_000) for (const [k, ts] of seen) if (ts.every((t) => t <= now - windowMs)) seen.delete(k);
+      return true;
+    },
+  };
+}
+
+/** The size of the stored bytes of a key, or null when they are missing (HEAD of a download). */
+export async function statStored(key: string): Promise<number | null> {
+  try {
+    const s = await stat(storagePathIn(filesRoot(), key));
+    return s.isFile() ? s.size : null;
+  } catch {
+    return null;
+  }
 }

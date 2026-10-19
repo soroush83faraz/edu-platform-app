@@ -104,3 +104,39 @@ describe("receiveToTemp", () => {
     expect(readdirSync(dir)).toEqual([]);
   });
 });
+
+describe("upload slots", () => {
+  it("at most N in flight per process and per person; a release frees exactly one slot, twice is harmless", async () => {
+    const { keyedSlots, uploadSlots } = await import("@/modules/files/storage");
+    const proc = uploadSlots(2);
+    const a = proc.tryAcquire();
+    const b = proc.tryAcquire();
+    expect(a && b).toBeTruthy();
+    expect(proc.tryAcquire()).toBeNull();
+    a!();
+    a!();
+    const c = proc.tryAcquire();
+    expect(c).toBeTruthy();
+    expect(proc.tryAcquire()).toBeNull();
+
+    const people = keyedSlots(FILE_LIMITS.maxConcurrentUploadsPerPerson);
+    const p1 = [people.tryAcquire("p1"), people.tryAcquire("p1")];
+    expect(p1.every(Boolean)).toBe(true);
+    expect(people.tryAcquire("p1")).toBeNull();
+    expect(people.tryAcquire("p2")).toBeTruthy();
+    p1[0]!();
+    expect(people.tryAcquire("p1")).toBeTruthy();
+  });
+});
+
+describe("attemptWindow", () => {
+  it("allows `limit` attempts per key in the window, then refuses until the oldest ages out", async () => {
+    const { attemptWindow } = await import("@/modules/files/storage");
+    const w = attemptWindow(3, 1000);
+    expect([w.allow("p", 0), w.allow("p", 10), w.allow("p", 20)]).toEqual([true, true, true]);
+    expect(w.allow("p", 30)).toBe(false);
+    expect(w.allow("q", 30)).toBe(true);
+    expect(w.allow("p", 1001)).toBe(true);
+    expect(w.allow("p", 1002)).toBe(false);
+  });
+});

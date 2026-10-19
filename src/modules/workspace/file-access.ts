@@ -65,6 +65,8 @@ export interface UploadPlan {
 }
 
 export interface UploadTicket extends UploadPlan {
+  /** The uploader (the route's per-person concurrency key) — from the session, never from input. */
+  personId: string;
   purpose: UploadPurpose;
   workItemId: string | null;
   /** The sanitised display name (its extension is fixed to the sniffed kind on record). */
@@ -132,7 +134,7 @@ export async function authorizeUpload(tx: Tx, ctx: FileAccessCtx, meta: UploadMe
   }
   if (!withinDailyQuota(meta.purpose, await usedToday(tx, ctx.personId), announcedBytes ?? 1)) throw rateLimited(FILE_MESSAGES.quota);
   const fileId = uuidv7();
-  return { purpose: meta.purpose, workItemId: meta.workItemId ?? null, name, fileId, storageKey: storageKeyFor(ctx.orgId, fileId, new Date()) };
+  return { personId: ctx.personId, purpose: meta.purpose, workItemId: meta.workItemId ?? null, name, fileId, storageKey: storageKeyFor(ctx.orgId, fileId, new Date()) };
 }
 
 /**
