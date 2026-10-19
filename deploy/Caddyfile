@@ -20,13 +20,18 @@
 		max_size 12MB
 	}
 
+	# The `-Server` deletion defers this block to write time, so every value in it OVERWRITES the app's. HSTS and
+	# nosniff are the same everywhere; X-Frame-Options and Referrer-Policy are only DEFAULTS (`?` = set when the response
+	# has none): the app sends its own on every response, and GET /files/<id> must keep its `Referrer-Policy:
+	# no-referrer` (security review 2026-10-19, D1). One `?` field per directive — several `?` fields in ONE block
+	# share a single "all of them absent" condition.
 	header {
 		-Server
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options nosniff
-		X-Frame-Options DENY
-		Referrer-Policy strict-origin-when-cross-origin
 	}
+	header ?X-Frame-Options DENY
+	header ?Referrer-Policy strict-origin-when-cross-origin
 
 	reverse_proxy app:3000 {
 		# The app throttles logins on the FIRST X-Forwarded-For value (src/lib/request.ts): send exactly one, the

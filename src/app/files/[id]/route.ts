@@ -3,7 +3,8 @@
 // the file live and attached, its تکلیف visible to the caller, a پاسخ's file only to its student and the تکلیف's
 // managers). Anything else — unknown id, archived, pending, another tenant's, not yours — is the same bare 404, so a
 // file's existence never leaks. A dead session goes to the login (and back here after it, `?next=`). Served with the
-// headers of untrusted content (src/modules/files/serve.ts); the service worker never caches it
+// headers of untrusted content (src/modules/files/serve.ts — the same set next.config.ts gives `/files/:path*`, whose
+// app-wide rule excludes this path: Next would keep ITS value over ours); the service worker never caches it
 // (src/lib/pwa/should-cache.ts: network-only). No Range support. HEAD is its own handler (Next would otherwise run GET
 // for it and leave the opened file's stream unread): the same decision, the headers, no body, no open file.
 import { type NextRequest } from "next/server";

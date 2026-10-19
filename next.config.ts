@@ -35,6 +35,32 @@ const securityHeaders = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 ];
 
+// How Next merges headers (node_modules/next/dist/server/lib/router-server.js, server/send-response.js): the rules
+// below are set on the response FIRST, and a route handler's own header is added only where none of that name is
+// there yet. So the global set must not match the two file routes, or it silently replaces their stricter values
+// (security review 2026-10-19, D1 — the download's sandbox CSP and `no-referrer` were dropped). Each file route gets
+// its own complete set here; GET /files/<id> sends the same one itself (src/modules/files/serve.ts — kept equal by
+// tests/unit/files-serve-headers.test.ts).
+//   • /files/<id> — an upload, untrusted content: no source at all, an opaque-origin sandbox, never framed, never
+//     embedded by another site, no referrer, never stored;
+//   • /api/files — the upload endpoint's JSON answers: nothing to render, nothing to frame.
+const fileHeaders = [
+  { key: "Content-Security-Policy", value: "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; sandbox" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "no-referrer" },
+  { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
+  { key: "Cache-Control", value: "private, no-store" },
+];
+
+const uploadApiHeaders = [
+  { key: "Content-Security-Policy", value: "default-src 'none'; frame-ancestors 'none'; sandbox" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "no-referrer" },
+  { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
+];
+
 const nextConfig: NextConfig = {
   // Required by the Dockerfile: copies .next/standalone + .next/static + public into the runner image.
   output: "standalone",
@@ -45,7 +71,10 @@ const nextConfig: NextConfig = {
   images: { remotePatterns: [] },
   async headers() {
     return [
-      { source: "/(.*)", headers: securityHeaders },
+      // Everything but `/files`, `/files/…` and exactly `/api/files` (a path like `/filesx` or `/api/files/x` keeps it).
+      { source: "/((?!files(?:/|$)|api/files$).*)", headers: securityHeaders },
+      { source: "/files/:path*", headers: fileHeaders },
+      { source: "/api/files", headers: uploadApiHeaders },
       // The worker must be re-fetched on every check so a new release replaces it promptly.
       {
         source: "/sw.js",

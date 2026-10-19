@@ -120,13 +120,18 @@ describe("fileResponseHeaders (GET /files/[id])", () => {
     expect(fileResponseHeaders("pdf", "a.pdf", 1)["Content-Type"]).toBe("application/pdf");
   });
 
-  it("always nosniff, a sandboxed CSP with no sources, private no-store, same-origin resource policy", () => {
+  // What the handler sets. That these values — not next.config.ts's app-wide ones — reach the browser is proven with
+  // Next's own merge code in tests/unit/files-serve-headers.test.ts (security review 2026-10-19, D1).
+  it("always nosniff, a sandboxed CSP with no sources, private no-store, same-origin resource policy, no referrer, never framed", () => {
     for (const h of [fileResponseHeaders("jpeg", "a.jpg", 1), fileResponseHeaders("pdf", "a.pdf", 1)]) {
       expect(h["X-Content-Type-Options"]).toBe("nosniff");
       expect(h["Content-Security-Policy"]).toContain("default-src 'none'");
+      expect(h["Content-Security-Policy"]).toContain("frame-ancestors 'none'");
       expect(h["Content-Security-Policy"]).toMatch(/(^|; )sandbox($|;)/);
       expect(h["Cache-Control"]).toBe("private, no-store");
       expect(h["Cross-Origin-Resource-Policy"]).toBe("same-origin");
+      expect(h["Referrer-Policy"]).toBe("no-referrer");
+      expect(h["X-Frame-Options"]).toBe("DENY");
     }
     expect(FILE_RESPONSE_SECURITY_HEADERS["Content-Security-Policy"]).not.toContain("script-src");
   });
