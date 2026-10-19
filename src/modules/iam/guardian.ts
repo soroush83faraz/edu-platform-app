@@ -681,7 +681,9 @@ export async function addGuardian(tx: Tx, ctx: IamCtx, input: AddGuardianInput):
 
 /**
  * «حذف از اولیا»: ends ONE live link (and its derived role) of a student in the caller's scope; the guardian's access
- * closes when that was their last child here. Idempotent on an already-ended link (`alreadyEnded`, nothing written).
+ * closes when that was their last child here (`accessClosed` — reported only for a guardian the caller's schools know,
+ * D3: for anyone else it would say whether they still have a child elsewhere). Idempotent on an already-ended link
+ * (`alreadyEnded`, nothing written).
  */
 export async function unlinkGuardian(tx: Tx, ctx: IamCtx, input: { linkId: string }): Promise<{ alreadyEnded: boolean; accessClosed: boolean }> {
   const scope = await getPermissionScope(tx, ctx, "iam.person.write");
@@ -696,6 +698,7 @@ export async function unlinkGuardian(tx: Tx, ctx: IamCtx, input: { linkId: strin
   await lockPersons(tx, [facts.personId]);
   await requirePersonInScope(tx, scope, facts.personId);
   await lockPersons(tx, [link.guardianPersonId]);
+  const known = await isGuardianKnown(tx, scope, link.guardianPersonId);
   const { endedLinkIds, revokedRoleAssignmentIds, withdrawnNotifications } = await endLinks(tx, [link.id]);
   if (endedLinkIds.length === 0) return { alreadyEnded: true, accessClosed: false };
   const accessClosed = await closeGuardianAccessIfOrphaned(tx, ctx, link.guardianPersonId);
@@ -707,12 +710,15 @@ export async function unlinkGuardian(tx: Tx, ctx: IamCtx, input: { linkId: strin
     { status: "archived", guardianPersonId: link.guardianPersonId, studentProfileId: link.studentProfileId, relation: link.relation, revokedRoleAssignmentIds, accessClosed, withdrawnNotifications },
     tx,
   );
-  return { alreadyEnded: false, accessClosed };
+  // D3: whether the login closed tells whether the guardian still has a child elsewhere — said only of a guardian the
+  // caller's schools know (the audit row keeps the truth).
+  return { alreadyEnded: false, accessClosed: known && accessClosed };
 }
 
 /**
  * «تعیین رمز موقت» of a guardian from the student's card: the link must be live and the student in the caller's scope
- * (NOT_FOUND), the guardian guardian-only (a colleague's account belongs to the staff pages — FORBIDDEN) and every live
+ * (NOT_FOUND), the guardian guardian-only (a colleague's account belongs to the staff pages — FORBIDDEN, and named so
+ * only to a caller who knows that colleague) and every live
  * child of theirs inside the caller's scope (`requireCredentialReach`, FORBIDDEN otherwise: the new password would let
  * the caller sign in as a parent of another school's student — it locks the guardian row FOR SHARE first, so a link to
  * another school's child being added meanwhile is waited for); then the account service's own reset (sessions revoked,
@@ -729,7 +735,11 @@ export async function resetGuardianPassword(tx: Tx, ctx: IamCtx, input: { linkId
   const facts = await studentFacts(tx, link.studentProfileId);
   if (!facts) throw notFound();
   await requirePersonInScope(tx, scope, facts.personId);
-  if (!(await isGuardianOnly(tx, link.guardianPersonId))) throw forbidden(GUARDIAN_MESSAGES.staffAccount);
+  // A colleague's account is the staff pages' — said so only of a colleague the caller knows (D3); anyone else hears
+  // the one neutral sentence.
+  if (!(await isGuardianOnly(tx, link.guardianPersonId))) {
+    throw forbidden((await isGuardianKnown(tx, scope, link.guardianPersonId)) ? GUARDIAN_MESSAGES.staffAccount : GUARDIAN_MESSAGES.orgAdminOnly);
+  }
   await requireCredentialReach(tx, scope, link.guardianPersonId);
   const [acct] = await tx
     .select({ userAccountId: organizationMembership.userAccountId, loginIdentifier: userAccount.loginIdentifier })

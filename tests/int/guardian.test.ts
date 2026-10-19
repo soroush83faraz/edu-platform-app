@@ -589,9 +589,14 @@ describe("«اولیا» — guardians", () => {
       expect(cardOrg.find((r) => r.guardianPersonId === tB.personId)).toMatchObject({ firstName: "کاوه", lastName: "صالحی", isStaff: true, known: true, loginIdentifier: e164(26) });
       expect(cardOrg.find((r) => r.guardianPersonId === g.guardianPersonId)).toMatchObject({ firstName: "مریم", lastName: "شریفی", known: true, loginIdentifier: e164(16) });
 
-      // A colleague OF SCHOOL A (on principal A's own staff list) is no stranger: outcome and card name them.
-      expect((await add(tx, w.principalA, w.s3, w.teacherPhone, "father", { firstName: "علی", lastName: "حسینی" })).accountKind).toBe("staff");
+      // Nor do the other answers: «تعیین رمز موقت» on school B's colleague is the neutral sentence, not «… از همکاران است».
+      await expect(sub(tx, (sp) => resetGuardianPassword(sp, w.principalA, { linkId: toT.linkId }))).rejects.toSatisfy(isError("FORBIDDEN", GUARDIAN_MESSAGES.orgAdminOnly));
+
+      // A colleague OF SCHOOL A (on principal A's own staff list) is no stranger: outcome, card and answers name them.
+      const toTeacher = await add(tx, w.principalA, w.s3, w.teacherPhone, "father", { firstName: "علی", lastName: "حسینی" });
+      expect(toTeacher.accountKind).toBe("staff");
       expect((await listGuardiansOfStudent(tx, w.principalA, w.s3.personId))[0]).toMatchObject({ firstName: "علی", lastName: "حسینی", isStaff: true, known: true });
+      await expect(sub(tx, (sp) => resetGuardianPassword(sp, w.principalA, { linkId: toTeacher.linkId }))).rejects.toSatisfy(isError("FORBIDDEN", GUARDIAN_MESSAGES.staffAccount));
     });
   });
 
@@ -613,6 +618,13 @@ describe("«اولیا» — guardians", () => {
       const slip = (await listClassGuardianCredentials(tx, w.principalA, f.CLASS_GROUP_A1)).rows.find((r) => r.guardianPersonId === g.guardianPersonId);
       expect(slip).toMatchObject({ known: false, loginIdentifier: "s1-v-g-3", firstName: "ولیِ نگار", lastName: "رضایی" });
       expect(slip?.initialPasswordEnc).not.toBeNull();
+      // Unlinking them again closes the login — but the answer does not say so to a school that does not know them
+      // (for others it would tell whether a child elsewhere remains); the audit row keeps the truth.
+      expect(await unlinkGuardian(tx, w.principalA, { linkId: reopened.linkId })).toEqual({ alreadyEnded: false, accessClosed: false });
+      const [closed] = await tx.select({ status: organizationMembership.status }).from(organizationMembership).where(eq(organizationMembership.personId, g.guardianPersonId));
+      expect(closed.status).toBe("left");
+      const [endedRow] = await tx.select({ after: auditLog.after }).from(auditLog).where(and(eq(auditLog.entityId, reopened.linkId), eq(auditLog.action, "iam.guardian_link.ended")));
+      expect(endedRow.after).toMatchObject({ accessClosed: true });
     });
   });
 
