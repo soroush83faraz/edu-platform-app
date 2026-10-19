@@ -2150,3 +2150,19 @@ is fixed in its own commit.
   buttons (`PersonDetail.credentialReach`) and shows that line. Everything about T that is not acting AS T — the page,
   the staff list, edits, teaching — stays principal A's; the organization admin keeps full reach. Test:
   `tests/int/guardian.test.ts` «security review D1».
+- **D2 — a closed guardian reopened by another school carries nothing of the first one.** `reopenGuardianAccess`
+  hands the caller a new password, so (a) it now runs `requireCredentialReach` (every live child of the guardian, the
+  new link included, inside the caller's scope — a closed account normally has no live link left, so this refuses only
+  an account disabled under another school's live link, and the whole link is refused with it), and (b) the guardian's
+  bell no longer outlives a link: guardian notifications record their child (`payload.studentProfileId`), and
+  `pruneGuardianNotifications` (src/modules/iam/guardian-notify.ts) DELETES the `guardian.*` rows of a guardian that
+  are not about one of their live children — run when links end (`endLinks`: «حذف از اولیا», a student's removal, a
+  colleague's removal), when the access closes and again when it reopens; the count lands in the audit rows
+  (`withdrawnNotifications`, the removal's `withdrawnGuardianNotifications`). Deleted rather than expired: they are
+  derived signals, and a dedupe key left behind would mute the event if the link came back; a colleague's work-item
+  bell is never touched. (c) The typed name replaces a stored one only for a guardian the caller's schools already
+  KNOW (`guardianKnownSql`: the organization scope; a colleague in scope; a guardian-only person every link of whom —
+  live OR ended — is to a student of the scope, a student who left every school counting for the last school they were
+  at), so the name another school stored is never overwritten, not even through a reopened account; within one school
+  the bulk placeholder still gets its real name, also after a sibling left. Tests: `tests/int/guardian.test.ts`
+  «security review D2», «D2b».

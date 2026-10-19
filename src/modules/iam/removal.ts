@@ -286,7 +286,7 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
 
   // «اولیا»: the student's guardian links (and the guardians' rows, locked ascending — person rows before the work items
   // below), and a removed colleague's own links as a guardian.
-  const guardians = plan.student ? await endGuardianLinksOfStudent(tx, ctx, plan.student.id) : { endedLinkIds: [], revokedRoleAssignmentIds: [], closedGuardianPersonIds: [] };
+  const guardians = plan.student ? await endGuardianLinksOfStudent(tx, ctx, plan.student.id) : { endedLinkIds: [], revokedRoleAssignmentIds: [], withdrawnNotifications: 0, closedGuardianPersonIds: [] };
   const asGuardian = await endGuardianLinksOfGuardian(tx, personId);
 
   // Open work items: out of the giver's count (header). Before the archive below; the order does not matter otherwise.
@@ -385,6 +385,8 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
         endedGuardianLinkIds: [...guardians.endedLinkIds, ...asGuardian.endedLinkIds],
         revokedGuardianRoleAssignmentIds: [...guardians.revokedRoleAssignmentIds, ...asGuardian.revokedRoleAssignmentIds],
         closedGuardianPersonIds: guardians.closedGuardianPersonIds,
+        // …and the ended children's notifications taken out of those guardians' bells (D2, 2026-10-19).
+        withdrawnGuardianNotifications: guardians.withdrawnNotifications + asGuardian.withdrawnNotifications,
       },
       tx,
     );

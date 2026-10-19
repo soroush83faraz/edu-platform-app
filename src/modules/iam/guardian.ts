@@ -45,6 +45,7 @@ import { audit } from "@/lib/audit";
 import { encryptInitialPassword } from "@/lib/crypto";
 import { forbidden, notFound, conflict, validation } from "@/lib/errors";
 import { findClassGroup, findSchoolById } from "@/modules/tenancy/repo";
+import { pruneGuardianNotifications } from "./guardian-notify";
 import { BULK_RELATION, CREDENTIALS_ORG_ADMIN_ONLY, guardianUsernameBase, isGuardianRelation, placeholderGuardianName, type GuardianAccountKind, type GuardianRelation } from "./guardian-policy";
 import { generateInitialPassword, hashPassword } from "./password";
 import { revokeAllForUser } from "./repo";
@@ -119,6 +120,36 @@ export function credentialReachSql(scope: AdminScope, personColumn: string): SQL
     join iam.student_profile wsp on wsp.id = wgl.student_profile_id
     where wgl.guardian_person_id = ${p} and wgl.status = 'active'
       and not ${personInScopeSql(scope, "wsp.person_id")})`;
+}
+
+/**
+ * SQL «the guardian in `personColumn` is KNOWN to `scope`» — the caller's schools already manage this person, so a
+ * name typed there may replace theirs (security review 2026-10-19, D2b) and the «اولیا» card, the sheet and the
+ * outcome of «افزودن ولی» may show their stored name, login and colleague status (D3):
+ *   - the organization scope;
+ *   - a COLLEAGUE inside the scope (`personInScopeSql` — they are on the caller's staff list anyway);
+ *   - a GUARDIAN-ONLY person every one of whose links, live OR ENDED, is to a student of the scope — by the admin
+ *     people rule, or, for a student who left every school (removed, graduated), by the school they were at last.
+ * Not known: a parent another school registered — even after that school's link ended and the account closed, when
+ * the next school's link reopens it — or a colleague of another school. Their stored name stays theirs (the school
+ * that typed it, and the organization admin, keep reading it) and a school that merely typed their phone learns
+ * nothing about them. Stricter than `credentialReachSql` (live links only) on purpose: reach is about what the caller
+ * could read AS the person today; knowing is about whose data the person's record already is.
+ */
+export function guardianKnownSql(scope: AdminScope, personColumn: string): SQL {
+  if (scope.kind === "organization") return sql`true`;
+  const p = columnRef(personColumn);
+  const ids = sql`${sql.param(scope.schoolIds, undefined)}::uuid[]`;
+  return sql`(case when ${guardianOnlySql(personColumn)} then not exists (
+      select 1 from iam.guardian_link kgl
+      join iam.student_profile ksp on ksp.id = kgl.student_profile_id
+      where kgl.guardian_person_id = ${p}
+        and not (
+          ${personInScopeSql(scope, "ksp.person_id")}
+          or (not exists (select 1 from academic.school_enrollment kse where kse.student_profile_id = ksp.id and ${liveSchoolEnrollmentSql("kse")})
+              and (select lse.school_id from academic.school_enrollment lse where lse.student_profile_id = ksp.id
+                   order by lse.starts_on desc, lse.created_at desc limit 1) = any(${ids}))))
+    else ${personInScopeSql(scope, personColumn)} end)`;
 }
 
 /**
@@ -389,16 +420,31 @@ async function revokeLinkRoles(tx: Tx, linkIds: readonly string[]): Promise<stri
   return rows.map((r) => r.id);
 }
 
-/** Ends live links (status `archived`, `archived_at`) and their roles; the ids of what changed. */
-async function endLinks(tx: Tx, linkIds: readonly string[]): Promise<{ endedLinkIds: string[]; revokedRoleAssignmentIds: string[] }> {
-  if (linkIds.length === 0) return { endedLinkIds: [], revokedRoleAssignmentIds: [] };
+interface EndedLinks {
+  endedLinkIds: string[];
+  revokedRoleAssignmentIds: string[];
+  /** The ended children's notifications deleted from their guardians' bells (`pruneGuardianNotifications`). */
+  withdrawnNotifications: number;
+}
+
+/**
+ * Ends live links (status `archived`, `archived_at`) and their roles, and takes the ended children's notifications out
+ * of those guardians' bells (D2); the ids of what changed. The guardian rows are locked by the caller.
+ */
+async function endLinks(tx: Tx, linkIds: readonly string[]): Promise<EndedLinks> {
+  if (linkIds.length === 0) return { endedLinkIds: [], revokedRoleAssignmentIds: [], withdrawnNotifications: 0 };
   const ended = await tx
     .update(guardianLink)
     .set({ status: "archived", archivedAt: sql`now()` })
     .where(and(inArray(guardianLink.id, [...linkIds]), eq(guardianLink.status, "active")))
-    .returning({ id: guardianLink.id });
+    .returning({ id: guardianLink.id, guardianPersonId: guardianLink.guardianPersonId });
   const endedLinkIds = ended.map((r) => r.id);
-  return { endedLinkIds, revokedRoleAssignmentIds: await revokeLinkRoles(tx, endedLinkIds) };
+  const revokedRoleAssignmentIds = await revokeLinkRoles(tx, endedLinkIds);
+  const withdrawnNotifications = await pruneGuardianNotifications(
+    tx,
+    ended.map((r) => r.guardianPersonId),
+  );
+  return { endedLinkIds, revokedRoleAssignmentIds, withdrawnNotifications };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -412,8 +458,10 @@ async function isGuardianOnly(tx: Tx, personId: string): Promise<boolean> {
 
 /**
  * A guardian-only person (locked by the caller) with no live link left: their login closes like a removal's —
- * membership `left`, the printable initial password cleared, the account `disabled`, every session revoked — audited
- * as `iam.guardian.access_closed`. A colleague keeps their account (only the derived role went with the link), and so
+ * membership `left`, the printable initial password cleared, the account `disabled`, every session revoked, and the
+ * bell emptied of guardian notifications (D2: whoever reopens the account later must not find a former child's name
+ * there — `endLinks` pruned them already; this keeps «closed» meaning «clean» for any caller) — audited as
+ * `iam.guardian.access_closed`. A colleague keeps their account (only the derived role went with the link), and so
  * does a guardian who still has a child here. Returns whether anything closed.
  */
 async function closeGuardianAccessIfOrphaned(tx: Tx, ctx: IamCtx, guardianPersonId: string): Promise<boolean> {
@@ -440,13 +488,14 @@ async function closeGuardianAccessIfOrphaned(tx: Tx, ctx: IamCtx, guardianPerson
   const [acct] = await tx.select({ status: userAccount.status }).from(userAccount).where(eq(userAccount.id, m.userAccountId)).limit(1);
   if (acct && acct.status !== "disabled") await tx.update(userAccount).set({ status: "disabled" }).where(eq(userAccount.id, m.userAccountId));
   const revokedSessions = await revokeAllForUser(tx, m.userAccountId);
-  if (m.status === "left" && acct?.status === "disabled" && cleared.length === 0 && revokedSessions === 0) return false;
+  const withdrawnNotifications = await pruneGuardianNotifications(tx, [guardianPersonId]);
+  if (m.status === "left" && acct?.status === "disabled" && cleared.length === 0 && revokedSessions === 0 && withdrawnNotifications === 0) return false;
   await audit(
     ctx,
     "iam.guardian.access_closed",
     { schema: "iam", table: "person", id: guardianPersonId },
     { membershipStatus: m.status, accountStatus: acct?.status ?? null },
-    { membershipStatus: "left", accountStatus: "disabled", revokedSessions, clearedInitialPassword: cleared.length > 0 },
+    { membershipStatus: "left", accountStatus: "disabled", revokedSessions, clearedInitialPassword: cleared.length > 0, withdrawnNotifications },
     tx,
   );
   return true;
@@ -459,7 +508,9 @@ async function closeGuardianAccessIfOrphaned(tx: Tx, ctx: IamCtx, guardianPerson
  * the account. The new password goes to the caller, so this is acting AS the guardian: every live child of theirs —
  * the new link included — must be inside the caller's scope (`requireCredentialReach`, FORBIDDEN otherwise; a closed
  * account normally has no live link left, so this refuses only an account disabled under live links of another
- * school). Audited as `iam.guardian.access_reopened` (no secret in it). Null when nothing was closed.
+ * school). The bell keeps only the live children's notifications (D2 — the former children's are pruned again here, in
+ * case any outlived the close). Audited as `iam.guardian.access_reopened` (no secret in it). Null when nothing was
+ * closed.
  */
 async function reopenGuardianAccess(tx: Tx, ctx: IamCtx, scope: AdminScope, guardianPersonId: string): Promise<{ loginIdentifier: string; initialPassword: string } | null> {
   const [m] = await tx
@@ -482,12 +533,13 @@ async function reopenGuardianAccess(tx: Tx, ctx: IamCtx, scope: AdminScope, guar
   await tx.update(userAccount).set({ status: "active", mustChangePassword: true, passwordChangedAt: null, failedLoginCount: 0, lockedUntil: null }).where(eq(userAccount.id, m.userAccountId));
   await clearRecentFailures(tx, m.loginIdentifier);
   await tx.update(organizationMembership).set({ status: "active", leftAt: null }).where(eq(organizationMembership.id, m.id));
+  const withdrawnNotifications = await pruneGuardianNotifications(tx, [guardianPersonId]);
   await audit(
     ctx,
     "iam.guardian.access_reopened",
     { schema: "iam", table: "person", id: guardianPersonId },
     { membershipStatus: m.status, accountStatus: m.accountStatus },
-    { membershipStatus: "active", accountStatus: "active", userAccountId: m.userAccountId },
+    { membershipStatus: "active", accountStatus: "active", userAccountId: m.userAccountId, withdrawnNotifications },
     tx,
   );
   return { loginIdentifier: m.loginIdentifier, initialPassword };
@@ -511,7 +563,7 @@ export interface AddGuardianResult {
   accountKind: GuardianAccountKind;
   /** The guardian was linked to this student already (the relation may have been updated). */
   alreadyLinked: boolean;
-  /** The typed name replaced the guardian's stored one (an existing guardian all of whose children the caller manages). */
+  /** The typed name replaced the guardian's stored one (an existing guardian the caller's schools already know — D2b). */
   renamed: boolean;
   /** Plaintext, returned ONCE: a new account, or a reopened one. Null otherwise. */
   account: { loginIdentifier: string; initialPassword: string } | null;
@@ -520,9 +572,11 @@ export interface AddGuardianResult {
 /**
  * «افزودن ولی» on the student page: name + phone + relation. Scope and permission first (header); the student
  * locked, in scope and live; the guardian found or created by the phone rules; then the link. Adding a phone that
- * is ALREADY a guardian here links that same person (one account across siblings) and, when every child of theirs is
- * in the caller's scope and they are not a colleague, replaces their stored name with the typed one — the way a bulk
- * placeholder («ولیِ لیلا …») gets its real name. A colleague's name is the staff pages' to change.
+ * is ALREADY a guardian here links that same person (one account across siblings) and, when the caller's schools
+ * already know them (`guardianKnownSql`: every link of theirs, live or ended, to a student of the scope), replaces
+ * their stored name with the typed one — the way a bulk placeholder («ولیِ لیلا …») gets its real name. A name another
+ * school stored is never overwritten (D2b — not even when this link reopens that school's closed account); the typed
+ * name then only names a brand-new person. A colleague's name is the staff pages' to change.
  */
 export async function addGuardian(tx: Tx, ctx: IamCtx, input: AddGuardianInput): Promise<AddGuardianResult> {
   const scope = await getPermissionScope(tx, ctx, "iam.person.write");
@@ -535,13 +589,15 @@ export async function addGuardian(tx: Tx, ctx: IamCtx, input: AddGuardianInput):
   const ensured = await ensureGuardianPerson(tx, ctx, { phone, names, child: student });
   const outcome = await linkGuardian(tx, ctx, scope, student, ensured.personId, input.relation);
 
+  // D2b: the typed name replaces the stored one only for a guardian the caller's schools already know (every link,
+  // live or ended, theirs) — never the name another school stored, not even through a reopened account.
   let renamed = false;
   if (ensured.kind === "existing") {
-    const res = await tx.execute<{ first_name: string; last_name: string; within: boolean }>(sql`
-      select p.first_name, p.last_name, ${credentialReachSql(scope, "p.id")} as within
+    const res = await tx.execute<{ first_name: string; last_name: string; known: boolean }>(sql`
+      select p.first_name, p.last_name, ${guardianKnownSql(scope, "p.id")} as known
       from iam.person p where p.id = ${ensured.personId}::uuid`);
     const g = res.rows[0];
-    if (g && g.within && (g.first_name !== names.firstName || g.last_name !== names.lastName)) {
+    if (g && g.known && (g.first_name !== names.firstName || g.last_name !== names.lastName)) {
       await tx.update(person).set(names).where(eq(person.id, ensured.personId));
       await audit(ctx, "iam.person.updated", { schema: "iam", table: "person", id: ensured.personId }, { firstName: g.first_name, lastName: g.last_name }, { ...names, kind: "guardian" }, tx);
       renamed = true;
@@ -574,7 +630,7 @@ export async function unlinkGuardian(tx: Tx, ctx: IamCtx, input: { linkId: strin
   await lockPersons(tx, [facts.personId]);
   await requirePersonInScope(tx, scope, facts.personId);
   await lockPersons(tx, [link.guardianPersonId]);
-  const { endedLinkIds, revokedRoleAssignmentIds } = await endLinks(tx, [link.id]);
+  const { endedLinkIds, revokedRoleAssignmentIds, withdrawnNotifications } = await endLinks(tx, [link.id]);
   if (endedLinkIds.length === 0) return { alreadyEnded: true, accessClosed: false };
   const accessClosed = await closeGuardianAccessIfOrphaned(tx, ctx, link.guardianPersonId);
   await audit(
@@ -582,7 +638,7 @@ export async function unlinkGuardian(tx: Tx, ctx: IamCtx, input: { linkId: strin
     "iam.guardian_link.ended",
     { schema: "iam", table: "guardian_link", id: link.id },
     { status: "active" },
-    { status: "archived", guardianPersonId: link.guardianPersonId, studentProfileId: link.studentProfileId, relation: link.relation, revokedRoleAssignmentIds, accessClosed },
+    { status: "archived", guardianPersonId: link.guardianPersonId, studentProfileId: link.studentProfileId, relation: link.relation, revokedRoleAssignmentIds, accessClosed, withdrawnNotifications },
     tx,
   );
   return { alreadyEnded: false, accessClosed };
@@ -885,41 +941,41 @@ export async function listClassGuardianCredentials(tx: Tx, ctx: IamCtx, classGro
 // removal (src/modules/iam/removal.ts)
 // ---------------------------------------------------------------------------------------------------------------
 
-export interface EndedGuardianLinks {
-  endedLinkIds: string[];
-  revokedRoleAssignmentIds: string[];
+export interface EndedGuardianLinks extends EndedLinks {
   /** Guardian-only persons whose access closed because this was their last child here. */
   closedGuardianPersonIds: string[];
 }
 
 /**
  * A STUDENT is being removed (its person row is already FOR UPDATE — ./removal): every live link of theirs ends with
- * its derived role, and each guardian left without a live child here loses their login (`closeGuardianAccessIfOrphaned`,
- * each audited). The guardian rows are locked in ascending order, after the student's (the lock order above).
+ * its derived role and the child's notifications in those guardians' bells (D2), and each guardian left without a
+ * live child here loses their login (`closeGuardianAccessIfOrphaned`, each audited). The guardian rows are locked in
+ * ascending order, after the student's (the lock order above).
  */
 export async function endGuardianLinksOfStudent(tx: Tx, ctx: IamCtx, studentProfileId: string): Promise<EndedGuardianLinks> {
   const live = await tx
     .select({ id: guardianLink.id, guardianPersonId: guardianLink.guardianPersonId })
     .from(guardianLink)
     .where(and(eq(guardianLink.studentProfileId, studentProfileId), eq(guardianLink.status, "active")));
-  if (live.length === 0) return { endedLinkIds: [], revokedRoleAssignmentIds: [], closedGuardianPersonIds: [] };
+  if (live.length === 0) return { endedLinkIds: [], revokedRoleAssignmentIds: [], withdrawnNotifications: 0, closedGuardianPersonIds: [] };
   const guardians = [...new Set(live.map((l) => l.guardianPersonId))].sort();
   await lockPersons(tx, guardians);
-  const { endedLinkIds, revokedRoleAssignmentIds } = await endLinks(
+  const ended = await endLinks(
     tx,
     live.map((l) => l.id),
   );
   const closedGuardianPersonIds: string[] = [];
   for (const g of guardians) if (await closeGuardianAccessIfOrphaned(tx, ctx, g)) closedGuardianPersonIds.push(g);
-  return { endedLinkIds, revokedRoleAssignmentIds, closedGuardianPersonIds };
+  return { ...ended, closedGuardianPersonIds };
 }
 
 /**
  * A COLLEAGUE who is also a guardian is being removed (their person row is FOR UPDATE; the removal revokes every role
  * of theirs and disables their login itself): their own live guardian links end too, so no live link points at a
- * removed person. The children's rows are not locked — a link's end needs nothing of theirs.
+ * removed person (and their bell drops those children's rows). The children's rows are not locked — a link's end
+ * needs nothing of theirs.
  */
-export async function endGuardianLinksOfGuardian(tx: Tx, guardianPersonId: string): Promise<{ endedLinkIds: string[]; revokedRoleAssignmentIds: string[] }> {
+export async function endGuardianLinksOfGuardian(tx: Tx, guardianPersonId: string): Promise<EndedLinks> {
   const live = await tx
     .select({ id: guardianLink.id })
     .from(guardianLink)

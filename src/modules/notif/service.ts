@@ -27,6 +27,8 @@ export interface NotifyPayload {
   sourceKind?: string | null;
   sourceId?: string | null;
   deepLink?: string | null;
+  /** Structured facts for the producer's own later queries (never rendered); `{}` when omitted. */
+  payload?: Record<string, unknown>;
   /**
    * Per-recipient idempotency key: the same (recipient, key) is inserted once (`ON CONFLICT DO NOTHING`).
    * Receives the recipient id so producers can build `wi:<id>:assigned:<person>`; omit for "always a new row".
@@ -54,6 +56,7 @@ export async function notifyMany(tx: Tx, ctx: NotifyCtx, personIds: readonly str
           typeCode: payload.typeCode,
           title: payload.title.slice(0, 200),
           body: payload.body ?? null,
+          payload: payload.payload ?? {},
           sourceKind: payload.sourceKind ?? null,
           sourceId: payload.sourceId ?? null,
           deepLink: payload.deepLink ?? null,

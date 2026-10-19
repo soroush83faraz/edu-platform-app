@@ -505,6 +505,65 @@ describe("«اولیا» — guardians", () => {
     });
   });
 
+  it("security review D2: a closed guardian reopened by another school's manager — only with every live child in that scope, the former child's notifications gone, the stored name kept", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const guardianBell = (personId: string) =>
+        tx.select({ title: notification.title, typeCode: notification.typeCode }).from(notification).where(and(eq(notification.recipientPersonId, personId), sql`${notification.typeCode} like 'guardian.%'`));
+      // School B's parent G (phone 16) of رها, with a «غیبت» and a «کارنامه» in their bell.
+      const g = await add(tx, w.admin, w.sB, 16, "mother", { firstName: "مریم", lastName: "شریفی" });
+      await takeAttendance(tx, w.admin, { classGroupId: w.schoolB.classGroupId, date: tehranToday(), entries: [{ studentProfileId: w.sB.studentProfileId, status: "absent" }] });
+      await notifyGuardiansOfReportCard(tx, w.admin, { academicYearId: f.YEAR_A, month: 7, monthName: "مهر", studentProfileIds: [w.sB.studentProfileId] });
+      expect((await guardianBell(g.guardianPersonId)).map((n) => n.title).sort()).toEqual([`غیبت: ${w.sB.name}`, `کارنامهٴ ماه مهر: ${w.sB.name}`].sort());
+
+      // School B ends the link: the account closes and the bell keeps nothing about رها.
+      expect(await unlinkGuardian(tx, w.admin, { linkId: g.linkId })).toEqual({ alreadyEnded: false, accessClosed: true });
+      expect(await guardianBell(g.guardianPersonId)).toEqual([]);
+      const [ended] = await tx.select({ after: auditLog.after }).from(auditLog).where(and(eq(auditLog.entityId, g.linkId), eq(auditLog.action, "iam.guardian_link.ended")));
+      expect(ended.after).toMatchObject({ withdrawnNotifications: 2, accessClosed: true });
+      // A row that outlived the close (a roll call racing the unlink) — the reopen prunes it too.
+      await tx.insert(notification).values({ organizationId: f.ORG_A, recipientPersonId: g.guardianPersonId, typeCode: "guardian.child_absent", title: `غیبت: ${w.sB.name}`, payload: { studentProfileId: w.sB.studentProfileId } });
+
+      // Principal A types phone 16 for لیلا: the same person, reopened with a new password for principal A (every live
+      // child of G is now A's) — but G's bell has no word of رها and the name school B stored stays.
+      const reopened = await add(tx, w.principalA, w.s1, 16, "mother", { firstName: "زهره", lastName: "نیک‌خواه" });
+      expect(reopened).toMatchObject({ guardianPersonId: g.guardianPersonId, renamed: false });
+      expect(reopened.account?.initialPassword).toMatch(/^\S{6,}$/);
+      expect(await guardianBell(g.guardianPersonId)).toEqual([]);
+      const [stored] = await tx.select({ firstName: schema.person.firstName, lastName: schema.person.lastName }).from(schema.person).where(eq(schema.person.id, g.guardianPersonId));
+      expect(stored).toEqual({ firstName: "مریم", lastName: "شریفی" });
+      // …and a new «غیبت» of the new child reaches the bell as usual.
+      await takeAttendance(tx, w.admin, { classGroupId: f.CLASS_GROUP_A1, date: tehranToday(), entries: [{ studentProfileId: w.s1.studentProfileId, status: "absent" }] });
+      expect((await guardianBell(g.guardianPersonId)).map((n) => n.title)).toEqual([`غیبت: ${w.s1.name}`]);
+
+      // The organization admin knows every school: their typed name does replace it.
+      expect((await add(tx, w.admin, w.s1, 16, "mother", { firstName: "زهره", lastName: "نیک‌خواه" })).renamed).toBe(true);
+
+      // A guardian whose account is disabled while a live link to school B remains (an anomaly — say a manual
+      // disable): principal A's link would hand them the new password, so it is refused as a whole.
+      const g17 = await add(tx, w.admin, w.sB2, 17, "father", { firstName: "حسن", lastName: "کریمی" });
+      const [m17] = await tx.select({ accountId: organizationMembership.userAccountId }).from(organizationMembership).where(eq(organizationMembership.personId, g17.guardianPersonId));
+      await tx.update(userAccount).set({ status: "disabled" }).where(eq(userAccount.id, m17.accountId));
+      await expect(sub(tx, (sp) => add(sp, w.principalA, w.s3, 17, "father", { firstName: "حسن", lastName: "کریمی" }))).rejects.toSatisfy(isError("FORBIDDEN", GUARDIAN_MESSAGES.orgAdminOnly));
+      expect((await tx.select({ id: guardianLink.id }).from(guardianLink).where(and(eq(guardianLink.guardianPersonId, g17.guardianPersonId), eq(guardianLink.status, "active")))).length).toBe(1);
+    });
+  });
+
+  it("security review D2b: inside one school the typed name still replaces the placeholder — even after a sibling left the school", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      // The bulk creates «ولیِ لیلا نیک‌خواه» for لیلا and سارا (phone 11, both school A).
+      await bulkCreateClassGuardians(tx, w.admin, { classGroupId: f.CLASS_GROUP_A1 });
+      await bulkCreateClassGuardians(tx, w.admin, { classGroupId: f.CLASS_GROUP_A2 });
+      // لیلا is removed (her link ends, she belongs to no school any more) — سارا stays.
+      await removePerson(tx, w.admin, { personId: w.s1.personId, kind: "student" });
+      // Principal A names the parent on سارا's card: A's own former student does not make the guardian a stranger.
+      const named = await add(tx, w.principalA, w.s2, 11, "mother", { firstName: "زهره", lastName: "نیک‌خواه" });
+      expect(named).toMatchObject({ alreadyLinked: true, renamed: true });
+      expect((await listGuardiansOfStudent(tx, w.principalA, w.s2.personId))[0]).toMatchObject({ firstName: "زهره", lastName: "نیک‌خواه" });
+    });
+  });
+
   it("removing a student ends their links; a guardian left without a child loses their login; a new link opens it again; a removed student gets no guardian", async () => {
     await rolledBack(async (tx) => {
       const w = await buildWorld(tx);
