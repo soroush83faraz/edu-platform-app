@@ -388,7 +388,7 @@ describe("creator actions — «اتمام» and «ویرایش»", () => {
 
       // Later: the familiar «تمدید».
       const later = new Date(original.getTime() + 7 * 86_400_000);
-      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, dueAt: later })).toEqual({ changed: ["dueAt"], notified: 2 });
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, dueAt: later })).toEqual({ changed: ["dueAt"], notified: 2, unlinkKeys: [] });
       const [wi] = await tx.select({ dueAt: workItem.dueAt }).from(workItem).where(eq(workItem.id, res.id));
       expect(wi.dueAt?.toISOString()).toBe(later.toISOString());
       let notifs = await dueNotifs();
@@ -408,7 +408,7 @@ describe("creator actions — «اتمام» and «ویرایش»", () => {
       expect(notifs.filter((n) => n.title === `مهلت تکلیف «تمرین ۷» به ${formatJalaliDateTime(earlier)} تغییر کرد`)).toHaveLength(2);
 
       // Removed: an item may live without a deadline, as it may be created without one.
-      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, dueAt: null })).toEqual({ changed: ["dueAt"], notified: 2 });
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, dueAt: null })).toEqual({ changed: ["dueAt"], notified: 2, unlinkKeys: [] });
       const [cleared] = await tx.select({ dueAt: workItem.dueAt }).from(workItem).where(eq(workItem.id, res.id));
       expect(cleared.dueAt).toBeNull();
       notifs = await dueNotifs();
@@ -438,12 +438,12 @@ describe("creator actions — «اتمام» and «ویرایش»", () => {
         (await tx.select({ title: workItem.title, description: workItem.description, priority: workItem.priority, dueAt: workItem.dueAt }).from(workItem).where(eq(workItem.id, res.id)))[0];
 
       // The title alone (a typo), with the same due passed back unchanged — not a deadline change, not re-checked.
-      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, title: "  تمرین صفحهٴ ۴۳ ", dueAt: due })).toEqual({ changed: ["title"], notified: 2 });
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, title: "  تمرین صفحهٴ ۴۳ ", dueAt: due })).toEqual({ changed: ["title"], notified: 2, unlinkKeys: [] });
       expect(await readCore()).toEqual({ title: "تمرین صفحهٴ ۴۳", description: "سوال‌های ۱ تا ۵", priority: "normal", dueAt: due });
-      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, description: "سوال‌های ۱ تا ۸" })).toEqual({ changed: ["description"], notified: 2 });
-      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, priority: "urgent" })).toEqual({ changed: ["priority"], notified: 2 });
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, description: "سوال‌های ۱ تا ۸" })).toEqual({ changed: ["description"], notified: 2, unlinkKeys: [] });
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, priority: "urgent" })).toEqual({ changed: ["priority"], notified: 2, unlinkKeys: [] });
       // An empty description clears it.
-      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, description: null, priority: "high" })).toEqual({ changed: ["description", "priority"], notified: 2 });
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, description: null, priority: "high" })).toEqual({ changed: ["description", "priority"], notified: 2, unlinkKeys: [] });
       expect(await readCore()).toEqual({ title: "تمرین صفحهٴ ۴۳", description: null, priority: "high", dueAt: due });
 
       const notifs = await updatedNotifs();
@@ -455,7 +455,7 @@ describe("creator actions — «اتمام» and «ویرایش»", () => {
 
       // Content and deadline in one save: ONE notification per person (the due one), naming the content change.
       const next = new Date(Date.now() + 2 * 86_400_000);
-      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, title: "تمرین صفحهٴ ۴۴", dueAt: next })).toEqual({ changed: ["title", "dueAt"], notified: 2 });
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, title: "تمرین صفحهٴ ۴۴", dueAt: next })).toEqual({ changed: ["title", "dueAt"], notified: 2, unlinkKeys: [] });
       const both = await tx.select({ title: notification.title, body: notification.body }).from(notification).where(eq(notification.typeCode, "work_item.due_extended"));
       expect(both).toHaveLength(2);
       expect(both[0]).toEqual({ title: `مهلت تکلیف «تمرین صفحهٴ ۴۴» تا ${formatJalaliDateTime(next)} تمدید شد`, body: "عنوان هم تغییر کرد." });
@@ -477,8 +477,8 @@ describe("creator actions — «اتمام» and «ویرایش»", () => {
       const res = await createWorkItem(tx, teacher, { typeCode: "task", title: "انشا", description: "موضوع آزاد", priority: "high", dueAt: due, recipients: { kind: "class_offering", id: f.OFFERING_A1, excludePersonIds: [] } });
       const notificationsBefore = (await tx.select({ id: notification.id }).from(notification)).length;
 
-      expect(await updateWorkItem(tx, teacher, { workItemId: res.id })).toEqual({ changed: [], notified: 0 });
-      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, title: " انشا ", description: "موضوع آزاد", priority: "high", dueAt: new Date(due.getTime()) })).toEqual({ changed: [], notified: 0 });
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id })).toEqual({ changed: [], notified: 0, unlinkKeys: [] });
+      expect(await updateWorkItem(tx, teacher, { workItemId: res.id, title: " انشا ", description: "موضوع آزاد", priority: "high", dueAt: new Date(due.getTime()) })).toEqual({ changed: [], notified: 0, unlinkKeys: [] });
 
       const trail = await tx.select({ action: auditLog.action }).from(auditLog).where(eq(auditLog.entityId, res.id));
       expect(trail.map((t) => t.action)).toEqual(["workspace.work_item.created"]);

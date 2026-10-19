@@ -21,10 +21,10 @@ import { env } from "@/lib/env";
 import { FA_MESSAGES, HTTP_STATUS } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { FILE_LIMITS, FILE_MESSAGES } from "@/modules/files/limits";
-import { decodeHeaderName } from "@/modules/files/names";
 import { ReceiveError, receiveToTemp, type Received } from "@/modules/files/receive";
 import { sniffFile } from "@/modules/files/sniff";
 import { discardTemp, freeBytes, removeStored, sweepTemp, tempDir, uploadSlots } from "@/modules/files/storage";
+import { isSameOriginUpload, readUploadRequest } from "@/modules/files/upload-request";
 import { authorizeUploadGate, recordUploadGate } from "@/modules/workspace/file-gates";
 
 export const dynamic = "force-dynamic";
@@ -40,18 +40,6 @@ function fromResult(r: Extract<Result<unknown>, { ok: false }>): NextResponse {
   return fail(HTTP_STATUS[r.code], r.code, r.message);
 }
 
-function sameOrigin(request: NextRequest): boolean {
-  const site = request.headers.get("sec-fetch-site");
-  if (site !== null && site !== "same-origin") return false;
-  const origin = request.headers.get("origin");
-  if (!origin) return false;
-  try {
-    return new URL(origin).origin === new URL(env.PUBLIC_ORIGIN).origin;
-  } catch {
-    return false;
-  }
-}
-
 const RECEIVE_REFUSAL: Record<ReceiveError["reason"], { status: number; message: string }> = {
   too_large: { status: 413, message: FILE_MESSAGES.tooLarge },
   incomplete: { status: 400, message: FILE_MESSAGES.incomplete },
@@ -60,20 +48,16 @@ const RECEIVE_REFUSAL: Record<ReceiveError["reason"], { status: number; message:
 };
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  if (!sameOrigin(request)) return fail(403, "FORBIDDEN", FA_MESSAGES.FORBIDDEN);
+  if (!isSameOriginUpload(request.headers, env.PUBLIC_ORIGIN)) return fail(403, "FORBIDDEN", FA_MESSAGES.FORBIDDEN);
   const release = slots.tryAcquire();
   if (!release) return fail(503, "RATE_LIMITED", FILE_MESSAGES.busy);
   let received: Received | null = null;
   let plannedKey: string | null = null;
   let committed = false;
   try {
-    const query = request.nextUrl.searchParams;
-    // Exactly these three inputs; the strict schema refuses anything malformed. The name never reaches a path.
-    const raw: Record<string, unknown> = { purpose: query.get("purpose") ?? undefined, name: decodeHeaderName(request.headers.get("x-file-name")) ?? undefined };
-    const workItemId = query.get("workItemId");
-    if (workItemId) raw.workItemId = workItemId;
-    const lengthHeader = request.headers.get("content-length");
-    const announced = lengthHeader && /^\d{1,12}$/.test(lengthHeader) ? Number(lengthHeader) : null;
+    // Exactly three inputs (purpose, workItemId, the name) — the strict schema refuses anything malformed; the name never
+    // reaches a path.
+    const { meta: raw, announcedBytes: announced } = readUploadRequest(request.nextUrl.searchParams, request.headers);
     if (announced !== null && announced > FILE_LIMITS.maxFileBytes) return fail(413, "VALIDATION", FILE_MESSAGES.tooLarge);
 
     const ticket = await authorizeUploadGate(raw, announced);
