@@ -19,17 +19,38 @@ export interface ManageActor {
   assignments: readonly Assignment[];
 }
 
-export function managesItem(actor: ManageActor, item: { createdByPersonId: string }, actorIsAssignee: boolean): boolean {
-  if (item.createdByPersonId === actor.personId) return true;
+export function managesItem(actor: ManageActor, item: { createdByPersonId: string; typeCode: string }, actorIsAssignee: boolean): boolean {
+  // The creator of a type whose creator is no participant (a guardian's «پیام ولی») never manages it.
+  if (item.createdByPersonId === actor.personId) return creatorParticipates(item.typeCode);
   return !actorIsAssignee && canBroadly(actor.assignments, "workspace.work_item.update");
 }
 
 /**
  * Does ONE assignee's «انجام شد» close the item for everyone? For an `admin_request` («درخواست اداری» — the
  * counselor's «ارجاع به مدیریت», addressed to every manager of the school) yes: a request to an office is answered
- * once, by whichever addressee answers it, and that answer — the transition's note — is the decision. Every other
- * type keeps «done when every assignee is done» (a class task, named people). Pure; used by `changeStatus`.
+ * once, by whichever addressee answers it, and that answer — the transition's note — is the decision. Likewise a
+ * `parent_message` («پیام ولی», 2026-10-19): the school answers a guardian once. Every other type keeps «done when
+ * every assignee is done» (a class task, named people). Pure; used by `changeStatus`.
  */
 export function closesOnFirstAnswer(typeCode: string): boolean {
-  return typeCode === "admin_request";
+  return typeCode === "admin_request" || typeCode === "parent_message";
+}
+
+/**
+ * Is the creator of an item of this type one of its participants — the creator's watcher row and read inbox row
+ * («کارهایی که دادم»), opening it (`canViewWorkItem`), managing it (`managesItem`)? Yes for every type but a
+ * `parent_message` (owner 2026-10-19, «ارتباط ولی و مدرسه»): its creator is the GUARDIAN who wrote it, who never opens
+ * the confidential item (its addressees, its status trail, who answered) — they read its status and the answer through
+ * `workspace.guardian_message` (src/modules/iam/guardian-messages.ts), as the counseling file reads its referrals.
+ */
+export function creatorParticipates(typeCode: string): boolean {
+  return typeCode !== "parent_message";
+}
+
+/**
+ * Must an addressee's closing answer carry text? For a `parent_message` yes: the answer IS what the guardian waits
+ * for (an empty «ثبت پاسخ» would tell them «پاسخ داده شد» with nothing to read). An `admin_request` keeps it optional.
+ */
+export function answerNeedsText(typeCode: string): boolean {
+  return typeCode === "parent_message";
 }

@@ -116,19 +116,21 @@ export function guardianDemoLabel(children: ReadonlyArray<{ name: string; classN
 }
 
 /** The guardian bell's events (scripts/catalog.ts `guardian.*`). */
-export type GuardianEvent = "absent" | "report_card";
+export type GuardianEvent = "absent" | "report_card" | "message_answered";
 
 /**
  * Title of a guardian's notification: the kind of event and the child's name — nothing else (no درس, no زنگ, no
- * teacher's note, no level): «غیبت: لیلا نیک‌خواه», «کارنامهٴ ماه مهر: لیلا نیک‌خواه». No body is ever written.
+ * teacher's note, no level, never the school's answer): «غیبت: لیلا نیک‌خواه», «کارنامهٴ ماه مهر: لیلا نیک‌خواه»,
+ * «پاسخ مدرسه به پیام شما دربارهٴ لیلا نیک‌خواه». No body is ever written.
  */
 export function guardianNotificationTitle(event: GuardianEvent, childName: string, monthName?: string): string {
   if (event === "absent") return `غیبت: ${childName}`;
+  if (event === "message_answered") return `پاسخ مدرسه به پیام شما دربارهٴ ${childName}`;
   return monthName ? `کارنامهٴ ماه ${monthName}: ${childName}` : `کارنامهٴ ماهانه: ${childName}`;
 }
 
 /** The guardian pages (`/child/*`), always naming the child. */
-export type ChildPage = "work" | "attendance" | "report-card" | "timetable";
+export type ChildPage = "work" | "attendance" | "report-card" | "timetable" | "messages";
 
 export function childHref(page: ChildPage, studentProfileId: string, extra?: Record<string, string | number>): string {
   const q = new URLSearchParams({ child: studentProfileId });

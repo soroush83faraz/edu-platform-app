@@ -18,7 +18,8 @@
 // with a direct UPDATE (one precomputed argon2 hash instead of ~600 extra hashes). «اولیا» (2026-10-18): a few
 // guardians per school through the guardian service — one with TWO children (siblings in two classes) and a teacher
 // who is also a parent (the «ولی» role joins the teacher's own account) — before the کارتابل and the roll calls, so
-// their bell holds real «غیبت» (and, in the دبستان, «کارنامه») notifications.
+// their bell holds real «غیبت» (and, in the دبستان, «کارنامه») notifications. «ارتباط ولی و مدرسه» (2026-10-19): the
+// first guardian's two sample «پیام به مدرسه» — a question to a teacher, answered, and an open suggestion to the principal.
 //
 // Deterministic and idempotent: ids are sha256("edu-pilot:"+key) (v7-shaped, like demoId), phones live in one block
 // per school (+9893510xxxxx ALK, +9893520xxxxx FRZ, +9893530xxxxx HL4 — never the demo block), names come from the
@@ -45,6 +46,8 @@ import { hashPassword } from "../src/modules/iam/password";
 import { IMPLICIT_PERMISSIONS, PERMISSIONS } from "../src/modules/iam/permissions";
 import { listValidAssignments } from "../src/modules/iam/repo";
 import { addGuardian } from "../src/modules/iam/guardian";
+import { childMessagesPage, sendGuardianMessage } from "../src/modules/iam/guardian-messages";
+import type { MessageDestination, MessageKind } from "../src/modules/iam/guardian-message-policy";
 import { createStaff, createStudent, findAccountOfPerson, setPersonPhones, type IamCtx } from "../src/modules/iam/service";
 import { findAcademicYearByName, findClassGroupByName, findDefaultBranch, findGradeLevelByCode, findOffering, findSchoolByCode, findSubjectByCode } from "../src/modules/tenancy/repo";
 import { createAcademicYear, createClassGroup, createClassOffering, createSchool, createSubject, ensureCatalogYears, updateBranch, upsertTerm } from "../src/modules/tenancy/service";
@@ -76,6 +79,8 @@ const {
   counselorNote,
   teacherReport,
   referral,
+  guardianLink,
+  guardianMessage,
 } = schema;
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -504,6 +509,8 @@ export function expectedCounts(scale: number): ExpectedCounts {
       counselors += 1;
       workItems += 1;
     }
+    // «ارتباط ولی و مدرسه»: the first guardian's sample messages (a school with guardians — `seedGuardians`).
+    if (spec.classes.length >= 2 && spec.teachers.length > 0) workItems += SAMPLE_GUARDIAN_MESSAGES.length;
     timetableSlots += spec.classes.reduce((n, c) => n + c.subjects.reduce((m, code) => m + sessionsOf(spec.key, `${c.name}:${code}`), 0), 0);
   }
   return { organizations: SEEDED_PILOT_ORGS.length, schools: SEEDED_PILOT_ORGS.length, classGroups, offerings, teachers, counselors, students, workItems, timetableSlots };
@@ -980,6 +987,9 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
   // ---- 7. «مشاوره»: the counselor's sample notes, one teacher's report and one open referral ----
   if (structure.counselor) await seedCounseling(db, orgId, spec, { ...structure, counselor: structure.counselor }, opts.scale, ctxCache);
 
+  // ---- 8. «ارتباط ولی و مدرسه»: the first guardian's sample messages, one answered (owner, 2026-10-19) ----
+  if (guardians.length > 0) await seedGuardianMessages(db, orgId, spec, ctxCache);
+
   const counts = await withOrg(db, orgId, async (tx) => {
     const count = async (table: string, where = ""): Promise<number> => {
       const res = await tx.execute<{ n: number }>(sql.raw(`select count(*)::int as n from ${table} ${where}`));
@@ -1001,6 +1011,7 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
       teacherReports: await count("counseling.teacher_report"),
       referrals: await count("counseling.referral"),
       guardianLinks: await count("iam.guardian_link", "where status = 'active'"),
+      guardianMessages: await count("workspace.guardian_message"),
       workItems: await count("workspace.work_item"),
       assignees: await count("workspace.work_item_assignee"),
       comments: await count("workspace.work_item_comment"),
@@ -1330,6 +1341,80 @@ async function seedCounseling(
   });
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// «ارتباط ولی و مدرسه» (owner, 2026-10-19): the demo parent's sample messages
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * The sample messages of a school's FIRST guardian (the plan's mother of two siblings — the «ولی» the demo dock offers
+ * first) about her first child: a «سؤال» to the teacher of the child's first درس, ANSWERED by that teacher, and an
+ * open «پیشنهاد» to the principal — so «پیام به مدرسه» shows both states and the bell its «پاسخ مدرسه …».
+ */
+export const SAMPLE_GUARDIAN_MESSAGES: ReadonlyArray<{ kind: MessageKind; destination: MessageDestination; subject: string; body: string; answer: string | null }> = [
+  {
+    kind: "question",
+    destination: "teacher",
+    subject: "تمرین‌های هفتهٴ گذشته",
+    body: "سلام. فرزندم می‌گوید تمرین‌های فصل دوم در کلاس حل شده است؛ لطفاً بفرمایید کدام صفحه‌ها را در خانه مرور کند.",
+    answer: "سلام. صفحه‌های ۲۴ تا ۳۰ را مرور کند و سه تمرین آخر را در دفترش بنویسد. در کلاس خوب پیش می‌رود.",
+  },
+  {
+    kind: "suggestion",
+    destination: "principal",
+    subject: "زمان جلسهٴ اولیا",
+    body: "پیشنهاد می‌کنم جلسه‌های اولیا عصر برگزار شود تا پدر و مادرهای شاغل هم بتوانند بیایند.",
+    answer: null,
+  },
+];
+
+/**
+ * Through the real services with each actor's REAL ctx: the guardian sends (`sendGuardianMessage` — the live link, the
+ * destinations of the child's school, the rate limit, the audit), the teacher answers in «پنل من» (`changeStatus`,
+ * which tells the guardian). Idempotent: nothing is sent when that guardian already has a message about that child.
+ */
+async function seedGuardianMessages(db: Db, orgId: string, spec: PilotOrgSpec, ctxCache: Map<string, ActorCtx>): Promise<void> {
+  await withOrg(db, orgId, async (tx) => {
+    // The plan's first guardian is the one of the first student of the first class (`guardianPlan`, cls 0 / j 0).
+    const [child] = await tx
+      .select({ studentProfileId: studentProfile.id })
+      .from(person)
+      .innerJoin(studentProfile, eq(studentProfile.personId, person.id))
+      .where(eq(person.externalRef, `pilot:${spec.key}:student:${14051001}`))
+      .limit(1);
+    if (!child) return;
+    const [link] = await tx
+      .select({ guardianPersonId: guardianLink.guardianPersonId })
+      .from(guardianLink)
+      .where(and(eq(guardianLink.studentProfileId, child.studentProfileId), eq(guardianLink.status, "active")))
+      .orderBy(guardianLink.createdAt, guardianLink.guardianPersonId)
+      .limit(1);
+    if (!link) return;
+    const [sent] = await tx
+      .select({ id: guardianMessage.id })
+      .from(guardianMessage)
+      .where(and(eq(guardianMessage.guardianPersonId, link.guardianPersonId), eq(guardianMessage.studentProfileId, child.studentProfileId)))
+      .limit(1);
+    if (sent) return;
+    const gctx = await actorCtx(tx, orgId, link.guardianPersonId, ctxCache);
+    const teacher = (await childMessagesPage(tx, gctx, child.studentProfileId)).destinations.teachers[0];
+    for (const m of SAMPLE_GUARDIAN_MESSAGES) {
+      if (m.destination === "teacher" && !teacher) continue;
+      const res = await sendGuardianMessage(tx, gctx, {
+        studentProfileId: child.studentProfileId,
+        kind: m.kind,
+        destination: m.destination,
+        classOfferingId: m.destination === "teacher" ? teacher.classOfferingId : null,
+        teacherPersonId: m.destination === "teacher" ? teacher.teacherPersonId : null,
+        subject: m.subject,
+        body: m.body,
+      });
+      if (m.answer && m.destination === "teacher") {
+        await changeStatus(tx, await actorCtx(tx, orgId, teacher.teacherPersonId, ctxCache), { workItemId: res.workItemId, toStatusCode: "answered", note: m.answer });
+      }
+    }
+  });
+}
+
 export interface PilotCounts extends Record<string, number> {
   organizations: number;
   schools: number;
@@ -1358,6 +1443,7 @@ export async function pilotCounts(db: Db): Promise<PilotCounts> {
     referrals: 0,
     guardianLinks: 0,
     guardians: 0,
+    guardianMessages: 0,
     workItems: 0,
     comments: 0,
     notifications: 0,
@@ -1389,6 +1475,7 @@ export async function pilotCounts(db: Db): Promise<PilotCounts> {
       // Guardian-only persons (a teacher who is also a parent is counted as staff): their accounts are memberships too.
       const guardians = await tx.execute<{ n: number }>(sql.raw("select (select count(*)::int from iam.person p where exists (select 1 from iam.guardian_link gl where gl.guardian_person_id = p.id) and not exists (select 1 from iam.student_profile sp where sp.person_id = p.id) and not exists (select 1 from iam.staff_profile st where st.person_id = p.id)) as n"));
       totals.guardians += guardians.rows[0].n;
+      totals.guardianMessages += await count("workspace.guardian_message");
       totals.workItems += await count("workspace.work_item");
       totals.comments += await count("workspace.work_item_comment");
       totals.notifications += await count("notif.notification");

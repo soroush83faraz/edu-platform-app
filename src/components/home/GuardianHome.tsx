@@ -1,4 +1,4 @@
-import { Award, CalendarCheck2, CalendarRange, ChevronLeft, NotebookPen, UserRound } from "lucide-react";
+import { Award, CalendarCheck2, CalendarRange, ChevronLeft, MessageSquareText, NotebookPen, UserRound } from "lucide-react";
 import Link from "next/link";
 import { PageSection } from "@/components/layout/PageSection";
 import { RowMark } from "@/components/RowMark";
@@ -20,6 +20,8 @@ function childTiles(child: GuardianChild, taken: ReadonlySet<string>) {
     { code: "child-attendance", labelFa: label("حضور و غیاب"), href: childHref("attendance", child.studentProfileId), icon: CalendarCheck2 },
     ...(child.primary ? [{ code: "child-report-card", labelFa: label("کارنامه"), href: childHref("report-card", child.studentProfileId), icon: Award }] : []),
     { code: "child-timetable", labelFa: label("برنامهٴ کلاسی"), href: childHref("timetable", child.studentProfileId), icon: CalendarRange },
+    // «ارتباط ولی و مدرسه» (owner, 2026-10-19): a question / suggestion / criticism about this child to the school.
+    { code: "child-messages", labelFa: "پیام به مدرسه", href: childHref("messages", child.studentProfileId), icon: MessageSquareText },
   ];
 }
 
@@ -62,7 +64,8 @@ function ChildCardBody({ child }: { child: GuardianChild }) {
 
 /**
  * «فرزندان» on Home (owner, 2026-10-18): one card per live child — name, class, school — and the selected child's
- * tiles under them: «تکالیف فرزند», «حضور و غیاب», «کارنامه» (a primary class only), «برنامهٴ کلاسی». With several
+ * tiles under them: «تکالیف فرزند», «حضور و غیاب», «کارنامه» (a primary class only), «برنامهٴ کلاسی», «پیام به مدرسه»
+ * (2026-10-19). With several
  * children each card is the switch (`/home?child=…`, the server picks among the guardian's own children — an unknown
  * id simply selects the first); a single child's card is static. A colleague who is also a parent sees this section
  * under their own tiles — whose labels a child tile never repeats («حضور و غیاب فرزند»): one name, one door.

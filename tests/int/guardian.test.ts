@@ -314,14 +314,15 @@ describe("«اولیا» — guardians", () => {
       await add(tx, w.admin, w.s3, 13);
       const guardian = await actor(tx, g);
 
-      // The derived assignments: two children, read-only permissions, student scope only.
+      // The derived assignments: two children, read-only permissions — but the guardian's own «پیام به مدرسه»
+      // (2026-10-19, tests/int/guardian-message.test.ts) — student scope only.
       expect(guardian.assignments.map((a) => [a.roleCode, a.scopeType, a.scopeId]).sort()).toEqual(
         [
           ["guardian_full", "student", w.s1.studentProfileId],
           ["guardian_full", "student", w.s2.studentProfileId],
         ].sort(),
       );
-      for (const a of guardian.assignments) for (const p of a.permissions) expect(p, p).toMatch(/\.read$/);
+      for (const a of guardian.assignments) for (const p of a.permissions.filter((x) => x !== "iam.guardian_message.send")) expect(p, p).toMatch(/\.read$/);
       for (const p of ["workspace.work_item.create", "workspace.work_item.update", "workspace.work_item.comment", "academic.attendance.write", "academic.objective_rating.write", "iam.admin.access", "counseling.case.read"] as const) {
         expect(canAtAnyScope(guardian.assignments, p), p).toBe(false);
       }

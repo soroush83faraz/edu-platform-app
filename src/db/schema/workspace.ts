@@ -16,8 +16,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { id, timestamps } from "./_common";
 import { fileObject } from "./files";
-import { person } from "./iam";
-import { classOffering, orgFk, organization } from "./tenancy";
+import { person, studentProfile } from "./iam";
+import { classOffering, orgFk, organization, school } from "./tenancy";
 
 export const workspace = pgSchema("workspace");
 
@@ -305,6 +305,73 @@ export const inboxEntry = workspace.table(
       name: "inbox_entry_work_item_fk",
       columns: [t.organizationId, t.workItemId],
       foreignColumns: [workItem.organizationId, workItem.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
+ * «ارتباط ولی و مدرسه» (migration 0022; owner 2026-10-19; docs/decisions.md): the link between a guardian's message
+ * about ONE child and the confidential `parent_message` work item that carries it to the addressees. The guardian is
+ * the item's creator but NOT one of its participants (workspace/manage-policy `creatorParticipates`): they read their
+ * message's status and the answer through THIS row — the way the counseling file reads its referrals — never by
+ * opening the item. The text (subject + body) lives on the item; this row holds no text at all: who sent it, about
+ * whom, at which school, what kind, to which destination (and, for a teacher, which of the child's درس‌ها).
+ *
+ * The owner's rule is a CHECK too: a «انتقاد» never goes straight to a teacher (`guardian_message_criticism_chk`).
+ * Immutable: no `updated_at`; app_rw may neither UPDATE nor DELETE it (`app.apply_grants()`, 0022). RESTRICTIVE policies
+ * for app_rw (0022): readable by the sending guardian and by the item's addressees only; inserted only in the current
+ * person's own name.
+ */
+export const guardianMessage = workspace.table(
+  "guardian_message",
+  {
+    id: id(),
+    organizationId: orgFk(),
+    /** The child's school when the message was sent — where the addressees were resolved. */
+    schoolId: uuid("school_id").notNull(),
+    guardianPersonId: uuid("guardian_person_id").notNull(),
+    studentProfileId: uuid("student_profile_id").notNull(),
+    workItemId: uuid("work_item_id").notNull(),
+    /** question «سؤال» · suggestion «پیشنهاد» · criticism «انتقاد». */
+    kind: text("kind").notNull(),
+    /** teacher «دبیر» · counselor «مشاور» · vice_principal «معاون» · principal «مدیر». */
+    destinationKind: text("destination_kind").notNull(),
+    /** The درس (class offering of the child's class) a `teacher` message is about; null for every other destination. */
+    classOfferingId: uuid("class_offering_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique("guardian_message_org_id_uq").on(t.organizationId, t.id),
+    unique("guardian_message_work_item_uq").on(t.organizationId, t.workItemId),
+    index("guardian_message_org_guardian_idx").on(t.organizationId, t.guardianPersonId, t.studentProfileId, t.createdAt.desc()),
+    check("guardian_message_kind_chk", sql`${t.kind} IN ('question', 'suggestion', 'criticism')`),
+    check("guardian_message_destination_chk", sql`${t.destinationKind} IN ('teacher', 'counselor', 'vice_principal', 'principal')`),
+    check("guardian_message_offering_chk", sql`(${t.destinationKind} = 'teacher') = (${t.classOfferingId} IS NOT NULL)`),
+    check("guardian_message_criticism_chk", sql`NOT (${t.kind} = 'criticism' AND ${t.destinationKind} = 'teacher')`),
+    foreignKey({
+      name: "guardian_message_school_fk",
+      columns: [t.organizationId, t.schoolId],
+      foreignColumns: [school.organizationId, school.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "guardian_message_guardian_fk",
+      columns: [t.organizationId, t.guardianPersonId],
+      foreignColumns: [person.organizationId, person.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "guardian_message_student_fk",
+      columns: [t.organizationId, t.studentProfileId],
+      foreignColumns: [studentProfile.organizationId, studentProfile.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "guardian_message_work_item_fk",
+      columns: [t.organizationId, t.workItemId],
+      foreignColumns: [workItem.organizationId, workItem.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "guardian_message_offering_fk",
+      columns: [t.organizationId, t.classOfferingId],
+      foreignColumns: [classOffering.organizationId, classOffering.id],
     }).onDelete("restrict"),
   ],
 );

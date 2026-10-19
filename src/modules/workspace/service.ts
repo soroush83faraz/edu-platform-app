@@ -20,9 +20,10 @@ import { type WorkItemVoice, type WorkItemWords, createVoice, workItemStatusLabe
 import { person, staffProfile } from "@/modules/iam/schema";
 import { getPermissionScope } from "@/modules/iam/service";
 import { notifyConfidentialAnswer } from "@/modules/counseling/notify";
+import { notifyGuardianOfMessageAnswer } from "@/modules/iam/guardian-notify";
 import { notifyMany } from "@/modules/notif/service";
 import type { Recipients } from "./dto";
-import { closesOnFirstAnswer, managesItem } from "./manage-policy";
+import { answerNeedsText, closesOnFirstAnswer, creatorParticipates, managesItem } from "./manage-policy";
 import { creationNotifiable, notifiable } from "./notify-policy";
 import {
   type AssigneeRow,
@@ -80,12 +81,15 @@ function nouns(ctx: WorkspaceCtx): WorkItemWords {
  * the item (its description, its trail) nor act on it. This is about the WORK ITEM only: the student file of
  * «مشاوره» (counseling `listReferrals`) lists every referral of the school — its title, status, addressees and the
  * answer that closed it — to every case reader of that school (its counselors, principal and vice principals, and the
- * organization admin), addressed or not (docs/decisions.md «security review fixes», D2).
+ * organization admin), addressed or not (docs/decisions.md «security review fixes», D2). A guardian's «پیام ولی»
+ * (`parent_message`, 2026-10-19) is confidential too, and its CREATOR is no participant (`creatorParticipates`): the
+ * guardian who wrote it gets NOT_FOUND here like anyone else — only its addressees open it; the guardian follows its
+ * status and the answer through `workspace.guardian_message` (iam/guardian-messages).
  */
 export async function canViewWorkItem(tx: Tx, ctx: WorkspaceCtx, workItemId: string): Promise<WorkItemCore> {
   const item = await findWorkItemCore(tx, workItemId);
   if (!item) throw notFound();
-  if (item.createdByPersonId === ctx.personId) return item;
+  if (item.createdByPersonId === ctx.personId && creatorParticipates(item.typeCode)) return item;
   if (await findMyInboxEntry(tx, ctx.personId, workItemId)) return item;
   if (!item.isConfidential && canBroadly(ctx.assignments, "workspace.work_item.read") && !(await isSelfAssigned(tx, item))) return item;
   throw notFound();
@@ -232,9 +236,16 @@ interface InsertWorkItemInput {
   idempotencyKey: string | null;
   classOfferingId: string | null;
   isConfidential: boolean;
+  /**
+   * The creator gets their watcher row and read inbox row («کارهایی که دادم») — every type but a `parent_message`,
+   * whose creator (the guardian) is no participant (`creatorParticipates`).
+   */
+  creatorParticipates: boolean;
   /** The `work_item.assigned` recipients among the others (the notify policy already applied). */
   notify: (others: string[]) => string[];
   notificationTitle: string;
+  /** Where that notification leads; the item's page (`/inbox/<id>`) unless the calling module names its own surface. */
+  deepLink?: string;
   /** The audit row's `after` (the caller decides what of the item it may record). */
   auditAfter: Record<string, unknown>;
 }
@@ -278,16 +289,19 @@ async function insertWorkItem(tx: Tx, ctx: WorkspaceCtx, input: InsertWorkItemIn
     );
   }
   // The creator watches the item and sees it as read (it shows under «کارهایی که دادم»); for a self item she is
-  // the assignee, so the single inbox row keeps relation = assignee.
-  await tx.insert(workItemWatcher).values({ workItemId: wi.id, personId: ctx.personId, organizationId: ctx.orgId, reason: "creator" });
-  await tx.insert(inboxEntry).values({
-    organizationId: ctx.orgId,
-    personId: ctx.personId,
-    workItemId: wi.id,
-    relation: recipientIds.includes(ctx.personId) ? "assignee" : "creator",
-    state: "read",
-    firstSeenAt: sql`now()`,
-  });
+  // the assignee, so the single inbox row keeps relation = assignee. Not so the guardian who wrote a «پیام ولی»:
+  // no row of theirs is attached to the item (`creatorParticipates`).
+  if (input.creatorParticipates) {
+    await tx.insert(workItemWatcher).values({ workItemId: wi.id, personId: ctx.personId, organizationId: ctx.orgId, reason: "creator" });
+    await tx.insert(inboxEntry).values({
+      organizationId: ctx.orgId,
+      personId: ctx.personId,
+      workItemId: wi.id,
+      relation: recipientIds.includes(ctx.personId) ? "assignee" : "creator",
+      state: "read",
+      firstSeenAt: sql`now()`,
+    });
+  }
   await tx.insert(workItemTransition).values({ organizationId: ctx.orgId, workItemId: wi.id, fromStatusId: null, toStatusId: input.type.initialStatusId, byPersonId: ctx.personId });
 
   const notified = await notifyMany(tx, ctx, input.notify(others), {
@@ -296,7 +310,7 @@ async function insertWorkItem(tx: Tx, ctx: WorkspaceCtx, input: InsertWorkItemIn
     body: creatorName,
     sourceKind: "work_item",
     sourceId: wi.id,
-    deepLink: `/inbox/${wi.id}`,
+    deepLink: input.deepLink ?? `/inbox/${wi.id}`,
     dedupeKey: (personId) => `wi:${wi.id}:assigned:${personId}`,
   });
 
@@ -326,6 +340,7 @@ export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWor
     // A class task belongs to its درس: the subject page lists it (`listInbox({ offeringId })`).
     classOfferingId: input.recipients.kind === "class_offering" ? input.recipients.id : null,
     isConfidential: false,
+    creatorParticipates: true,
     notify: (others) => creationNotifiable(ctx.assignments, input.recipients.kind, others),
     notificationTitle: `${nouns(ctx).new}: ${input.title}`,
     auditAfter: { typeCode: input.typeCode, title: input.title, priority: input.priority, dueAt: input.dueAt ?? null, recipients: input.recipients.kind },
@@ -333,8 +348,11 @@ export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWor
 }
 
 export interface ConfidentialWorkItemInput {
-  /** `admin_request` for a request to the school's management, `task` for a request to named people. */
-  typeCode: "admin_request" | "task";
+  /**
+   * `admin_request` for a request to the school's management, `task` for a request to named people, `parent_message`
+   * for a guardian's message to the school (iam/guardian-messages — its creator is no participant).
+   */
+  typeCode: "admin_request" | "task" | "parent_message";
   title: string;
   description: string | null;
   priority: Priority;
@@ -347,6 +365,11 @@ export interface ConfidentialWorkItemInput {
   recipientIds: readonly string[];
   /** The bold line of the `work_item.assigned` notification (the generic «تسک جدید: …» would misname it). */
   notificationTitle: string;
+  /**
+   * Where that notification leads, when the recipients answer it somewhere else than the work-item page — a counselor,
+   * who holds no `workspace.*` permission, answers a guardian's «پیام ولی» in «مشاوره». Default `/inbox/<id>`.
+   */
+  deepLink?: string;
   idempotencyKey?: string | null;
   /** What the audit row records about the item INSTEAD of its text: ids, kinds, lengths. */
   auditContext: Record<string, unknown>;
@@ -383,8 +406,10 @@ export async function createConfidentialWorkItem(tx: Tx, ctx: WorkspaceCtx, inpu
     idempotencyKey: input.idempotencyKey ?? null,
     classOfferingId: null,
     isConfidential: true,
+    creatorParticipates: creatorParticipates(input.typeCode),
     notify: (others) => notifiable(ctx.assignments, others),
     notificationTitle: input.notificationTitle,
+    deepLink: input.deepLink,
     auditAfter: {
       ...input.auditContext,
       typeCode: input.typeCode,
@@ -489,6 +514,9 @@ export interface ChangeStatusInput {
  */
 export const CONFIDENTIAL_NOTE_MESSAGE = "روی این مورد محرمانه فقط «ثبت پاسخ» متن می‌پذیرد.";
 
+/** «ثبت پاسخ» of a guardian's «پیام ولی» without text (`answerNeedsText`). */
+export const ANSWER_TEXT_MESSAGE = "متن پاسخ را بنویسید؛ همین متن برای ولی فرستاده می‌شود.";
+
 export interface ChangeStatusResult {
   statusCode: string;
   /** Item status changed (as opposed to only the caller's own assignee state). */
@@ -516,12 +544,34 @@ async function setItemStatus(tx: Tx, ctx: WorkspaceCtx, item: WorkItemCore, to: 
  * VALIDATION otherwise).
  */
 export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatusInput): Promise<ChangeStatusResult> {
+  return changeStatusCore(tx, ctx, input, { addresseeAnswerOnly: false });
+}
+
+/**
+ * An addressee's «ثبت پاسخ» submitted by ANOTHER module on behalf of its own, already-checked capability — today a
+ * counselor's answer to a guardian's «پیام ولی» in «مشاوره» (src/modules/iam/guardian-messages.ts): a counselor holds no
+ * `workspace.*` permission (catalog «مشاور» — a school-scoped one would be BROAD), so `changeStatus`'s
+ * `workspace.work_item.update` gate would refuse them. Exactly the assignee path of `changeStatus` — same visibility
+ * (`canViewWorkItem`), locks, rules (the note required by `answerNeedsText`), notifications and audit — and nothing
+ * else: the item must be of `typeCode`, confidential and closed by its first answer, and the caller one of its
+ * assignees (FORBIDDEN otherwise); never a manager's transition. Not reachable from any workspace action.
+ */
+export async function answerAsAddressee(tx: Tx, ctx: WorkspaceCtx, input: { workItemId: string; typeCode: "parent_message"; note: string }): Promise<ChangeStatusResult> {
+  const item = await canViewWorkItem(tx, ctx, input.workItemId);
+  if (item.typeCode !== input.typeCode) throw notFound();
+  const done = (await listStatusesOfType(tx, item.typeId)).find((s) => s.category === "done");
+  if (!done) throw notFound();
+  return changeStatusCore(tx, ctx, { workItemId: item.id, toStatusCode: done.code, note: input.note }, { addresseeAnswerOnly: true });
+}
+
+async function changeStatusCore(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatusInput, opts: { addresseeAnswerOnly: boolean }): Promise<ChangeStatusResult> {
   await canViewWorkItem(tx, ctx, input.workItemId);
   // Everything below reads the item under its row lock (`lockWorkItem`), its people locked before it.
   await lockItemPeople(tx, ctx, input.workItemId);
   const item = await lockWorkItem(tx, input.workItemId);
   if (item.archivedAt) throw validation(undefined, `این ${nouns(ctx).singular} بایگانی شده است.`);
-  if (!canAtAnyScope(ctx.assignments, "workspace.work_item.update")) throw forbidden();
+  // The module-authorised answer (`answerAsAddressee`) skips this gate and only this one — its own rule is below.
+  if (!opts.addresseeAnswerOnly && !canAtAnyScope(ctx.assignments, "workspace.work_item.update")) throw forbidden();
   const statuses = await listStatusesOfType(tx, item.typeId);
   const target = statuses.find((s) => s.code === input.toStatusCode);
   if (!target) throw validation(undefined, `این وضعیت برای این نوع ${nouns(ctx).singular} وجود ندارد.`);
@@ -529,6 +579,7 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
 
   const mine = await findMyAssigneeRow(tx, ctx.personId, item.id);
   const manager = managesItem(ctx, item, mine !== null);
+  if (opts.addresseeAnswerOnly && (manager || mine === null || target.category !== "done" || !item.isConfidential || !closesOnFirstAnswer(item.typeCode))) throw forbidden();
   if (note !== null && item.isConfidential && !(!manager && mine !== null && target.category === "done" && closesOnFirstAnswer(item.typeCode))) {
     throw validation({ fieldErrors: { note: [CONFIDENTIAL_NOTE_MESSAGE] } }, CONFIDENTIAL_NOTE_MESSAGE);
   }
@@ -570,6 +621,8 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
       }
     } else if (target.category === "done") {
       if (mine.state === "done") throw validation(undefined, `این ${nouns(ctx).singular} را قبلاً انجام‌شده علامت زده‌اید.`);
+      // A guardian's «پیام ولی» is answered WITH text — the answer is what they wait for (`answerNeedsText`).
+      if (note === null && answerNeedsText(item.typeCode)) throw validation({ fieldErrors: { note: [ANSWER_TEXT_MESSAGE] } }, ANSWER_TEXT_MESSAGE);
       await tx
         .update(workItemAssignee)
         .set({ state: "done", respondedAt: sql`now()` })
@@ -596,8 +649,13 @@ export async function changeStatus(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatu
   const done = assignees.filter((a) => a.state === "done").length;
   const myStateAfter = assignees.find((a) => a.personId === ctx.personId)?.state ?? null;
   if (answered && item.isConfidential) {
-    const respondedAt = assignees.find((a) => a.personId === ctx.personId)?.respondedAt ?? null;
-    await notifyConfidentialAnswer(tx, ctx, { workItemId: item.id, closed: itemChanged, respondedAt });
+    // The guardian who wrote a «پیام ولی» hears that the school answered (its creator row was locked with the item's
+    // people, `lockItemPeople`); a referral's counselor hears of the answer to theirs.
+    if (item.typeCode === "parent_message") await notifyGuardianOfMessageAnswer(tx, ctx, { workItemId: item.id, closed: itemChanged });
+    else {
+      const respondedAt = assignees.find((a) => a.personId === ctx.personId)?.respondedAt ?? null;
+      await notifyConfidentialAnswer(tx, ctx, { workItemId: item.id, closed: itemChanged, respondedAt });
+    }
   }
   if (recipients.length > 0) {
     const actorName = (await findPersonName(tx, ctx.personId)) ?? "";

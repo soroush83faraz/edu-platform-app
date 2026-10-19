@@ -1,6 +1,6 @@
 // The shared parts of a work-item row: its mark, its meta line and my progress on what I gave. The rows themselves
 // are `WorkItemRow` (the unified list of «پنل من» and the subject page, ./WorkItemList) and Home's compact rows.
-import { ClipboardList, ListTodo } from "lucide-react";
+import { ClipboardList, ListTodo, MessageSquareText } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { RelativeTime } from "@/components/RelativeTime";
 import { RowMark } from "@/components/RowMark";
@@ -19,7 +19,8 @@ export function WorkItemMark({ row, label, className, hues }: { row: Row; label?
   if (row.subjectId && row.subjectName) {
     return <SubjectStamp subjectId={row.subjectId} name={row.subjectName} hue={offeringHue(hues, row.offeringId, row.subjectId)} className={cn(closed && "opacity-60", className)} />;
   }
-  return <RowMark icon={row.typeCode === "todo" ? ListTodo : ClipboardList} label={label} className={cn(closed && "opacity-60", className)} />;
+  const icon = row.typeCode === "todo" ? ListTodo : row.typeCode === "parent_message" ? MessageSquareText : ClipboardList;
+  return <RowMark icon={icon} label={label} className={cn(closed && "opacity-60", className)} />;
 }
 
 /**

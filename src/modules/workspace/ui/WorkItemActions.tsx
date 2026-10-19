@@ -59,6 +59,11 @@ export interface WorkItemActionsProps extends EditableItem {
    * answer is the transition's note, the decision the counselor reads in the student file.
    */
   answerable?: boolean;
+  /**
+   * A guardian's «پیام ولی» (`parent_message`, 2026-10-19): the answer must carry text — it is what the guardian reads
+   * (`answerNeedsText`; the service refuses an empty one too).
+   */
+  answerRequired?: boolean;
 }
 
 const TASK_CODES: StatusCodes = { done: "done", open: "open", cancelled: "cancelled" };
@@ -99,6 +104,7 @@ export function WorkItemActions({
   noun,
   statusCodes = TASK_CODES,
   answerable = false,
+  answerRequired = false,
 }: WorkItemActionsProps) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -277,25 +283,30 @@ export function WorkItemActions({
         open={confirm === "answer"}
         onOpenChange={(o) => setConfirm(o ? "answer" : null)}
         title="ثبت پاسخ"
-        description="پاسخ شما برای فرستنده ثبت می‌شود و این درخواست برای همهٴ گیرندگان بسته می‌شود."
+        description={
+          answerRequired
+            ? "پاسخ شما برای ولی فرستاده می‌شود و این پیام برای همهٴ گیرندگان بسته می‌شود."
+            : "پاسخ شما برای فرستنده ثبت می‌شود و این درخواست برای همهٴ گیرندگان بسته می‌شود."
+        }
       >
         <form
           className="flex flex-col gap-3 pt-2"
           onSubmit={(e) => {
             e.preventDefault();
+            if (answerRequired && answer.trim() === "") return;
             setConfirm(null);
             finish("پاسخ ثبت شد", answer);
           }}
         >
           <Label htmlFor={`${workItemId}-answer`}>
-            پاسخ <span className="text-text-faint">(اختیاری)</span>
+            پاسخ {answerRequired ? null : <span className="text-text-faint">(اختیاری)</span>}
           </Label>
-          <Textarea id={`${workItemId}-answer`} dir="auto" rows={4} maxLength={500} value={answer} onChange={(e) => setAnswer(e.target.value)} />
+          <Textarea id={`${workItemId}-answer`} dir="auto" rows={4} maxLength={500} required={answerRequired} value={answer} onChange={(e) => setAnswer(e.target.value)} />
           <ConfirmRow
             pending={pending}
             onCancel={() => setConfirm(null)}
             confirm={
-              <Button type="submit" className="min-w-28" disabled={pending}>
+              <Button type="submit" className="min-w-28" disabled={pending || (answerRequired && answer.trim() === "")}>
                 <MessageSquareReply aria-hidden />
                 ثبت پاسخ
               </Button>

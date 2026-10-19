@@ -42,9 +42,10 @@ export interface Queryable {
  * also teaches gets the report through their teacher role — never through the manager hat. A principal, vice
  * principal or organization admin is never ALSO a counselor of the same school (2026-10-14: `assignRole` refuses
  * either role to a holder of the other there, and nobody grants themselves a role), so the counselors-only notes
- * stay out of management's reach.
+ * stay out of management's reach. And the guardian's own «پیام به مدرسه» (`iam.guardian_message.send`, 2026-10-19):
+ * a parent's voice is never a manager's — an organization admin who is also a parent sends through their «ولی» hat.
  */
-export const NON_MANAGER_PERMS: readonly Permission[] = ["counseling.note.write", "counseling.referral.create", "counseling.teacher_report.write"];
+export const NON_MANAGER_PERMS: readonly Permission[] = ["counseling.note.write", "counseling.referral.create", "counseling.teacher_report.write", "iam.guardian_message.send"];
 
 /** Every manager permission: the whole catalog but the implicit `iam.account.self` and `NON_MANAGER_PERMS`. */
 export const ALL_ROLE_PERMS: Permission[] = PERMISSIONS.map((p) => p.code).filter((c) => !IMPLICIT_PERMISSIONS.includes(c) && !NON_MANAGER_PERMS.includes(c));
@@ -149,11 +150,14 @@ export const SYSTEM_ROLES: SystemRole[] = [
     // no `workspace.work_item.comment` (removed 2026-10-18) — nothing a guardian does changes the child's data. The
     // guardian pages (src/modules/iam/guardian-views.ts) require the live link as well as `can(..., { student })`, so an
     // organization-scoped admin who also holds these permissions gets no guardian view of a child that is not theirs.
+    // The ONE write (owner, 2026-10-19): `iam.guardian_message.send` — «پیام به مدرسه», a question / suggestion /
+    // criticism about the child to the child's school (src/modules/iam/guardian-messages.ts); it changes nothing of
+    // the child's, and no manager holds it (`NON_MANAGER_PERMS`).
     code: "guardian_full",
     name: "ولی",
-    description: "مشاهدهٴ تکالیف، حضور و غیاب، کارنامه و برنامهٴ کلاسی فرزند (فقط خواندنی)",
+    description: "مشاهدهٴ تکالیف، حضور و غیاب، کارنامه و برنامهٴ کلاسی فرزند، و پیام به مدرسه",
     allowedScopeTypes: ["student", "family"],
-    permissions: ["workspace.work_item.read", "notif.notification.read", "academic.timetable.read", "academic.attendance.read", "academic.objective_rating.read"],
+    permissions: ["workspace.work_item.read", "notif.notification.read", "academic.timetable.read", "academic.attendance.read", "academic.objective_rating.read", "iam.guardian_message.send"],
   },
 ];
 
@@ -195,6 +199,23 @@ export const SYSTEM_WORK_ITEM_TYPES: SystemWorkItemType[] = [
       { code: "rejected", name: "ردشده", category: "cancelled", sequence: 4, isTerminal: true },
     ],
   },
+  {
+    // «پیام ولی» (owner, 2026-10-19 — «ارتباط ولی و مدرسه»): a guardian's question / suggestion / criticism about one
+    // child, CONFIDENTIAL, given to the addressees the guardian picked (a teacher of the child, or the school's
+    // counselors / vice principals / principal). Its creator — the guardian — is NOT a participant
+    // (workspace/manage-policy `creatorParticipates`): no watcher row, no inbox row, never opens or manages it; they
+    // follow it through `workspace.guardian_message`. Answered like an `admin_request`: the FIRST addressee's
+    // «ثبت پاسخ» closes it, its (required) note is the answer. The same status codes, so the action row needs nothing new.
+    code: "parent_message",
+    name: "پیام ولی",
+    requiresAssignee: true,
+    statuses: [
+      { code: "open", name: "باز", category: "todo", sequence: 1 },
+      { code: "in_review", name: "در حال بررسی", category: "doing", sequence: 2 },
+      { code: "answered", name: "پاسخ‌داده‌شده", category: "done", sequence: 3, isTerminal: true },
+      { code: "rejected", name: "بسته‌شده", category: "cancelled", sequence: 4, isTerminal: true },
+    ],
+  },
   // The spec lists no statuses for `reminder`; it behaves like a personal todo (recurrence allowed later).
   { code: "reminder", name: "یادآوری", requiresAssignee: false, allowRecurrence: true, statuses: STANDARD_STATUSES },
   {
@@ -233,6 +254,8 @@ export const NOTIFICATION_TYPES: SystemNotificationType[] = [
   // a درس or a level (src/modules/iam/guardian-notify.ts).
   { code: "guardian.child_absent", module: "guardian", name: "غیبت فرزند" },
   { code: "guardian.report_card", module: "guardian", name: "کارنامهٴ ماهانهٴ فرزند" },
+  // «ارتباط ولی و مدرسه» (owner, 2026-10-19): the school answered the guardian's message — the child's name, never the answer.
+  { code: "guardian.message_answered", module: "guardian", name: "پاسخ مدرسه به پیام ولی" },
   { code: "account.password_reset", module: "iam", name: "رمز حساب بازنشانی شد", urgency: "high", userCanDisable: false },
   { code: "system.announcement", module: "system", name: "اطلاعیهٴ سامانه", userCanDisable: false },
 ];

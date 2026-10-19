@@ -6,6 +6,8 @@
 //   • «کارنامهٴ ماه …»: the child's card for a month is COMPLETE — every active objective of the month, across every
 //     درس, has a level (owner 2026-10-19; it fired on the first level before) — once per child per month and school
 //     year, never taken back when a level is later changed or cleared (`saveObjectiveRatings`, academic/report-card);
+//   • «پاسخ مدرسه به پیام شما دربارهٴ …»: an addressee answered the guardian's «پیام ولی» (owner 2026-10-19,
+//     ./guardian-messages) — once per message, from workspace `changeStatus` (`notifyGuardianOfMessageAnswer`);
 //   • an overdue تکلیف is NOT a notification: phase 1 has no scheduler and no queue, so nothing could write it on time —
 //     the guardian's Home shows the child's overdue count when read instead (./guardian-views `listMyChildren`).
 // The title is the kind of event and the child's name, nothing else (`guardianNotificationTitle`); no body. The
@@ -15,18 +17,19 @@
 // Each row records its child (`payload.studentProfileId`), so a guardian's bell only ever holds rows about their LIVE
 // children: ending a link (and so closing, or reopening, a guardian login) prunes the rest (`pruneGuardianNotifications`,
 // security review 2026-10-19 D2 — a reopened account would otherwise show the next school a former child's name).
-// A leaf module — notif + schema only — so academic can call it without an import cycle.
+// A leaf module — notif + schema only — so academic and workspace can call it without an import cycle.
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import type { AssignmentLike } from "@/lib/work-item-words";
 import { notification } from "@/modules/notif/schema";
 import { notifyMany, type NotificationTypeCode } from "@/modules/notif/service";
 import { notifiable } from "@/modules/workspace/notify-policy";
+import { guardianMessage } from "@/modules/workspace/schema";
 import { childHref, guardianNotificationTitle } from "./guardian-policy";
 import { guardianLink, person, studentProfile } from "./schema";
 
 /** The guardian bell's types (scripts/catalog.ts, module `guardian`). */
-export const GUARDIAN_NOTIFICATION_TYPES: readonly NotificationTypeCode[] = ["guardian.child_absent", "guardian.report_card"];
+export const GUARDIAN_NOTIFICATION_TYPES: readonly NotificationTypeCode[] = ["guardian.child_absent", "guardian.report_card", "guardian.message_answered"];
 
 export interface GuardianNotifyCtx {
   orgId: string;
@@ -146,6 +149,47 @@ export async function notifyGuardiansOfReportCard(
     });
   }
   return written;
+}
+
+/**
+ * An addressee's «ثبت پاسخ» CLOSED a guardian's «پیام ولی» (workspace `changeStatus`, owner 2026-10-19): the guardian
+ * who wrote it hears «پاسخ مدرسه به پیام شما دربارهٴ <نام>» — never the answer, never who gave it (they read the answer
+ * in «پیام به مدرسه») — while their link to that child is still live (link, child and guardian active: a former child's
+ * name never reaches a bell, D2) and never for the actor's own act. Once per message (the first answer closes it, and
+ * a `parent_message` has no manager to reopen it). The guardian's person row was taken FOR KEY SHARE before the item
+ * (`lockItemPeople` takes a confidential item's creator), so the insert's foreign-key check waits for nothing new.
+ * The message row is readable here because the actor is one of the item's addressees (0022's RESTRICTIVE policy).
+ */
+export async function notifyGuardianOfMessageAnswer(tx: Tx, ctx: GuardianNotifyCtx, answer: { workItemId: string; closed: boolean }): Promise<number> {
+  if (!answer.closed) return 0;
+  const [m] = await tx
+    .select({ id: guardianMessage.id, guardianPersonId: guardianMessage.guardianPersonId, studentProfileId: guardianMessage.studentProfileId })
+    .from(guardianMessage)
+    .where(eq(guardianMessage.workItemId, answer.workItemId))
+    .limit(1);
+  if (!m || m.guardianPersonId === ctx.personId) return 0;
+  const live = await tx.execute<{ first_name: string; last_name: string }>(sql`
+    select child.first_name, child.last_name
+    from iam.guardian_link gl
+    join iam.student_profile sp on sp.id = gl.student_profile_id and sp.status = 'active'
+    join iam.person child on child.id = sp.person_id and child.status = 'active'
+    join iam.person gp on gp.id = gl.guardian_person_id and gp.status = 'active'
+    where gl.guardian_person_id = ${m.guardianPersonId}::uuid and gl.student_profile_id = ${m.studentProfileId}::uuid and gl.status = 'active'
+    limit 1`);
+  const child = live.rows[0];
+  if (!child) return 0;
+  const recipients = notifiable(ctx.assignments, [m.guardianPersonId]);
+  if (recipients.length === 0) return 0;
+  return notifyMany(tx, ctx, recipients, {
+    typeCode: "guardian.message_answered",
+    title: guardianNotificationTitle("message_answered", `${child.first_name} ${child.last_name}`),
+    body: null,
+    payload: { studentProfileId: m.studentProfileId },
+    sourceKind: "guardian_message",
+    sourceId: m.id,
+    deepLink: childHref("messages", m.studentProfileId),
+    dedupeKey: (personId) => `guardian:message:${m.id}:answered:${personId}`,
+  });
 }
 
 /**

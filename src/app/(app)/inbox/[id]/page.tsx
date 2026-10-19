@@ -14,6 +14,7 @@ import { personalItemLabel, workItemStatusLabel, workItemWords } from "@/lib/wor
 import { offeringLinkQuery } from "@/modules/academic/queries";
 import { counselingLinkQuery } from "@/modules/counseling";
 import { Button } from "@/components/ui/button";
+import { answerNeedsText, closesOnFirstAnswer } from "@/modules/workspace/manage-policy";
 import { workItemDetailQuery } from "@/modules/workspace/queries";
 import type { StatusCategory } from "@/modules/workspace/repo";
 import { statusCodesOf } from "@/modules/workspace/status-codes";
@@ -42,9 +43,10 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
   }
   const { item, creatorName, assignees, watchers, transitions, statuses, myInbox, myAssigneeState, viewer } = result.data;
   const words = workItemWords(viewer.voice);
-  // The item's own name for this reader: a personal کار is the student's «تسک» or the catalog name, anything
-  // given to someone is «تکلیف» / «تسک» (the chip below and the action row's dialogs say the same word).
-  const noun = item.typeCode === "todo" ? personalItemLabel(viewer.createVoice, item.typeName) : words.singular;
+  // The item's own name for this reader: a personal کار is the student's «تسک» or the catalog name, a guardian's
+  // message is «پیام ولی» (its catalog name), anything else given to someone is «تکلیف» / «تسک» (the chip below and
+  // the action row's dialogs say the same word).
+  const noun = item.typeCode === "todo" ? personalItemLabel(viewer.createVoice, item.typeName) : item.typeCode === "parent_message" ? item.typeName : words.singular;
   const done = assignees.filter((a) => a.state === "done").length;
   // Managers see per-person progress; a personal todo (the only assignee is the creator) needs none.
   const showProgress = viewer.isManager && assignees.length > 0 && !(assignees.length === 1 && assignees[0].personId === item.createdByPersonId);
@@ -73,9 +75,10 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
   // teacher the report request went to → «گزارش به مشاور»; the school's management → the student's file.
   const counseling = item.isConfidential ? await counselingLinkQuery({ workItemId: item.id }) : null;
   const counselingLink = counseling?.ok ? counseling.data : null;
-  // An administrative request (the counselor's «ارجاع به مدیریت»): its addressee answers it, and the answer — the
-  // note of the transition that closed it — is shown to everyone who reads the item.
-  const answerable = item.typeCode === "admin_request";
+  // An administrative request (the counselor's «ارجاع به مدیریت») or a guardian's «پیام ولی»: its addressee answers
+  // it — a guardian's with text — and the answer, the note of the transition that closed it, is shown to everyone who
+  // reads the item (its participants: confidential).
+  const answerable = closesOnFirstAnswer(item.typeCode);
   const answer = answerable && item.statusCategory === "done" ? (transitions.find((t) => t.note) ?? null) : null;
 
   return (
@@ -148,6 +151,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
           inboxState={myInbox?.state ?? null}
           statusCodes={statusCodesOf(statuses)}
           answerable={answerable}
+          answerRequired={answerNeedsText(item.typeCode)}
         />
       </header>
 

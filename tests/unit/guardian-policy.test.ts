@@ -86,23 +86,36 @@ describe("the demo dock's «ولی» labels", () => {
 });
 
 describe("the guardian's bell: the kind of event and the child's name — nothing else", () => {
-  it("absence and the monthly report card", () => {
+  it("absence, the monthly report card and the school's answer to a message (never the answer itself)", () => {
     expect(guardianNotificationTitle("absent", "لیلا نیک‌خواه")).toBe("غیبت: لیلا نیک‌خواه");
     expect(guardianNotificationTitle("report_card", "لیلا نیک‌خواه", "مهر")).toBe("کارنامهٴ ماه مهر: لیلا نیک‌خواه");
     expect(guardianNotificationTitle("report_card", "لیلا نیک‌خواه")).toBe("کارنامهٴ ماهانه: لیلا نیک‌خواه");
+    expect(guardianNotificationTitle("message_answered", "لیلا نیک‌خواه")).toBe("پاسخ مدرسه به پیام شما دربارهٴ لیلا نیک‌خواه");
   });
   it("deep links name the child (and the month)", () => {
     expect(childHref("attendance", A.studentProfileId)).toBe(`/child/attendance?child=${A.studentProfileId}`);
     expect(childHref("report-card", A.studentProfileId, { month: 7 })).toBe(`/child/report-card?child=${A.studentProfileId}&month=7`);
+    expect(childHref("messages", A.studentProfileId)).toBe(`/child/messages?child=${A.studentProfileId}`);
     expect(homeChildHref(B.studentProfileId)).toBe(`/home?child=${B.studentProfileId}`);
   });
 });
 
 describe("the «ولی» role in the catalog", () => {
   const guardian = SYSTEM_ROLES.find((r) => r.code === "guardian_full")!;
-  it("is read-only: the child's work items, attendance, report card and week, and its own bell — no write, no comment", () => {
-    expect([...guardian.permissions].sort()).toEqual(["academic.attendance.read", "academic.objective_rating.read", "academic.timetable.read", "notif.notification.read", "workspace.work_item.read"]);
-    for (const p of guardian.permissions) expect(p, p).toMatch(/\.read$/);
+  it("is read-only but for its own «پیام به مدرسه»: the child's work items, attendance, report card and week, its bell — no other write, no comment", () => {
+    expect([...guardian.permissions].sort()).toEqual([
+      "academic.attendance.read",
+      "academic.objective_rating.read",
+      "academic.timetable.read",
+      "iam.guardian_message.send",
+      "notif.notification.read",
+      "workspace.work_item.read",
+    ]);
+    // The ONE write (owner, 2026-10-19) — a message to the school about the child; it changes nothing of the child's.
+    for (const p of guardian.permissions.filter((x) => x !== "iam.guardian_message.send")) expect(p, p).toMatch(/\.read$/);
+  });
+  it("its message permission is nobody else's: no manager, teacher, student or counselor role holds it", () => {
+    for (const r of SYSTEM_ROLES.filter((x) => x.code !== "guardian_full")) expect(r.permissions, r.code).not.toContain("iam.guardian_message.send");
   });
   it("lives at a student (or family) scope only — never a scope that reaches a class, a school or the organization", () => {
     expect(guardian.allowedScopeTypes).toEqual(["student", "family"]);

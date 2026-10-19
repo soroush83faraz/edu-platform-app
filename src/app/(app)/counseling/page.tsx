@@ -1,4 +1,4 @@
-import { ChevronLeft, UserRound } from "lucide-react";
+import { ChevronLeft, MessageSquareText, UserRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -10,6 +10,8 @@ import { ContentWidth } from "@/components/layout/ContentWidth";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { formatNumberFa, toFaDigits } from "@/lib/format";
 import { counselingStudentsQuery } from "@/modules/counseling/queries";
+import { addressedMessagesQuery } from "@/modules/iam/guardian-message-queries";
+import { COUNSELOR_MESSAGES_HREF } from "@/modules/iam/guardian-messages";
 
 export const metadata: Metadata = { title: "مشاوره" };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -34,6 +36,10 @@ export default async function CounselingPage({ searchParams }: { searchParams: P
     notFound();
   }
   const { schools, school, groups, total, truncated } = result.data;
+  // A counselor (`counseling.note.write`) reads and answers the guardians' messages given to them here — they have no
+  // «پنل من». Anyone else gets FORBIDDEN from the query and no row.
+  const messages = await addressedMessagesQuery();
+  const openMessages = messages.ok ? messages.data.filter((m) => m.open).length : 0;
   const hrefOf = (over: { school?: string; q?: string }) => {
     const p = new URLSearchParams();
     const s = over.school ?? school?.id;
@@ -80,6 +86,15 @@ export default async function CounselingPage({ searchParams }: { searchParams: P
             })}
           </ul>
         </nav>
+      ) : null}
+
+      {messages.ok ? (
+        <Link prefetch={false} href={COUNSELOR_MESSAGES_HREF} className="surface-link pressable surface-panel flex min-h-12 items-center gap-3 px-4 py-2 text-sm font-medium text-text">
+          <RowMark icon={MessageSquareText} />
+          <span className="min-w-0 flex-1 truncate">پیام‌های اولیا</span>
+          {openMessages > 0 ? <span className="tabular text-meta font-normal text-text-muted">{formatNumberFa(openMessages)} در انتظار پاسخ</span> : null}
+          <ChevronLeft className="size-4 shrink-0 text-text-faint" aria-hidden />
+        </Link>
       ) : null}
 
       <SearchForm q={q} hidden={{ school: schools.length > 1 ? school?.id : undefined }} placeholder="نام یا شمارهٴ دانش‌آموزی" />

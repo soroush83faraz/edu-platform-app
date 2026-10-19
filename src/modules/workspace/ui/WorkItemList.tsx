@@ -106,7 +106,14 @@ export function WorkItemRow({
   const pct = row.assigneesTotal === 0 ? 0 : Math.round((row.assigneesDone / row.assigneesTotal) * 100);
   const body = (
     <>
-        {mark ? <WorkItemMark row={row} label={row.typeCode === "todo" ? personalItemLabel(createVoice, row.typeName) : words.singular} hues={hues} /> : null}
+        {mark ? (
+          <WorkItemMark
+            row={row}
+            // A guardian's «پیام ولی» keeps its catalog name; a personal کار the reader's word for it; the rest «تکلیف» / «تسک».
+            label={row.typeCode === "todo" ? personalItemLabel(createVoice, row.typeName) : row.typeCode === "parent_message" ? row.typeName : words.singular}
+            hues={hues}
+          />
+        ) : null}
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <p className={cn("line-clamp-2 text-row", closed ? "font-medium text-text-muted" : cn("text-text", row.unread ? "font-semibold" : "font-medium"))}>
             <bdi data-slot="row-title">{row.title}</bdi>

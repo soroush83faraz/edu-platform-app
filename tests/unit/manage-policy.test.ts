@@ -4,7 +4,7 @@
 // spam). Pure — the service paths are covered end to end in tests/int/workspace-service.test.ts.
 import { describe, expect, it } from "vitest";
 import type { Assignment } from "@/modules/iam/can";
-import { managesItem } from "@/modules/workspace/manage-policy";
+import { answerNeedsText, closesOnFirstAnswer, creatorParticipates, managesItem } from "@/modules/workspace/manage-policy";
 
 const WORK = ["workspace.work_item.read", "workspace.work_item.create", "workspace.work_item.update", "workspace.work_item.comment"];
 const hat = (roleCode: string, scopeType: Assignment["scopeType"], permissions: string[] = WORK): Assignment => ({ roleCode, roleId: `r-${roleCode}`, scopeType, scopeId: `s-${scopeType}`, permissions });
@@ -19,8 +19,8 @@ const broadReader = hat("auditor", "organization", ["workspace.work_item.read"])
 
 const ME = "p-me";
 const actor = (...assignments: Assignment[]) => ({ personId: ME, assignments });
-const mine = { createdByPersonId: ME };
-const theirs = { createdByPersonId: "p-other" };
+const mine = { createdByPersonId: ME, typeCode: "task" };
+const theirs = { createdByPersonId: "p-other", typeCode: "task" };
 
 describe("managesItem", () => {
   it("the creator manages their item — as an assignee too, whatever their hats (a student's own «تسک» included)", () => {
@@ -40,5 +40,27 @@ describe("managesItem", () => {
     for (const hats of [[orgAdmin], [principal], [branchVice], [teacher, principal]]) expect(managesItem(actor(...hats), theirs, false)).toBe(true);
     // Scoped (teacher / student) or broad-but-read-only hats: no override.
     for (const hats of [[teacher], [student], [broadReader], []]) expect(managesItem(actor(...hats), theirs, false)).toBe(false);
+  });
+
+  it("«پیام ولی» (2026-10-19): its creator — the guardian — never manages it, whatever other hats they wear", () => {
+    const sent = { createdByPersonId: ME, typeCode: "parent_message" };
+    for (const hats of [[orgAdmin], [principal], [teacher], [student], []]) {
+      expect(managesItem(actor(...hats), sent, false)).toBe(false);
+      expect(managesItem(actor(...hats), sent, true)).toBe(false);
+    }
+    // Its addressees are assignees: never managers either (a principal answers, they do not close it for the others).
+    expect(managesItem(actor(principal), { createdByPersonId: "p-guardian", typeCode: "parent_message" }, true)).toBe(false);
+  });
+});
+
+describe("the type rules of «پیام ولی»", () => {
+  it("closed by the first answer, which must carry text; its creator is no participant — every other type unchanged", () => {
+    expect(closesOnFirstAnswer("parent_message")).toBe(true);
+    expect(closesOnFirstAnswer("admin_request")).toBe(true);
+    for (const t of ["task", "todo", "reminder", "approval"]) expect(closesOnFirstAnswer(t), t).toBe(false);
+    expect(answerNeedsText("parent_message")).toBe(true);
+    for (const t of ["admin_request", "task", "todo"]) expect(answerNeedsText(t), t).toBe(false);
+    expect(creatorParticipates("parent_message")).toBe(false);
+    for (const t of ["admin_request", "task", "todo", "reminder", "approval"]) expect(creatorParticipates(t), t).toBe(true);
   });
 });

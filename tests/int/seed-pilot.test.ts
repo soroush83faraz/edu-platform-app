@@ -11,7 +11,7 @@ import * as schema from "@/db/schema";
 import { withTenant } from "@/db/client";
 import { runMigrations } from "../../scripts/migrate";
 import { seedCatalog } from "../../scripts/seed";
-import { ALLAMEH, DABESTAN, FARZANEGAN, SAMPLE_NOTES, SEEDED_PILOT_ORGS, expectedCounts, guardianPlan, pilotCounts, pilotId, pilotPhone, resetPilot, seedPilot, studentsPerClass } from "../../scripts/seed-pilot";
+import { ALLAMEH, DABESTAN, FARZANEGAN, SAMPLE_GUARDIAN_MESSAGES, SAMPLE_NOTES, SEEDED_PILOT_ORGS, expectedCounts, guardianPlan, pilotCounts, pilotId, pilotPhone, resetPilot, seedPilot, studentsPerClass } from "../../scripts/seed-pilot";
 import { OWNER_URL } from "./env";
 import { dropAppSchemas, seed } from "./global-setup";
 import { asAppRw } from "./helpers";
@@ -67,6 +67,8 @@ describe("seed:pilot", () => {
       const plannedGuardians = SEEDED_PILOT_ORGS.reduce((n, o) => n + guardianPlan(studentsPerClass(SCALE, o)).filter((g) => g.phoneOf === "self").length, 0);
       expect(first.guardianLinks).toBe(plannedLinks);
       expect(first.guardians).toBe(plannedGuardians);
+      // «ارتباط ولی و مدرسه» (2026-10-19): the first guardian's sample messages in every school (one answered).
+      expect(first.guardianMessages).toBe(SEEDED_PILOT_ORGS.length * SAMPLE_GUARDIAN_MESSAGES.length);
       for (const s of run1.summaries) {
         expect(s.guardians.some((g) => g.children.length === 2), `${s.code}: one guardian of two siblings`).toBe(true);
         expect(s.guardians.filter((g) => g.teacher), `${s.code}: one teacher-parent`).toHaveLength(1);

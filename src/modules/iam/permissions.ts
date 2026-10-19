@@ -39,6 +39,11 @@ export const PERMISSIONS = [
   /** Who a referral «ارجاع به مدیریت» is addressed to: the school's managers (the organization admin when it has none). */
   { code: "counseling.referral.receive", module: "counseling", name: "دریافت ارجاع مشاور", isSensitive: false },
   { code: "counseling.teacher_report.write", module: "counseling", name: "ثبت گزارش برای مشاور", isSensitive: false },
+  // «ارتباط ولی و مدرسه» (owner, 2026-10-19; docs/decisions.md): a guardian's question / suggestion / criticism about
+  // ONE of their children to that child's teacher, counselor, vice principal or principal — held only by the derived
+  // «ولی» role at the child's student scope (never a manager's: scripts/catalog.ts `NON_MANAGER_PERMS`), and every use
+  // ALSO needs the live link (`requireChild`, src/modules/iam/guardian-messages.ts).
+  { code: "iam.guardian_message.send", module: "iam", name: "پیام ولی به مدرسه", isSensitive: false },
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number]["code"];
