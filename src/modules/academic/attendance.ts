@@ -27,7 +27,7 @@ import {
   type AttendanceStatus,
 } from "@/lib/attendance";
 import { can } from "@/modules/iam/can";
-import { notifyGuardiansOfAbsence } from "@/modules/iam/guardian-notify";
+import { notifyGuardiansOfAbsence, withdrawGuardianAbsences } from "@/modules/iam/guardian-notify";
 import { classOffering } from "@/modules/tenancy/schema";
 import {
   countClassAttendanceByDate,
@@ -165,8 +165,9 @@ export interface TakeAttendanceResult {
  * `(class_group, date, period_no)`, NULLS NOT DISTINCT — re-taking UPDATES it) and one entry per student. Students
  * dropped from the list lose their entry (a roster change), students added get one. Validates the date (never in
  * the future, Tehran), the زنگ (must exist in the school's زنگ‌بندی), the درس (must belong to the class) and the
- * roster (every student must have an active enrollment in that class on that date). Nobody is notified — phase 1
- * keeps attendance silent (docs/attendance.md).
+ * roster (every student must have an active enrollment in that class on that date). The only notification is the
+ * guardians' «غیبت» (2026-10-18, src/modules/iam/guardian-notify.ts): written for a child saved absent, withdrawn when
+ * a later save says they were not (D4b) — staff and students hear nothing (docs/attendance.md).
  */
 export async function takeAttendance(tx: Tx, ctx: AttendanceCtx, input: TakeAttendanceInput, now = new Date()): Promise<TakeAttendanceResult> {
   const cg = await findClassGroupFacts(tx, input.classGroupId);
@@ -249,17 +250,23 @@ export async function takeAttendance(tx: Tx, ctx: AttendanceCtx, input: TakeAtte
   const gone = existing.filter((e) => !seen.has(e.studentProfileId)).map((e) => e.id);
   if (gone.length > 0) await tx.delete(attendanceEntry).where(inArray(attendanceEntry.id, gone));
 
+  // «اولیا» (D4b, 2026-10-19): a child who WAS absent in this roll call and no longer is — corrected to present / late /
+  // excused, or taken off the list — has their guardians' «غیبت» withdrawn.
+  const absentNow = new Set(wanted.filter((e) => e.status === "absent").map((e) => e.studentProfileId));
+  const noLongerAbsent = existing.filter((e) => e.status === "absent" && !absentNow.has(e.studentProfileId)).map((e) => e.studentProfileId);
+  const withdrawnGuardianNotifications = await withdrawGuardianAbsences(tx, { attendanceSessionId: sessionId, studentProfileIds: noLongerAbsent });
+
   const counts = tally(wanted.map((e) => e.status));
   await audit(
     ctx,
     before ? "academic.attendance_session.retaken" : "academic.attendance_session.taken",
     { schema: "academic", table: "attendance_session", id: sessionId },
     before ? { date: before.date, periodNo: before.periodNo, classOfferingId: before.classOfferingId, counts: tally(existing.map((e) => e.status)) } : null,
-    { classGroupId: cg.id, date, periodNo, classOfferingId: offeringId, counts, removed: gone.length },
+    { classGroupId: cg.id, date, periodNo, classOfferingId: offeringId, counts, removed: gone.length, withdrawnGuardianNotifications },
     tx,
   );
   // «اولیا»: the guardians of every child marked absent hear it — once per child per roll call (deduped).
-  await notifyGuardiansOfAbsence(tx, ctx, { attendanceSessionId: sessionId, absentStudentProfileIds: wanted.filter((e) => e.status === "absent").map((e) => e.studentProfileId) });
+  await notifyGuardiansOfAbsence(tx, ctx, { attendanceSessionId: sessionId, absentStudentProfileIds: [...absentNow] });
   return { sessionId, created: before === null, counts, takenAt };
 }
 

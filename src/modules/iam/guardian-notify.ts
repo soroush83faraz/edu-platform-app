@@ -1,7 +1,8 @@
 // iam/guardian-notify — the guardian's bell (owner, 2026-10-18; docs/decisions.md «اولیا — فاز ۱»): in-app only, ONE
 // notification per guardian and event, in the SAME transaction as the change that caused it.
 //   • «غیبت»: a roll call saved with the child marked absent — once per child per roll call (attendance session),
-//     however often it is saved again (`takeAttendance`, academic/attendance);
+//     however often it is saved again (`takeAttendance`, academic/attendance); withdrawn when a correction says the
+//     child was not absent after all (`withdrawGuardianAbsences`, D4b);
 //   • «کارنامهٴ ماه …»: the first level written for the child in a month of the report card — once per child per month
 //     and school year, whichever درس comes first (`saveObjectiveRatings`, academic/report-card);
 //   • an overdue تکلیف is NOT a notification: phase 1 has no scheduler and no queue, so nothing could write it on time —
@@ -63,6 +64,11 @@ async function liveGuardiansOf(tx: Tx, ctx: GuardianNotifyCtx, studentProfileIds
   return [...byChild.values()];
 }
 
+/** The «غیبت» row's per-recipient key: one row per roll call, child and guardian (`notifyMany` inserts it once). */
+function absenceDedupeKey(attendanceSessionId: string, studentProfileId: string, personId: string): string {
+  return `guardian:absent:${attendanceSessionId}:${studentProfileId}:${personId}`;
+}
+
 /** «غیبت: <نام>» to the live guardians of every student marked ABSENT in this roll call. Rows written (deduped excluded). */
 export async function notifyGuardiansOfAbsence(tx: Tx, ctx: GuardianNotifyCtx, input: { attendanceSessionId: string; absentStudentProfileIds: readonly string[] }): Promise<number> {
   let written = 0;
@@ -77,10 +83,41 @@ export async function notifyGuardiansOfAbsence(tx: Tx, ctx: GuardianNotifyCtx, i
       sourceKind: "attendance_session",
       sourceId: input.attendanceSessionId,
       deepLink: childHref("attendance", c.studentProfileId),
-      dedupeKey: (personId) => `guardian:absent:${input.attendanceSessionId}:${c.studentProfileId}:${personId}`,
+      dedupeKey: (personId) => absenceDedupeKey(input.attendanceSessionId, c.studentProfileId, personId),
     });
   }
   return written;
+}
+
+/**
+ * The roll call was corrected (security review 2026-10-19, D4b): these students are no longer ABSENT in it — marked
+ * present / late / excused, or taken off the list — so the «غیبت» their guardians were told of is withdrawn: the rows
+ * are DELETED (the exact per-recipient key of `notifyGuardiansOfAbsence`, through the recipient + key unique index), for
+ * every guardian the child has had (a link may have ended since). Deleting frees the key, so marking the child absent
+ * again in the same roll call tells the guardians again. Same transaction as the attendance change; rows deleted.
+ */
+export async function withdrawGuardianAbsences(tx: Tx, input: { attendanceSessionId: string; studentProfileIds: readonly string[] }): Promise<number> {
+  const ids = [...new Set(input.studentProfileIds)];
+  if (ids.length === 0) return 0;
+  const pairs = await tx
+    .selectDistinct({ studentProfileId: guardianLink.studentProfileId, guardianPersonId: guardianLink.guardianPersonId })
+    .from(guardianLink)
+    .where(inArray(guardianLink.studentProfileId, ids));
+  if (pairs.length === 0) return 0;
+  const rows = await tx
+    .delete(notification)
+    .where(
+      and(
+        eq(notification.typeCode, "guardian.child_absent"),
+        inArray(notification.recipientPersonId, [...new Set(pairs.map((p) => p.guardianPersonId))]),
+        inArray(
+          notification.dedupeKey,
+          pairs.map((p) => absenceDedupeKey(input.attendanceSessionId, p.studentProfileId, p.guardianPersonId)),
+        ),
+      ),
+    )
+    .returning({ id: notification.id });
+  return rows.length;
 }
 
 /** «کارنامهٴ ماه <ماه>: <نام>» to the live guardians of every student who got a level in this month — once per month and year. */

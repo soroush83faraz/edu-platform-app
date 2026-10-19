@@ -2200,3 +2200,11 @@ is fixed in its own commit.
   (`setPersonPhones` → `guardianPhoneChanged`, also in its audit; `adminUpdatePerson` → `guardianLinksToReview`;
   `updateStudentAction` → `guardianNotice`, a warning toast). Re-adding a guardian re-states where the link comes from,
   and changing the phone back clears the flag by itself. Test: `tests/int/guardian.test.ts` «security review D4a».
+- **D4b — a corrected roll call withdraws its «غیبت».** The guardian's «غیبت» stayed in the bell after the teacher
+  corrected the same roll call (the child was present after all). Now `takeAttendance` compares the session's previous
+  entries with the new ones: every child who WAS absent in it and no longer is — present, late, excused, or taken off
+  the list — has the guardians' row deleted (`withdrawGuardianAbsences`: the exact per-recipient dedupe key
+  `guardian:absent:<session>:<student>:<guardian>`, through the recipient + key unique index, for every guardian the child
+  has had), in the same transaction, counted in the session's audit (`withdrawnGuardianNotifications`). Deleting frees
+  the key, so marking the child absent again tells the guardians again; another child's correction touches nothing.
+  docs/attendance.md no longer claims attendance is silent. Test: `tests/int/guardian.test.ts` «غیبت …» (extended).

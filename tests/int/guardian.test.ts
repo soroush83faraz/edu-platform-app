@@ -768,10 +768,30 @@ describe("«اولیا» — guardians", () => {
       await takeAttendance(tx, w.admin, { classGroupId: f.CLASS_GROUP_A1, date, entries: entries(true) });
       expect(await of(g1, "guardian.child_absent")).toEqual([{ title: `غیبت: ${w.s1.name}`, body: null, deepLink: `/child/attendance?child=${w.s1.studentProfileId}` }]);
       expect(await of(g3, "guardian.child_absent")).toEqual([]); // present
-      // The same roll call saved again (absent again, or present then absent): still one.
+      // The same roll call saved again, still absent: still one.
       await takeAttendance(tx, w.admin, { classGroupId: f.CLASS_GROUP_A1, date, entries: entries(true) });
-      await takeAttendance(tx, w.admin, { classGroupId: f.CLASS_GROUP_A1, date, entries: entries(false) });
+      expect(await of(g1, "guardian.child_absent")).toHaveLength(1);
+      // Security review D4b: corrected to present, the «غیبت» is withdrawn — the guardian is not left believing it;
+      // absent again, they are told again (one row); late, excused or taken off the list withdraw it too.
+      const retaken = await takeAttendance(tx, w.admin, { classGroupId: f.CLASS_GROUP_A1, date, entries: entries(false) });
+      expect(await of(g1, "guardian.child_absent")).toEqual([]);
+      // (one transaction: every audit row has the same `at` — find the retake by its count)
+      const trail = await tx.select({ after: auditLog.after }).from(auditLog).where(and(eq(auditLog.entityId, retaken.sessionId), eq(auditLog.action, "academic.attendance_session.retaken")));
+      expect(trail.map((t) => (t.after as { withdrawnGuardianNotifications?: number }).withdrawnGuardianNotifications)).toContain(1);
       await takeAttendance(tx, w.admin, { classGroupId: f.CLASS_GROUP_A1, date, entries: entries(true) });
+      expect(await of(g1, "guardian.child_absent")).toHaveLength(1);
+      const s1As = (status: "late" | "excused") => entries(true).map((e) => (e.studentProfileId === w.s1.studentProfileId ? { studentProfileId: e.studentProfileId, status, ...(status === "late" ? { minutesLate: 10 } : {}) } : e));
+      for (const status of ["late", "excused"] as const) {
+        await takeAttendance(tx, w.admin, { classGroupId: f.CLASS_GROUP_A1, date, entries: s1As(status) });
+        expect(await of(g1, "guardian.child_absent"), status).toEqual([]);
+        await takeAttendance(tx, w.admin, { classGroupId: f.CLASS_GROUP_A1, date, entries: entries(true) });
+        expect(await of(g1, "guardian.child_absent"), status).toHaveLength(1);
+      }
+      await takeAttendance(tx, w.admin, { classGroupId: f.CLASS_GROUP_A1, date, entries: entries(true).filter((e) => e.studentProfileId !== w.s1.studentProfileId) });
+      expect(await of(g1, "guardian.child_absent")).toEqual([]);
+      // Another child's correction leaves this child's «غیبت» alone.
+      await takeAttendance(tx, w.admin, { classGroupId: f.CLASS_GROUP_A1, date, entries: entries(true) });
+      await takeAttendance(tx, w.admin, { classGroupId: f.CLASS_GROUP_A1, date, entries: entries(true).map((e) => (e.studentProfileId === w.sNone.studentProfileId ? { studentProfileId: e.studentProfileId, status: "present" as const } : e)) });
       expect(await of(g1, "guardian.child_absent")).toHaveLength(1);
       // The admin who took it is never notified of their own act (and holds no guardian link anyway).
       expect(await of(w.admin.personId, "guardian.child_absent")).toEqual([]);
