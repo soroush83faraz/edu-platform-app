@@ -19,6 +19,8 @@ import { flatten } from "@/lib/form-errors";
 import { formatNumberFa, parseJalaliToInstant, toFaDigits } from "@/lib/format";
 import type { WorkItemWords } from "@/lib/work-item-words";
 import { formatJalaliDayLong, parseJalaliDay } from "@/lib/jalali-grid";
+import { FILE_LIMITS } from "@/modules/files/limits";
+import { FileUploader, type UploaderState } from "@/modules/files/ui/FileUploader";
 import { createWorkItemAction, offeringRosterQuery, searchPersonsQuery } from "../actions";
 import type { OfferingRow, PersonHit, RosterRow } from "../repo";
 
@@ -29,13 +31,17 @@ export interface NewWorkItemFormProps {
   words: WorkItemWords;
   /** A درس to start on (the subject page's «کار جدید برای این درس»); must be one of `offerings`. */
   initialOfferingId?: string;
+  /** «فایل‌های تکلیف» (2026-10-19): the giver may attach files (`workspace.work_item.attach`, not a demo session). */
+  canAttach?: boolean;
 }
 
 type Mode = "class" | "persons" | "self";
 /** Every field the form renders; a server error on anything else lands on the form-level line (never silent). */
-const RENDERED = ["title", "description", "priority", "dueDate", "dueTime", "recipients"];
+const RENDERED = ["title", "description", "priority", "dueDate", "dueTime", "recipients", "files", "attachments"];
 
-export function NewWorkItemForm({ offerings, canPickPersons, words, initialOfferingId }: NewWorkItemFormProps) {
+const NO_UPLOADS: UploaderState = { fileIds: [], busy: false, bytes: 0 };
+
+export function NewWorkItemForm({ offerings, canPickPersons, words, initialOfferingId, canAttach = false }: NewWorkItemFormProps) {
   const router = useRouter();
   const ids = useId();
   const [pending, start] = useTransition();
@@ -48,6 +54,9 @@ export function NewWorkItemForm({ offerings, canPickPersons, words, initialOffer
   const [priority, setPriority] = useState<Priority>("normal");
   const [dueDate, setDueDate] = useState("");
   const [dueTime, setDueTime] = useState("");
+  // The giver's files: uploaded as they are picked, attached by the submit (a personal «خودم» item takes none).
+  const [uploads, setUploads] = useState<UploaderState>(NO_UPLOADS);
+  const showFiles = canAttach && mode !== "self";
 
   // ---- class recipients
   const [offeringId, setOfferingId] = useState(initialOfferingId ?? offerings[0]?.id ?? "");
@@ -128,6 +137,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, words, initialOffer
         dueTime: dueTime || undefined,
         recipients,
         idempotencyKey,
+        ...(showFiles && uploads.fileIds.length > 0 ? { attachments: uploads.fileIds } : {}),
       });
       if (r.ok) {
         toast.success(r.data.duplicate ? `این ${words.singular} قبلاً ایجاد شده بود` : mode === "self" ? `${words.selfNoun} ثبت شد` : `${words.singular} ایجاد شد`);
@@ -159,6 +169,16 @@ export function NewWorkItemForm({ offerings, canPickPersons, words, initialOffer
         <Textarea id={descF.id} name="description" dir="auto" rows={3} maxLength={4000} aria-invalid={descF.error ? true : undefined} aria-describedby={descF.describedBy} />
         <FieldError id={`${descF.id}-err`} text={descF.error} />
       </div>
+
+      {showFiles ? (
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium text-text">
+            فایل‌ها <span className="text-text-faint">(اختیاری)</span>
+          </span>
+          <FileUploader purpose="work_item" maxFiles={FILE_LIMITS.maxItemFiles} onChange={setUploads} />
+          <FieldError id={`${ids}-files-err`} text={errors.files ?? errors.attachments} />
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-2">
         <Label htmlFor={dueF.id}>
@@ -338,7 +358,7 @@ export function NewWorkItemForm({ offerings, canPickPersons, words, initialOffer
       <p role="alert" className="min-h-5 text-sm text-danger">
         {errors.form}
       </p>
-      <Button type="submit" size="lg" disabled={pending || (mode === "class" && roster === null)}>
+      <Button type="submit" size="lg" disabled={pending || (mode === "class" && roster === null) || (showFiles && uploads.busy)}>
         {pending ? "در حال ارسال…" : mode === "class" && roster ? `ارسال ${words.singular} به ${formatNumberFa(selectedCount)} نفر` : mode === "self" ? `ثبت ${words.selfNoun}` : `ارسال ${words.singular}`}
       </Button>
     </form>

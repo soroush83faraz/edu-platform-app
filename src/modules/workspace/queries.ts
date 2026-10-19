@@ -9,7 +9,7 @@ import { getPermissionScope } from "@/modules/iam/service";
 import { unreadNotificationCount } from "@/modules/notif";
 import { ListInboxInput, ListWorkItemsInput, WorkItemIdInput } from "./dto";
 import { type InboxSummary, inboxCounts, inboxTabCounts, isStaff, listInbox, listOfferingsInScope, listTaughtOfferings, openCountsByOffering } from "./repo";
-import { FileIdInput, findDownload, workItemFilesView } from "./file-access";
+import { FileIdInput, findDownload, isDemoSession, workItemFilesView } from "./file-access";
 import { getWorkItemDetail } from "./service";
 
 export const listInboxQuery = defineQuery({ schema: ListInboxInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) => {
@@ -115,6 +115,8 @@ export const newWorkItemOptionsQuery = defineQuery({ permission: "workspace.work
     offerings,
     canPickPersons: canBroadly(ctx.assignments, "workspace.work_item.create"),
     canAssignClass: broadAssign || offerings.length > 0,
+    // «فایل‌های تکلیف»: the picker shows for a giver who may attach — never in a «ورود آزمایشی» session (no uploads there).
+    canAttach: canAtAnyScope(ctx.assignments, "workspace.work_item.attach") && !(await isDemoSession(tx, ctx)),
     // The form is the one surface that is ALWAYS about a کار being opened, so it speaks the create voice:
     // a student with neither a class nor persons to pick writes a «تسک» for «خودم».
     voice: createVoice(ctx.assignments),

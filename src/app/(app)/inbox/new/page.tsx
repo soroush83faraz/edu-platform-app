@@ -41,6 +41,7 @@ export default async function NewWorkItemPage({ searchParams }: { searchParams: 
       <NewWorkItemForm
         offerings={options.data.offerings}
         canPickPersons={options.data.canPickPersons}
+        canAttach={options.data.canAttach}
         words={words}
         initialOfferingId={sp.offering && UUID_RE.test(sp.offering) && options.data.offerings.some((o) => o.id === sp.offering) ? sp.offering : undefined}
       />

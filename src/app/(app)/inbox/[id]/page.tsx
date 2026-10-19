@@ -13,12 +13,15 @@ import { formatDueLongFa, formatNumberFa } from "@/lib/format";
 import { personalItemLabel, workItemStatusLabel, workItemWords } from "@/lib/work-item-words";
 import { offeringLinkQuery } from "@/modules/academic/queries";
 import { counselingLinkQuery } from "@/modules/counseling";
+import { FileRows } from "@/modules/files/ui/FileRows";
 import { Button } from "@/components/ui/button";
 import { answerNeedsText, closesOnFirstAnswer } from "@/modules/workspace/manage-policy";
 import { workItemDetailQuery } from "@/modules/workspace/queries";
 import type { StatusCategory } from "@/modules/workspace/repo";
 import { statusCodesOf } from "@/modules/workspace/status-codes";
 import { CompletableTitle, CompletionProvider } from "@/modules/workspace/ui/Completion";
+import { SubmissionCard } from "@/modules/workspace/ui/SubmissionCard";
+import { SubmissionsOverview } from "@/modules/workspace/ui/SubmissionsOverview";
 import { WorkItemActions } from "@/modules/workspace/ui/WorkItemActions";
 
 // Role-neutral in the tab title (the page itself says «تکلیف» / «تسک» once it knows the reader).
@@ -41,7 +44,7 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     notFound(); // NOT_FOUND and FORBIDDEN alike: the page never distinguishes "not yours" from "does not exist"
   }
-  const { item, creatorName, assignees, watchers, transitions, statuses, myInbox, myAssigneeState, viewer } = result.data;
+  const { item, creatorName, assignees, watchers, transitions, statuses, myInbox, myAssigneeState, viewer, files } = result.data;
   const words = workItemWords(viewer.voice);
   // The item's own name for this reader: a personal کار is the student's «تسک» or the catalog name, a guardian's
   // message is «پیام ولی» (its catalog name), anything else given to someone is «تکلیف» / «تسک» (the chip below and
@@ -152,6 +155,8 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
           statusCodes={statusCodesOf(statuses)}
           answerable={answerable}
           answerRequired={answerNeedsText(item.typeCode)}
+          files={files.files}
+          canAttach={files.canAttach && !files.uploadsBlocked}
         />
       </header>
 
@@ -191,6 +196,28 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
         </section>
       ) : null}
 
+      {/* «فایل‌های تکلیف» (2026-10-19): the giver's files, for everyone who opens it — each row a download. */}
+      {files.files.length > 0 ? (
+        <section aria-labelledby="files-heading" className="surface-panel">
+          <h3 id="files-heading" className="flex items-center justify-between gap-3 px-4 pt-3 pb-1 text-sm font-medium text-text">
+            فایل‌های {noun}
+            <span className="tabular text-meta font-normal text-text-muted">{formatNumberFa(files.files.length)} فایل</span>
+          </h3>
+          <FileRows files={files.files} />
+        </section>
+      ) : null}
+
+      {/* «پاسخ شما»: the student's own پاسخ (text + files) while the تکلیف is open. */}
+      {files.mine ? (
+        <SubmissionCard
+          workItemId={item.id}
+          submission={files.mine.submission}
+          canSubmit={files.mine.canSubmit}
+          uploadsBlocked={files.uploadsBlocked}
+          myDone={myAssigneeState === "done"}
+        />
+      ) : null}
+
       {showProgress ? (
         <section aria-labelledby="progress-heading" className="surface-work">
           <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
@@ -218,6 +245,9 @@ export default async function WorkItemPage({ params }: { params: Promise<{ id: s
           </ul>
         </section>
       ) : null}
+
+      {/* «پاسخ‌های دانش‌آموزان»: every پاسخ and who has not answered — the item's managers only. */}
+      {files.overview ? <SubmissionsOverview overview={files.overview} /> : null}
 
       {/* No «گفت‌وگو» (owner, round 7: «no comments and no conversation for now» — a communication channel comes
           later). Stored comments stay in the database and in the read model; nothing here shows or adds one. */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, CheckCheck, MessageSquareReply, Pencil, RotateCcw, Trash2, TriangleAlert } from "lucide-react";
+import { Check, CheckCheck, MessageSquareReply, Pencil, RotateCcw, Trash2, TriangleAlert, Undo2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import { JalaliDatePicker } from "@/components/pickers/JalaliDatePicker";
 import { TimePicker, formatTimeFa } from "@/components/pickers/TimePicker";
 import { PrioritySelect } from "@/components/PrioritySelect";
 import type { Priority } from "@/components/priority";
+import { RowMark } from "@/components/RowMark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +22,9 @@ import { flatten } from "@/lib/form-errors";
 import { parseJalaliToInstant, tehranNow } from "@/lib/format";
 import { formatHm, formatJalaliDay, formatJalaliDayLong, parseJalaliDay, tehranToday } from "@/lib/jalali-grid";
 import type { WorkItemWords } from "@/lib/work-item-words";
+import { FILE_LIMITS } from "@/modules/files/limits";
+import { type FileRowData, fileIcon, fileMeta } from "@/modules/files/ui/FileRows";
+import { FileUploader, type UploaderState } from "@/modules/files/ui/FileUploader";
 import { changeStatusAction, markInboxReadAction, updateWorkItemAction } from "../actions";
 import type { StatusCategory } from "../repo";
 import type { StatusCodes } from "../status-codes";
@@ -64,6 +68,9 @@ export interface WorkItemActionsProps extends EditableItem {
    * (`answerNeedsText`; the service refuses an empty one too).
    */
   answerRequired?: boolean;
+  /** «فایل‌های تکلیف» (2026-10-19): the item's own files, and whether «ویرایش» may change them (the giver of an open `task`). */
+  files?: FileRowData[];
+  canAttach?: boolean;
 }
 
 const TASK_CODES: StatusCodes = { done: "done", open: "open", cancelled: "cancelled" };
@@ -105,6 +112,8 @@ export function WorkItemActions({
   statusCodes = TASK_CODES,
   answerable = false,
   answerRequired = false,
+  files = [],
+  canAttach = false,
 }: WorkItemActionsProps) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -344,7 +353,17 @@ export function WorkItemActions({
       </ResponsiveModal>
 
       <ResponsiveModal open={editing} onOpenChange={setEditing} title={`ویرایش ${noun}`}>
-        {editing ? <EditForm workItemId={workItemId} item={{ title, description, priority, dueAt }} noun={noun} onClose={() => setEditing(false)} onDone={() => router.refresh()} /> : null}
+        {editing ? (
+          <EditForm
+            workItemId={workItemId}
+            item={{ title, description, priority, dueAt }}
+            noun={noun}
+            files={files}
+            canAttach={canAttach}
+            onClose={() => setEditing(false)}
+            onDone={() => router.refresh()}
+          />
+        ) : null}
       </ResponsiveModal>
     </div>
   );
@@ -402,7 +421,25 @@ function ConfirmRow({ pending, onCancel, confirm }: { pending: boolean; onCancel
  * typo fixed without being asked for a new date; a CHANGED deadline must lie ahead (earlier or later — both fine) or
  * be removed with the field's ×. «ذخیرهٴ تغییرات» waits until something differs.
  */
-function EditForm({ workItemId, item, noun, onClose, onDone }: { workItemId: string; item: EditableItem; noun: string; onClose: () => void; onDone: () => void }) {
+const NO_UPLOADS: UploaderState = { fileIds: [], busy: false, bytes: 0 };
+
+function EditForm({
+  workItemId,
+  item,
+  noun,
+  files,
+  canAttach,
+  onClose,
+  onDone,
+}: {
+  workItemId: string;
+  item: EditableItem;
+  noun: string;
+  files: FileRowData[];
+  canAttach: boolean;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const ids = useId();
   const [pending, start] = useTransition();
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -418,13 +455,24 @@ function EditForm({ workItemId, item, noun, onClose, onDone }: { workItemId: str
     return minutes === 23 * 60 + 59 ? "" : formatHm(minutes);
   });
   const [dueTouched, setDueTouched] = useState(false);
+  // «فایل‌ها»: the item's files marked for removal (by file id) and the new uploads made for THIS تکلیف.
+  const [removed, setRemoved] = useState<Set<string>>(() => new Set());
+  const [uploads, setUploads] = useState<UploaderState>(NO_UPLOADS);
+  const filesChanged = removed.size > 0 || uploads.fileIds.length > 0;
+  const toggleRemoved = (id: string) =>
+    setRemoved((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const day = dueDate ? parseJalaliDay(dueDate) : null;
   const instant = dueDate ? parseJalaliToInstant(dueDate, dueTime || null) : null;
   const dueChanged = dueTouched && (instant?.getTime() ?? null) !== (item.dueAt?.getTime() ?? null);
   const inPast = dueChanged && instant !== null && instant <= new Date();
-  const dirty = title.trim() !== item.title || description.trim() !== (item.description ?? "") || priority !== item.priority || dueChanged;
-  const blocked = pending || !dirty || title.trim() === "" || inPast || (dueChanged && dueDate !== "" && !instant);
+  const dirty = title.trim() !== item.title || description.trim() !== (item.description ?? "") || priority !== item.priority || dueChanged || filesChanged;
+  const blocked = pending || !dirty || title.trim() === "" || inPast || (dueChanged && dueDate !== "" && !instant) || uploads.busy;
 
   const submit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -437,6 +485,8 @@ function EditForm({ workItemId, item, noun, onClose, onDone }: { workItemId: str
         priority,
         // Only a touched deadline travels: "" removes it, anything else is the new day (+ time).
         ...(dueChanged ? { dueDate, dueTime: dueDate ? dueTime || undefined : undefined } : {}),
+        ...(removed.size > 0 ? { removeFiles: [...removed] } : {}),
+        ...(uploads.fileIds.length > 0 ? { addFiles: uploads.fileIds } : {}),
       });
       if (r.ok) {
         toast.success(r.data.changed.length > 0 ? `تغییرات ${noun} ذخیره شد` : "تغییری برای ذخیره نبود");
@@ -487,6 +537,33 @@ function EditForm({ workItemId, item, noun, onClose, onDone }: { workItemId: str
         />
         <FieldError id={`${descF.id}-err`} text={descF.error} />
       </div>
+
+      {canAttach ? (
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium text-text">فایل‌ها</span>
+          {files.length > 0 ? (
+            <ul className="divide-y divide-line rounded-lg border border-line" aria-label={`فایل‌های ${noun}`}>
+              {files.map((f) => {
+                const gone = removed.has(f.id);
+                return (
+                  <li key={f.id} className="flex min-h-12 items-center gap-3 px-3 py-2 text-sm">
+                    <RowMark icon={fileIcon(f.kind)} />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <bdi className={cn("truncate text-row", gone ? "text-text-faint line-through" : "text-text")}>{f.name}</bdi>
+                      <span className="text-meta text-text-muted">{gone ? "با ذخیره برداشته می‌شود" : fileMeta(f)}</span>
+                    </span>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => toggleRemoved(f.id)} aria-label={gone ? `بازگرداندن ${f.name}` : `برداشتن ${f.name}`}>
+                      {gone ? <Undo2 aria-hidden /> : <X aria-hidden />}
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+          <FileUploader purpose="work_item" workItemId={workItemId} maxFiles={FILE_LIMITS.maxItemFiles - (files.length - removed.size)} onChange={setUploads} />
+          <FieldError id={`${ids}-files-err`} text={errors.files} />
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-2">
         <Label htmlFor={dueF.id}>
@@ -560,7 +637,7 @@ function EditForm({ workItemId, item, noun, onClose, onDone }: { workItemId: str
 }
 
 /** Every field the edit form renders; a server error on anything else lands on the form-level line. */
-const EDIT_FIELDS = ["title", "description", "priority", "dueDate", "dueTime"];
+const EDIT_FIELDS = ["title", "description", "priority", "dueDate", "dueTime", "files"];
 
 function FieldError({ id, text }: { id: string; text?: string }) {
   return (
