@@ -33,16 +33,19 @@ describe("the four levels", () => {
     expect(isObjectiveRating(null)).toBe(false);
   });
 
-  it("follow the colour discipline: success / primary / info / yellow FILL with navy text — never red", () => {
+  it("follow the owner's colours (2026-10-19): green / blue / yellow FILL with navy text / red", () => {
     expect(RATING_PILL_CLASSES.very_good).toContain("success");
     expect(RATING_PILL_CLASSES.good).toContain("primary");
-    expect(RATING_PILL_CLASSES.acceptable).toContain("info-soft");
-    expect(RATING_PILL_CLASSES.needs_effort).toBe("bg-warning text-text");
-    expect(RATING_ON_CLASSES.needs_effort).toContain("data-[on=true]:bg-warning");
-    expect(RATING_ON_CLASSES.needs_effort).toContain("data-[on=true]:text-text");
+    expect(RATING_PILL_CLASSES.acceptable).toBe("bg-warning text-text");
+    expect(RATING_PILL_CLASSES.needs_effort).toBe("bg-danger-soft text-danger");
+    expect(RATING_ON_CLASSES.acceptable).toContain("data-[on=true]:bg-warning");
+    expect(RATING_ON_CLASSES.acceptable).toContain("data-[on=true]:text-text");
+    expect(RATING_ON_CLASSES.needs_effort).toContain("data-[on=true]:bg-danger");
+    expect(RATING_ON_CLASSES.needs_effort).toContain("data-[on=true]:text-white");
     for (const r of OBJECTIVE_RATINGS) {
-      expect(RATING_PILL_CLASSES[r]).not.toMatch(/danger|red/);
-      expect(RATING_ON_CLASSES[r]).not.toMatch(/danger|red|text-warning/);
+      // yellow is only ever a FILL (CLAUDE.md): never as text colour
+      expect(RATING_PILL_CLASSES[r]).not.toMatch(/text-warning/);
+      expect(RATING_ON_CLASSES[r]).not.toMatch(/text-warning/);
     }
   });
 });

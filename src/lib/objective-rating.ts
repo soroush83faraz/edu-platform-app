@@ -3,9 +3,10 @@
 // unit-tested (tests/unit/objective-rating.test.ts); the CHECK constraint of academic.objective_rating lists the
 // same four codes.
 //
-// Colour (docs/decisions.md «کارنامهٴ توصیفی»): «خیلی خوب» = success, «خوب» = primary, «قابل قبول» = the soft info
-// surface with navy text, «نیاز به تلاش» = the yellow warning FILL with navy text (CLAUDE.md: yellow is a fill,
-// never text). No red: needing effort is not a failure, and red already means «a problem» in the product.
+// Colour (owner 2026-10-19, replacing the first scheme of docs/decisions.md «کارنامهٴ توصیفی»): «خیلی خوب» = success
+// (green), «خوب» = primary (blue), «قابل قبول» = the yellow warning FILL with navy text (CLAUDE.md: yellow is a fill,
+// never text), «نیاز به تلاش» = danger (red). Red here marks the one level that asks for the teacher's and the
+// family's attention — it is shown as a soft pill/fill, never as a bare alarm.
 import { canonicalSubject, schoolMonthIndex } from "@/modules/academic/primary-objectives";
 
 export const OBJECTIVE_RATINGS = ["very_good", "good", "acceptable", "needs_effort"] as const;
@@ -22,16 +23,16 @@ export const RATING_LABELS: Record<ObjectiveRating, string> = {
 export const RATING_PILL_CLASSES: Record<ObjectiveRating, string> = {
   very_good: "bg-success-soft text-success",
   good: "bg-primary-50 text-primary-700",
-  acceptable: "bg-info-soft text-primary-800",
-  needs_effort: "bg-warning text-text",
+  acceptable: "bg-warning text-text",
+  needs_effort: "bg-danger-soft text-danger",
 };
 
 /** The pressed segment of the entry control (`data-on=true`), same hues as the pills but filled. */
 export const RATING_ON_CLASSES: Record<ObjectiveRating, string> = {
   very_good: "data-[on=true]:bg-success data-[on=true]:text-white",
   good: "data-[on=true]:bg-primary-600 data-[on=true]:text-white",
-  acceptable: "data-[on=true]:bg-info data-[on=true]:text-text",
-  needs_effort: "data-[on=true]:bg-warning data-[on=true]:text-text",
+  acceptable: "data-[on=true]:bg-warning data-[on=true]:text-text",
+  needs_effort: "data-[on=true]:bg-danger data-[on=true]:text-white",
 };
 
 export function isObjectiveRating(v: unknown): v is ObjectiveRating {

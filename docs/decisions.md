@@ -1676,10 +1676,11 @@ correct. Docs: the school's data review **docs/primary-objectives-review.md**, d
   write). ANY teacher of an open offering of the class READS the whole class; since 2026-10-14 (security review,
   D3 below) a teacher WRITES only the درس‌ها they teach there and those the class has no offering of — in دبستان
   the آموزگار teaches (so writes) every درس, the ورزش teacher writes ورزش. Out of scope = NOT_FOUND.
-- **Colours** (`src/lib/objective-rating.ts`): خیلی خوب = success, خوب = primary, قابل قبول = the info-soft surface
-  with navy text, نیاز به تلاش = yellow warning FILL with navy text. `success` here breaks the «success only for
-  100 %» rule on purpose (the owner's mapping: the top level is the «done well» state); red is never used — needing
-  effort is not a failure.
+- **Colours** (`src/lib/objective-rating.ts`; owner 2026-10-19 changed the first scheme): خیلی خوب = success (green),
+  خوب = primary (blue), قابل قبول = the yellow warning FILL with navy text, نیاز به تلاش = danger (red, as a soft pill /
+  filled segment). `success` here breaks the «success only for 100 %» rule on purpose (the top level is the «done
+  well» state); red marks the one level that asks for attention — the first scheme (no red, «not a failure») was
+  replaced at the owner's request.
 - **UI** mirrors the attendance roster: one card per student, a four-way 44 px segmented control per objective (tap
   the pressed one to clear), «همه خیلی خوب» per student, the same sticky save bar (classes of 08f2c59) with
   «۱۸ از ۲۴ دانش‌آموز ثبت شده»; month switcher opening on the current Jalali month or the nearest one with
