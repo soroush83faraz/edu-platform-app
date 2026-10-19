@@ -1,8 +1,10 @@
 // «پیام‌های من» of «پیام به مدرسه» (a guardian, owner 2026-10-19): the guardian's own messages about one child, newest
-// first — kind, subject, to whom, when, the status tag «ارسال‌شده» / «پاسخ داده شد», and once answered the school's
-// answer with its date (never who answered — the guardian reads the answer, not the school's people). The message's
-// own text folds under «متن پیام». Static rows: the guardian never opens the work item itself. A Server Component.
-import { Check, Clock, MessageSquareText } from "lucide-react";
+// first — kind, subject, to whom, when, the status tag «ارسال‌شده» / «در انتظار پاسخ» (after a week) / «در حال ارجاع به
+// مدیریت» (nobody left on it) / «پاسخ داده شد» — the waiting tags neutral, not a problem the guardian has to act on —
+// and once answered the school's answer with its date (never who answered — the guardian reads the answer, not the
+// school's people). The message's own text folds under «متن پیام». Static rows: the guardian never opens the work
+// item itself. A Server Component.
+import { Check, Clock, Hourglass, MessageSquareText, Share2 } from "lucide-react";
 import { RelativeTime } from "@/components/RelativeTime";
 import { RowMark } from "@/components/RowMark";
 import { cn } from "@/lib/cn";
@@ -11,6 +13,8 @@ import type { MyMessageRow } from "@/modules/iam/guardian-message-queries";
 
 const STATE_TAG: Record<MessageState, { icon: typeof Check; className: string }> = {
   sent: { icon: Clock, className: "bg-primary-50 text-primary-700" },
+  waiting: { icon: Hourglass, className: "bg-surface-sunken text-text-muted" },
+  routing: { icon: Share2, className: "bg-surface-sunken text-text-muted" },
   answered: { icon: Check, className: "bg-success-soft text-success" },
 };
 

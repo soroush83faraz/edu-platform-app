@@ -2307,9 +2307,10 @@ is fixed in its own commit.
   the refusals, who opens it — service and database, the answer + bell + audit, the counselor's path, the rate limit,
   an ended link), `tests/int/concurrency.test.ts` C14 (two sends at the limit: the second waits and is refused),
   `tests/int/seed-pilot.test.ts`, `tests/int/rls-meta.test.ts` (counts).
-- **Open (owner):** (a) answers are bounded by the transition note (500) — longer?; (b) a message whose only
+- **Open (owner):** (a) answers are bounded by the transition note (500) — longer?; (b) ~~a message whose only
   addressee is removed (`withdrawRemovedAssignee`) stays «ارسال‌شده» with nobody to answer — re-route it to the
-  principal?; (c) the guardian never sees WHO answered — show the office holder's name?; (d) one exchange only — no
+  principal?~~ — decided 2026-10-19 (review fix D1, below): re-routed along «same office → principal → vice principal»;
+  (c) the guardian never sees WHO answered — show the office holder's name?; (d) one exchange only — no
   reply to an answer (a conversation is a later channel); (e) also a daily cap?; (f) the organization admin is never a
   destination: a school with no principal answers «برای مدرسهٴ این فرزند مدیری ثبت نشده است».
 
@@ -2341,3 +2342,41 @@ fixed in its own commit.
   unchanged (ratings → profile rows → guardian rows, now FOR SHARE). Races: `tests/int/concurrency.test.ts` C15 (an
   answer against an unlink, both orders) and C16 (a roll call against an unlink, both orders) — each fails without
   the fix (the second transaction never waits).
+- **D1 — a message nobody can answer any more goes on, in the same write.** A `parent_message` whose last addressee
+  was removed (`withdrawRemovedAssignee` deleted the row), lost the office, or stopped teaching the درس (both keep
+  their row) stayed open for ever: «ارسال‌شده» for the guardian, nobody to answer. Now
+  `src/modules/iam/guardian-message-routing.ts` hands it on at the end of every write that ends such a capacity —
+  `removePerson` (around `withdrawRemovedAssignee`), `revokeRoleAssignment`, `endTeacherAssignment` (the offerings
+  form and «افزودن تدریس», which put the next teacher in right after, re-route once that teacher is in). A message
+  needs it when it is open and none of its assignees is an active person still holding, at its school, the office it
+  went to, a current teaching of its درس, or the principal's or a vice principal's role. The chain, at that school,
+  never the guardian nor the person who left: (1) the same destination — the درس's current teachers who teach the
+  child now, or that office's live holders; (2) the principals; (3) the vice principals; (4) nobody — it stays open
+  with no live addressee. Never the organization admin (open item (f) above). The new addressees get an assignee
+  row, an unread inbox row and the standard `work_item.assigned` bell (a counselor's opens «مشاوره»); the actor no
+  bell; one audit row `workspace.guardian_message.rerouted` per message decided (reason, the person who left, the
+  step, the persons added — ids and kinds only); the removal's own audit row lists them
+  (`reroutedGuardianMessages`). **Routing facts:** `workspace.guardian_message` is readable only by the guardian and
+  the addressees (0022) and the admin making the change is neither, so **migration 0023** adds ONE function and
+  changes no policy: `app.guardian_message_routes(person)` — SECURITY DEFINER (app_owner, `search_path = pg_catalog,
+  app, pg_temp`, every name schema-qualified), EXECUTE for app_rw only — returning (work item, school, child,
+  destination, درس) of that person's OPEN messages, only at a school where the CURRENT person holds
+  `iam.person.write`, `iam.role_assignment.write` or `academic.teacher_assignment.write` (the managers and the
+  organization admin); no guardian, kind, date or text. The managers still select no row of the table. **Locks:**
+  the chain's candidates FOR KEY SHARE **SKIP LOCKED** (ascending) before any item, the decision and the writes
+  under the items' FOR NO KEY UPDATE (ascending; the removal's are `withdrawRemovedAssignee`'s) — a candidate being
+  removed (FOR UPDATE, the one mode KEY SHARE waits for) is passed over, so two removals of a school's two office
+  holders at once never wait for each other in a circle (`tests/int/concurrency.test.ts` C17 deadlocks without SKIP
+  LOCKED). **Accepted:** the office and teaching rows are not locked — two changes to two DIFFERENT office holders of
+  one school committed at the same instant may hand a message to the one whose change commits second; a role that
+  runs out by its date, a closed offering or a child who changed class or school re-route nothing (no event — the
+  week-old tag below covers them); nothing is routed TO a person appointed later. **The guardian's tag** (display
+  only, derived when read — `messageState`): «ارسال‌شده», the neutral «در انتظار پاسخ» after `MESSAGE_WAITING_DAYS`
+  (7) without an answer, «در حال ارجاع به مدیریت» while no assignee of an active person is left on the open item at
+  all (a removal with nobody to take it; after a revoke or an ended teaching the old addressee keeps the row, so the
+  cheap rule shows «ارسال‌شده» / «در انتظار پاسخ» there), «پاسخ داده شد». A teacher message names the addressee who
+  teaches (or taught) the درس — after a re-route, its teacher now; a manager is never named. Tests:
+  `tests/unit/guardian-message-policy.test.ts` (the tags), `tests/int/guardian-message.test.ts` «security review D1»
+  (school A emptied step by step: removal → vice principals, ended teaching → vice principals, the last vice
+  principal → nobody + the tags; the last counselor revoked → the principal; «افزودن تدریس» → the new teacher;
+  0023's function: definer, grants, who gets what), `tests/int/concurrency.test.ts` C17.

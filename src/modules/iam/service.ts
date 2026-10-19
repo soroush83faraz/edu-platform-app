@@ -16,6 +16,7 @@ import { schoolEnrollment } from "@/modules/academic/schema";
 import { enrollStudent } from "@/modules/academic/service";
 import { findClassGroup, findCurrentAcademicYear, findSchoolById, schoolIdOfBranch } from "@/modules/tenancy/repo";
 import { can, canAtAnyScope, resolveScopeChain, type Assignment } from "./can";
+import { rerouteGuardianMessagesOf } from "./guardian-message-routing";
 import { PERSON_REMOVED_MESSAGE } from "./messages";
 import { generateInitialPassword, hashPassword } from "./password";
 import type { Permission } from "./permissions";
@@ -723,7 +724,9 @@ export async function roleAssignmentSchoolId(
  * roles stay FORBIDDEN for them. Every caller needs `iam.role_assignment.write` at the scope the role is GRANTED
  * from (FORBIDDEN) — the revoke rules mirror the grant rules: `org_admin` and `school_principal` roles need the
  * organization-level permission (a principal cannot unseat a principal), `vice_principal` the school's. Only then
- * a derived teacher role is refused with its explanation (it ends with the teaching).
+ * a derived teacher role is refused with its explanation (it ends with the teaching). Last, a guardian's message that
+ * only this office holder could still answer is handed on (iam/guardian-message-routing, security review 2026-10-19
+ * D1 — «مشاور», «معاون», «مدیر مدرسه»; for any other role it finds nothing to do).
  */
 export async function revokeRoleAssignment(tx: Tx, ctx: IamCtx, input: { roleAssignmentId: string }): Promise<void> {
   const [ra] = await tx
@@ -763,6 +766,7 @@ export async function revokeRoleAssignment(tx: Tx, ctx: IamCtx, input: { roleAss
   if (ra.personId === ctx.personId && ra.scopeType === "organization") throw validation(undefined, "نمی‌توانید نقش سازمانی خودتان را لغو کنید.");
   await tx.update(roleAssignment).set({ revokedAt: sql`now()` }).where(eq(roleAssignment.id, ra.id));
   await audit(ctx, "iam.role_assignment.revoked", { schema: "iam", table: "role_assignment", id: ra.id }, ra, { revokedAt: "now" }, tx);
+  await rerouteGuardianMessagesOf(tx, ctx, ra.personId, "role_revoked");
 }
 
 // ---------------------------------------------------------------------------------------------------------------

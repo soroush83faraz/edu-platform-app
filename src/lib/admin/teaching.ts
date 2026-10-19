@@ -13,6 +13,7 @@ import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { conflict, forbidden, notFound, validation } from "@/lib/errors";
 import { assignTeacher, endTeacherAssignment, type TeacherRole } from "@/modules/academic/service";
+import { rerouteGuardianMessagesOf } from "@/modules/iam/guardian-message-routing";
 import { teacherAssignment } from "@/modules/academic/schema";
 import { can } from "@/modules/iam/can";
 import { person, staffProfile, studentProfile } from "@/modules/iam/schema";
@@ -216,6 +217,7 @@ export async function assignTeaching(tx: Tx, ctx: ResourceCtx, input: AssignTeac
   if (own) throw conflict(TEACHING_MESSAGES.alreadyTeaches);
 
   let replacedTeacherAssignmentId: string | null = null;
+  let replacedPersonId: string | null = null;
   if (input.role === "main") {
     const [current] = await tx
       .select({ id: teacherAssignment.id })
@@ -224,10 +226,12 @@ export async function assignTeaching(tx: Tx, ctx: ResourceCtx, input: AssignTeac
       .limit(1);
     if (current) {
       if (!input.replaceMain) throw conflict(TEACHING_MESSAGES.mainTaken);
-      await endTeacherAssignment(tx, ctx, { teacherAssignmentId: current.id });
+      replacedPersonId = (await endTeacherAssignment(tx, ctx, { teacherAssignmentId: current.id, rerouteGuardianMessages: false })).personId;
       replacedTeacherAssignmentId = current.id;
     }
   }
   const res = await assignTeacher(tx, ctx, { staffProfileId: staff.id, classOfferingId, role: input.role });
+  // The guardians' messages to the replaced teacher go on now that the new one is in (iam/guardian-message-routing, D1).
+  if (replacedPersonId) await rerouteGuardianMessagesOf(tx, ctx, replacedPersonId, "teaching_ended");
   return { classOfferingId, teacherAssignmentId: res.teacherAssignmentId, offeringCreated, replacedTeacherAssignmentId };
 }

@@ -12,6 +12,7 @@ import { conflict, invalidReference, notFound, validation } from "@/lib/errors";
 import { normalizeFa } from "@/lib/normalize";
 import { SCHOOL_WEEKDAYS, currentPeriodOf, nextSessionOf, tehranClock, type Weekday } from "@/lib/timetable";
 import { can, canAtAnyScope, type CanContext } from "@/modules/iam/can";
+import { rerouteGuardianMessagesOf } from "@/modules/iam/guardian-message-routing";
 import { PERSON_REMOVED_MESSAGE } from "@/modules/iam/messages";
 import { lockPersonForShare } from "@/modules/iam/repo";
 import { person, role, roleAssignment, staffProfile, studentProfile } from "@/modules/iam/schema";
@@ -135,10 +136,27 @@ export interface EndTeacherAssignmentInput {
   teacherAssignmentId: string;
   /** ISO date; defaults to today. */
   validTo?: string;
+  /**
+   * A guardian's message to this teacher about this درس that nobody can answer any more is handed on at the end
+   * (iam/guardian-message-routing, security review 2026-10-19 D1) — default. `false` only for a caller that goes on and
+   * re-routes once it is done: the offerings form and «افزودن تدریس» put the next teacher in first (they call
+   * `rerouteGuardianMessagesOf` after `assignTeacher`), the removal re-routes around its withdrawal. Never from input.
+   */
+  rerouteGuardianMessages?: boolean;
 }
 
-/** Sets `valid_to` on the assignment and `revoked_at` (+ `valid_to`) on its derived role_assignment(s). */
-export async function endTeacherAssignment(tx: Tx, ctx: ServiceCtx, input: EndTeacherAssignmentInput): Promise<{ revokedRoleAssignments: number }> {
+export interface EndTeacherAssignmentResult {
+  revokedRoleAssignments: number;
+  /** The teacher (iam.person) whose teaching ended — what a caller that deferred the re-route passes to it. */
+  personId: string;
+}
+
+/**
+ * Sets `valid_to` on the assignment and `revoked_at` (+ `valid_to`) on its derived role_assignment(s); then (unless
+ * deferred, `rerouteGuardianMessages`) re-routes the guardians' messages only this teacher could still answer — its
+ * person and item locks are taken there, after every write of this function (none of which locks a person or an item).
+ */
+export async function endTeacherAssignment(tx: Tx, ctx: ServiceCtx, input: EndTeacherAssignmentInput): Promise<EndTeacherAssignmentResult> {
   // Default "today", but never before valid_from (an assignment that starts in the future ends as an empty range).
   const validTo = input.validTo ? sql`${input.validTo}::date` : sql`greatest(current_date, ${teacherAssignment.validFrom})`;
   const [ta] = await tx
@@ -162,7 +180,10 @@ export async function endTeacherAssignment(tx: Tx, ctx: ServiceCtx, input: EndTe
     { validTo: ta.validTo, revokedRoleAssignments: revoked.map((r) => r.id) },
     tx,
   );
-  return { revokedRoleAssignments: revoked.length };
+  const [staff] = await tx.select({ personId: staffProfile.personId }).from(staffProfile).where(eq(staffProfile.id, ta.staffProfileId)).limit(1);
+  if (!staff) throw invalidReference();
+  if (input.rerouteGuardianMessages !== false) await rerouteGuardianMessagesOf(tx, ctx, staff.personId, "teaching_ended");
+  return { revokedRoleAssignments: revoked.length, personId: staff.personId };
 }
 
 export interface EnrollStudentInput {

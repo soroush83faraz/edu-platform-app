@@ -24,7 +24,8 @@ import { withTenant, type Tx } from "@/db/client";
 import * as schema from "@/db/schema";
 import { auditLog, guardianLink, guardianMessage, inboxEntry, notification, workItem, workItemAssignee, workItemComment, workItemWatcher } from "@/db/schema";
 import { AppError } from "@/lib/errors";
-import { assignTeacher } from "@/modules/academic/service";
+import { assignTeaching } from "@/lib/admin/teaching";
+import { assignTeacher, endTeacherAssignment } from "@/modules/academic/service";
 import { type Assignment } from "@/modules/iam/can";
 import { addGuardian, unlinkGuardian } from "@/modules/iam/guardian";
 import { GUARDIAN_MESSAGE_MESSAGES, MESSAGE_RATE_LIMIT } from "@/modules/iam/guardian-message-policy";
@@ -32,7 +33,7 @@ import { COUNSELOR_MESSAGES_HREF, answerAddressedMessage, childMessagesPage, lis
 import { PERMISSIONS } from "@/modules/iam/permissions";
 import { removePerson } from "@/modules/iam/removal";
 import { listValidAssignments } from "@/modules/iam/repo";
-import { assignRole, createStaff, createStudent } from "@/modules/iam/service";
+import { assignRole, createStaff, createStudent, revokeRoleAssignment } from "@/modules/iam/service";
 import { createAcademicYear, createClassGroup, createClassOffering, createSchool, createSubject } from "@/modules/tenancy/service";
 import { listInbox } from "@/modules/workspace/repo";
 import {
@@ -572,6 +573,211 @@ describe("«ارتباط ولی و مدرسه» — guardian messages", () => {
         .where(and(eq(guardianLink.guardianPersonId, w.teacherA2.personId), eq(guardianLink.studentProfileId, w.s3.studentProfileId)));
       await unlinkGuardian(tx, w.admin, { linkId: linkS3.id });
       expect(await bellOf(w.teacherA2.personId)).toEqual([`work_item.assigned:${task.id}`]);
+    });
+  });
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // security review D1 — a message nobody can answer any more goes on (iam/guardian-message-routing, migration 0023)
+  // ---------------------------------------------------------------------------------------------------------------
+
+  const assigneesOf = async (tx: Tx, workItemId: string) =>
+    (await tx.select({ p: workItemAssignee.personId }).from(workItemAssignee).where(and(eq(workItemAssignee.workItemId, workItemId), eq(workItemAssignee.role, "assignee")))).map((a) => a.p).sort();
+  const reroutesOf = (tx: Tx, workItemId: string) =>
+    tx
+      .select({ before: auditLog.before, after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.action, "workspace.guardian_message.rerouted"), eq(auditLog.entityId, workItemId)));
+  const assignedBells = async (tx: Tx, workItemId: string) =>
+    (
+      await tx
+        .select({ to: notification.recipientPersonId, title: notification.title, body: notification.body, link: notification.deepLink })
+        .from(notification)
+        .where(and(eq(notification.sourceId, workItemId), eq(notification.typeCode, "work_item.assigned")))
+    ).sort((a, b) => (a.to < b.to ? -1 : a.to > b.to ? 1 : 0));
+  const unreadInbox = async (tx: Tx, workItemId: string) =>
+    (await tx.select({ p: inboxEntry.personId }).from(inboxEntry).where(and(eq(inboxEntry.workItemId, workItemId), eq(inboxEntry.state, "unread")))).map((i) => i.p).sort();
+  const teachingOf = async (tx: Tx, personId: string, classOfferingId: string) => {
+    const res = await tx.execute<{ id: string }>(sql`
+      select ta.id from academic.teacher_assignment ta join iam.staff_profile stp on stp.id = ta.staff_profile_id
+      where stp.person_id = ${personId}::uuid and ta.class_offering_id = ${classOfferingId}::uuid and ta.valid_to is null`);
+    return res.rows[0].id;
+  };
+  const officeOf = async (tx: Tx, personId: string, code: string) => {
+    const res = await tx.execute<{ id: string }>(sql`
+      select ra.id from iam.role_assignment ra join iam.role r on r.id = ra.role_id
+      where ra.person_id = ${personId}::uuid and r.code = ${code} and ra.revoked_at is null`);
+    return res.rows[0].id;
+  };
+  const sorted = (...ids: string[]) => [...ids].sort();
+
+  it("security review D1 — school A empties: the sole principal removed → the principal's message goes to the vice principals; the ریاضی teaching ended → the teacher's message too; both vice principals removed → a message is left with nobody, open, «در حال ارجاع به مدیریت»; a week without an answer reads «در انتظار پاسخ»", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const send = (input: SendMessageInput) => as(tx, w.g1, (t) => sendGuardianMessage(t, w.g1, input));
+      const toPrincipal = await send(msg(w.s1, { destination: "principal" }));
+      const toMath = await send(toTeacher(w, w.s1, "math"));
+      const toVice = await send(msg(w.s1, { destination: "vice_principal", kind: "criticism" }));
+      const toCounselor = await send(msg(w.s1, { destination: "counselor", kind: "suggestion" }));
+      const vices = sorted(w.viceA.personId, w.viceA2.personId);
+      const title = (id: string) => tx.select({ t: workItem.title }).from(workItem).where(eq(workItem.id, id)).then((r) => r[0].t);
+
+      // 1. The principal removed: their message has no live addressee → «مدیر مدرسه» (none left) → the vice principals.
+      const removedP = await as(tx, w.admin, (t) => removePerson(t, w.admin, { personId: w.principalA.personId, kind: "staff" }));
+      expect(removedP).toMatchObject({ withdrawnWorkItems: 1, reroutedGuardianMessages: 1 });
+      expect(await assigneesOf(tx, toPrincipal.workItemId)).toEqual(vices);
+      expect(await unreadInbox(tx, toPrincipal.workItemId)).toEqual(vices);
+      // The standard bell, as a send gives it (the removed principal keeps theirs from the send).
+      const bellsP = await assignedBells(tx, toPrincipal.workItemId);
+      expect(bellsP.map((b) => b.to)).toEqual(sorted(w.principalA.personId, ...vices));
+      const itemTitle = await title(toPrincipal.workItemId);
+      expect(bellsP.filter((b) => vices.includes(b.to))).toEqual(vices.map((to) => ({ to, title: itemTitle, body: "زهره نیک‌خواه", link: `/inbox/${toPrincipal.workItemId}` })));
+      const [r1] = await reroutesOf(tx, toPrincipal.workItemId);
+      expect(r1.before).toEqual({ assigneeIds: [] });
+      expect(r1.after).toEqual({ reason: "removed", fromPersonId: w.principalA.personId, schoolId: f.SCHOOL_A, destination: "principal", step: "vice_principal", addedPersonIds: vices });
+      // The other messages had live addressees: untouched.
+      expect(await assigneesOf(tx, toMath.workItemId)).toEqual([w.teacherMath.personId]);
+      expect(await assigneesOf(tx, toVice.workItemId)).toEqual(vices);
+      // A vice principal opens it now; the guardian's tag is still «ارسال‌شده» (someone holds it).
+      expect((await as(tx, w.viceA, (t) => getWorkItemDetail(t, w.viceA, toPrincipal.workItemId))).item.typeCode).toBe("parent_message");
+
+      // 2. The ریاضی teaching ended (no other teacher of it, no principal): the teacher's message → the vice principals.
+      //    The teacher keeps their row and still reads the item (docs/decisions.md «Open (owner)», D2).
+      const ended = await as(tx, w.admin, async (t) => endTeacherAssignment(t, w.admin, { teacherAssignmentId: await teachingOf(t, w.teacherMath.personId, w.mathOfferingId) }));
+      expect(ended.personId).toBe(w.teacherMath.personId);
+      expect(await assigneesOf(tx, toMath.workItemId)).toEqual(sorted(w.teacherMath.personId, ...vices));
+      expect(await assignedBells(tx, toMath.workItemId)).toEqual(
+        sorted(w.teacherMath.personId, ...vices).map((to) => ({ to, title: expect.any(String), body: "زهره نیک‌خواه", link: `/inbox/${toMath.workItemId}` })),
+      );
+      expect((await reroutesOf(tx, toMath.workItemId)).map((r) => r.after)).toEqual([
+        { reason: "teaching_ended", fromPersonId: w.teacherMath.personId, schoolId: f.SCHOOL_A, destination: "teacher", step: "vice_principal", addedPersonIds: vices },
+      ]);
+      expect(await canViewWorkItem(tx, w.teacherMath, toMath.workItemId)).toMatchObject({ statusCategory: "todo" });
+      // The guardian still reads «ریاضی — <the teacher they picked>» — a vice principal is never named.
+      const page = await as(tx, w.g1, (t) => childMessagesPage(t, w.g1, w.s1.studentProfileId));
+      expect(page.messages.find((m) => m.destination === "teacher")).toMatchObject({ subjectName: "ریاضی", teacherName: "علی حسینی", state: "sent" });
+      // A re-routed addressee answers; the guardian hears of it as from any addressee.
+      expect(await as(tx, w.viceA, (t) => changeStatus(t, w.viceA, { workItemId: toMath.workItemId, toStatusCode: "answered", note: "معاون آموزشی پیگیری می‌کند." }))).toMatchObject({ itemChanged: true });
+      expect(await tx.select({ id: notification.id }).from(notification).where(and(eq(notification.recipientPersonId, w.g1.personId), eq(notification.typeCode, "guardian.message_answered")))).toHaveLength(1);
+
+      // 3. Both vice principals removed: the first leaves the other live (nothing moves); the second leaves nobody at
+      //    the school for the principal's and the vice principal's messages — open, no assignee, «در حال ارجاع به مدیریت».
+      expect(await as(tx, w.admin, (t) => removePerson(t, w.admin, { personId: w.viceA.personId, kind: "staff" }))).toMatchObject({ reroutedGuardianMessages: 0 });
+      expect(await assigneesOf(tx, toVice.workItemId)).toEqual([w.viceA2.personId]);
+      expect(await reroutesOf(tx, toVice.workItemId)).toEqual([]);
+      expect(await as(tx, w.admin, (t) => removePerson(t, w.admin, { personId: w.viceA2.personId, kind: "staff" }))).toMatchObject({ reroutedGuardianMessages: 0 });
+      const steps = async (workItemId: string) => (await reroutesOf(tx, workItemId)).map((r) => (r.after as { step: string }).step).sort();
+      expect(await steps(toPrincipal.workItemId)).toEqual(["nobody", "vice_principal"]);
+      expect(await steps(toVice.workItemId)).toEqual(["nobody"]);
+      for (const m of [toPrincipal, toVice]) expect(await assigneesOf(tx, m.workItemId)).toEqual([]);
+      expect((await reroutesOf(tx, toVice.workItemId))[0].after).toEqual({ reason: "removed", fromPersonId: w.viceA2.personId, schoolId: f.SCHOOL_A, destination: "vice_principal", step: "nobody", addedPersonIds: [] });
+
+      const now = new Date();
+      const later = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000);
+      const stateOf = async (at: Date) => {
+        const p = await as(tx, w.g1, (t) => childMessagesPage(t, w.g1, w.s1.studentProfileId, at));
+        const by = (destination: string) => p.messages.find((m) => m.destination === destination)!.state;
+        return { principal: by("principal"), teacher: by("teacher"), vice: by("vice_principal"), counselor: by("counselor") };
+      };
+      expect(await stateOf(now)).toEqual({ principal: "routing", teacher: "answered", vice: "routing", counselor: "sent" });
+      expect(await stateOf(later)).toEqual({ principal: "routing", teacher: "answered", vice: "routing", counselor: "waiting" });
+      // The audit rows of the re-route carry ids and kinds only.
+      const trail = JSON.stringify(await tx.select({ after: auditLog.after }).from(auditLog).where(eq(auditLog.action, "workspace.guardian_message.rerouted")));
+      for (const secret of ["زمان جلسهٴ اولیا", "جلسهٴ اولیا کی", "معاون آموزشی", "زهره"]) expect(trail, secret).not.toContain(secret);
+      expect(await assigneesOf(tx, toCounselor.workItemId)).toEqual(sorted(w.counselorA.personId, w.counselorA2.personId));
+    });
+  });
+
+  it("security review D1 — the last counselor's role revoked (by the principal) → the counselor message goes to the principal, who gets the item but no bell of their own act; the counselors keep their rows; school B's sole counselor revoked → its principal, belled, answering in «پنل من»", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const m = await as(tx, w.g1, (t) => sendGuardianMessage(t, w.g1, msg(w.s1, { destination: "counselor", kind: "suggestion" })));
+      const counselors = sorted(w.counselorA.personId, w.counselorA2.personId);
+      const revoke = (who: Actor, personId: string) => as(tx, who, async (t) => revokeRoleAssignment(t, who, { roleAssignmentId: await officeOf(t, personId, "counselor") }));
+
+      // The other counselor still holds the office: nothing moves.
+      await revoke(w.principalA, w.counselorA.personId);
+      expect(await assigneesOf(tx, m.workItemId)).toEqual(counselors);
+      expect(await reroutesOf(tx, m.workItemId)).toEqual([]);
+      // No counselor left: «مشاور» (none) → «مدیر مدرسه» — the principal who revoked it.
+      await revoke(w.principalA, w.counselorA2.personId);
+      expect(await assigneesOf(tx, m.workItemId)).toEqual(sorted(...counselors, w.principalA.personId));
+      expect((await reroutesOf(tx, m.workItemId)).map((r) => r.after)).toEqual([
+        { reason: "role_revoked", fromPersonId: w.counselorA2.personId, schoolId: f.SCHOOL_A, destination: "counselor", step: "principal", addedPersonIds: [w.principalA.personId] },
+      ]);
+      expect(await unreadInbox(tx, m.workItemId)).toContain(w.principalA.personId);
+      expect((await assignedBells(tx, m.workItemId)).map((b) => b.to)).toEqual(counselors); // the send's bells; none for the actor
+      expect(await as(tx, w.principalA, (t) => changeStatus(t, w.principalA, { workItemId: m.workItemId, toStatusCode: "answered", note: "به‌زودی مشاور تازه معرفی می‌شود." }))).toMatchObject({ itemChanged: true });
+      expect((await as(tx, w.g1, (t) => childMessagesPage(t, w.g1, w.s1.studentProfileId))).messages[0]).toMatchObject({ state: "answered", answer: "به‌زودی مشاور تازه معرفی می‌شود." });
+
+      // School B (one counselor, a principal, no vice principal), revoked by the organization admin.
+      const mb = await as(tx, w.gB, (t) => sendGuardianMessage(t, w.gB, msg(w.sB, { destination: "counselor" })));
+      await revoke(w.admin, w.counselorB.personId);
+      expect(await assigneesOf(tx, mb.workItemId)).toEqual(sorted(w.counselorB.personId, w.principalB.personId));
+      const bells = await assignedBells(tx, mb.workItemId);
+      expect(bells.find((b) => b.to === w.principalB.personId)).toMatchObject({ link: `/inbox/${mb.workItemId}`, body: "فرشته شریفی" });
+      expect(bells.find((b) => b.to === w.counselorB.personId)).toMatchObject({ link: COUNSELOR_MESSAGES_HREF });
+      expect((await as(tx, w.principalB, (t) => listInbox(t, w.principalB.personId, { tab: "all", limit: 100 }))).rows.map((r) => r.id)).toContain(mb.workItemId);
+    });
+  });
+
+  it("security review D1 — «افزودن تدریس» replacing the ریاضی main teacher: the teacher's message goes to the NEW teacher of the درس (the same destination), never to the management; the guardian reads the درس's teacher now", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const m = await as(tx, w.g1, (t) => sendGuardianMessage(t, w.g1, toTeacher(w, w.s1, "math")));
+      const next = await createStaff(tx, w.admin, { firstName: "بهاره", lastName: "سلیمی", phone: phone(12), createAccount: false, schoolId: f.SCHOOL_A });
+      const rctx = { ...w.admin, userId: "00000000-0000-7000-8000-000000000000", ip: "127.0.0.1", userAgent: null };
+      await as(tx, w.admin, (t) => assignTeaching(t, rctx, { personId: next.personId, classGroupId: f.CLASS_GROUP_A1, classOfferingId: w.mathOfferingId, role: "main", replaceMain: true }));
+      expect(await assigneesOf(tx, m.workItemId)).toEqual(sorted(w.teacherMath.personId, next.personId));
+      expect((await reroutesOf(tx, m.workItemId)).map((r) => r.after)).toEqual([
+        { reason: "teaching_ended", fromPersonId: w.teacherMath.personId, schoolId: f.SCHOOL_A, destination: "teacher", step: "same", addedPersonIds: [next.personId] },
+      ]);
+      expect((await assignedBells(tx, m.workItemId)).find((b) => b.to === next.personId)).toMatchObject({ link: `/inbox/${m.workItemId}` });
+      expect((await as(tx, w.g1, (t) => childMessagesPage(t, w.g1, w.s1.studentProfileId))).messages[0]).toMatchObject({ subjectName: "ریاضی", teacherName: "بهاره سلیمی", state: "sent" });
+    });
+  });
+
+  it("migration 0023: app.guardian_message_routes is SECURITY DEFINER (app_owner, pinned search_path), EXECUTE for app_rw only, and gives the routing facts — nothing else — of a person's OPEN messages to a manager of that school only; the table's policies are unchanged", async () => {
+    await asAppRw(async (c) => {
+      const fn = await c.query<{ secdef: boolean; owner: string; config: string[]; rw: boolean; backup: boolean; args: string; result: string }>(
+        `select p.prosecdef as secdef, pg_get_userbyid(p.proowner) as owner, p.proconfig::text[] as config,
+                has_function_privilege('app_rw', p.oid, 'EXECUTE') as rw, has_function_privilege('app_backup', p.oid, 'EXECUTE') as backup,
+                pg_get_function_identity_arguments(p.oid) as args, pg_get_function_result(p.oid) as result
+           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'app' and p.proname = 'guardian_message_routes'`,
+      );
+      expect(fn.rows).toEqual([
+        {
+          secdef: true,
+          owner: "app_owner",
+          config: ["search_path=pg_catalog, app, pg_temp"],
+          rw: true,
+          backup: false,
+          args: "p_person_id uuid",
+          result: "TABLE(work_item_id uuid, school_id uuid, student_profile_id uuid, destination_kind text, class_offering_id uuid)",
+        },
+      ]);
+    });
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const m = await as(tx, w.g1, (t) => sendGuardianMessage(t, w.g1, msg(w.s1, { destination: "principal" })));
+      const t2 = await as(tx, w.g1, (t) => sendGuardianMessage(t, w.g1, toTeacher(w, w.s1, "science")));
+      const routesSeenBy = async (who: { personId: string }, of: string) =>
+        (await as(tx, who, (t) => t.execute(sql`select * from app.guardian_message_routes(${of}::uuid) order by work_item_id`))).rows;
+      // A manager of school A — the organization admin, a vice principal — gets the facts.
+      const expected = [{ work_item_id: m.workItemId, school_id: f.SCHOOL_A, student_profile_id: w.s1.studentProfileId, destination_kind: "principal", class_offering_id: null }];
+      expect(await routesSeenBy(w.admin, w.principalA.personId)).toEqual(expected);
+      expect(await routesSeenBy(w.viceA, w.principalA.personId)).toEqual(expected);
+      expect(await routesSeenBy(w.admin, w.teacherScience.personId)).toEqual([
+        { work_item_id: t2.workItemId, school_id: f.SCHOOL_A, student_profile_id: w.s1.studentProfileId, destination_kind: "teacher", class_offering_id: w.scienceOfferingId },
+      ]);
+      // Nobody else: another school's principal, a teacher, a counselor, the guardian — and an unrelated person has none.
+      for (const who of [w.principalB, w.teacherMath, w.counselorA, w.g1, w.gB]) expect(await routesSeenBy(who, w.principalA.personId), who.personId).toEqual([]);
+      expect(await routesSeenBy(w.admin, w.teacherMath.personId)).toEqual([]);
+      // An answered message is no longer open: no row.
+      await as(tx, w.principalA, (t) => changeStatus(t, w.principalA, { workItemId: m.workItemId, toStatusCode: "answered", note: "پاسخ" }));
+      expect(await routesSeenBy(w.admin, w.principalA.personId)).toEqual([]);
+      // The managers still select no row of the table itself (0022's RESTRICTIVE policy, unchanged).
+      for (const who of [w.admin, w.viceA, w.principalB]) expect(await rowsSeenBy(tx, who), who.personId).toEqual([]);
     });
   });
 });

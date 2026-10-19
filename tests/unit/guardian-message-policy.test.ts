@@ -17,6 +17,7 @@ import {
   MESSAGE_RATE_LIMIT,
   MESSAGE_STATE_LABELS,
   MESSAGE_SUBJECT_MAX,
+  MESSAGE_WAITING_DAYS,
   allowedDestinations,
   answerOf,
   cleanBody,
@@ -54,7 +55,7 @@ describe("labels", () => {
     expect(MESSAGE_KINDS.map((k) => MESSAGE_KIND_LABELS[k])).toEqual(["سؤال", "پیشنهاد", "انتقاد"]);
     expect(MESSAGE_DESTINATIONS.map((d) => DESTINATION_LABELS[d])).toEqual(["دبیر", "مشاور مدرسه", "معاون مدرسه", "مدیر مدرسه"]);
     expect(teacherDestinationLabel("ریاضی", "علی حسینی")).toBe("ریاضی — علی حسینی");
-    expect(MESSAGE_STATE_LABELS).toEqual({ sent: "ارسال‌شده", answered: "پاسخ داده شد" });
+    expect(MESSAGE_STATE_LABELS).toEqual({ sent: "ارسال‌شده", waiting: "در انتظار پاسخ", routing: "در حال ارجاع به مدیریت", answered: "پاسخ داده شد" });
     for (const s of [...Object.values(MESSAGE_KIND_LABELS), ...Object.values(DESTINATION_LABELS), ...Object.values(GUARDIAN_MESSAGE_MESSAGES)]) expect(s, s).not.toMatch(/[A-Za-z]/);
     expect(GUARDIAN_MESSAGE_MESSAGES.rateLimited).toContain((MESSAGE_RATE_LIMIT).toLocaleString("fa-IR"));
   });
@@ -85,8 +86,28 @@ describe("what the guardian reads of the answer", () => {
     expect(answerOf({ category: "done", byAddressee: false, note: "کسی دیگر" })).toBeNull();
     expect(answerOf({ category: "done", byAddressee: true, note: null })).toBeNull();
     expect(answerOf({ category: null, byAddressee: null, note: null })).toBeNull();
-    expect(messageState(null)).toBe("sent");
-    expect(messageState("پاسخ")).toBe("answered");
+  });
+});
+
+describe("the guardian's tag (security review 2026-10-19, D1 — display only, derived when read)", () => {
+  const sentAt = new Date("2026-10-01T08:00:00Z");
+  const after = (days: number, ms = 0) => new Date(sentAt.getTime() + days * 24 * 60 * 60 * 1000 + ms);
+  const open = { open: true, orphaned: false, sentAt };
+  it("«ارسال‌شده» for a week, then the neutral «در انتظار پاسخ» — never «ارسال‌شده» for ever", () => {
+    expect(MESSAGE_WAITING_DAYS).toBe(7);
+    expect(messageState(null, open, sentAt)).toBe("sent");
+    expect(messageState(null, open, after(MESSAGE_WAITING_DAYS, -1))).toBe("sent");
+    expect(messageState(null, open, after(MESSAGE_WAITING_DAYS))).toBe("waiting");
+    expect(messageState(null, open, after(40))).toBe("waiting");
+  });
+  it("«در حال ارجاع به مدیریت» while no addressee is left on an open message, whatever its age; an answer wins over everything", () => {
+    expect(messageState(null, { ...open, orphaned: true }, sentAt)).toBe("routing");
+    expect(messageState(null, { ...open, orphaned: true }, after(30))).toBe("routing");
+    expect(messageState("پاسخ", open, after(30))).toBe("answered");
+    expect(messageState("پاسخ", { ...open, orphaned: true }, sentAt)).toBe("answered");
+  });
+  it("a closed message without an answer neither waits nor is routed", () => {
+    expect(messageState(null, { open: false, orphaned: true, sentAt }, after(30))).toBe("sent");
   });
 });
 

@@ -15,7 +15,8 @@
 //   • OPEN work items somebody else gave them (owner, 2026-10-07): their unfinished assignee row is taken out
 //     (`withdrawRemovedAssignee` — the one deletion of the removal; the rows are listed in the audit row) so the
 //     giver's «n از m» counts only the people still here; an item whose remaining assignees are all done flips to
-//     done. Finished and cancelled items keep them as history.
+//     done. Finished and cancelled items keep them as history. A guardian's «پیام ولی» they were the last live
+//     addressee of goes on to whoever can answer it (./guardian-message-routing — security review 2026-10-19, D1).
 // One `iam.person.removed` audit row summarises the change (statuses, counts and the ids of the ended rows — no
 // secrets). Idempotent: on a person already removed nothing changes and nothing is written (`alreadyRemoved`).
 //
@@ -66,6 +67,7 @@ import { branch, classGroup, classOffering } from "@/modules/tenancy/schema";
 import { withdrawRemovedAssignee } from "@/modules/workspace/service";
 import { can, canAtAnyScope } from "./can";
 import { endGuardianLinksOfGuardian, endGuardianLinksOfStudent } from "./guardian";
+import { applyGuardianMessageReroute, prepareGuardianMessageReroute } from "./guardian-message-routing";
 import { revokeAllForUser } from "./repo";
 import { authIdentity, organizationMembership, person, role, roleAssignment, staffProfile, studentProfile, userAccount } from "./schema";
 import { getPermissionScope, liveSchoolEnrollmentSql, ORG_GRANTED_ROLES, requirePersonInScope, roleAssignmentSchoolId, type IamCtx } from "./service";
@@ -238,6 +240,8 @@ export interface RemovePersonResult {
   withdrawnWorkItems: number;
   /** Of those, the items that flipped to done because everyone left had finished. */
   completedWorkItems: number;
+  /** Guardians' messages they were the last live addressee of, handed on to someone who can answer them (D1). */
+  reroutedGuardianMessages: number;
   revokedSessions: number;
   accountDisabled: boolean;
 }
@@ -247,9 +251,10 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
   const plan = await planRemoval(tx, ctx, input.personId, input.kind, true);
   const personId = plan.person.id;
 
-  // Teaching first: `endTeacherAssignment` revokes each derived `teacher` role and writes its own audit row.
+  // Teaching first: `endTeacherAssignment` revokes each derived `teacher` role and writes its own audit row. The guardians'
+  // messages of this person are re-routed once, below, around the withdrawal (not per teaching, before the items' locks).
   let derivedRoles = 0;
-  for (const t of plan.teaching) derivedRoles += (await endTeacherAssignment(tx, ctx, { teacherAssignmentId: t.id })).revokedRoleAssignments;
+  for (const t of plan.teaching) derivedRoles += (await endTeacherAssignment(tx, ctx, { teacherAssignmentId: t.id, rerouteGuardianMessages: false })).revokedRoleAssignments;
   const revokedRoleIds = (
     await tx
       .update(roleAssignment)
@@ -290,7 +295,12 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
   const asGuardian = await endGuardianLinksOfGuardian(tx, personId);
 
   // Open work items: out of the giver's count (header). Before the archive below; the order does not matter otherwise.
+  // «ارتباط ولی و مدرسه» (D1): a guardian's message this person was the last live addressee of goes on to whoever can
+  // answer it (./guardian-message-routing) — its candidates' person rows taken before `withdrawRemovedAssignee` locks
+  // the items, the decision and the writes under those locks, after the withdrawal took this person off them.
+  const reroute = await prepareGuardianMessageReroute(tx, personId);
   const work = await withdrawRemovedAssignee(tx, ctx, personId);
+  const rerouted = await applyGuardianMessageReroute(tx, ctx, reroute, { reason: "removed", lockedItemIds: work.withdrawn.map((w) => w.workItemId) });
 
   let staffLeftOn = plan.staff?.leftOn ?? null;
   if (plan.staff && staffLeftOn === null) {
@@ -380,6 +390,9 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
         // Open items they were taken out of — a restore re-inserts these assignee rows (role 'assignee', this state).
         withdrawnWorkItemAssignees: work.withdrawn,
         completedWorkItemIds: work.completedWorkItemIds,
+        // «ارتباط ولی و مدرسه» (D1): the guardians' messages handed on (or left with nobody) — each has its own
+        // `workspace.guardian_message.rerouted` row.
+        reroutedGuardianMessages: rerouted.map((r) => ({ workItemId: r.workItemId, step: r.step })),
         // «اولیا»: the links that ended (the student's guardians, or theirs as a guardian), the derived roles revoked with
         // them and the guardians whose login closed (each has its own `iam.guardian.access_closed` row).
         endedGuardianLinkIds: [...guardians.endedLinkIds, ...asGuardian.endedLinkIds],
@@ -401,6 +414,7 @@ export async function removePerson(tx: Tx, ctx: IamCtx, input: RemovePersonInput
     revokedRoleAssignments: counts.roleAssignments,
     withdrawnWorkItems: counts.workItems,
     completedWorkItems: work.completedWorkItemIds.length,
+    reroutedGuardianMessages: rerouted.filter((r) => r.step !== "nobody").length,
     revokedSessions,
     accountDisabled: accountChanged || accountBefore === "disabled",
   };

@@ -26,7 +26,10 @@
 //      row FOR SHARE before the item, so whichever runs first, the other waits — and no bell about the former child is
 //      left (security review 2026-10-19, D4);
 //   C16 the same for a roll call marking the child absent: the guardians' rows FOR SHARE and the links read again under
-//      them (`liveGuardiansOf`, also the report card's bell) — no «غیبت» about a former child is left.
+//      them (`liveGuardiansOf`, also the report card's bell) — no «غیبت» about a former child is left;
+//   C17 the removals of a school's only principal and only vice principal at once, each the last addressee of a
+//      guardian's message: the re-route passes over a candidate being removed (FOR KEY SHARE SKIP LOCKED) instead of
+//      waiting for them — no deadlock — and both messages are left with nobody (security review 2026-10-19, D1).
 // Each race asserts that the second transaction really WAITED for the first (pg_blocking_pids), so a pass means the
 // lock was there, not that the timing happened to be kind. The rows must be COMMITTED for the second connection to
 // see them, so the catalog is seeded in beforeAll and the database is re-created in afterAll (as
@@ -65,7 +68,7 @@ import { addGuardian, unlinkGuardian } from "@/modules/iam/guardian";
 import { MESSAGE_RATE_LIMIT } from "@/modules/iam/guardian-message-policy";
 import { sendGuardianMessage } from "@/modules/iam/guardian-messages";
 import { listValidAssignments } from "@/modules/iam/repo";
-import { createClassOffering, createSubject } from "@/modules/tenancy/service";
+import { createAcademicYear, createClassGroup, createClassOffering, createSchool, createSubject } from "@/modules/tenancy/service";
 import { assignRole, createStaff, createStudent, MESSAGES } from "@/modules/iam/service";
 import { listOfferingRoster } from "@/modules/workspace/repo";
 import { changeStatus, createWorkItem, updateWorkItem } from "@/modules/workspace/service";
@@ -652,5 +655,60 @@ describe("concurrency: a removal against the doors that would bring the person b
     expect(expectFulfilled(r2.second)).toMatchObject({ alreadyEnded: false });
     expect(await absentBellOf(g3.guardianPersonId)).toEqual([]);
     expect(await absentBellOf(g2.guardianPersonId)).toHaveLength(1);
+  });
+
+  it("C17: the removals of a school's only principal and only vice principal at once, each the last addressee of a guardian's message — no deadlock: the vice principal's re-route passes over the principal being removed (SKIP LOCKED), and both messages are left with nobody", async () => {
+    // A real organization admin (0023's function asks the database who the current person is), a fresh school with one
+    // principal and one vice principal, and a child there with a guardian who wrote to each office.
+    const adminP = await committed((tx) => createStaff(tx, orgAdmin, { firstName: "مهرداد", lastName: "صالحی", phone: "09127419101", createAccount: false }));
+    await committed((tx) => assignRole(tx, { ...orgAdmin, personId: adminP.personId }, { personId: adminP.personId, roleCode: "org_admin" }));
+    const admin = await realCtx(adminP.personId);
+    const s = await committed(async (tx) => {
+      const sch = await createSchool(tx, admin, { name: "دبستان هفدهم", code: "C17", genderPolicy: "girls" });
+      const year = await createAcademicYear(tx, admin, {
+        schoolId: sch.schoolId,
+        name: "۱۴۰۵-۱۴۰۶",
+        startsOn: "2026-09-23",
+        endsOn: "2027-06-21",
+        isCurrent: true,
+        terms: [{ name: "نوبت اول", sequence: 1, startsOn: "2026-09-23", endsOn: "2027-01-20" }],
+      });
+      const cg = await createClassGroup(tx, admin, { branchId: sch.branchId, academicYearId: year.academicYearId, gradeLevelId: f.GRADE_A, name: "۳/۱" });
+      const office = (firstName: string, phone: string, roleCode: "school_principal" | "vice_principal") =>
+        createStaff(tx, admin, { firstName, lastName: "صالحی", phone, createAccount: false, roles: [{ roleCode, schoolId: sch.schoolId }] });
+      const principal = await office("نسرین", "09127419102", "school_principal");
+      const vice = await office("نازنین", "09127419103", "vice_principal");
+      const child = await createStudent(tx, admin, { firstName: "رعنا", lastName: "صالحی", studentNumber: "C17-1", enrollment: { classGroupId: cg.classGroupId } });
+      return { principal, vice, child };
+    });
+    const g = await guardianOf(s.child.studentProfileId, 9);
+    const gctx = await realCtx(g.guardianPersonId);
+    const send = (destination: "principal" | "vice_principal") =>
+      committed(async (tx) => {
+        await bind(tx, g.guardianPersonId);
+        return sendGuardianMessage(tx, gctx, { studentProfileId: s.child.studentProfileId, kind: "question", destination, subject: "ساعت تعطیلی", body: "متن پیام" });
+      });
+    const toPrincipal = await send("principal");
+    const toVice = await send("vice_principal");
+
+    // The principal's removal holds their row FOR UPDATE (as `planRemoval` takes it first) and has not reached its
+    // re-route; the vice principal's removal runs whole — its chain names the principal, whose row it must not wait for
+    // (it would hold the vice principal's FOR UPDATE and wait for the principal's, while the principal's re-route then
+    // waited for the vice principal's: a circle). Then the principal's removal goes on.
+    const r = await race(
+      (tx) => bind(tx, admin.personId).then(() => tx.select({ id: schema.person.id }).from(schema.person).where(eq(schema.person.id, s.principal.personId)).for("update")),
+      (tx) => bind(tx, admin.personId).then(() => removePerson(tx, admin, { personId: s.vice.personId, kind: "staff" })),
+      (tx) => removePerson(tx, admin, { personId: s.principal.personId, kind: "staff" }),
+    );
+    expect(r.waited).toBe(false);
+    expect(expectFulfilled(r.second)).toMatchObject({ withdrawnWorkItems: 1, reroutedGuardianMessages: 0 });
+    for (const m of [toPrincipal, toVice]) expect(await itemState(m.workItemId)).toMatchObject({ category: "todo", assignees: [] });
+    const steps = await committed((tx) =>
+      tx
+        .select({ after: auditLog.after })
+        .from(auditLog)
+        .where(and(eq(auditLog.action, "workspace.guardian_message.rerouted"), sql`${auditLog.entityId} in (${toPrincipal.workItemId}::uuid, ${toVice.workItemId}::uuid)`)),
+    );
+    expect(steps.map((x) => (x.after as { step: string }).step)).toEqual(["nobody", "nobody"]);
   });
 });

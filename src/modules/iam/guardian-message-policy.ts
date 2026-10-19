@@ -112,9 +112,25 @@ export function splitGuardianMessageDescription(description: string | null): { s
   return { subject: d.slice(SUBJECT_PREFIX.length, nl).trim(), body: d.slice(nl).trim() };
 }
 
-/** What the guardian reads of a message: «ارسال‌شده» until an addressee answered, then «پاسخ داده شد». */
-export type MessageState = "sent" | "answered";
-export const MESSAGE_STATE_LABELS: Record<MessageState, string> = { sent: "ارسال‌شده", answered: "پاسخ داده شد" };
+/** Where a counselor reads and answers the guardians' messages addressed to them (they have no «پنل من»). */
+export const COUNSELOR_MESSAGES_HREF = "/counseling/messages";
+
+/**
+ * What the guardian reads of a message — display only, derived when read (no stored state): «ارسال‌شده», then after
+ * `MESSAGE_WAITING_DAYS` without an answer the neutral «در انتظار پاسخ» (never «ارسال‌شده» for ever); «در حال ارجاع به
+ * مدیریت» while no addressee is left on it at all (its last one removed and nobody at the school to take it —
+ * ./guardian-message-routing); «پاسخ داده شد» once answered (security review 2026-10-19, D1).
+ */
+export type MessageState = "sent" | "waiting" | "routing" | "answered";
+export const MESSAGE_STATE_LABELS: Record<MessageState, string> = {
+  sent: "ارسال‌شده",
+  waiting: "در انتظار پاسخ",
+  routing: "در حال ارجاع به مدیریت",
+  answered: "پاسخ داده شد",
+};
+/** Days without an answer after which «ارسال‌شده» reads «در انتظار پاسخ». */
+export const MESSAGE_WAITING_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The item's LATEST transition, as the guardian's list reads it. */
 export interface LastTransition {
@@ -134,8 +150,24 @@ export function answerOf(last: LastTransition): string | null {
   return last.category === "done" && last.byAddressee === true && last.note ? last.note : null;
 }
 
-export function messageState(answer: string | null): MessageState {
-  return answer === null ? "sent" : "answered";
+/** The facts of a message `messageState` reads besides its answer. */
+export interface MessageFacts {
+  /** The item is open (todo / doing, not archived). */
+  open: boolean;
+  /** No assignee of an active person is left on the item. */
+  orphaned: boolean;
+  sentAt: Date;
+}
+
+/**
+ * The guardian's tag (`MessageState`): answered once `answerOf` gave an answer; else, on an open message, «در حال ارجاع
+ * به مدیریت» while it is orphaned, «در انتظار پاسخ» from `MESSAGE_WAITING_DAYS` after it was sent, «ارسال‌شده» before.
+ */
+export function messageState(answer: string | null, facts: MessageFacts, now: Date): MessageState {
+  if (answer !== null) return "answered";
+  if (!facts.open) return "sent";
+  if (facts.orphaned) return "routing";
+  return now.getTime() - facts.sentAt.getTime() >= MESSAGE_WAITING_DAYS * DAY_MS ? "waiting" : "sent";
 }
 
 export function isMessageKind(v: string): v is MessageKind {

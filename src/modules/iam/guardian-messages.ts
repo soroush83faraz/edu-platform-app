@@ -26,7 +26,12 @@
 //     manager), no attachments.
 // Privacy: the audit rows carry ids, kinds and lengths only — never the subject or the body; the addressees' bell names
 // the kind and the child (the item's title), the guardian's bell the child only (`notifyGuardianOfMessageAnswer`); a
-// guardian learns nothing about an addressee but the درس × دبیر they picked themselves.
+// guardian learns nothing about an addressee but the درس × دبیر they picked themselves (after a re-route, the درس's
+// teacher now — whom the form lists to them anyway).
+// A message nobody can answer any more — its last live addressee removed, out of the office or no longer teaching the
+// درس — is handed on in that same write (./guardian-message-routing, security review 2026-10-19 D1); the guardian's
+// tag is derived when read: «ارسال‌شده», «در انتظار پاسخ» after a week, «در حال ارجاع به مدیریت» while nobody is left
+// on it, «پاسخ داده شد» (`messageState`).
 //
 // Lock order (iam/removal «Concurrency»): the guardian's and the recipients' person rows FOR KEY SHARE (ascending,
 // `lockActivePersons`) → the live guardian link FOR NO KEY UPDATE → the work item rows (`createConfidentialWorkItem`) →
@@ -40,6 +45,7 @@ import { findStudentAnchor, lockActivePersons } from "@/modules/counseling/repo"
 import { guardianMessage } from "@/modules/workspace/schema";
 import { answerAsAddressee, createConfidentialWorkItem } from "@/modules/workspace/service";
 import {
+  COUNSELOR_MESSAGES_HREF,
   GUARDIAN_MESSAGE_MESSAGES as MSG,
   MESSAGE_BODY_MAX,
   MESSAGE_RATE_LIMIT,
@@ -60,6 +66,7 @@ import {
   type MessageKind,
   type MessageState,
 } from "./guardian-message-policy";
+import { OFFICE_ROLE, officeHolders, type Office } from "./guardian-message-routing";
 import { requireChild, type ChildContext, type GuardianChild, type GuardianViewCtx } from "./guardian-views";
 
 export type GuardianMessageCtx = GuardianViewCtx & AuditCtx;
@@ -67,13 +74,8 @@ export type GuardianMessageCtx = GuardianViewCtx & AuditCtx;
 /** The permission every guardian-message read and write names (the derived «ولی» role only). */
 export const GUARDIAN_MESSAGE_PERMISSION = "iam.guardian_message.send" as const;
 
-/** Where a counselor reads and answers the guardians' messages addressed to them (they have no «پنل من»). */
-export const COUNSELOR_MESSAGES_HREF = "/counseling/messages";
-
-type Office = Exclude<MessageDestination, "teacher">;
-
-/** The school's offices and the system role whose live holders they are. */
-const OFFICE_ROLE: Record<Office, string> = { counselor: "counselor", vice_principal: "vice_principal", principal: "school_principal" };
+/** Where a counselor reads and answers the guardians' messages addressed to them (./guardian-message-policy). */
+export { COUNSELOR_MESSAGES_HREF };
 
 const fail = (field: string, message: string) => validation({ fieldErrors: { [field]: [message] } }, message);
 
@@ -124,33 +126,6 @@ async function teachersOfChild(tx: Tx, classGroupId: string | null, exceptPerson
   return out;
 }
 
-/**
- * The live holders of the school's offices: active persons with a valid assignment of the SYSTEM role (organization_id
- * NULL — a tenant role with the same code never counts) scoped to the school or one of its branches. Never
- * `exceptPersonId`. One query for the three offices.
- */
-async function officeHolders(tx: Tx, schoolId: string, exceptPersonId: string): Promise<Record<Office, string[]>> {
-  const res = await tx.execute<{ role_code: string; person_id: string }>(sql`
-    select distinct r.code as role_code, ra.person_id
-    from iam.role_assignment ra
-    join iam.role r on r.id = ra.role_id and r.organization_id is null
-    join iam.person p on p.id = ra.person_id and p.status = 'active'
-    where r.code in ('counselor', 'vice_principal', 'school_principal')
-      and ra.revoked_at is null
-      and (ra.valid_from is null or ra.valid_from <= current_date)
-      and (ra.valid_to is null or ra.valid_to >= current_date)
-      and ra.person_id <> ${exceptPersonId}::uuid
-      and ((ra.scope_type = 'school' and ra.school_id = ${schoolId}::uuid)
-           or (ra.scope_type = 'branch' and exists (select 1 from tenancy.branch b where b.id = ra.branch_id and b.school_id = ${schoolId}::uuid)))
-    order by r.code, ra.person_id`);
-  const out: Record<Office, string[]> = { counselor: [], vice_principal: [], principal: [] };
-  for (const r of res.rows) {
-    const office = (Object.keys(OFFICE_ROLE) as Office[]).find((o) => OFFICE_ROLE[o] === r.role_code);
-    if (office) out[office].push(r.person_id);
-  }
-  return out;
-}
-
 async function destinationsOf(tx: Tx, ctx: GuardianMessageCtx, child: GuardianChild): Promise<MessageDestinations & { classGroupId: string | null; holders: Record<Office, string[]> }> {
   const anchor = await findStudentAnchor(tx, child.studentProfileId);
   const empty = { counselor: [], vice_principal: [], principal: [] };
@@ -169,7 +144,11 @@ export interface MyMessageRow {
   id: string;
   kind: MessageKind;
   destination: MessageDestination;
-  /** A teacher message: the درس and the teacher it went to (null once nobody of it is left on the item). */
+  /**
+   * A teacher message: the درس, and the teacher it is with — an addressee who teaches (or taught) that درس, the one who
+   * teaches it now first (after a re-route, the درس's new teacher); null once no such addressee is left on the item
+   * (it went to the school's management — never named here).
+   */
   subjectName: string | null;
   teacherName: string | null;
   subject: string;
@@ -183,9 +162,11 @@ export interface MyMessageRow {
 
 /**
  * The caller's own messages about ONE child, newest first (`guardian_person_id` = the caller — RLS says the same,
- * 0022): status, the answer and its date. The child has passed `requireChild`.
+ * 0022): status, the answer and its date. The child has passed `requireChild`. The tag (`messageState`) is derived
+ * here, at `now`: whether the item is open, and whether any assignee of an active person is left on it at all
+ * (none: «در حال ارجاع به مدیریت» — ./guardian-message-routing found nobody to take it).
  */
-async function listMyMessages(tx: Tx, ctx: GuardianMessageCtx, studentProfileId: string): Promise<MyMessageRow[]> {
+async function listMyMessages(tx: Tx, ctx: GuardianMessageCtx, studentProfileId: string, now: Date): Promise<MyMessageRow[]> {
   const res = await tx.execute<{
     id: string;
     kind: string;
@@ -194,6 +175,8 @@ async function listMyMessages(tx: Tx, ctx: GuardianMessageCtx, studentProfileId:
     description: string | null;
     subject_name: string | null;
     teacher_name: string | null;
+    open: boolean;
+    orphaned: boolean;
     last_note: string | null;
     last_at: string | null;
     last_category: string | null;
@@ -204,11 +187,24 @@ async function listMyMessages(tx: Tx, ctx: GuardianMessageCtx, studentProfileId:
         select tp.first_name || ' ' || tp.last_name
         from workspace.work_item_assignee a join iam.person tp on tp.id = a.person_id
         where a.work_item_id = wi.id and a.role = 'assignee'
-        order by tp.last_name, tp.first_name limit 1
+          and exists (
+            select 1 from academic.teacher_assignment ta join iam.staff_profile stp on stp.id = ta.staff_profile_id
+            where ta.class_offering_id = gm.class_offering_id and stp.person_id = a.person_id)
+        order by (exists (
+            select 1 from academic.teacher_assignment ta join iam.staff_profile stp on stp.id = ta.staff_profile_id
+            where ta.class_offering_id = gm.class_offering_id and ta.valid_to is null and stp.person_id = a.person_id)) desc,
+          tp.last_name, tp.first_name
+        limit 1
       ) end as teacher_name,
+      (wi.archived_at is null and s.category in ('todo', 'doing')) as open,
+      not exists (
+        select 1 from workspace.work_item_assignee a join iam.person ap on ap.id = a.person_id and ap.status = 'active'
+        where a.work_item_id = wi.id and a.role = 'assignee'
+      ) as orphaned,
       lt.note as last_note, lt.at as last_at, lt.category as last_category, lt.by_addressee as last_by_addressee
     from workspace.guardian_message gm
     join workspace.work_item wi on wi.id = gm.work_item_id
+    join workspace.work_item_status s on s.id = wi.status_id
     left join tenancy.class_offering o on o.id = gm.class_offering_id
     left join tenancy.subject subj on subj.id = o.subject_id
     left join lateral (
@@ -236,7 +232,7 @@ async function listMyMessages(tx: Tx, ctx: GuardianMessageCtx, studentProfileId:
       subject: text.subject,
       body: text.body,
       sentAt: new Date(r.created_at),
-      state: messageState(answer),
+      state: messageState(answer, { open: r.open, orphaned: r.orphaned, sentAt: new Date(r.created_at) }, now),
       answer,
       answeredAt: answer && r.last_at ? new Date(r.last_at) : null,
     };
@@ -248,11 +244,14 @@ export interface ChildMessagesPage extends ChildContext {
   messages: MyMessageRow[];
 }
 
-/** «پیام به مدرسه» of one child: the form's destinations and the caller's messages — `requireChild` first (NOT_FOUND). */
-export async function childMessagesPage(tx: Tx, ctx: GuardianMessageCtx, requested: string | undefined): Promise<ChildMessagesPage> {
+/**
+ * «پیام به مدرسه» of one child: the form's destinations and the caller's messages — `requireChild` first (NOT_FOUND).
+ * `now` dates the «در انتظار پاسخ» tag (tests pass their own).
+ */
+export async function childMessagesPage(tx: Tx, ctx: GuardianMessageCtx, requested: string | undefined, now = new Date()): Promise<ChildMessagesPage> {
   const c = await requireChild(tx, ctx, requested, GUARDIAN_MESSAGE_PERMISSION);
   const d = await destinationsOf(tx, ctx, c.child);
-  return { ...c, destinations: { schoolId: d.schoolId, teachers: d.teachers, offices: d.offices }, messages: await listMyMessages(tx, ctx, c.child.studentProfileId) };
+  return { ...c, destinations: { schoolId: d.schoolId, teachers: d.teachers, offices: d.offices }, messages: await listMyMessages(tx, ctx, c.child.studentProfileId, now) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

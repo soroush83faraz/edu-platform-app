@@ -186,6 +186,7 @@ describe("removing a student or a colleague", () => {
         revokedRoleAssignments: 1,
         withdrawnWorkItems: 0,
         completedWorkItems: 0,
+        reroutedGuardianMessages: 0,
         revokedSessions: 2,
         accountDisabled: true,
       });

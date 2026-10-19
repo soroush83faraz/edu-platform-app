@@ -9,6 +9,7 @@ import type { Tx } from "@/lib/actions";
 import { forbidden, notFound, validation } from "@/lib/errors";
 import { formatNumberFa } from "@/lib/format";
 import { assignTeacher, endTeacherAssignment } from "@/modules/academic/service";
+import { rerouteGuardianMessagesOf } from "@/modules/iam/guardian-message-routing";
 import { classEnrollment, teacherAssignment } from "@/modules/academic/schema";
 import { can, isOrganizationAdmin, type Assignment } from "@/modules/iam/can";
 import { person, staffProfile } from "@/modules/iam/schema";
@@ -566,8 +567,11 @@ export const offeringResource = defineResource<OfferingRow, z.output<typeof Offe
     if (!(await can(tx, ctx, "academic.teacher_assignment.write", school))) throw forbidden(RESOURCE_MESSAGES.teacherAssignForbidden);
     // A school admin may only hand a class to staff anchored in / already teaching at their schools (scope widening).
     if (next) await requireStaffAssignable(tx, scope, next);
-    if (current) await endTeacherAssignment(tx, ctx, { teacherAssignmentId: current.id });
+    // The guardians' messages to the outgoing teacher go on once the next one is in (iam/guardian-message-routing, D1):
+    // the new teacher of the درس, else the school's management.
+    const ended = current ? await endTeacherAssignment(tx, ctx, { teacherAssignmentId: current.id, rerouteGuardianMessages: false }) : null;
     if (next) await assignTeacher(tx, ctx, { staffProfileId: next, classOfferingId: id, role: "main" });
+    if (ended) await rerouteGuardianMessagesOf(tx, ctx, ended.personId, "teaching_ended");
   },
 });
 
