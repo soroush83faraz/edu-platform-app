@@ -8,7 +8,7 @@ import { organization } from "@/modules/tenancy/schema";
 import type { ScopeType } from "../permissions";
 import { organizationMembership, person, userAccount } from "../schema";
 import type { DemoAccountFacts, DemoMembershipFacts } from "./eligibility";
-import type { DemoManagerHat, DemoManagerHatKey, DemoPerson, DemoSchoolFacts, DemoStudentPlace, DemoTeaching } from "./labels";
+import type { DemoGuardianChild, DemoManagerHat, DemoManagerHatKey, DemoPerson, DemoSchoolFacts, DemoStudentPlace, DemoTeaching } from "./labels";
 
 /** `user_session.device_label` of every demo session (src/modules/iam/session.ts `deviceLabel`). */
 export const DEMO_SESSION_LABEL = "demo-login";
@@ -224,6 +224,38 @@ export async function listDemoStudents(tx: Tx): Promise<DemoStudentPlace[]> {
     schoolId: r.school_id,
     className: r.class_name,
     gradeName: r.grade_name,
+    gradeSeq: Number(r.grade_seq),
+  }));
+}
+
+/**
+ * Tenant. Every LIVE guardian link to an active student in an active class (2026-10-18, «اولیا»): the guardian's person,
+ * the child's school, name, class and پایه — the «ولی» role of the panel. The guardian's account must still pass
+ * `listDemoPeople` (and the action's whole rule) to be offered.
+ */
+export async function listDemoGuardians(tx: Tx): Promise<DemoGuardianChild[]> {
+  const res = await tx.execute<{ person_id: string; school_id: string; first_name: string; last_name: string; class_name: string; grade_seq: number }>(sql`
+    select gl.guardian_person_id as person_id, cls.school_id, child.first_name, child.last_name, cls.class_name, cls.grade_seq
+    from iam.guardian_link gl
+    join iam.student_profile sp on sp.id = gl.student_profile_id and sp.status = 'active'
+    join iam.person child on child.id = sp.person_id and child.status = 'active'
+    join lateral (
+      select b.school_id, cg.name as class_name, gl2.sequence as grade_seq
+      from academic.class_enrollment ce
+      join tenancy.class_group cg on cg.id = ce.class_group_id
+      join tenancy.branch b on b.id = cg.branch_id
+      join tenancy.grade_level gl2 on gl2.id = cg.grade_level_id
+      where ce.student_profile_id = sp.id and ce.status = 'active'
+      order by ce.starts_on desc
+      limit 1
+    ) cls on true
+    where gl.status = 'active'
+  `);
+  return res.rows.map((r) => ({
+    personId: r.person_id,
+    schoolId: r.school_id,
+    childName: `${r.first_name} ${r.last_name}`.trim(),
+    className: r.class_name,
     gradeSeq: Number(r.grade_seq),
   }));
 }

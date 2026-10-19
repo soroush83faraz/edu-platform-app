@@ -7,14 +7,17 @@
 //   teacher  «امین ظفری — ریاضی ۱۰/۱، ۱۰/۲، ۱۰/۳… · فیزیک ۱۱/۱» — درس first, its classes after (three at most, then «…»);
 //            a دبستان's class teacher (every درس of ONE class) reads «هانیه فتحی — آموزگار اول الف»
 //   student  «پایهٴ اول — اول الف — لیلا نیک‌خواه», in one <optgroup> per پایه («پایهٴ اول»)
+//   guardian «ولیِ لیلا نیک‌خواه — اول الف», or «ولیِ ۲ فرزند: لیلا نیک‌خواه، سارا نیک‌خواه» (2026-10-18; the children
+//            at THAT school — a guardian of children in two schools is listed under both)
 // The teacher role is «دبیر», or «آموزگار» in a دبستان (a school whose classes are all پایهٴ اول–ششم).
 import { ROLE_LABELS } from "@/components/brand/roles";
+import { guardianDemoLabel } from "../guardian-policy";
 
-export type DemoRoleKey = "org_admin" | "principal" | "vice" | "counselor" | "teacher" | "student";
+export type DemoRoleKey = "org_admin" | "principal" | "vice" | "counselor" | "teacher" | "student" | "guardian";
 export type DemoManagerHatKey = Extract<DemoRoleKey, "org_admin" | "principal" | "vice" | "counselor">;
 
 /** The order of the «نقش» dropdown — the product's own hat order (`ROLE_ORDER`). */
-export const DEMO_ROLE_ORDER: readonly DemoRoleKey[] = ["org_admin", "principal", "vice", "counselor", "teacher", "student"];
+export const DEMO_ROLE_ORDER: readonly DemoRoleKey[] = ["org_admin", "principal", "vice", "counselor", "teacher", "student", "guardian"];
 
 export interface DemoOption {
   /** iam.user_account.id — the ONLY value the demo login accepts. */
@@ -68,6 +71,15 @@ export interface DemoStudentPlace {
   gradeName: string;
   gradeSeq: number;
 }
+/** One live guardian link (guardian person → a child in an active class of a school), for the «ولی» role. */
+export interface DemoGuardianChild {
+  /** The GUARDIAN's person id (their account is the option). */
+  personId: string;
+  schoolId: string;
+  childName: string;
+  className: string;
+  gradeSeq: number;
+}
 export interface DemoSchoolFacts {
   id: string;
   name: string;
@@ -83,6 +95,8 @@ export interface DemoOrgFacts {
   managers: DemoManagerHat[];
   teaching: DemoTeaching[];
   students: DemoStudentPlace[];
+  /** Live guardian links (2026-10-18); optional so a list read before «اولیا» still builds. */
+  guardians?: DemoGuardianChild[];
 }
 
 const collator = new Intl.Collator("fa", { numeric: true, sensitivity: "base" });
@@ -185,6 +199,22 @@ function studentOptions(org: DemoOrgFacts, people: Map<string, DemoPerson>, scho
     }));
 }
 
+/** «ولی»: one option per guardian with a child at this school, labelled by those children (`guardianDemoLabel`). */
+function guardianOptions(org: DemoOrgFacts, people: Map<string, DemoPerson>, schoolId: string): DemoOptionGroup[] {
+  const byGuardian = new Map<string, DemoGuardianChild[]>();
+  for (const g of org.guardians ?? []) {
+    if (g.schoolId !== schoolId || !people.has(g.personId)) continue;
+    byGuardian.set(g.personId, [...(byGuardian.get(g.personId) ?? []), g]);
+  }
+  const options = [...byGuardian.entries()]
+    .map(([personId, kids]) => {
+      const sorted = [...kids].sort((a, b) => a.gradeSeq - b.gradeSeq || byText(a.className, b.className) || byText(a.childName, b.childName));
+      return { id: people.get(personId)!.accountId, label: guardianDemoLabel(sorted.map((k) => ({ name: k.childName, className: k.className }))) };
+    })
+    .sort((a, b) => byText(a.label, b.label));
+  return [{ label: null, options }];
+}
+
 export function buildDemoDirectory(orgs: readonly DemoOrgFacts[]): DemoDirectory {
   const schools: Array<DemoSchool & { orgName: string }> = [];
   for (const org of orgs) {
@@ -195,7 +225,13 @@ export function buildDemoDirectory(orgs: readonly DemoOrgFacts[]): DemoDirectory
       const roles: DemoRole[] = [];
       for (const key of DEMO_ROLE_ORDER) {
         const groups =
-          key === "teacher" ? teacherOptions(org, people, school) : key === "student" ? studentOptions(org, people, school.id) : staffOptions(org, people, key, school.id);
+          key === "teacher"
+            ? teacherOptions(org, people, school)
+            : key === "student"
+              ? studentOptions(org, people, school.id)
+              : key === "guardian"
+                ? guardianOptions(org, people, school.id)
+                : staffOptions(org, people, key, school.id);
         if (groups.some((g) => g.options.length > 0)) roles.push({ key, label: demoRoleLabel(key, school.primary), groups: groups.filter((g) => g.options.length > 0) });
       }
       if (roles.length > 0) schools.push({ key: `${org.orgId}/${school.id}`, label: school.name, roles, orgName: org.orgName });

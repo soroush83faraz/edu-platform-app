@@ -7,7 +7,7 @@
 import { z } from "zod";
 import { defineDemoAction } from "@/lib/actions";
 import { buildDemoDirectory, type DemoDirectory, type DemoOrgFacts } from "./labels";
-import { findDemoOrgs, listDemoManagerHats, listDemoPeople, listDemoSchools, listDemoStudents, listDemoTeaching } from "./repo";
+import { findDemoOrgs, listDemoGuardians, listDemoManagerHats, listDemoPeople, listDemoSchools, listDemoStudents, listDemoTeaching } from "./repo";
 
 export const loadDemoDirectory = defineDemoAction({ schema: z.object({}).strict() }, async (_input, tools): Promise<DemoDirectory> => {
   const orgs = await tools.globalTx((tx) => findDemoOrgs(tx, tools.allowedOrgSlugs));
@@ -22,6 +22,7 @@ export const loadDemoDirectory = defineDemoAction({ schema: z.object({}).strict(
         managers: await listDemoManagerHats(tx),
         teaching: await listDemoTeaching(tx),
         students: await listDemoStudents(tx),
+        guardians: await listDemoGuardians(tx),
       })),
     );
   }

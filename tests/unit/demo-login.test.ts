@@ -471,6 +471,39 @@ describe("labels", () => {
     expect(dir.schools[1].roles.find((r) => r.key === "teacher")).toMatchObject({ label: "دبیر" });
   });
 
+  it("«ولی» (2026-10-18): one option per guardian with a child at the school — one child by name and class, siblings as «ولیِ ۲ فرزند: …»; an ineligible guardian account is never offered", () => {
+    const withGuardians: DemoOrgFacts = {
+      ...org,
+      people: [
+        ...org.people,
+        { personId: "g1", accountId: "acc-g1", firstName: "ولیِ لیلا", lastName: "نیک‌خواه" },
+        { personId: "g2", accountId: "acc-g2", firstName: "رضا", lastName: "امینی" },
+      ],
+      guardians: [
+        { personId: "g2", schoolId: SCHOOL, childName: "نگار رضایی", className: "دوم الف", gradeSeq: 2 },
+        { personId: "g1", schoolId: SCHOOL, childName: "لیلا نیک‌خواه", className: "اول الف", gradeSeq: 1 },
+        { personId: "g2", schoolId: SCHOOL, childName: "سارا امینی", className: "اول الف", gradeSeq: 1 },
+        { personId: "ghost-guardian", schoolId: SCHOOL, childName: "لیلا نیک‌خواه", className: "اول الف", gradeSeq: 1 },
+        { personId: "g1", schoolId: "elsewhere", childName: "کسی دیگر", className: "۷/۱", gradeSeq: 7 },
+      ],
+    };
+    const [school] = buildDemoDirectory([withGuardians]).schools;
+    expect(school.roles.map((r) => r.key)).toEqual(["org_admin", "principal", "teacher", "student", "guardian"]);
+    const guardian = school.roles.find((r) => r.key === "guardian")!;
+    expect(guardian.label).toBe("ولی");
+    expect(guardian.groups).toEqual([
+      {
+        label: null,
+        options: [
+          { id: "acc-g2", label: "ولیِ ۲ فرزند: سارا امینی، نگار رضایی" },
+          { id: "acc-g1", label: "ولیِ لیلا نیک‌خواه — اول الف" },
+        ],
+      },
+    ]);
+    // No guardian facts → no «ولی» role (the list read before «اولیا» still builds).
+    expect(buildDemoDirectory([org]).schools[0].roles.some((r) => r.key === "guardian")).toBe(false);
+  });
+
   it("an organization without a school still offers its «مدیر سازمان»", () => {
     const dir = buildDemoDirectory([{ ...org, schools: [], teaching: [], students: [] }]);
     expect(dir.schools).toEqual([

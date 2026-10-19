@@ -439,4 +439,27 @@ describe("the panel's list", () => {
     expect(res.data.schools.some((s) => s.key.startsWith(f.ORG_B))).toBe(false);
     expect(JSON.stringify(res.data)).not.toContain(allowed.phone);
   });
+
+  it("«ولی» (2026-10-18): a guardian with a live link to a student of the school is offered, labelled by the child — never with a phone", async () => {
+    const guardian = await createAccount(8, { orgs: [f.ORG_A], withPassword: true });
+    await asAppOwner(async (c) => {
+      await c.query("BEGIN");
+      await c.query("SELECT set_config('app.current_org_id', $1, true)", [f.ORG_A]);
+      await c.query(
+        `INSERT INTO iam.guardian_link (id, organization_id, guardian_person_id, student_profile_id, relation, is_primary)
+         VALUES ($1, $2, $3, $4, 'mother', true) ON CONFLICT DO NOTHING`,
+        [id(8, 1), f.ORG_A, guardian.personIds[0], id(5, 1)],
+      );
+      await c.query("COMMIT");
+    });
+    unlock();
+    const res = await loadDemoDirectory({});
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const school = res.data.schools.find((s) => s.key === `${f.ORG_A}/${f.SCHOOL_A}`)!;
+    const role = school.roles.find((r) => r.key === "guardian");
+    expect(role?.label).toBe("ولی");
+    expect(role?.groups.flatMap((g) => g.options)).toContainEqual({ id: guardian.id, label: "ولیِ دمو آزمایشی 1 — اول 1" });
+    expect(JSON.stringify(role)).not.toContain(guardian.phone);
+  });
 });
