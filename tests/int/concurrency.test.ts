@@ -21,7 +21,12 @@
 //      (the students' profile rows, `completeCardsOf`) and sees the card complete — the guardian hears of it ONCE, never
 //      zero times (owner 2026-10-19, «کارنامه: اعلان کامل»);
 //   C14 a guardian's two messages about one child at once with one left under the hourly limit: the second waits for
-//      the first at the live link's row and is refused (RATE_LIMITED) — never both («ارتباط ولی و مدرسه»).
+//      the first at the live link's row and is refused (RATE_LIMITED) — never both («ارتباط ولی و مدرسه»);
+//   C15 an addressee's answer racing the unlink of the guardian who wrote the message: the answer takes the guardian's
+//      row FOR SHARE before the item, so whichever runs first, the other waits — and no bell about the former child is
+//      left (security review 2026-10-19, D4);
+//   C16 the same for a roll call marking the child absent: the guardians' rows FOR SHARE and the links read again under
+//      them (`liveGuardiansOf`, also the report card's bell) — no «غیبت» about a former child is left.
 // Each race asserts that the second transaction really WAITED for the first (pg_blocking_pids), so a pass means the
 // lock was there, not that the timing happened to be kind. The rows must be COMMITTED for the second connection to
 // see them, so the catalog is seeded in beforeAll and the database is re-created in afterAll (as
@@ -47,6 +52,8 @@ import {
   workItemStatus,
 } from "@/db/schema";
 import { AppError } from "@/lib/errors";
+import { tehranToday } from "@/lib/attendance";
+import { takeAttendance } from "@/modules/academic/attendance";
 import { saveObjectiveRatings } from "@/modules/academic/report-card";
 import { assignTeacher } from "@/modules/academic/service";
 import { adminPlaceStudent, adminResetInitialPassword, type AdminCtx } from "@/modules/iam/admin";
@@ -54,7 +61,7 @@ import type { Assignment } from "@/modules/iam/can";
 import { PERSON_REMOVED_MESSAGE } from "@/modules/iam/messages";
 import { PERMISSIONS } from "@/modules/iam/permissions";
 import { removePerson } from "@/modules/iam/removal";
-import { addGuardian } from "@/modules/iam/guardian";
+import { addGuardian, unlinkGuardian } from "@/modules/iam/guardian";
 import { MESSAGE_RATE_LIMIT } from "@/modules/iam/guardian-message-policy";
 import { sendGuardianMessage } from "@/modules/iam/guardian-messages";
 import { listValidAssignments } from "@/modules/iam/repo";
@@ -584,5 +591,66 @@ describe("concurrency: a removal against the doors that would bring the person b
       return tx.select({ id: schema.guardianMessage.id }).from(schema.guardianMessage).where(eq(schema.guardianMessage.studentProfileId, child.studentProfileId));
     });
     expect(n).toHaveLength(MESSAGE_RATE_LIMIT);
+  });
+
+  it("C15: an answer to a guardian's message racing the unlink of that guardian — whichever runs first, no bell about the former child is left (the answer takes the guardian's row FOR SHARE before the item)", async () => {
+    const teacher = await newStaff("کاوه");
+    await committed((tx) => assignTeacher(tx, orgAdmin, { staffProfileId: teacher.staffProfileId, classOfferingId: f.OFFERING_A1 }));
+    const tctx = await realCtx(teacher.personId);
+    /** A fresh child of A1 with a fresh guardian who has written to the teacher of its ریاضی (committed). */
+    const family = async (firstName: string, n: number) => {
+      const child = await newStudent(firstName);
+      const g = await guardianOf(child.studentProfileId, n);
+      const gctx = await realCtx(g.guardianPersonId);
+      const m = await committed(async (tx) => {
+        await bind(tx, g.guardianPersonId);
+        return sendGuardianMessage(tx, gctx, { studentProfileId: child.studentProfileId, kind: "question", destination: "teacher", classOfferingId: f.OFFERING_A1, teacherPersonId: teacher.personId, subject: "تکلیف ریاضی", body: "متن پیام" });
+      });
+      return { g, m };
+    };
+    const answer = (workItemId: string) => (tx: Tx) => bind(tx, teacher.personId).then(() => changeStatus(tx, tctx, { workItemId, toStatusCode: "answered", note: "پاسخ دبیر" }));
+    const unlink = (linkId: string) => (tx: Tx) => unlinkGuardian(tx, orgAdmin, { linkId });
+    const bellOf = (personId: string) =>
+      committed((tx) => tx.select({ id: notification.id }).from(notification).where(and(eq(notification.recipientPersonId, personId), eq(notification.typeCode, "guardian.message_answered"))));
+
+    // The unlink first: the answer waits at the guardian's row, then reads the link ended — no bell.
+    const a = await family("پرستو", 3);
+    const r1 = await race(unlink(a.g.linkId), answer(a.m.workItemId));
+    expect(r1.waited).toBe(true);
+    expect(r1.first).toMatchObject({ alreadyEnded: false });
+    expect(expectFulfilled(r1.second)).toMatchObject({ statusCode: "answered", itemChanged: true });
+    expect(await bellOf(a.g.guardianPersonId)).toEqual([]);
+
+    // The answer first (its bell written, not committed): the unlink waits for it, then its prune deletes the bell.
+    const b = await family("پریسا", 4);
+    const r2 = await race(answer(b.m.workItemId), unlink(b.g.linkId));
+    expect(r2.waited).toBe(true);
+    expect(r2.first).toMatchObject({ statusCode: "answered", itemChanged: true });
+    expect(expectFulfilled(r2.second)).toMatchObject({ alreadyEnded: false });
+    expect(await bellOf(b.g.guardianPersonId)).toEqual([]);
+  });
+
+  it("C16: a roll call marking a child absent racing the unlink of the child's guardian — whichever runs first, no «غیبت» about the former child is left (the guardians' rows FOR SHARE, the links read again)", async () => {
+    const absentBellOf = (personId: string) =>
+      committed((tx) => tx.select({ id: notification.id }).from(notification).where(and(eq(notification.recipientPersonId, personId), eq(notification.typeCode, "guardian.child_absent"))));
+    const kids = [await newStudent("آرزو"), await newStudent("آیدا"), await newStudent("آوا")];
+    const [g1, g2, g3] = [await guardianOf(kids[0].studentProfileId, 5), await guardianOf(kids[1].studentProfileId, 6), await guardianOf(kids[2].studentProfileId, 7)];
+    /** Today's homeroom roll call with the first `n` children absent (re-taking it updates the same session). */
+    const rollCall = (n: number) => (tx: Tx) =>
+      takeAttendance(tx, orgAdmin, { classGroupId: f.CLASS_GROUP_A1, date: tehranToday(), entries: kids.slice(0, n).map((k) => ({ studentProfileId: k.studentProfileId, status: "absent" as const })) });
+
+    // The unlink first: the roll call waits at the guardian's row, then reads the link ended — no bell for g1; g2's is written.
+    const r1 = await race((tx) => unlinkGuardian(tx, orgAdmin, { linkId: g1.linkId }), rollCall(2));
+    expect(r1.waited).toBe(true);
+    expect(expectFulfilled(r1.second)).toMatchObject({ counts: expect.objectContaining({ absent: 2 }) });
+    expect(await absentBellOf(g1.guardianPersonId)).toEqual([]);
+    expect(await absentBellOf(g2.guardianPersonId)).toHaveLength(1);
+
+    // The roll call first (g3's bell written, not committed): the unlink of g3 waits for it, then its prune deletes it.
+    const r2 = await race(rollCall(3), (tx) => unlinkGuardian(tx, orgAdmin, { linkId: g3.linkId }));
+    expect(r2.waited).toBe(true);
+    expect(expectFulfilled(r2.second)).toMatchObject({ alreadyEnded: false });
+    expect(await absentBellOf(g3.guardianPersonId)).toEqual([]);
+    expect(await absentBellOf(g2.guardianPersonId)).toHaveLength(1);
   });
 });

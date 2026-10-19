@@ -2328,3 +2328,16 @@ fixed in its own commit.
   `pruneGuardianNotifications` also deletes, whichever child, any work-item notification (`source_kind` 'work_item')
   about a «پیام ولی» its recipient wrote — none is theirs to receive; a colleague's own work-item bell is untouched.
   Tests: `tests/unit/manage-policy.test.ts`, `tests/int/guardian-message.test.ts` «security review D3».
+- **D4 — a guardian's bell and an unlink of that guardian never interleave.** `notifyGuardianOfMessageAnswer` read the
+  live link without a lock that an unlink waits for: the answer took the guardian's row FOR KEY SHARE, the unlink takes
+  it FOR NO KEY UPDATE, and those two never conflict — so an answer could read the link as live while it was ending
+  and commit its «پاسخ مدرسه …» after the unlink's prune, leaving a former child's name in the bell (the D2 property of
+  the «اولیا» review). The «غیبت» and «کارنامه» bells had the same race (`liveGuardiansOf` read the links, THEN took
+  the rows FOR KEY SHARE). Now: `lockItemPeople` (workspace) also takes the creator of a `parent_message` FOR SHARE, in
+  its own statement after the KEY SHARE one and still before the item (person rows before work items), and
+  `liveGuardiansOf` takes the guardians' rows FOR SHARE (ascending) and reads the links AGAIN under them. SHARE
+  conflicts with the unlink's NO KEY UPDATE, so whichever runs first the other waits: the bell reads the ended link and
+  writes nothing, or the unlink waits and its prune deletes the bell. The report card's lock order is otherwise
+  unchanged (ratings → profile rows → guardian rows, now FOR SHARE). Races: `tests/int/concurrency.test.ts` C15 (an
+  answer against an unlink, both orders) and C16 (a roll call against an unlink, both orders) — each fails without
+  the fix (the second transaction never waits).

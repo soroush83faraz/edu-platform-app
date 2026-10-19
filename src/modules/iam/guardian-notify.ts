@@ -13,7 +13,9 @@
 // The title is the kind of event and the child's name, nothing else (`guardianNotificationTitle`); no body. The
 // recipients are the child's LIVE guardians (link live, person active), never the actor (a teacher who is also the
 // parent does not hear of their own roll call), through the workspace notify policy. Their person rows are taken FOR
-// KEY SHARE in ascending order before the insert (its foreign-key check would take exactly that lock anyway).
+// SHARE before the link is read for the last time (ascending; the answer's through workspace `lockItemPeople`) — the
+// mode an unlink's FOR NO KEY UPDATE conflicts with, so a bell and an unlink of its guardian never interleave (security
+// review 2026-10-19, D4); the insert's foreign-key check then waits for nothing new.
 // Each row records its child (`payload.studentProfileId`), so a guardian's bell only ever holds rows about their LIVE
 // children: ending a link (and so closing, or reopening, a guardian login) prunes the rest (`pruneGuardianNotifications`,
 // security review 2026-10-19 D2 — a reopened account would otherwise show the next school a former child's name).
@@ -43,24 +45,36 @@ interface ChildGuardians {
   guardianPersonIds: string[];
 }
 
-/** The live guardians of each student (none → left out), but the actor; their rows locked FOR KEY SHARE, ascending. */
+/**
+ * The live guardians of each student (none → left out), but the actor. Their person rows are taken FOR SHARE,
+ * ascending, and the links read AGAIN under those locks (security review 2026-10-19, D4): an unlink takes the guardian's
+ * row FOR NO KEY UPDATE (./guardian «Concurrency»), which the KEY SHARE taken here before never waited for — a bell
+ * written while a link was ending committed after the unlink's prune and kept a former child's name. Now an unlink in
+ * flight is waited for and its ended link is seen by the second read (READ COMMITTED: a new statement sees what it
+ * committed); an unlink that comes later waits for this transaction and its prune sees the bell. A guardian linked
+ * between the two reads is left out (not locked): this event happened before their link.
+ */
 async function liveGuardiansOf(tx: Tx, ctx: GuardianNotifyCtx, studentProfileIds: readonly string[]): Promise<ChildGuardians[]> {
   const ids = [...new Set(studentProfileIds)];
   if (ids.length === 0) return [];
-  const rows = await tx.execute<{ student_profile_id: string; first_name: string; last_name: string; guardian_person_id: string }>(sql`
-    select sp.id as student_profile_id, child.first_name, child.last_name, gl.guardian_person_id
-    from iam.guardian_link gl
-    join iam.student_profile sp on sp.id = gl.student_profile_id
-    join iam.person child on child.id = sp.person_id
-    join iam.person gp on gp.id = gl.guardian_person_id
-    where gl.status = 'active' and gp.status = 'active'
-      and gl.student_profile_id = any(${sql.param(ids, undefined)}::uuid[])
-      and gl.guardian_person_id <> ${ctx.personId}::uuid
-    order by sp.id, gl.guardian_person_id`);
-  const recipients = [...new Set(rows.rows.map((r) => r.guardian_person_id))].sort();
-  if (recipients.length > 0) await tx.select({ id: person.id }).from(person).where(inArray(person.id, recipients)).orderBy(asc(person.id)).for("key share");
+  const read = () =>
+    tx.execute<{ student_profile_id: string; first_name: string; last_name: string; guardian_person_id: string }>(sql`
+      select sp.id as student_profile_id, child.first_name, child.last_name, gl.guardian_person_id
+      from iam.guardian_link gl
+      join iam.student_profile sp on sp.id = gl.student_profile_id
+      join iam.person child on child.id = sp.person_id
+      join iam.person gp on gp.id = gl.guardian_person_id
+      where gl.status = 'active' and gp.status = 'active'
+        and gl.student_profile_id = any(${sql.param(ids, undefined)}::uuid[])
+        and gl.guardian_person_id <> ${ctx.personId}::uuid
+      order by sp.id, gl.guardian_person_id`);
+  const recipients = [...new Set((await read()).rows.map((r) => r.guardian_person_id))].sort();
+  if (recipients.length === 0) return [];
+  await tx.select({ id: person.id }).from(person).where(inArray(person.id, recipients)).orderBy(asc(person.id)).for("share");
+  const locked = new Set(recipients);
+  const live = (await read()).rows.filter((r) => locked.has(r.guardian_person_id));
   const byChild = new Map<string, ChildGuardians>();
-  for (const r of rows.rows) {
+  for (const r of live) {
     const entry = byChild.get(r.student_profile_id) ?? { studentProfileId: r.student_profile_id, childName: `${r.first_name} ${r.last_name}`, guardianPersonIds: [] };
     entry.guardianPersonIds.push(r.guardian_person_id);
     byChild.set(r.student_profile_id, entry);
@@ -156,9 +170,12 @@ export async function notifyGuardiansOfReportCard(
  * who wrote it hears «پاسخ مدرسه به پیام شما دربارهٴ <نام>» — never the answer, never who gave it (they read the answer
  * in «پیام به مدرسه») — while their link to that child is still live (link, child and guardian active: a former child's
  * name never reaches a bell, D2) and never for the actor's own act. Once per message (the first answer closes it, and
- * a `parent_message` has no manager to reopen it). The guardian's person row was taken FOR KEY SHARE before the item
- * (`lockItemPeople` takes a confidential item's creator), so the insert's foreign-key check waits for nothing new.
- * The message row is readable here because the actor is one of the item's addressees (0022's RESTRICTIVE policy).
+ * a `parent_message` has no manager to reopen it). The guardian's person row was taken FOR SHARE before the item
+ * (workspace `lockItemPeople`, security review 2026-10-19 D4) — the mode an unlink's FOR NO KEY UPDATE on that row
+ * conflicts with: an unlink in flight committed before the link is read below (so it reads the link ended and writes
+ * nothing), or it waits for this transaction and its prune then deletes the row written here. The insert's
+ * foreign-key check waits for nothing new. The message row is readable here because the actor is one of the item's
+ * addressees (0022's RESTRICTIVE policy).
  */
 export async function notifyGuardianOfMessageAnswer(tx: Tx, ctx: GuardianNotifyCtx, answer: { workItemId: string; closed: boolean }): Promise<number> {
   if (!answer.closed) return 0;

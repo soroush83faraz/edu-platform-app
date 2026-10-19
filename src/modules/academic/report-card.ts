@@ -394,8 +394,8 @@ export async function getRatingSheet(tx: Tx, ctx: ReportCtx, input: { classGroup
  * «missing» 0. Two teachers who complete the last two درس‌ها of a card at the same moment save in two transactions,
  * and neither would see the other's uncommitted levels: the students' profile rows are taken FOR NO KEY UPDATE
  * (ascending) first, so the later save waits, then reads the earlier one's committed levels and sees the card
- * complete. Lock order: the rating rows (the save) → these profile rows → the guardians' person rows (FOR KEY SHARE,
- * `notifyGuardiansOfReportCard`); nothing locks a profile row and then a rating.
+ * complete. Lock order: the rating rows (the save) → these profile rows → the guardians' person rows (FOR SHARE,
+ * `notifyGuardiansOfReportCard` — an unlink in flight is waited for, D4); nothing locks a profile row and then a rating.
  */
 async function completeCardsOf(tx: Tx, cg: ReportClass, month: number, studentIds: readonly string[]): Promise<string[]> {
   const ids = [...new Set(studentIds)].sort();

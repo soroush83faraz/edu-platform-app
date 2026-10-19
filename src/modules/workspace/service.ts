@@ -119,22 +119,33 @@ async function lockWorkItem(tx: Tx, workItemId: string): Promise<WorkItemCore> {
  * BEFORE `lockWorkItem`. Those inserts' foreign-key checks take exactly this lock: taken there, after the item's lock,
  * they would invert the lock order and deadlock with a removal, which holds its person FOR UPDATE and then locks that
  * person's open items. Here a removal in flight is waited for first, and one that starts later waits for this
- * transaction. Assignee rows are never added to an existing item, so the set read here covers every later recipient.
- * The creator of a CONFIDENTIAL item too: an addressee's answer notifies the counselor who asked
- * (counseling `notifyConfidentialAnswer`).
+ * transaction. Assignee rows are never added to an existing item but by a guardian message's re-route
+ * (iam/guardian-message-routing, under the item's lock), and a `parent_message` notifies none of its assignees from
+ * here (it has no manager; an answer tells its guardian) — so the set read here covers every later recipient. The
+ * creator of a CONFIDENTIAL item too: an addressee's answer notifies the counselor who asked (counseling
+ * `notifyConfidentialAnswer`) or the guardian who wrote a «پیام ولی» (iam/guardian-notify).
+ *
+ * The guardian who wrote a «پیام ولی» is ALSO taken FOR SHARE (security review 2026-10-19, D4): an unlink takes the
+ * guardian's row FOR NO KEY UPDATE (iam/guardian «Concurrency»), which KEY SHARE never waits for — an answer racing an
+ * unlink would read the link as still live and commit its bell after the unlink's prune, leaving a former child's name
+ * in that bell. SHARE conflicts with it, so the two run one after the other: the answer reads the link the unlink
+ * ended (no bell), or the unlink waits for the answer and its prune deletes the bell. Its own statement, after the KEY
+ * SHARE one: nothing that holds a guardian's row in a mode SHARE waits for (an unlink, a link edit, a removal of that
+ * guardian) waits in turn for one of the KEY SHARE rows above.
  */
-async function lockItemPeople(tx: Tx, ctx: WorkspaceCtx, workItemId: string): Promise<void> {
-  const assignees = tx.select({ id: workItemAssignee.personId }).from(workItemAssignee).where(eq(workItemAssignee.workItemId, workItemId));
+async function lockItemPeople(tx: Tx, ctx: WorkspaceCtx, item: Pick<WorkItemCore, "id" | "typeCode" | "createdByPersonId">): Promise<void> {
+  const assignees = tx.select({ id: workItemAssignee.personId }).from(workItemAssignee).where(eq(workItemAssignee.workItemId, item.id));
   const confidentialCreator = tx
     .select({ id: workItem.createdByPersonId })
     .from(workItem)
-    .where(and(eq(workItem.id, workItemId), eq(workItem.isConfidential, true)));
+    .where(and(eq(workItem.id, item.id), eq(workItem.isConfidential, true)));
   await tx
     .select({ id: person.id })
     .from(person)
     .where(or(eq(person.id, ctx.personId), inArray(person.id, assignees), inArray(person.id, confidentialCreator)))
     .orderBy(asc(person.id))
     .for("key share");
+  if (item.typeCode === "parent_message") await tx.select({ id: person.id }).from(person).where(eq(person.id, item.createdByPersonId)).for("share");
 }
 
 /** Exactly one assignee row, and that assignee is the creator — any type. One indexed query, only on the broad-reader branch. */
@@ -571,9 +582,10 @@ export async function answerAsAddressee(tx: Tx, ctx: WorkspaceCtx, input: { work
 }
 
 async function changeStatusCore(tx: Tx, ctx: WorkspaceCtx, input: ChangeStatusInput, opts: { addresseeAnswerOnly: boolean }): Promise<ChangeStatusResult> {
-  await canViewWorkItem(tx, ctx, input.workItemId);
-  // Everything below reads the item under its row lock (`lockWorkItem`), its people locked before it.
-  await lockItemPeople(tx, ctx, input.workItemId);
+  const seen = await canViewWorkItem(tx, ctx, input.workItemId);
+  // Everything below reads the item under its row lock (`lockWorkItem`), its people locked before it (an item's type
+  // and creator never change, so `seen` names them).
+  await lockItemPeople(tx, ctx, seen);
   const item = await lockWorkItem(tx, input.workItemId);
   if (item.archivedAt) throw validation(undefined, `این ${nouns(ctx).singular} بایگانی شده است.`);
   // The module-authorised answer (`answerAsAddressee`) skips this gate and only this one — its own rule is below.
@@ -893,10 +905,10 @@ function listFa(parts: string[]): string {
  * body), a content-only edit is `work_item.updated`. Their inbox rows flip back to unread either way.
  */
 export async function updateWorkItem(tx: Tx, ctx: WorkspaceCtx, input: UpdateWorkItemInput): Promise<UpdateWorkItemResult> {
-  await canViewWorkItem(tx, ctx, input.workItemId);
+  const seen = await canViewWorkItem(tx, ctx, input.workItemId);
   // Under the item's row lock (`lockWorkItem`, its people locked before it): an «اتمام» / «حذف» committed meanwhile is
   // seen below and refused, and the audit `before` is the item as it is now.
-  await lockItemPeople(tx, ctx, input.workItemId);
+  await lockItemPeople(tx, ctx, seen);
   const item = await lockWorkItem(tx, input.workItemId);
   const noun = nouns(ctx).singular;
   if (item.archivedAt) throw validation(undefined, `این ${noun} بایگانی شده است.`);

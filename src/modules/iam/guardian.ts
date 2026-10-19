@@ -38,7 +38,10 @@
 // two link edits of one student and two of one guardian, and never blocks the FOR KEY SHARE readers (work-item
 // recipients, notification FK checks) — then the link, role and account rows. So a removal ending the last link of a
 // guardian and a link being added to that guardian run one after the other, and the second reads what the first
-// committed: no live link left on a closed account, no account closed under a live link.
+// committed: no live link left on a closed account, no account closed under a live link. The guardian's bell
+// («غیبت», «کارنامه», «پاسخ مدرسه») takes the guardian rows FOR SHARE before it reads the link for the last time
+// (./guardian-notify, security review 2026-10-19 D4), which this FOR NO KEY UPDATE conflicts with: a bell and an
+// unlink of its guardian run one after the other, so no bell about a former child outlives the unlink's prune.
 import { and, asc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit } from "@/lib/audit";
