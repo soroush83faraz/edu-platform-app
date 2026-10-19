@@ -85,7 +85,28 @@ journalctl -u docker --since "1 hour ago"  # اگر خود docker مشکوک ا�
 6. بررسی و بالا آوردن: `docker compose exec -T db psql -U app_backup -d app -tAc "select count(*) from iam.person"` → `docker compose up -d app` → health → `pnpm smoke:prod` → `pnpm sessions:revoke --all --yes` (نشست‌های بعد از زمانِ بکاپ معتبر نیستند؛ همه دوباره وارد می‌شوند).
 7. `shred -u /tmp/restore.dump /home/deploy/key.txt`. ثبت در جدول «نتیجهٴ تمرین بازیابی» (`deploy/README.md`).
 
-فایل‌های آپلود (volume `school_files`؛ فاز ۱ پیوست ندارد ولی tar گرفته می‌شود): `age -d -i key.txt backups/files-<date>.tar.gz.age | docker run --rm -i -v school_files:/data alpine tar xzf - -C /data`.
+فایل‌های آپلود (volume `school_files` = `FILES_DIR=/data/files` در کانتینر `app`؛ از ۲۰۲۶-۱۰-۱۹ «پیوست تکلیف و تحویل پاسخ» در آن می‌نویسد و `backup.sh` هر شب آن را tar می‌کند): **همان شبِ** dump را برگردانید تا ردیف‌ها و بایت‌ها با هم بخوانند:
+```bash
+docker compose stop app
+age -d -i /home/deploy/key.txt backups/files-<date>.tar.gz.age | docker run --rm -i -v school_files:/data alpine tar xzf - -C /data
+docker run --rm -v school_files:/data alpine sh -c 'chown -R 1001:1001 /data && find /data -type d -exec chmod 750 {} + && find /data -type f -exec chmod 600 {} +'
+docker compose up -d app
+```
+ردیفی که بایتش نیست، در دانلود ۴۰۴ می‌دهد و در لاگ `files: stored bytes missing` (فقط کلید، بدون نام فایل) می‌نویسد؛ بایتی که ردیف ندارد هرگز سرو نمی‌شود (بخش ۴-الف).
+
+### ۴-الف. فایل‌ها (`FILES_DIR`)
+
+- **کجا:** volume `school_files` → `/data/files` در `app` (`FILES_DIR` در `compose.yml`). چیدمان `<org id>/<yyyy>/<file id>` + پوشهٔ موقت `.tmp/` (فایل‌های `.part` نیمه‌کاره؛ بیش از یک ساعت ⇐ با بارگذاری بعدی پاک می‌شوند). نام فایلِ کاربر هرگز در مسیر نیست؛ در `files.file_object.original_name` است.
+- **قابل نوشتن برای uid 1001 (`nextjs`)؟** `docker compose exec -T app sh -c 'id; ls -ld /data/files; touch /data/files/.w && rm /data/files/.w && echo writable'` — اگر `Permission denied`: `docker run --rm -v school_files:/data alpine chown -R 1001:1001 /data`.
+- **دیسک:** بارگذاری زیر ۱ گیگابایت فضای آزاد متوقف می‌شود («فضای ذخیره‌سازی سرور پر است»، لاگ `files: upload refused — the files volume is below the free-space floor`)؛ watchdog بالای ۸۰٪ هشدار می‌دهد (volumeهای Docker روی همان دیسکِ ریشه‌اند). حجم: `docker run --rm -v school_files:/data alpine du -sh /data`.
+- **پاک‌سازی:** بارگذاری‌های پیوست‌نشده بعد از ۲۴ ساعت با بارگذاریِ بعدیِ همان سازمان بایگانی و پاک می‌شوند؛ فایلِ برداشته‌شده همان لحظه پاک می‌شود. **یتیم‌ها** (فقط بعد از crash بین rename و commit، یا بین commit و پاک‌کردن): بایتِ بدون ردیفِ زنده هرگز سرو نمی‌شود؛ برای یافتنشان (به‌عنوان `app_backup`، فقط‌خواندنی):
+  ```bash
+  docker compose exec -T db psql -U app_backup -d app -tAc "select storage_key from files.file_object where status <> 'archived'" | sort > /tmp/live.txt
+  docker run --rm -v school_files:/data alpine sh -c 'cd /data && find . -type f ! -path "./.tmp/*" | sed "s|^./||"' | sort > /tmp/disk.txt
+  comm -13 /tmp/live.txt /tmp/disk.txt   # روی دیسک ولی بدون ردیفِ زنده → بعد از بررسی می‌شود پاکشان کرد
+  ```
+- **`seed:pilot --reset`** ردیف‌های سه سازمانِ آزمایشی را پاک می‌کند، نه بایت‌هایشان را: بعد از آن `docker run --rm -v school_files:/data alpine rm -rf /data/<org id>`.
+- **cPanel:** `FILES_DIR` را به مسیری بیرون از پوشهٔ انتشار بدهید (مثلاً `/home/<user>/app-files`) — هر انتشار پوشهٔ اپ را عوض می‌کند — و آن را جدا بکاپ کنید (`backup.sh` مسیرِ Docker است). سقف بدنهٔ درخواستِ Apache/LiteSpeed باید ≥ ۱۱ مگابایت باشد.
 
 ## ۵. افزودن مدرسه / سازمان
 

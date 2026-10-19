@@ -2398,3 +2398,116 @@ fixed in its own commit.
   exact scenario and the options are open item (g) of «ارتباط ولی و مدرسه» above, for the owner to decide. The D1
   re-route counts such an addressee as gone (they hold no capacity), so the message also reaches someone who can
   answer it; nothing else of their access changed.
+
+## 2026-10-19 — «پیوست تکلیف و تحویل پاسخ» (owner): files on a تکلیف and a student's پاسخ (migration 0024)
+
+- **Owner decision.** File attachments were on CLAUDE.md's «NOT in Phase 1» list; the owner asked for them on
+  2026-10-19 and the line is lifted. (1) The GIVER (a teacher, or any manager of the item) attaches files to a
+  تکلیف on «تکلیف جدید» and in «ویرایش»; every assignee opens / downloads them. (2) A STUDENT answers a تکلیف given
+  to them — «تحویل پاسخ»: text + files, editable until the تکلیف is closed; the giver sees every پاسخ (text + files),
+  who has not answered, and downloads the files.
+- **Storage.** Local disk under `FILES_DIR` (lazy `process.env`; unset = `/data/files` in production — the Docker
+  volume — and `./.data/files`, gitignored, elsewhere). Key `<organization id>/<yyyy>/<file id>`: server values only,
+  never a part of the client's name; re-validated on every resolve and CHECKed in the database against the row's own
+  organization and id (`file_object_storage_key_chk`), so no row points at another tenant's bytes or outside the root.
+  The body streams to `<root>/.tmp/<random>.part` (O_EXCL, 0600, size cap, idle 60 s / total 10 min timeouts,
+  SHA-256, fsync) and is renamed into place as the LAST statement of the transaction that records it; on any failure
+  the temp file and the planned key are removed. Directories 0750, files 0600 (uid 1001 `nextjs`).
+- **Limits** (`src/modules/files/limits.ts`, the one place; unit-tested): 10 MiB per file; 5 files per تکلیف; 5 files
+  and 25 MiB per پاسخ; پاسخ text ≤ 4000; a rolling 24 h quota per person — 50 MiB / 100 files for a student's پاسخ
+  uploads, 200 MiB / 300 files for a giver's — counted over every recorded upload; 2 uploads in flight per person, 8
+  per process, 60 attempts per person per hour (refused ones included); uploads stop below 1 GiB free on the files
+  volume (the database shares the disk). Display names ≤ 120 code points.
+- **Allowed types — by MAGIC BYTES, default deny** (`src/modules/files/sniff.ts`): PDF, PNG (+ IHDR), JPEG, WebP,
+  DOCX / XLSX / PPTX, UTF-8 text (`.txt`/`.csv`/`.md`), MP3, M4A, OGG, WAV. OOXML is decided from the ZIP central
+  directory without unpacking anything (no zip bomb can expand): `[Content_Types].xml` + exactly one main part, the
+  main part's OOXML type inside `[Content_Types].xml` (inflated with a hard 1 MiB output cap), no `vbaProject.bin`,
+  nothing `macroEnabled`, no encrypted entry, no ZIP64 / multi-disk. Text must be clean UTF-8 over the WHOLE file (no
+  NUL or other control but TAB/LF/FF/CR) and may not start with `<` (HTML / SVG / XML) or `#!`. Skipped: GIF, HEIC
+  (iOS hands a JPEG to a picker that does not ask for HEIC), generic ZIP (cannot be vouched for without unpacking),
+  executables, HTML / SVG / JS. The stored `mime` is the sniffed kind's; the download name's extension is forced to the
+  kind's (`x.pdf.exe` holding a PDF is served as `x.pdf`; an executable never gets that far).
+- **Names** (`src/modules/files/names.ts`): display text only — percent-encoded in `X-File-Name` by the client, the last
+  path segment, control / bidi-override / invisible characters stripped (the Persian ZWNJ kept), Windows-unsafe
+  characters replaced, device names guarded, capped; RFC 5987 `Content-Disposition` with an ASCII fallback.
+- **Upload path — `POST /api/files?purpose=work_item|submission[&workItemId=]`** (`src/app/api/files/route.ts`): ONE file
+  per request as the RAW body (no multipart: nothing parsed or buffered; `XMLHttpRequest` for progress). Not a Server
+  Action (Next buffers an action's whole multipart body in memory). Excluded from `src/proxy.ts`'s matcher: a proxy
+  clones the request body into memory and, past `proxyClientMaxBodySize` (10 MB), hands the route a SILENTLY TRUNCATED
+  body (node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/proxyClientMaxBodySize.md).
+  Order: same origin only (`Origin` = PUBLIC_ORIGIN, `Sec-Fetch-Site: same-origin` when sent; the custom header forces a
+  preflight cross-site; the cookie is SameSite=Lax) → a process slot → **defineAction pass 1 BEFORE a byte is read**
+  (`workspace/file-gates` → `file-access.authorizeUpload`: session, must-change, `.strict()` input, the purpose's
+  permission, the item rule, no «ورود آزمایشی» session, the quota) → a person slot + the attempt window → free space →
+  stream to temp → sniff → **defineAction pass 2** (`recordUpload`: decided again, per-person advisory lock + the quota
+  with the real size, the `pending` row + audit, stale uploads expired, the rename). `serverActions.bodySizeLimit` stays
+  at Next's 1 MB (actions carry ids only); Caddy's `request_body max_size 12MB` (12,000,000 B) already holds one
+  10 MiB (10,485,760 B) raw body — left as is, tighter is safer.
+- **Two steps, bound.** An upload is a `pending` `files.file_object` bound to its uploader, purpose and target
+  (`target_work_item_id`: the تکلیف, or NULL for a تکلیف being created). The write that uses it — `createWorkItem`,
+  `updateWorkItem`, `saveSubmission` — takes exactly those rows, locked FOR UPDATE, in its own transaction
+  (`takePendingUploads`: a stranger's, an attached or expired one, one made for another تکلیف or the other purpose all
+  answer INVALID_REFERENCE «یکی از فایل‌ها یافت نشد …»). A removed file is archived (row + file) and its BYTES deleted
+  after the commit by the action (`afterCommit`, workspace/actions) — never inside the transaction, so a rollback never
+  loses one. Pending uploads never attached are archived after 24 h by the next upload of the organization (≤ 50 per
+  call, SKIP LOCKED; bytes deleted after the commit) — no cron; temp files older than 1 h are swept the same way.
+  **Accepted orphans:** a crash between the rename and the commit leaves bytes with no row, a crash between a commit
+  and its deletion leaves bytes of an archived row — never served (a download needs a live, attached row); the
+  runbook has the manual sweep.
+- **Download — `GET /files/[id]`** (`src/app/files/[id]/route.ts`), re-authorized on EVERY request (defineQuery →
+  `findDownload`): the file live and attached by a live attachment; its تکلیف visible to the caller (`canViewWorkItem` —
+  assignees, the giver, the broad readers it allows); a پاسخ's file only to its student and the item's managers
+  (`managesItem`). Everything else — unknown, pending, archived, another tenant's, not yours (another class's student,
+  a guardian, a counselor, another class's teacher) — the same bare 404; a dead session → `/login?next=`. Headers
+  (`src/modules/files/serve.ts`): the sniffed kind's Content-Type, `nosniff`, `Content-Security-Policy: default-src
+  'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; sandbox`, `Content-Disposition: inline` for images ONLY
+  (a PDF is downloaded: the browsers' PDF viewers refuse to run under a CSP sandbox, and outside one a PDF can carry
+  script into the viewer), `Cache-Control: private, no-store`, `Cross-Origin-Resource-Policy: same-origin`, no Range.
+  HEAD has its own handler (Next would run GET and leave the file's stream unread). The service worker never caches
+  `/files/*` (network-only).
+- **Data model — migration 0024** (additive, no backfill; generated by drizzle-kit + the custom part; the three
+  trailing calls): `files.file_object` + `status` (pending / attached / archived) + `archived_at`, `purpose`,
+  `target_work_item_id` (composite FK in SQL only — in Drizzle it would close an import cycle, like
+  `class_group_homeroom_staff_fk`), CHECKs (key shape bound to the row, hex SHA-256, size > 0, name ≤ 200), indexes
+  for the quota and the expiry; `workspace.work_item_submission` (org, id, item, student person, body ≤ 4000,
+  `submitted_at`, timestamps; UNIQUE (org, item, student)); `workspace.work_item_attachment` + `submission_id`
+  (composite FK to the submission AND its item) + `archived_at`, UNIQUE (org, file). RESTRICTIVE policies for app_rw:
+  a submission is readable by its student and the item's managers (`app.work_item_manager(item)`: the creator, or a
+  broad `workspace.work_item.update` holder — SECURITY INVOKER), written by its student only; a submission's
+  attachment rows are readable only where the submission is and written only by its student. `app.apply_grants()`:
+  0022's definition + `REVOKE DELETE` on the three tables (soft removal only).
+- **Permissions** (catalog): `workspace.work_item.attach` — teachers + every manager role (ALL_ROLE_PERMS);
+  `workspace.work_item.submit` — students only (`NON_MANAGER_PERMS`). Never guardians or counselors. Every use also
+  needs the item rule. A «ورود آزمایشی» session uploads nothing (the pilot's open demo login must not become an
+  anonymous file host); it may still send a text-only پاسخ.
+- **Rules.** Files only on a `task` that is not confidential (never a personal «خودم» item, a counselor's referral or
+  a «پیام ولی»). The giver's files change only while the تکلیف is open (the «ویرایش» rule). A پاسخ: an assignee
+  student (not the creator) of an open تکلیف, under the item's row lock (persons FOR KEY SHARE first — iam/removal
+  «Concurrency»), never empty (text or a file); the student's own «انجام شد» does not close it for them — the giver's
+  «اتمام» / «حذف» does, «بازیابی» opens it again. A پاسخ does NOT tick «انجام شد»: after the first one the card reminds an
+  unfinished student. A removed student's پاسخ stays as history for the giver (tagged «حذف‌شده»); «n از m تحویل
+  داده‌اند» counts the current student assignees.
+- **Bell.** The giver hears ONCE per student and تکلیف: `work_item.submitted` «<نام> پاسخ تکلیف «…» را ثبت کرد», no
+  body, deduped `wi:<item>:submitted:<student>` — the owner's explicit exception to round 7's «nothing a student does
+  notifies anyone». Students get the existing «تکلیف جدید» bell; files are named on the item page, never in a bell. An
+  edit that changes files is one more changed field, «فایل‌ها», in the existing `work_item.updated` bell.
+- **Audit.** `files.file_object.uploaded` (purpose, item, size, type), `files.file_object.expired` (ids),
+  `workspace.work_item.files_changed` (count, added ids/sizes/types, removed ids),
+  `workspace.work_item_submission.saved` (item, first, text length, file count, total bytes, added / removed) and
+  `attachmentCount` on `workspace.work_item.created` — never a file name, a hash or the پاسخ text. Logs carry ids and
+  keys only.
+- **UI.** «افزودن فایل» (`src/modules/files/ui/FileUploader.tsx`: the server's bounds checked first in the browser,
+  one upload at a time, per-file progress / Persian error / «تلاش دوباره» / ×, the submit waits); «فایل‌های تکلیف»
+  rows (`FileRows`: a `RowMark` glyph by kind, name, «نوع · حجم», the row IS the download; images open in a new tab —
+  an installed app has no back button); «پاسخ شما» (`SubmissionCard`); «پاسخ‌های دانش‌آموزان» (`SubmissionsOverview`).
+- **Out of phase 1 (recorded):** antivirus scanning (suggest ClamAV `clamd` in a sidecar, `scan_status` is ready);
+  guardians seeing a child's پاسخ; grading / feedback on a پاسخ; versions of a پاسخ (an edit replaces); image previews /
+  thumbnails; stripping EXIF (GPS) from photos; Range / resumable uploads; image-dimension limits (a decompression-bomb
+  image can only hang the tab of whoever opens it).
+- Tests: `tests/unit/files-{sniff,names,limits,upload-request,ui}.test.ts`, `tests/unit/role-catalog.test.ts`,
+  `tests/int/work-item-files.test.ts` (temp FILES_DIR), counts in `rls-meta` / `guards`, `workspace-service`.
+- **Open (owner):** (a) should a پاسخ tick «انجام شد» by itself? (today: no, a reminder); (b) a deadline lock — no پاسخ
+  after `due_at` (+ grace)? (today: editable until the giver closes it); (c) guardians reading the child's پاسخ;
+  (d) strip photo metadata (GPS) on upload; (e) the quotas (50 / 200 MiB a day) and the 10 MiB file cap; (f) a school
+  manager of school A reads the پاسخ‌ها of a تکلیف of school B when they open it — the phase-1 organization-wide manager
+  rule (`managesItem` / the broad read) carried over unchanged.

@@ -9,6 +9,7 @@
 | ☐ | ■ dump تازهٴ همین صبح | `docker compose exec -T db pg_dump -Fc -U app_backup app > backups/golive-$(date -u +%Y%m%dT%H%M%SZ).dump && ls -la backups/golive-*` | فایل > ۰ بایت؛ `age -r $AGE_RECIPIENT` اگر می‌خواهید بیرون از سرور نگه دارید |
 | ☐ | ■ dump رمزشدهٴ دیشب در باکت هست | `ls -la backups/db-$(date -u -d yesterday +%F).dump.age backups/LAST_OK && rclone lsl arvan:school-backups/$(hostname)/ \| tail -3` | فایل دیشب محلی **و** در باکت با همان اندازه؛ `LAST_OK` < ۲۶ ساعت؛ `LAST_FAILURE` نیست |
 | ☐ | ■ تمرین بازیابی انجام و ثبت شده | `cat backups/LAST_RESTORE_TEST` و جدول `deploy/README.md` | سطر `OK person=… elapsed=…`؛ تاریخ در جدول با امضا |
+| ☐ | ■ فایل‌های دیشب هم در باکت‌اند («پیوست تکلیف و تحویل پاسخ») | `ls -la backups/files-$(date -u -d yesterday +%F).tar.gz.age && rclone lsl arvan:school-backups/$(hostname)/ \| grep files- \| tail -2` | فایل > ۰ بایت، هم محلی هم در باکت |
 | ☐ | □ کلید age در پاکت مهرشده + password manager | — | دو نسخه؛ روی سرور **نیست** (`ls ~deploy/*.txt` خالی) |
 
 ## ۰۶:۴۵ — سرور و شبکه (■)
@@ -20,6 +21,7 @@
 | ☐ | ■ هدرها | `curl -sI https://$H/login \| grep -iE 'strict-transport\|x-content-type\|x-frame\|referrer\|content-security\|^server'` | HSTS, nosniff, DENY, strict-origin-when-cross-origin, **CSP موجود** (بلوک PWA/هدرها)، بدون `Server:` |
 | ☐ | □ ساعت و منطقهٴ زمانی | `timedatectl \| grep -E 'Time zone\|synchronized'` و `docker compose exec -T app env \| grep -E '^TZ=\|^NODE_ENV='` | میزبان `Asia/Tehran` sync شده؛ کانتینر `TZ=UTC`, `NODE_ENV=production` |
 | ☐ | □ دیسک/RAM/سواپ | `df -h / ; free -m ; swapon --show` | دیسک < ۵۰٪، RAM آزاد > ۱ GB، سواپ ۲G |
+| ☐ | ■ پوشهٴ فایل‌ها برای اپ نوشتنی است | `docker compose exec -T app sh -c 'id -u; touch /data/files/.w && rm /data/files/.w && echo writable'` | `1001` و `writable` (docs/ops/runbook.md ۴-الف) |
 | ☐ | □ لاگ کانتینرها محدود | `docker inspect school-app-1 --format '{{json .HostConfig.LogConfig}}'` | `max-size 50m`, `max-file 5` |
 | ☐ | □ watchdog زنده | `crontab -l -u deploy` و `tail -5 watchdog.log` | سه سطر cron؛ آخرین اجرا < ۱۰ دقیقه بدون `ALERT` |
 

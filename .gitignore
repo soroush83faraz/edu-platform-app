@@ -28,9 +28,10 @@ yarn-error.log*
 .env*
 !.env.example
 
-# local uploads / data
+# local uploads / data (FILES_DIR's development default is ./.data/files)
 /uploads
 /data
+/.data
 
 # typescript
 *.tsbuildinfo
