@@ -8,7 +8,7 @@
 // first «ثبت پاسخ» the card reminds an unfinished student of «انجام شد» (a پاسخ does not tick it by itself).
 import { Pencil, Send, Undo2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { RelativeTime } from "@/components/RelativeTime";
 import { RowMark } from "@/components/RowMark";
@@ -49,6 +49,17 @@ export function SubmissionCard({ workItemId, submission, canSubmit, uploadsBlock
   const headingId = useId();
   const [editing, setEditing] = useState(submission === null && canSubmit);
   const [justSent, setJustSent] = useState(false);
+  // After a save the form stays (locked) until the refreshed پاسخ arrives — never a flash of the old one, or of
+  // «هنوز پاسخی ثبت نکرده‌اید» right after the first «ثبت پاسخ».
+  const stamp = submission ? submission.updatedAt.getTime() : 0;
+  const awaiting = useRef<number | null>(null);
+  const [locked, setLocked] = useState(false);
+  useEffect(() => {
+    if (awaiting.current === null || awaiting.current === stamp) return;
+    awaiting.current = null;
+    setLocked(false);
+    setEditing(false);
+  }, [stamp]);
 
   if (editing) {
     return (
@@ -60,11 +71,24 @@ export function SubmissionCard({ workItemId, submission, canSubmit, uploadsBlock
           workItemId={workItemId}
           submission={submission}
           uploadsBlocked={uploadsBlocked}
+          locked={locked}
           onCancel={submission ? () => setEditing(false) : undefined}
-          onSaved={(first) => {
-            setEditing(false);
+          onSaved={(first, changed) => {
             setJustSent(first);
+            if (!changed) {
+              setEditing(false);
+              return;
+            }
+            awaiting.current = stamp;
+            setLocked(true);
             router.refresh();
+            // A refresh that never lands (offline right after the save) must not hold the form for ever.
+            window.setTimeout(() => {
+              if (awaiting.current === null) return;
+              awaiting.current = null;
+              setLocked(false);
+              setEditing(false);
+            }, 8000);
           }}
         />
       </section>
@@ -120,14 +144,17 @@ function SubmissionForm({
   workItemId,
   submission,
   uploadsBlocked,
+  locked,
   onCancel,
   onSaved,
 }: {
   workItemId: string;
   submission: SubmissionCardData | null;
   uploadsBlocked: boolean;
+  /** Saved — waiting for the refreshed page. */
+  locked: boolean;
   onCancel?: () => void;
-  onSaved: (first: boolean) => void;
+  onSaved: (first: boolean, changed: boolean) => void;
 }) {
   const ids = useId();
   const [pending, start] = useTransition();
@@ -140,7 +167,7 @@ function SubmissionForm({
   const keptBytes = kept.reduce((a, f) => a + f.sizeBytes, 0);
   const empty = body.trim() === "" && kept.length + uploads.fileIds.length === 0;
   const changed = !submission || body.trim() !== (submission.body ?? "") || removed.size > 0 || uploads.fileIds.length > 0;
-  const blocked = pending || uploads.busy || empty || !changed;
+  const blocked = pending || locked || uploads.busy || empty || !changed;
 
   const toggle = (id: string) =>
     setRemoved((prev) => {
@@ -166,7 +193,7 @@ function SubmissionForm({
       });
       if (r.ok) {
         toast.success(r.data.first ? "پاسخ شما ثبت شد" : "پاسخ شما ویرایش شد");
-        onSaved(r.data.first);
+        onSaved(r.data.first, r.data.changed);
         return;
       }
       setErrors(flatten(r.fieldErrors, r.message, ["body", "files"]));
@@ -239,7 +266,7 @@ function SubmissionForm({
         ) : null}
         <Button type="submit" className="min-w-32" disabled={blocked}>
           <Send aria-hidden className="rtl:-scale-x-100" />
-          {pending ? "در حال ثبت…" : "ثبت پاسخ"}
+          {pending || locked ? "در حال ثبت…" : "ثبت پاسخ"}
         </Button>
       </div>
     </form>
