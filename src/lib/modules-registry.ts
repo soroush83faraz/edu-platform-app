@@ -69,13 +69,13 @@ export const PHASES: Record<
   1: {
     title: "فاز ۱ — اکنون فعال",
     months: "شهریور ۱۴۰۵",
-    summary: "ورود امن، پنل من، اعلان‌ها، برنامهٴ کلاسی، حضور و غیاب، پروندهٴ مشاوره و مدیریت ساختار مدرسه؛ نصب روی گوشی.",
+    summary: "ورود امن، پنل من، اعلان‌ها، برنامهٴ کلاسی، حضور و غیاب، پروندهٴ مشاوره، حساب اولیا و مدیریت ساختار مدرسه؛ نصب روی گوشی.",
   },
   2: {
     title: "فاز ۲",
     months: "مهر تا آبان ۱۴۰۵",
     summary:
-      "دفتر کلاسی، موارد انضباطی، والدین، تابلو اعلانات و گزارش‌ها.",
+      "دفتر کلاسی، موارد انضباطی، تابلو اعلانات و گزارش‌ها.",
   },
   3: {
     title: "فاز ۳",
@@ -152,7 +152,7 @@ export const MODULES: readonly ModuleEntry[] = [
     permission: "academic.attendance.read",
     phase: 1,
     competitorTerm: "حضور و غیاب",
-    descriptionFa: "ثبت زنگ به زنگ در کلاس، «حضور و غیاب من» برای دانش‌آموز، و گزارش درصد غیبت برای مدیر. اطلاع به والدین در فاز بعد.",
+    descriptionFa: "ثبت زنگ به زنگ در کلاس، «حضور و غیاب من» برای دانش‌آموز، گزارش درصد غیبت برای مدیر، و اعلان غیبت برای ولی.",
   },
   {
     // Delivered in phase 1 (owner, 2026-10-13): the primary-school monthly descriptive report card.
@@ -178,6 +178,19 @@ export const MODULES: readonly ModuleEntry[] = [
     descriptionFa: "پروندهٴ مشاورهٴ هر دانش‌آموز: یادداشت محرمانهٴ مشاور، گزارش دبیران و ارجاع به مدیریت. نوبت‌دهی و ارتباط با والدین در فازهای بعد.",
   },
   {
+    // Delivered in phase 1 (owner, 2026-10-18 — «اولیا», docs/decisions.md): the guardian signs in with their own phone
+    // and reads each child's تکالیف, attendance, report card and week — read-only — and hears of an absence and a new
+    // monthly report card. The school makes the accounts on the student page («اولیا») and the class page («ساخت حساب
+    // اولیا»). Counseling appointments, messages and payments for guardians stay in later phases.
+    code: "guardians",
+    labelFa: "والدین",
+    href: "/admin/students",
+    icon: HeartHandshake,
+    phase: 1,
+    competitorTerm: "والدین",
+    descriptionFa: "حساب ولی با شمارهٴ موبایل خودش: تکالیف، حضور و غیاب، کارنامه و برنامهٴ کلاسی هر فرزند، فقط مشاهده؛ با اعلان غیبت و کارنامه. نوبت مشاوره، گفت‌وگو و پرداخت در فازهای بعد.",
+  },
+  {
     code: "classbook",
     labelFa: "دفتر کلاسی",
     href: "/roadmap#phase-2",
@@ -198,17 +211,6 @@ export const MODULES: readonly ModuleEntry[] = [
     competitorTerm: "موارد انضباطی",
     descriptionFa: "ثبت مورد، اطلاع به خانواده، پیگیری معاون.",
     soonFor: ["teacher", "admin"],
-  },
-  {
-    code: "guardians",
-    labelFa: "والدین",
-    href: "/roadmap#phase-2",
-    icon: HeartHandshake,
-    phase: 2,
-    month: "آبان",
-    competitorTerm: "والدین",
-    descriptionFa: "حساب ولی با دیدِ فقط‌خواندنی به تکالیف، حضور و نمره‌ها.",
-    soonFor: "admin",
   },
   {
     code: "board",

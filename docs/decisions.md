@@ -2022,3 +2022,104 @@ the key.** An explicit, opt-in open mode; it goes off with the rest of the featu
 - Tests: `tests/unit/demo-login.test.ts` (open mode on exactly "1", the gate matrix switch × mode × cookie read from
   process.env, keyless unlock, the cookie outliving the mode, the caps, env validation), `tests/int/demo-login.test.ts`
   (open mode without key or cookie: list, session, `open: true`; with a key; every other gate; the tighter per-IP cap).
+
+## 2026-10-18 — «اولیا» — فاز ۱: guardian accounts (migration 0020)
+
+Owner (approved 2026-10-18): a parent signs in and reads — never writes — what concerns their own children: the
+تکالیف given to them, their attendance, the primary report card and the class week, and hears of an absence and of a
+new monthly report card. NOT in this phase (no code, clean seams): booking a counseling appointment, Q&A / feedback,
+plan approval, payments. Docs: docs/db.md (`iam.guardian_link`), docs/admin.md «اولیا», docs/attendance.md (role table).
+
+- **Model.** A guardian is a `person` of the organization — ONE person and ONE login per guardian phone, however many
+  children (siblings) they have there. `iam.guardian_link` (migration 0020, additive): guardian person → student
+  profile, `relation` per link (`father | mother | guardian | other` — «پدر / مادر / سرپرست / سایر»), `is_primary`
+  (at most one live primary per student, partial unique), `status/archived_at`, composite FKs, one LIVE link per
+  (organization, guardian, student). Tenant RLS only (`apply_rls()` picks the table up — it lives in `iam`, no new
+  schema); app_rw may not DELETE it (`app.apply_grants()` re-created from 0018's text with one more REVOKE — diffed: the
+  rest is byte-identical). No RESTRICTIVE policy: unlike the counselor's notes, who-is-whose-parent is ordinary iam data
+  and the service is the boundary (below).
+- **Scope = one child, through the existing machinery.** Each live link DERIVES one `role_assignment` — the seeded
+  `guardian_full` («ولی», `allowed_scope_types student/family`), `scope_type student`, `source_type
+  guardian_relationship`, `source_id` = the link (like the derived teacher role) — so `can(..., { student })` answers
+  unchanged and nothing new was added to `can()`. A `student` scope is never broad (`canBroadly`, `getPermissionScope`
+  ignore it), so no permission of the role reaches a class, a school or the organization. Ending a link revokes its role.
+  **Permissions (read-only):** `workspace.work_item.read`, `academic.attendance.read`, `academic.objective_rating.read`,
+  `academic.timetable.read`, `notif.notification.read`. `workspace.work_item.comment` — seeded with the role in step 1 —
+  was REMOVED: commenting is a write on the child's item. Every guardian read ALSO requires the live link
+  (`requireChild`, src/modules/iam/guardian-views.ts): the child must be one of the caller's live children (link live,
+  student active) AND carried by the session's own derived assignment, AND the page's permission must hold at that
+  child's student scope — either half alone would be wrong (the link would survive a revoked role; `can()` alone lets
+  the organization admin, whose organization-scoped assignment matches every chain, read any child «as a guardian»).
+  `?child=<studentProfileId>` is only a choice among the server's own list (`pickChild`): an id that is not theirs is
+  NOT_FOUND, never a fallback to another child.
+- **What a guardian never sees.** The child's personal notes («یادداشت/تسک شخصی» — the تکالیف list is items of type
+  `task` given to the child by SOMEONE ELSE, `listChildWorkItems`), confidential items, comments, the child's inbox
+  read/pinned state, other students, the counseling file (no `counseling.*`; its RESTRICTIVE policies refuse the rows
+  anyway), teacher reports, referrals, every admin page (`iam.admin.access` is not held). The existing student-scoped
+  reads that already ran `can(..., { student })` (`studentAttendanceSummary`) now admit a guardian for their child —
+  intended; the class roll call, the class report, the class report card, the subject page and «کارنامهٴ من» stay
+  closed (their chains never contain a student node, or they read the CALLER's own profile). Guardian-only persons are
+  left out of the work-item recipient reach (`inReach`, workspace/repo) — a guardian receives no کار in phase 1.
+- **Staff who are parents** keep both hats with no bleed: the «ولی» role joins the colleague's OWN person and account
+  (`hats.isGuardian`; the emblem reads «… · ولی»); the guardian assignment opens one child of whatever school, the
+  teaching assignment its own درس — tested both ways (tests/int/guardian.test.ts).
+- **Accounts — the phone rules** (`findGuardianCandidate`), in order: (1) a guardian-only person of the organization
+  already holding the phone → the same person (siblings); (2) the phone is the login of an ACTIVE colleague's live
+  account here → link to that person, no second login; (3) the phone is ANY other login — a student who signs in with
+  the parent's number (the importer's `phone` column often IS the parent's), a removed person, an account of another
+  organization (its membership is invisible under RLS) → **never merged**: a new guardian person with the username
+  `<school code>-v-<student number>` of the child (`-01…-05` on a global collision), and one sentence for all of these
+  cases (no new oracle: «این شماره قبلاً ثبت شده است» already told an admin a phone was taken); (4) a free phone → a new
+  person whose login is the phone. Initial passwords are the existing machinery (random, argon2id, `must_change_password`,
+  AES-GCM copy for the sheet). Never yourself (the D1 rule: a manager does not hand a role to their own account).
+- **Admin UI.** The student page's «اولیا» card (list; «افزودن ولی» by name + phone + relation with the outcome in one
+  line and the password shown once; «حذف از اولیا»; «تعیین رمز موقت»), the class page's «ساخت حساب اولیا» (every
+  student with a «ولی» phone; idempotent; placeholder name «ولیِ <child>», replaced when the same phone is added with a
+  real name by someone who manages all of that guardian's children) opening the A4 «برگه‌های ورود اولیا». Writes need
+  `iam.person.write` at the student's school (NOT_FOUND outside). **Acting AS a guardian** — reading their initial
+  password on the sheet, «تعیین رمز موقت» — needs EVERY live child of that guardian inside the caller's scope
+  (`guardianWithinScopeSql`), and a colleague's account is never touched here: a school's manager must not be able to
+  sign in as the parent of another school's student.
+- **Removal.** `removePerson` of a student ends their live links and roles (after the student's own rows, before the
+  work items — the guardian rows are person rows, locked ascending); a guardian-only person left without a live child
+  loses their login exactly as a removal does (membership `left`, account `disabled`, sessions revoked, printable
+  password cleared — `iam.guardian.access_closed`); a later link opens it again with a NEW initial password
+  (`iam.guardian.access_reopened`). A removed student never gets a guardian (CONFLICT, read under the lock). A removed
+  colleague's own guardian links end with them. Lock order (iam/removal «Concurrency»): student person rows (FOR NO KEY
+  UPDATE, ascending) → guardian person rows (FOR NO KEY UPDATE, ascending) → link / role / account rows; the bulk run
+  locks every roster row, then every existing guardian its phones lead to, before writing.
+- **The guardian's bell** (scripts/catalog.ts, module `guardian`): `guardian.child_absent` «غیبت: <نام>» — a roll
+  call saved with the child absent, once per child per roll call (dedupe on the session); `guardian.report_card`
+  «کارنامهٴ ماه <ماه>: <نام>» — the first level written for the child in a month, once per child, month and year. The
+  title is the kind and the child's name only, no body; recipients are the live guardians but the actor, through the
+  workspace notify policy; their person rows are taken FOR KEY SHARE (ascending) before the insert. **Overdue تکالیف:
+  no notification** — the product has no scheduler and phase 1 adds no queue, so nothing could write it on time; it is
+  computed when read (the child's card on Home: «n تکلیف مهلت‌گذشته» with a red dot; the list tags «مهلت گذشته»).
+- **Guardian UI.** Home: a «فرزندان» section under the person's other tiles (the whole Home for a guardian-only
+  person): one card per child (name, class, school, overdue), the cards are the switch (`/home?child=`), and the selected
+  child's tiles «تکالیف فرزند» · «حضور و غیاب» · «کارنامه» (primary classes) · «برنامهٴ کلاسی» (a label another tile of
+  the same person already uses gets «… فرزند»). `/child/{work,attendance,report-card,timetable}`: the child's name and
+  class under the title, back = Home with that child, a 44 px pill switcher when there are several children; the
+  تکالیف are `WorkItemList` rows in a new `readOnly` mode (no link, no hover), the attendance section is the student's
+  own (`StudentAttendanceSection`, now shared), the card is «کارنامهٴ من»'s parts (`studentReportCard`, shared), the
+  week is `MyWeek` over `getStudentTimetable` (the student half only). The roadmap's «والدین» moved to phase 1.
+- **Demo / pilot.** The «ورود آزمایشی» panel offers «ولی» (`listDemoGuardians`: «ولیِ لیلا نیک‌خواه — اول الف», «ولیِ ۲
+  فرزند: …»); the allow-list and the eligibility rule are unchanged. `seed:pilot` adds per school, through `addGuardian`
+  with the organization admin's real ctx and the shared pilot password: own-phone parents of the first students, ONE
+  guardian of two siblings in two classes, and the first teacher as a parent — before the کارتابل and the roll calls,
+  so their bell holds real events; listed under «اولیا» in backups/pilot-accounts.md. The pilot's roll calls are now keyed
+  by the student's PERSON id: the student_profile id is random per fresh seed, so WHO was absent differed between two
+  fresh seeds (harmless before; the «غیبت» bell made `seed-pilot.test.ts` notice).
+- Tests: `tests/unit/guardian-policy.test.ts` (relations, `pickChild` / `childParam`, the username, labels, titles,
+  the read-only role), `tests/unit/demo-login.test.ts` («ولی» options), `tests/int/guardian.test.ts` (0020 grants and RLS,
+  tenant isolation, the phone rules incl. the student-login case, who may add, the guardian's reach and no-write, the
+  teacher-parent without bleed, bulk idempotency, the sheet and reset across schools, removal → closed → reopened, the
+  bell once), `tests/int/demo-login.test.ts`, `tests/int/seed-pilot.test.ts`, `tests/int/{rls-meta,guards}.test.ts`
+  (counts).
+- **Open (owner):** (a) the bulk relation for an unknown parent is «سرپرست» — or should bulk ask?; (b) the report-card
+  notification fires on the first level of the month, not when the card is complete; (c) a guardian whose child moves
+  to another school keeps the link (the link is to the student, not the school); (d) an initial password shown to the
+  admin who created a guardian stays valid until the parent changes it — if that guardian is later linked to a child at
+  ANOTHER school, that admin could sign in as the parent until then (they would have to set a new password, which locks
+  the parent out — visible); for organizations with several schools, the organization admin should create such guardians
+  (or the password could be rotated on a cross-school link — not done).
