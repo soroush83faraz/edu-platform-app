@@ -11,7 +11,7 @@ import * as schema from "@/db/schema";
 import { withTenant } from "@/db/client";
 import { runMigrations } from "../../scripts/migrate";
 import { seedCatalog } from "../../scripts/seed";
-import { ALLAMEH, DABESTAN, FARZANEGAN, SAMPLE_NOTES, SEEDED_PILOT_ORGS, expectedCounts, pilotCounts, pilotId, pilotPhone, resetPilot, seedPilot, studentsPerClass } from "../../scripts/seed-pilot";
+import { ALLAMEH, DABESTAN, FARZANEGAN, SAMPLE_NOTES, SEEDED_PILOT_ORGS, expectedCounts, guardianPlan, pilotCounts, pilotId, pilotPhone, resetPilot, seedPilot, studentsPerClass } from "../../scripts/seed-pilot";
 import { OWNER_URL } from "./env";
 import { dropAppSchemas, seed } from "./global-setup";
 import { asAppRw } from "./helpers";
@@ -61,7 +61,17 @@ describe("seed:pilot", () => {
       expect(first.counselorNotes).toBe(counselingOrgs * SAMPLE_NOTES.reduce((n, notes) => n + notes.length, 0));
       expect(first.teacherReports).toBe(counselingOrgs);
       expect(first.referrals).toBe(counselingOrgs);
-      expect(first.accounts).toBe(first.students + first.staff);
+      // «اولیا» (2026-10-18): the planned links per school; siblings share ONE guardian and the teacher-parent is staff,
+      // so the new guardian accounts are the «own phone» entries of the plan only.
+      const plannedLinks = SEEDED_PILOT_ORGS.reduce((n, o) => n + guardianPlan(studentsPerClass(SCALE, o)).length, 0);
+      const plannedGuardians = SEEDED_PILOT_ORGS.reduce((n, o) => n + guardianPlan(studentsPerClass(SCALE, o)).filter((g) => g.phoneOf === "self").length, 0);
+      expect(first.guardianLinks).toBe(plannedLinks);
+      expect(first.guardians).toBe(plannedGuardians);
+      for (const s of run1.summaries) {
+        expect(s.guardians.some((g) => g.children.length === 2), `${s.code}: one guardian of two siblings`).toBe(true);
+        expect(s.guardians.filter((g) => g.teacher), `${s.code}: one teacher-parent`).toHaveLength(1);
+      }
+      expect(first.accounts).toBe(first.students + first.staff + first.guardians);
       expect(first.workItems).toBe(plan.workItems);
       expect(first.comments).toBeGreaterThan(0);
       expect(first.notifications).toBeGreaterThan(first.students);

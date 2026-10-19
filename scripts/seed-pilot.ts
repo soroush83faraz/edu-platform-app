@@ -15,7 +15,10 @@
 // REAL ctx of the acting person (assignments loaded from the database with `listValidAssignments`, as
 // scripts/import.ts does): the organization admin builds structure and people, every teacher creates their own
 // tasks, every student comments / marks done under their own student role. Only the shared password is applied
-// with a direct UPDATE (one precomputed argon2 hash instead of ~600 extra hashes).
+// with a direct UPDATE (one precomputed argon2 hash instead of ~600 extra hashes). «اولیا» (2026-10-18): a few
+// guardians per school through the guardian service — one with TWO children (siblings in two classes) and a teacher
+// who is also a parent (the «ولی» role joins the teacher's own account) — before the کارتابل and the roll calls, so
+// their bell holds real «غیبت» (and, in the دبستان, «کارنامه») notifications.
 //
 // Deterministic and idempotent: ids are sha256("edu-pilot:"+key) (v7-shaped, like demoId), phones live in one block
 // per school (+9893510xxxxx ALK, +9893520xxxxx FRZ, +9893530xxxxx HL4 — never the demo block), names come from the
@@ -41,7 +44,8 @@ import type { Assignment } from "../src/modules/iam/can";
 import { hashPassword } from "../src/modules/iam/password";
 import { IMPLICIT_PERMISSIONS, PERMISSIONS } from "../src/modules/iam/permissions";
 import { listValidAssignments } from "../src/modules/iam/repo";
-import { createStaff, createStudent, findAccountOfPerson, type IamCtx } from "../src/modules/iam/service";
+import { addGuardian } from "../src/modules/iam/guardian";
+import { createStaff, createStudent, findAccountOfPerson, setPersonPhones, type IamCtx } from "../src/modules/iam/service";
 import { findAcademicYearByName, findClassGroupByName, findDefaultBranch, findGradeLevelByCode, findOffering, findSchoolByCode, findSubjectByCode } from "../src/modules/tenancy/repo";
 import { createAcademicYear, createClassGroup, createClassOffering, createSchool, createSubject, ensureCatalogYears, updateBranch, upsertTerm } from "../src/modules/tenancy/service";
 import { addComment, changeStatus, createWorkItem, type WorkspaceCtx } from "../src/modules/workspace/service";
@@ -55,7 +59,24 @@ import { hasTeacherClash, planTimetables, type PlanClass } from "./timetable-pla
 export type Db = NodePgDatabase<typeof schema> & { $client: NodePgClient };
 export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-const { organization, person, staffProfile, studentProfile, role, authIdentity, userAccount, teacherAssignment, workItem, workItemAssignee, workItemComment, counselorNote, teacherReport, referral } = schema;
+const {
+  organization,
+  person,
+  staffProfile,
+  studentProfile,
+  role,
+  authIdentity,
+  userAccount,
+  organizationMembership,
+  contactPoint,
+  teacherAssignment,
+  workItem,
+  workItemAssignee,
+  workItemComment,
+  counselorNote,
+  teacherReport,
+  referral,
+} = schema;
 
 // ---------------------------------------------------------------------------------------------------------------
 // deterministic helpers
@@ -517,6 +538,16 @@ export interface StudentOut {
   loginIdentifier: string;
 }
 
+/** A pilot guardian as the accounts sheet lists it. */
+export interface GuardianOut {
+  name: string;
+  /** «لیلا نیک‌خواه (اول الف)» per child. */
+  children: string[];
+  loginIdentifier: string;
+  /** A teacher who is also a parent: they sign in with their own staff account. */
+  teacher: boolean;
+}
+
 export interface SchoolSummary {
   org: string;
   school: string;
@@ -524,6 +555,8 @@ export interface SchoolSummary {
   admin: StaffOut;
   principal: StaffOut;
   vice: StaffOut;
+  /** «اولیا»: the school's sample guardians (`seedGuardians`). */
+  guardians: GuardianOut[];
   /** The school's «مشاور», when the spec has `counseling`. */
   counselor: StaffOut | null;
   teachers: TeacherOut[];
@@ -858,6 +891,10 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
 
   lap("studentsMs");
 
+  // ---- 2b. «اولیا»: a few guardians, one of two siblings, one a teacher (owner, 2026-10-18) ----
+  const guardians = await seedGuardians(db, orgId, spec, perClass, structure, ctxCache, secretHash, created);
+  lap("guardiansMs");
+
   // ---- 3. کارتابل: each teacher's tasks in their own transaction, students react under their own ctx ----
   let taskCounter = 0;
   for (const [t, teacher] of structure.teachers.entries()) {
@@ -963,6 +1000,7 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
       counselorNotes: await count("counseling.counselor_note"),
       teacherReports: await count("counseling.teacher_report"),
       referrals: await count("counseling.referral"),
+      guardianLinks: await count("iam.guardian_link", "where status = 'active'"),
       workItems: await count("workspace.work_item"),
       assignees: await count("workspace.work_item_assignee"),
       comments: await count("workspace.work_item_comment"),
@@ -983,8 +1021,110 @@ async function seedPilotOrg(db: Db, spec: PilotOrgSpec, opts: PilotOptions, secr
     counselor: structure.counselor,
     teachers: structure.teachers,
     classes,
+    guardians,
     counts,
   };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// «اولیا» (owner, 2026-10-18)
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * Which students of a pilot school get a guardian, and whose phone that guardian signs in with: the first two (three
+ * at full scale) students of the FIRST class with their own «ولی» phone (a mother, then fathers); the first student of
+ * the SECOND class shares the first one's mother (siblings — one guardian, one account, two children); the second
+ * student of the second class has the school's first TEACHER as a parent (the «ولی» role joins the teacher's account).
+ * `cls`/`j` index the spec's classes and the class's students; every class holds `perClass` students.
+ */
+export function guardianPlan(perClass: number): Array<{ cls: number; j: number; relation: "father" | "mother"; phoneOf: "self" | "sibling" | "teacher" }> {
+  return [
+    { cls: 0, j: 0, relation: "mother", phoneOf: "self" },
+    { cls: 1, j: 0, relation: "mother", phoneOf: "sibling" },
+    { cls: 0, j: 1, relation: "father", phoneOf: "self" },
+    ...(perClass >= 3 ? [{ cls: 0, j: 2, relation: "father" as const, phoneOf: "self" as const }] : []),
+    { cls: 1, j: 1, relation: "father", phoneOf: "teacher" },
+  ];
+}
+
+/**
+ * The sample guardians, through `addGuardian` with the organization admin's REAL ctx (the audit trail, the derived
+ * roles and the phone rules are the product's own): each new guardian account gets the shared pilot password; a
+ * sibling's and the teacher's child get that guardian's phone as their «ولی» contact point, so «ساخت حساب اولیا» on
+ * their class later finds them already linked. Idempotent: a second run links and creates nothing.
+ */
+async function seedGuardians(
+  db: Db,
+  orgId: string,
+  spec: PilotOrgSpec,
+  perClass: number,
+  structure: { admin: StaffOut; teachers: TeacherOut[] },
+  ctxCache: Map<string, ActorCtx>,
+  secretHash: string,
+  created: { created: number },
+): Promise<GuardianOut[]> {
+  if (spec.classes.length < 2 || structure.teachers.length === 0) return [];
+  return withOrg(db, orgId, async (tx) => {
+    const ctx = await actorCtx(tx, orgId, structure.admin.personId, ctxCache);
+    const studentAt = async (cls: number, j: number) => {
+      const studentNumber = String(14051001 + cls * perClass + j);
+      const [row] = await tx
+        .select({ personId: person.id, firstName: person.firstName, lastName: person.lastName, studentProfileId: studentProfile.id })
+        .from(person)
+        .innerJoin(studentProfile, eq(studentProfile.personId, person.id))
+        .where(eq(person.externalRef, `pilot:${spec.key}:student:${studentNumber}`))
+        .limit(1);
+      if (!row) throw new Error(`pilot: guardians — student ${studentNumber} of ${spec.key} not found`);
+      const [phone] = await tx
+        .select({ value: contactPoint.value })
+        .from(contactPoint)
+        .where(and(eq(contactPoint.personId, row.personId), eq(contactPoint.kind, "mobile"), eq(contactPoint.label, "ولی")))
+        .limit(1);
+      return { ...row, className: spec.classes[cls].name, guardianPhone: phone?.value ?? null };
+    };
+    const out = new Map<string, GuardianOut>();
+    let sibling: { phone: string; firstName: string; lastName: string } | null = null;
+    for (const [i, g] of guardianPlan(perClass).entries()) {
+      const child = await studentAt(g.cls, g.j);
+      const teacher = structure.teachers[0];
+      const gender = g.relation === "mother" ? "female" : "male";
+      let phone: string;
+      let names: { firstName: string; lastName: string };
+      if (g.phoneOf === "teacher") {
+        phone = teacher.phone;
+        const [first, ...rest] = teacher.name.split(" ");
+        names = { firstName: first, lastName: rest.join(" ") };
+      } else if (g.phoneOf === "sibling" && sibling) {
+        phone = sibling.phone;
+        names = { firstName: sibling.firstName, lastName: sibling.lastName };
+      } else {
+        if (!child.guardianPhone) throw new Error(`pilot: guardians — student ${child.personId} has no «ولی» phone`);
+        phone = child.guardianPhone;
+        names = { firstName: pilotName(gender, `${spec.key}:guardians`, i).firstName, lastName: child.lastName };
+        if (i === 0) sibling = { phone, ...names };
+      }
+      // The child's «ولی» contact point names the guardian who signs in for them (a sibling's / the teacher's phone).
+      if (child.guardianPhone !== phone) await setPersonPhones(tx, ctx, child.personId, { guardianPhone: phone });
+      // The teacher follows the school's staff: a girls' school's teachers are women — the child's mother.
+      const relation = g.phoneOf === "teacher" && spec.school.gender === "girls" ? "mother" : g.relation;
+      const res = await addGuardian(tx, ctx, { studentProfileId: child.studentProfileId, ...names, phone, relation });
+      if (res.account) {
+        const [acct] = await tx.select({ id: userAccount.id }).from(userAccount).where(eq(userAccount.loginIdentifier, res.account.loginIdentifier)).limit(1);
+        if (acct) await applyPilotPassword(tx, acct.id, secretHash);
+        created.created++;
+      }
+      const [login] = await tx
+        .select({ id: userAccount.loginIdentifier })
+        .from(organizationMembership)
+        .innerJoin(userAccount, eq(userAccount.id, organizationMembership.userAccountId))
+        .where(eq(organizationMembership.personId, res.guardianPersonId))
+        .limit(1);
+      const entry = out.get(res.guardianPersonId) ?? { name: `${names.firstName} ${names.lastName}`, children: [], loginIdentifier: login?.id ?? "—", teacher: g.phoneOf === "teacher" };
+      entry.children.push(`${child.firstName} ${child.lastName} (${child.className})`);
+      out.set(res.guardianPersonId, entry);
+    }
+    return [...out.values()];
+  });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1036,7 +1176,9 @@ async function seedAttendance(db: Db, orgId: string, spec: PilotOrgSpec, structu
           date,
           periodNo,
           entries: roster.map((r) => {
-            const key = `${spec.key}:${r.studentProfileId}:${date}:${periodNo}`;
+            // Keyed by the PERSON id (deterministic `pilotId`) — the student_profile id is random per fresh seed, which
+            // made WHO was absent differ between two fresh seeds; harmless until «اولیا», whose «غیبت» bell follows it.
+            const key = `${spec.key}:${r.personId}:${date}:${periodNo}`;
             const status = attendanceStatusFor(key);
             return { studentProfileId: r.studentProfileId, status, minutesLate: status === "late" ? minutesLateFor(key) : null };
           }),
@@ -1214,6 +1356,8 @@ export async function pilotCounts(db: Db): Promise<PilotCounts> {
     counselorNotes: 0,
     teacherReports: 0,
     referrals: 0,
+    guardianLinks: 0,
+    guardians: 0,
     workItems: 0,
     comments: 0,
     notifications: 0,
@@ -1241,6 +1385,10 @@ export async function pilotCounts(db: Db): Promise<PilotCounts> {
       totals.counselorNotes += await count("counseling.counselor_note");
       totals.teacherReports += await count("counseling.teacher_report");
       totals.referrals += await count("counseling.referral");
+      totals.guardianLinks += await count("iam.guardian_link", "where status = 'active'");
+      // Guardian-only persons (a teacher who is also a parent is counted as staff): their accounts are memberships too.
+      const guardians = await tx.execute<{ n: number }>(sql.raw("select (select count(*)::int from iam.person p where exists (select 1 from iam.guardian_link gl where gl.guardian_person_id = p.id) and not exists (select 1 from iam.student_profile sp where sp.person_id = p.id) and not exists (select 1 from iam.staff_profile st where st.person_id = p.id)) as n"));
+      totals.guardians += guardians.rows[0].n;
       totals.workItems += await count("workspace.work_item");
       totals.comments += await count("workspace.work_item_comment");
       totals.notifications += await count("notif.notification");
@@ -1397,6 +1545,11 @@ export function renderAccountsMarkdown(result: SeedPilotResult): string {
     lines.push("", "### دانش‌آموزان (سه نفر اول هر کلاس)", "", "| کلاس | نام | ورود |", "|---|---|---|");
     for (const c of s.classes) for (const st of c.students) lines.push(`| ${c.name} | ${st.name} | \`${loginId(st.loginIdentifier)}\` |`);
     lines.push("");
+    if (s.guardians.length > 0) {
+      lines.push("### اولیا", "", "ولی با همان رمز وارد می‌شود و در خانه کارت هر فرزند را می‌بیند (تکالیف، حضور و غیاب، کارنامه، برنامهٴ کلاسی؛ فقط مشاهده).", "", "| ولی | فرزندان | ورود |", "|---|---|---|");
+      for (const g of s.guardians) lines.push(`| ${g.name}${g.teacher ? " (دبیر همین مدرسه)" : ""} | ${g.children.join("، ")} | \`${loginId(g.loginIdentifier)}\` |`);
+      lines.push("");
+    }
     lines.push(
       `شمارش: ${s.counts.classGroups} کلاس، ${s.counts.offerings} ارائهٴ درس، ${s.counts.staff} همکار، ${s.counts.students} دانش‌آموز، ${s.counts.accounts} حساب، ${s.counts.teacherAssignments} تخصیص دبیر، ${s.counts.timetableSlots} زنگ برنامه، ${s.counts.workItems} کار، ${s.counts.comments} نظر، ${s.counts.notifications} اعلان.`,
       "",
@@ -1416,6 +1569,7 @@ function printSummary(result: SeedPilotResult): void {
     if (s.counselor) console.log(`  counselor ${s.counselor.name} ${national(s.counselor.phone)} · ${s.counts.counselorNotes} notes, ${s.counts.teacherReports} teacher reports, ${s.counts.referrals} referrals`);
     for (const t of s.teachers) console.log(`  teacher ${t.name.padEnd(22)} ${national(t.phone)}  ${t.offerings.join("، ")}`);
     for (const c of s.classes) console.log(`  class ${c.name}: ${c.students.map((st) => `${st.name} (${loginId(st.loginIdentifier)})`).join(" · ")}`);
+    for (const g of s.guardians) console.log(`  guardian ${g.name.padEnd(22)} ${loginId(g.loginIdentifier)}${g.teacher ? " (teacher)" : ""}  ${g.children.join("، ")}`);
   }
   console.log(`\n[seed:pilot] password for every pilot account: ${result.password}  (scale ${result.scale}, ${(result.ms / 1000).toFixed(1)} s)`);
 }
