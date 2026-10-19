@@ -10,6 +10,13 @@
 		trusted_proxies static 185.143.232.0/22 188.229.116.16/30 94.101.182.0/27 2.144.3.128/28 37.32.16.0/27 37.32.17.0/27 37.32.18.0/27 37.32.19.0/27 185.215.232.0/22 178.131.120.48/28 94.101.183.0/28 78.157.36.112/28 95.38.61.80/28 193.24.119.0/29
 		trusted_proxies_strict
 		client_ip_headers X-Forwarded-For
+		# A whole request (headers + body) must be READ within 2 minutes — until now a body could trickle forever
+		# (security review 2026-10-19, D2). Go's ReadTimeout: once the body is read the deadline is cleared, so long
+		# downloads are not cut. Kept above the app's own upload wall clock (90 s, src/modules/files/limits.ts) so the
+		# app answers first, in Persian; Node's requestTimeout (300 s) is the last line behind both.
+		timeouts {
+			read_body 120s
+		}
 	}
 }
 

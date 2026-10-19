@@ -106,10 +106,26 @@ export async function sweepTemp(olderThanMs: number): Promise<number> {
   return removed;
 }
 
-/** At most `limit` uploads in flight in this process; `tryAcquire` returns a release, or null when full. */
-export function uploadSlots(limit: number): { tryAcquire: () => (() => void) | null } {
-  const keyed = keyedSlots(limit);
-  return { tryAcquire: () => keyed.tryAcquire("") };
+/**
+ * At most `limit` uploads in flight in this process. `tryAcquire(ceiling)` takes one only while fewer than `ceiling`
+ * (at most `limit`) are in flight — the reserved slots of `slotCeilingFor` (./limits) — and returns its release (safe to
+ * call twice), or null. `inFlight` lets the route answer a full process before any database work.
+ */
+export function uploadSlots(limit: number): { tryAcquire: (ceiling?: number) => (() => void) | null; inFlight: () => number } {
+  let inFlight = 0;
+  return {
+    inFlight: () => inFlight,
+    tryAcquire(ceiling = limit) {
+      if (inFlight >= Math.min(limit, ceiling)) return null;
+      inFlight++;
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        inFlight--;
+      };
+    },
+  };
 }
 
 /** At most `limit` in flight per key (one person's parallel uploads); `tryAcquire` returns a release, or null. */
@@ -150,6 +166,28 @@ export function attemptWindow(limit: number, windowMs: number): { allow: (key: s
       seen.set(key, recent);
       if (seen.size > 10_000) for (const [k, ts] of seen) if (ts.every((t) => t <= now - windowMs)) seen.delete(k);
       return true;
+    },
+  };
+}
+
+/**
+ * Events per key in a sliding `windowMs` — the slow aborts of a person (D2: `slotCeilingFor`). In memory, per process,
+ * like `attemptWindow`; a key's list never holds more than its events in the window (a person's are bounded by the
+ * hourly attempts), and idle keys are dropped once there are many.
+ */
+export function slidingCounter(windowMs: number): { add: (key: string, now?: number) => void; count: (key: string, now?: number) => number } {
+  const seen = new Map<string, number[]>();
+  const live = (key: string, now: number) => (seen.get(key) ?? []).filter((t) => t > now - windowMs);
+  return {
+    add(key, now = Date.now()) {
+      seen.set(key, [...live(key, now), now]);
+      if (seen.size > 10_000) for (const [k, ts] of seen) if (ts.every((t) => t <= now - windowMs)) seen.delete(k);
+    },
+    count(key, now = Date.now()) {
+      const ts = live(key, now);
+      if (ts.length > 0) seen.set(key, ts);
+      else seen.delete(key);
+      return ts.length;
     },
   };
 }

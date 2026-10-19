@@ -35,15 +35,43 @@ export const FILE_LIMITS = {
   tempTtlMs: 60 * 60 * 1000,
   /** Uploads are refused below this much free space on the files volume (the database shares the disk). */
   minFreeDiskBytes: 1024 * MiB,
-  /** An upload that sends nothing for this long, or takes longer than the total, is aborted. */
-  idleTimeoutMs: 60 * 1000,
-  totalTimeoutMs: 10 * 60 * 1000,
-  /** Uploads in flight per app process (each holds a file descriptor and a disk stream), and per person. */
+  /**
+   * The pace of an upload's body (security review 2026-10-19, D2): a slot is held only by a body that keeps coming.
+   * Aborted (`./receive`) when no byte arrives for `idleTimeoutMs`; when, once `slowGraceMs` have passed, the AVERAGE
+   * rate since the receiver started is below `minBytesPerSecond`; and in any case after `totalTimeoutMs` — a hard wall
+   * clock (a full 10 MiB file therefore needs ~114 KiB/s). It sits UNDER the layers that would otherwise cut first,
+   * without a word: Caddy's `read_body` (deploy/Caddyfile, 120 s for a whole request) and Node's own
+   * `server.requestTimeout` (300 s — the http.Server default `next start` keeps), so this rule answers, in Persian.
+   */
+  idleTimeoutMs: 15 * 1000,
+  totalTimeoutMs: 90 * 1000,
+  minBytesPerSecond: 100 * 1024,
+  slowGraceMs: 10 * 1000,
+  /**
+   * Uploads in flight per app process (each holds a file descriptor and a disk stream). The last
+   * `reservedUploadSlots` are only for a person with no slow abort in the strike window, so a few accounts trickling
+   * bytes cannot hold every slot (`slotCeilingFor`).
+   */
   maxConcurrentUploads: 8,
-  maxConcurrentUploadsPerPerson: 2,
+  reservedUploadSlots: 2,
+  /** One upload in flight per person (the picker sends one file at a time anyway). */
+  maxConcurrentUploadsPerPerson: 1,
+  /** Slow aborts (idle, under the rate, past the wall clock) per person in the window before uploads are refused (429). */
+  maxSlowStrikes: 3,
+  slowStrikeWindowMs: 10 * 60 * 1000,
   /** Upload attempts per person per hour, refused ones included (garbage that never reaches the quota). */
   maxAttemptsPerHour: 60,
 } as const;
+
+/**
+ * The fairness rule of the process slots (D2), from the person's slow aborts in the strike window: null = refused (at
+ * `maxSlowStrikes`); otherwise how many slots may be in flight for them to take one — all of them for a person with no
+ * strike, all but the reserved ones for anyone with one.
+ */
+export function slotCeilingFor(slowStrikes: number): number | null {
+  if (slowStrikes >= FILE_LIMITS.maxSlowStrikes) return null;
+  return slowStrikes > 0 ? FILE_LIMITS.maxConcurrentUploads - FILE_LIMITS.reservedUploadSlots : FILE_LIMITS.maxConcurrentUploads;
+}
 
 /** Persian messages of the file rules (the server's AppErrors and the picker's own pre-checks say the same). */
 export const FILE_MESSAGES = {
@@ -62,6 +90,8 @@ export const FILE_MESSAGES = {
   expired: "یکی از فایل‌ها یافت نشد یا مهلتش گذشته است؛ آن را دوباره بارگذاری کنید.",
   incomplete: "بارگذاری کامل نشد؛ دوباره تلاش کنید.",
   timeout: "بارگذاری بیش از حد طول کشید؛ دوباره تلاش کنید.",
+  tooSlow: "اتصال برای بارگذاری بیش از حد کند است؛ با اتصال بهتری دوباره تلاش کنید.",
+  slowStrikes: "چند بارگذاری اخیر شما به‌خاطر کندی اتصال نیمه‌کاره ماند؛ چند دقیقهٔ دیگر با اتصال بهتری دوباره تلاش کنید.",
   emptySubmission: "متن پاسخ را بنویسید یا فایلی پیوست کنید.",
   submissionClosed: "این تکلیف بسته شده است؛ پاسخ دیگر ثبت یا ویرایش نمی‌شود.",
   attachNotHere: "به این مورد فایل پیوست نمی‌شود.",
