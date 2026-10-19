@@ -13,7 +13,11 @@
 //     teacher, another school's staff, another guardian, the organization admin; the database says the same;
 //   • the first addressee's «ثبت پاسخ» (text required) closes it; the guardian reads the status and the answer in
 //     «پیام‌های من» and gets ONE notification — the child's name, never the answer; a counselor answers in «مشاوره»;
-//   • the audit trail has ids, kinds and lengths only; the rate limit; a replayed form; an ended link.
+//   • the audit trail has ids, kinds and lengths only; the rate limit; a replayed form; an ended link;
+//   • security review 2026-10-19: D3 — no comment on a «پیام ولی», and a legacy comment bell is pruned with the link;
+//     D1 — a message nobody can answer any more goes on (removal, ended teaching, revoke, «افزودن تدریس»; nobody left →
+//     open, «در حال ارجاع به مدیریت»; a week → «در انتظار پاسخ») and migration 0023's routing function (definer,
+//     grants, who gets what).
 // The catalog is seeded in beforeAll; every write runs inside a withTenant transaction that ends with Rollback;
 // afterAll re-creates the fixture database (later files assert exact fixture counts).
 import { and, eq, inArray, sql } from "drizzle-orm";
