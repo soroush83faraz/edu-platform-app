@@ -2123,7 +2123,9 @@ plan approval, payments. Docs: docs/db.md (`iam.guardian_link`), docs/admin.md �
   admin who created a guardian stays valid until the parent changes it — if that guardian is later linked to a child at
   ANOTHER school, that admin could sign in as the parent until then (they would have to set a new password, which locks
   the parent out — visible); for organizations with several schools, the organization admin should create such guardians
-  (or the password could be rotated on a cross-school link — not done).
+  (or the password could be rotated on a cross-school link — not done). Since 2026-10-19 a go-live checklist item
+  (docs/ops/go-live-checklist.md «رمز اولیهٴ ولی‌ای که در چند مدرسه فرزند دارد را مدیر سازمان بسازد») lists those
+  guardians still on an initial password so the organization admin re-issues it.
 
 ## 2026-10-19 — «اولیا»: security review fixes (before the first deploy of 0020)
 
@@ -2208,3 +2210,9 @@ is fixed in its own commit.
   has had), in the same transaction, counted in the session's audit (`withdrawnGuardianNotifications`). Deleting frees
   the key, so marking the child absent again tells the guardians again; another child's correction touches nothing.
   docs/attendance.md no longer claims attendance is silent. Test: `tests/int/guardian.test.ts` «غیبت …» (extended).
+- **D4c — left open, now on the go-live checklist.** Open item (d) of «اولیا — فاز ۱» stays a decision for the owner
+  (an initial password a school's manager saw before the guardian got a child at another school remains valid until
+  the parent changes it; the D1 gate refuses any NEW reset or sheet from then on, but cannot un-show the old one). The
+  go-live checklist now has «رمز اولیهٴ ولی‌ای که در چند مدرسه فرزند دارد را مدیر سازمان بسازد»: one query lists the
+  guardians with live children at more than one school still on an initial password, and the organization admin
+  re-issues each from a child's «اولیا» card.
