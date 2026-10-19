@@ -2322,8 +2322,8 @@ is fixed in its own commit.
   the item to C: the guardian's subject and text, the child's name, the trail. If C holds `workspace.work_item.update`
   through another hat (a teacher of any class), C can still ANSWER it from `/inbox/<id>` — the assignee path checks the
   row, not the office — and that answer closes the message for every addressee and reaches the guardian as «پاسخ
-  مدرسه». (A counselor with no other hat loses «مشاوره» › «پیام‌های اولیا» with the role, but still opens the item by
-  its id.) Since D1 the message is also handed to the office's current holder (or the principal / a vice
+  مدرسه». (A counselor with no other hat loses «مشاوره» › «پیام‌های اولیا» with the role and, holding no
+  `workspace.*` permission, cannot open the item page either — their row just stays on the item.) Since D1 the message is also handed to the office's current holder (or the principal / a vice
   principal), so both read it and the first answer wins. Options: keep it (the ex-holder may know the case — today's
   behaviour); withdraw the row like a removal does (delete it if not answered, archive the inbox row) on revoke and
   on ended teaching; or keep reading but refuse the answer from a non-holder.
