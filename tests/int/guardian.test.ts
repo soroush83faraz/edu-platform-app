@@ -676,6 +676,38 @@ describe("«اولیا» — guardians", () => {
     });
   });
 
+  it("security review D2: ending one link prunes only that child's guardian notifications — a sibling's stay, and a colleague's work-item bell is never touched", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const bell = (personId: string) =>
+        tx
+          .select({ title: notification.title, typeCode: notification.typeCode })
+          .from(notification)
+          .where(eq(notification.recipientPersonId, personId))
+          .then((rows) => rows.map((r) => `${r.typeCode}|${r.title}`).sort());
+      // Phone 11's guardian of the siblings لیلا (A1) and سارا (A2), both absent today.
+      const g = (await add(tx, w.admin, w.s1, 11)).guardianPersonId;
+      const s2Link = await add(tx, w.admin, w.s2, 11);
+      await takeAttendance(tx, w.admin, { classGroupId: f.CLASS_GROUP_A1, date: tehranToday(), entries: [{ studentProfileId: w.s1.studentProfileId, status: "absent" }] });
+      await takeAttendance(tx, w.admin, { classGroupId: f.CLASS_GROUP_A2, date: tehranToday(), entries: [{ studentProfileId: w.s2.studentProfileId, status: "absent" }] });
+      expect(await bell(g)).toEqual([`guardian.child_absent|غیبت: ${w.s1.name}`, `guardian.child_absent|غیبت: ${w.s2.name}`].sort());
+      // سارا's link ends: her «غیبت» goes, لیلا's stays.
+      await unlinkGuardian(tx, w.admin, { linkId: s2Link.linkId });
+      expect(await bell(g)).toEqual([`guardian.child_absent|غیبت: ${w.s1.name}`]);
+
+      // A teacher who is also a parent: a کار given to them and their child's «غیبت»; the link ends — the کار's
+      // notification stays.
+      const tLink = await add(tx, w.admin, w.sB, w.teacherPhone, "father", { firstName: "علی", lastName: "حسینی" });
+      await takeAttendance(tx, w.admin, { classGroupId: w.schoolB.classGroupId, date: tehranToday(), entries: [{ studentProfileId: w.sB.studentProfileId, status: "absent" }] });
+      await createWorkItem(tx, w.admin, { typeCode: "task", title: "گزارش ماهانه", priority: "normal", recipients: { kind: "persons", ids: [w.teacher.personId] } });
+      const before = await bell(w.teacher.personId);
+      expect(before.filter((n) => n.startsWith("guardian."))).toEqual([`guardian.child_absent|غیبت: ${w.sB.name}`]);
+      expect(before.filter((n) => !n.startsWith("guardian.")).length).toBeGreaterThan(0);
+      await unlinkGuardian(tx, w.admin, { linkId: tLink.linkId });
+      expect(await bell(w.teacher.personId)).toEqual(before.filter((n) => !n.startsWith("guardian.")));
+    });
+  });
+
   it("security review D2b: inside one school the typed name still replaces the placeholder — even after a sibling left the school", async () => {
     await rolledBack(async (tx) => {
       const w = await buildWorld(tx);
