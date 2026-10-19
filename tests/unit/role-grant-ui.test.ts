@@ -65,6 +65,7 @@ const detail: PersonDetail = {
   ],
   teaching: [{ teacherAssignmentId: "0199a000-0005-7000-8000-000000000001", classOfferingId: "0199a000-0006-7000-8000-000000000001", className: "۱۰/۱", subjectId: "0199a000-0007-7000-8000-000000000001", subjectName: "ریاضی", role: "main" }],
   schoolIds: [SCHOOL_A],
+  credentialReach: true,
 };
 
 /** Every capability a school manager holds — the card must STILL offer no role control. */

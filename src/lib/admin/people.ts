@@ -6,6 +6,7 @@ import type { Tx } from "@/lib/actions";
 import { notFound } from "@/lib/errors";
 import { toAsciiDigits } from "@/lib/normalize";
 import { classEnrollment, schoolEnrollment, teacherAssignment } from "@/modules/academic/schema";
+import { credentialReachSql, requireCredentialReach } from "@/modules/iam/guardian";
 import { authIdentity, contactPoint, organizationMembership, person, role, roleAssignment, staffProfile, studentProfile, userAccount } from "@/modules/iam/schema";
 import { assertSchoolInScope, liveSchoolEnrollmentSql, type AdminScope } from "@/modules/iam/service";
 import { findClassGroup } from "@/modules/tenancy/repo";
@@ -239,6 +240,12 @@ export interface PersonDetail {
   teaching: Array<{ teacherAssignmentId: string; classOfferingId: string; className: string; subjectId: string; subjectName: string; role: string }>;
   /** Schools the person is anchored to (class, primary school, manual roles, live school enrollments); picks the credential sheet's school name. */
   schoolIds: string[];
+  /**
+   * The caller may act AS this person (`credentialReachSql`, security review 2026-10-19 D1): false for a colleague who
+   * is also the guardian of a student outside the caller's scope — «تعیین رمز موقت», «رفع قفل», «ساخت حساب» and the
+   * credentials sheet are then the organization admin's (the actions refuse anyway; the page just does not offer them).
+   */
+  credentialReach: boolean;
 }
 
 export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: string): Promise<PersonDetail> {
@@ -251,6 +258,7 @@ export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: strin
       externalRef: person.externalRef,
       status: person.status,
       inScope: sql<boolean>`${personInScope(scope, "iam.person.id")}`,
+      credentialReach: sql<boolean>`${credentialReachSql(scope, "iam.person.id")}`,
     })
     .from(person)
     .where(eq(person.id, personId))
@@ -356,6 +364,7 @@ export async function getPersonDetail(tx: Tx, scope: AdminScope, personId: strin
     roles,
     teaching,
     schoolIds: [...schoolIds],
+    credentialReach: p.credentialReach === true,
   };
 }
 
@@ -371,7 +380,11 @@ export interface CredentialRow {
   mustChangePassword: boolean;
 }
 
-/** Everyone with an account in a class (active enrollments), for the credentials sheet. */
+/**
+ * Everyone with an account in a class (active enrollments), for the credentials sheet. The encrypted initial password
+ * only where the caller may act as that person (`credentialReachSql`, D1 — students are nobody's guardian today, so
+ * this guards the rule rather than changing the sheet).
+ */
 export async function listClassCredentials(tx: Tx, scope: AdminScope, classGroupId: string): Promise<{ className: string; schoolName: string; rows: CredentialRow[] }> {
   const cg = await findClassGroup(tx, classGroupId);
   if (!cg) throw notFound();
@@ -385,7 +398,7 @@ export async function listClassCredentials(tx: Tx, scope: AdminScope, classGroup
       studentNumber: studentProfile.studentNumber,
       className: classGroup.name,
       loginIdentifier: userAccount.loginIdentifier,
-      initialPasswordEnc: authIdentity.initialPasswordEnc,
+      initialPasswordEnc: sql<string | null>`case when ${credentialReachSql(scope, "iam.person.id")} then ${authIdentity.initialPasswordEnc} else null end`,
       mustChangePassword: userAccount.mustChangePassword,
     })
     .from(classEnrollment)
@@ -400,8 +413,14 @@ export async function listClassCredentials(tx: Tx, scope: AdminScope, classGroup
   return { className: cg.name, schoolName: sch?.name ?? "", rows };
 }
 
+/**
+ * The person's own credentials sheet (/admin/people/[id]/credentials) — it reveals the initial password, so the person
+ * in scope (NOT_FOUND) and `requireCredentialReach` (FORBIDDEN: a colleague who is the guardian of another school's
+ * student — security review 2026-10-19, D1).
+ */
 export async function personCredential(tx: Tx, scope: AdminScope, personId: string): Promise<{ schoolName: string; row: CredentialRow }> {
   const d = await getPersonDetail(tx, scope, personId);
+  await requireCredentialReach(tx, scope, personId);
   if (!d.account) throw notFound("این فرد حساب کاربری ندارد.");
   const [ident] = await tx.select({ enc: authIdentity.initialPasswordEnc }).from(authIdentity).where(and(eq(authIdentity.userAccountId, d.account.userAccountId), eq(authIdentity.provider, "password"))).limit(1);
   let schoolName = d.enrollment?.schoolName ?? "";

@@ -12,6 +12,7 @@ import { formatJalaliDateTime, formatLoginIdentifierFa, formatNumberFa } from "@
 import { createAccountAction, placeStudentAction, resetPasswordAction, unlockAccountAction } from "@/lib/admin/people-actions";
 import type { PersonDetail } from "@/lib/admin/people";
 import { roleLabel } from "@/lib/admin/labels";
+import { CREDENTIALS_ORG_ADMIN_ONLY } from "@/modules/iam/guardian-policy";
 import { CredentialsDialog, type Credentials } from "./CredentialsDialog";
 import { ResponsiveModal } from "./ResponsiveModal";
 import type { ClassOption } from "./StudentForm";
@@ -25,7 +26,10 @@ interface Caps {
   canTeaching: boolean;
 }
 
-/** Account state + «تعیین رمز موقت» / «رفع قفل» / «ساخت حساب». */
+/**
+ * Account state + «تعیین رمز موقت» / «رفع قفل» / «ساخت حساب» — offered only where the caller may act as the person
+ * (`detail.credentialReach`, D1); otherwise one line says the organization admin does it (the server refuses anyway).
+ */
 export function AccountCard({ detail, caps }: { detail: PersonDetail; caps: Caps }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -85,25 +89,30 @@ export function AccountCard({ detail, caps }: { detail: PersonDetail; caps: Caps
             <dt className="text-text-muted">آخرین ورود</dt>
             <dd className="text-text">{acct.lastLoginAt ? formatJalaliDateTime(acct.lastLoginAt) : "هنوز وارد نشده"}</dd>
           </dl>
-          <div className="flex flex-wrap gap-2">
-            {caps.canReset ? (
-              <Button type="button" variant="outline" className="gap-2" onClick={() => setConfirmReset(true)} disabled={pending}>
-                <KeyRound className="size-4" aria-hidden />
-                تعیین رمز موقت
-              </Button>
-            ) : null}
-            {caps.canUnlock && (locked || acct.failedLoginCount > 0) ? (
-              <Button type="button" variant="outline" className="gap-2" onClick={unlock} disabled={pending}>
-                <LockOpen className="size-4" aria-hidden />
-                رفع قفل
-              </Button>
-            ) : null}
-          </div>
+          {detail.credentialReach ? (
+            <div className="flex flex-wrap gap-2">
+              {caps.canReset ? (
+                <Button type="button" variant="outline" className="gap-2" onClick={() => setConfirmReset(true)} disabled={pending}>
+                  <KeyRound className="size-4" aria-hidden />
+                  تعیین رمز موقت
+                </Button>
+              ) : null}
+              {caps.canUnlock && (locked || acct.failedLoginCount > 0) ? (
+                <Button type="button" variant="outline" className="gap-2" onClick={unlock} disabled={pending}>
+                  <LockOpen className="size-4" aria-hidden />
+                  رفع قفل
+                </Button>
+              ) : null}
+            </div>
+          ) : caps.canReset || caps.canUnlock ? (
+            <p className="text-meta text-text-muted">{CREDENTIALS_ORG_ADMIN_ONLY}</p>
+          ) : null}
         </>
       ) : (
         <div className="flex flex-col gap-2">
           <p className="text-sm text-text-muted">این فرد حساب کاربری ندارد و نمی‌تواند وارد سامانه شود.</p>
-          {caps.canWritePerson ? (
+          {caps.canWritePerson && !detail.credentialReach ? <p className="text-meta text-text-muted">{CREDENTIALS_ORG_ADMIN_ONLY}</p> : null}
+          {caps.canWritePerson && detail.credentialReach ? (
             <Button type="button" className="gap-2 self-start" onClick={create} disabled={pending}>
               <UserPlus className="size-4" aria-hidden />
               ساخت حساب کاربری

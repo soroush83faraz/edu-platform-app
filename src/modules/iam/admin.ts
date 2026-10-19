@@ -10,6 +10,7 @@ import { enrollStudent, moveEnrollment } from "@/modules/academic/service";
 import { classEnrollment } from "@/modules/academic/schema";
 import { findClassGroup } from "@/modules/tenancy/repo";
 import type { Assignment } from "./can";
+import { requireCredentialReach } from "./guardian";
 import { organizationMembership, studentProfile } from "./schema";
 import {
   assertSchoolInScope,
@@ -90,18 +91,29 @@ export async function adminUpdatePerson(tx: Tx, ctx: AdminCtx, personId: string,
   if (contactPhone !== undefined || guardianPhone !== undefined) await setPersonPhones(tx, ctx, personId, { contactPhone, guardianPhone });
 }
 
+/**
+ * «تعیین رمز موقت» on the person page. The person in scope (NOT_FOUND), then `requireCredentialReach` (FORBIDDEN): a
+ * colleague of the caller's school who is ALSO the guardian of another school's student is the organization admin's —
+ * the new password would let the caller sign in as them and read that child (security review 2026-10-19, D1).
+ */
 export async function adminResetInitialPassword(tx: Tx, ctx: AdminCtx, personId: string): Promise<{ initialPassword: string; loginIdentifier: string }> {
   const scope = await getAdminScope(tx, ctx);
   await requirePersonInScope(tx, scope, personId);
+  await requireCredentialReach(tx, scope, personId);
   const account = await findAccountOfPerson(tx, personId);
   if (!account) throw notFound("این فرد حساب کاربری ندارد.");
   const res = await resetInitialPassword(tx, ctx, { userAccountId: account.userAccountId });
   return { initialPassword: res.initialPassword, loginIdentifier: account.loginIdentifier };
 }
 
+/**
+ * «رفع قفل» — the same gate as the reset: it clears the throttle's recent failures, so repeated unlocks would lift the
+ * guessing limit on an account the caller may not act as (D1).
+ */
 export async function adminUnlockAccount(tx: Tx, ctx: AdminCtx, personId: string): Promise<void> {
   const scope = await getAdminScope(tx, ctx);
   await requirePersonInScope(tx, scope, personId);
+  await requireCredentialReach(tx, scope, personId);
   const account = await findAccountOfPerson(tx, personId);
   if (!account) throw notFound("این فرد حساب کاربری ندارد.");
   await unlockAccount(tx, ctx, { userAccountId: account.userAccountId });

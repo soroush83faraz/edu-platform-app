@@ -25,6 +25,14 @@ export function relationLabel(value: string): string {
   return isGuardianRelation(value) ? RELATION_LABELS[value] : RELATION_LABELS.other;
 }
 
+/**
+ * The ONE sentence for an account the caller may not act AS (security review 2026-10-19, D1 — `requireCredentialReach`
+ * in ./guardian): «تعیین رمز موقت», «رفع قفل», «ساخت حساب کاربری» or a sheet's initial password of a person who is the
+ * guardian of a child outside the caller's scope (a colleague with a child at another school, a parent with children
+ * at two schools). Deliberately says nothing about where — or whether — that person has children.
+ */
+export const CREDENTIALS_ORG_ADMIN_ONLY = "رمز و حساب کاربری این فرد را فقط مدیر سازمان تعیین می‌کند.";
+
 /** What happened to the login when a guardian was added (./guardian `addGuardian`) — the admin UI says it in one line. */
 export type GuardianAccountKind = "new_phone" | "new_username" | "existing" | "reopened" | "staff";
 

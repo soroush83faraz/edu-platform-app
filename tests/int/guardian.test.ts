@@ -22,12 +22,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { withTenant, type Tx } from "@/db/client";
 import * as schema from "@/db/schema";
 import { auditLog, guardianLink, notification, organizationMembership, roleAssignment, userAccount, authIdentity } from "@/db/schema";
+import { getPersonDetail, listClassCredentials, listStaff, personCredential } from "@/lib/admin/people";
 import { tehranToday } from "@/lib/attendance";
 import { AppError } from "@/lib/errors";
 import { getSessionForTaking, studentAttendanceSummary, takeAttendance } from "@/modules/academic/attendance";
 import { myReportCard } from "@/modules/academic/report-card";
 import { assignTeacher } from "@/modules/academic/service";
 import { getStudentFile } from "@/modules/counseling/service";
+import { adminResetInitialPassword, adminUnlockAccount, adminUpdatePerson } from "@/modules/iam/admin";
 import { type Assignment, can, canAtAnyScope } from "@/modules/iam/can";
 import { GUARDIAN_MESSAGES, addGuardian, bulkCreateClassGuardians, listClassGuardianCredentials, listGuardiansOfStudent, resetGuardianPassword, unlinkGuardian } from "@/modules/iam/guardian";
 import { notifyGuardiansOfReportCard } from "@/modules/iam/guardian-notify";
@@ -446,12 +448,60 @@ describe("«اولیا» — guardians", () => {
       expect(sheetA.rows.filter((r) => r.guardianPersonId !== g11 && ours.includes(r.loginIdentifier)).every((r) => r.initialPasswordEnc !== null)).toBe(true);
       const cardA = await listGuardiansOfStudent(tx, w.principalA, w.s1.personId);
       expect(cardA[0]).toMatchObject({ guardianPersonId: g11, manageable: false });
-      await expect(sub(tx, (sp) => resetGuardianPassword(sp, w.principalA, { linkId: cardA[0].linkId }))).rejects.toSatisfy(isError("FORBIDDEN", GUARDIAN_MESSAGES.otherSchool));
+      await expect(sub(tx, (sp) => resetGuardianPassword(sp, w.principalA, { linkId: cardA[0].linkId }))).rejects.toSatisfy(isError("FORBIDDEN", GUARDIAN_MESSAGES.orgAdminOnly));
       const reset = await resetGuardianPassword(tx, w.admin, { linkId: cardA[0].linkId });
       expect(reset.loginIdentifier).toBe(e164(11));
       // A colleague's account is never reset from here.
       const staffLink = await add(tx, w.admin, w.s3, w.teacherPhone, "father", { firstName: "علی", lastName: "حسینی" });
       await expect(sub(tx, (sp) => resetGuardianPassword(sp, w.admin, { linkId: staffLink.linkId }))).rejects.toSatisfy(isError("FORBIDDEN", GUARDIAN_MESSAGES.staffAccount));
+    });
+  });
+
+  it("security review D1: school A's manager may not act AS a colleague who is the parent of a school-B student — reset, unlock and the credentials sheet are refused; the colleague's school-A record stays theirs; the organization admin can", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const scopeA = await getAdminScope(tx, w.principalA);
+      // Before: teacher T is an ordinary school-A colleague for principal A (account, sheet, reset).
+      expect((await getPersonDetail(tx, scopeA, w.teacher.personId)).credentialReach).toBe(true);
+      expect((await adminResetInitialPassword(tx, w.principalA, w.teacher.personId)).loginIdentifier).toBe(e164(3));
+      expect((await personCredential(tx, scopeA, w.teacher.personId)).row.initialPasswordEnc).not.toBeNull();
+
+      // The reviewer's scenario: T becomes the guardian of a school-B student (rule 2 — on T's own account).
+      expect((await add(tx, w.admin, w.sB, w.teacherPhone, "father", { firstName: "علی", lastName: "حسینی" })).accountKind).toBe("staff");
+      const teacher = await actor(tx, w.teacher.personId);
+      expect((await listMyChildren(tx, teacher)).map((c) => c.studentProfileId)).toEqual([w.sB.studentProfileId]);
+
+      // Every path that would let principal A sign in as T refuses — one neutral sentence, nothing about school B.
+      const refused = isError("FORBIDDEN", GUARDIAN_MESSAGES.orgAdminOnly);
+      await expect(sub(tx, (sp) => adminResetInitialPassword(sp, w.principalA, w.teacher.personId))).rejects.toSatisfy(refused);
+      await expect(sub(tx, (sp) => adminUnlockAccount(sp, w.principalA, w.teacher.personId))).rejects.toSatisfy(refused);
+      await expect(sub(tx, (sp) => personCredential(sp, scopeA, w.teacher.personId))).rejects.toSatisfy(refused);
+      expect(GUARDIAN_MESSAGES.orgAdminOnly).not.toMatch(/مدرسه|فرزند/);
+      // The person page no longer offers them (the flag the account card reads).
+      expect((await getPersonDetail(tx, scopeA, w.teacher.personId)).credentialReach).toBe(false);
+
+      // Everything about T that is not acting AS T stays principal A's: the page, the staff list, an edit.
+      expect((await getPersonDetail(tx, scopeA, w.teacher.personId)).firstName).toBe("علی");
+      expect((await listStaff(tx, scopeA, { q: "", page: 1, pageSize: 200 })).rows.map((r) => r.personId)).toContain(w.teacher.personId);
+      await adminUpdatePerson(tx, w.principalA, w.teacher.personId, { employeeNumber: "E-77" });
+      expect((await getPersonDetail(tx, scopeA, w.teacher.personId)).staff?.employeeNumber).toBe("E-77");
+      // The class sheet of A1 still carries A's students' passwords (students are nobody's guardian).
+      const sheet = await listClassCredentials(tx, scopeA, f.CLASS_GROUP_A1);
+      expect(sheet.rows.find((r) => r.personId === w.s1.personId)?.initialPasswordEnc).not.toBeNull();
+
+      // The organization admin may (they manage both schools).
+      const byAdmin = await adminResetInitialPassword(tx, w.admin, w.teacher.personId);
+      expect(byAdmin.loginIdentifier).toBe(e164(3));
+      await adminUnlockAccount(tx, w.admin, w.teacher.personId);
+      expect((await personCredential(tx, await getAdminScope(tx, w.admin), w.teacher.personId)).row.initialPasswordEnc).not.toBeNull();
+
+      // The gate follows the LIVE links: once school B's link ends, T is principal A's colleague again.
+      const [bLink] = await tx
+        .select({ id: guardianLink.id })
+        .from(guardianLink)
+        .where(and(eq(guardianLink.guardianPersonId, w.teacher.personId), eq(guardianLink.status, "active")));
+      await unlinkGuardian(tx, w.admin, { linkId: bLink.id });
+      expect((await adminResetInitialPassword(tx, w.principalA, w.teacher.personId)).loginIdentifier).toBe(e164(3));
     });
   });
 

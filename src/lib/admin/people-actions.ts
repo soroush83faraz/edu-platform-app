@@ -7,6 +7,7 @@ import { defineAction } from "@/lib/actions";
 import { notFound } from "@/lib/errors";
 import { endTeacherAssignment } from "@/modules/academic/service";
 import { adminCreateStaff, adminCreateStudent, adminPlaceStudent, adminResetInitialPassword, adminUnlockAccount, adminUpdatePerson } from "@/modules/iam/admin";
+import { requireCredentialReach } from "@/modules/iam/guardian";
 import { removePerson } from "@/modules/iam/removal";
 import { assignRole, createAccountForPerson, getAdminScope, resolveIdentifier, revokeRoleAssignment, MESSAGES } from "@/modules/iam/service";
 import { findSchoolById } from "@/modules/tenancy/repo";
@@ -104,10 +105,14 @@ export const removePersonAction = defineAction({ schema: RemovePersonInput, perm
   return { personId: res.personId, kind: res.kind, alreadyRemoved: res.alreadyRemoved };
 });
 
-/** Creates the login account of a person who was registered without one (students without a phone → username). */
+/**
+ * Creates the login account of a person who was registered without one (students without a phone → username). The
+ * caller hands the new password out, so it is acting AS the person: `requireCredentialReach` (D1) like the reset.
+ */
 export const createAccountAction = defineAction({ schema: CreateAccountInput, permission: "iam.person.write", scope: "any" }, async (tx, input, ctx) => {
   const scope = await getAdminScope(tx, ctx);
   const detail = await getPersonDetail(tx, scope, input.personId);
+  await requireCredentialReach(tx, scope, input.personId);
   if (detail.account) throw notFound("این فرد حساب کاربری دارد.");
   let identifier;
   if (input.identifier?.trim()) identifier = resolveIdentifier(input.identifier, "identifier");

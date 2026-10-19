@@ -2078,8 +2078,9 @@ plan approval, payments. Docs: docs/db.md (`iam.guardian_link`), docs/admin.md �
   real name by someone who manages all of that guardian's children) opening the A4 «برگه‌های ورود اولیا». Writes need
   `iam.person.write` at the student's school (NOT_FOUND outside). **Acting AS a guardian** — reading their initial
   password on the sheet, «تعیین رمز موقت» — needs EVERY live child of that guardian inside the caller's scope
-  (`guardianWithinScopeSql`), and a colleague's account is never touched here: a school's manager must not be able to
-  sign in as the parent of another school's student.
+  (`guardianWithinScopeSql` — since 2026-10-19 `credentialReachSql`, and the staff pages' account operations obey it
+  too, below), and a colleague's account is never touched here: a school's manager must not be able to sign in as the
+  parent of another school's student.
 - **Removal.** `removePerson` of a student ends their live links and roles (after the student's own rows, before the
   work items — the guardian rows are person rows, locked ascending); a guardian-only person left without a live child
   loses their login exactly as a removal does (membership `left`, account `disabled`, sessions revoked, printable
@@ -2123,3 +2124,29 @@ plan approval, payments. Docs: docs/db.md (`iam.guardian_link`), docs/admin.md �
   ANOTHER school, that admin could sign in as the parent until then (they would have to set a new password, which locks
   the parent out — visible); for organizations with several schools, the organization admin should create such guardians
   (or the password could be rotated on a cross-school link — not done).
+
+## 2026-10-19 — «اولیا»: security review fixes (before the first deploy of 0020)
+
+A fresh-context security review of the unshipped «اولیا» feature (commits 1820626..632b0a3) found these defects; each
+is fixed in its own commit.
+
+- **D1 — nobody acts AS a person whose child is outside their scope.** The guardian paths already kept «تعیین رمز
+  موقت» and the sheet's initial password of a guardian with a child at another school away from a school's manager —
+  the generic account paths did not: teacher T of school A, linked (rule 2) as the parent of a school-B student, stayed
+  an ordinary school-A colleague for principal A, so `adminResetInitialPassword` (only `requirePersonInScope`) handed
+  principal A a new password and `personCredential` T's encrypted initial one — principal A could sign in as T and read
+  the school-B child. Now ONE helper guards every path that sets, resets, reveals or unlocks a credential, creates a
+  login or re-enables one: `requireCredentialReach(tx, scope, personId)` (src/modules/iam/guardian.ts; its row-by-row
+  form `credentialReachSql` is the former `guardianWithinScopeSql`) — the person row FOR SHARE (a link being added at
+  that moment is waited for, then seen), then FORBIDDEN unless every LIVE guardian link of the person is to a student
+  inside the caller's scope; the organization scope checks nothing. Called by `adminResetInitialPassword`,
+  `adminUnlockAccount` (an unlock clears the throttle's failures — repeated unlocks would lift the guessing limit),
+  `personCredential` (/admin/people/[id]/credentials), `createAccountAction`, `resetGuardianPassword` and
+  `reopenGuardianAccess` (a closed guardian login reopened hands its new password to the caller);
+  `listClassCredentials` and `listClassGuardianCredentials` apply `credentialReachSql` per row (students are nobody's
+  guardian, so the students' sheet does not change). One neutral sentence for all of them, «رمز و حساب کاربری این فرد
+  را فقط مدیر سازمان تعیین می‌کند.» (`CREDENTIALS_ORG_ADMIN_ONLY`) — it replaced «این ولی فرزندی در مدرسهٴ دیگری هم
+  دارد؛ …», which told a school where another school's parent has children. The person page then offers none of those
+  buttons (`PersonDetail.credentialReach`) and shows that line. Everything about T that is not acting AS T — the page,
+  the staff list, edits, teaching — stays principal A's; the organization admin keeps full reach. Test:
+  `tests/int/guardian.test.ts` «security review D1».

@@ -49,6 +49,7 @@ const detail: PersonDetail = {
     { teacherAssignmentId: "0199a000-0005-7000-8000-000000000002", classOfferingId: "0199a000-000c-7000-8000-000000000002", className: "۱۰/۲", subjectId: PHYSICS, subjectName: "فیزیک", role: "assistant" },
   ],
   schoolIds: [],
+  credentialReach: true,
 };
 
 const cls: TeachingClassOption = {

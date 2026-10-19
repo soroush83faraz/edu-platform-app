@@ -25,10 +25,13 @@
 // and the student inside that scope, `requirePersonInScope`, NOT_FOUND; reads: the admin scope). Never yourself (a
 // manager is no guardian of their own school's child through their own hands — the D1 rule «nobody grants themselves
 // a role»). A school-scoped admin reaches a GUARDIAN only through a child in their scope; whatever would let them act
-// AS the guardian — reading the initial password on the sheet, «تعیین رمز موقت» — needs every live child of that
-// guardian inside their scope (`guardianWithinScopeSql`), and a colleague's account is never touched here (its
-// password belongs to the staff pages). A guardian-only person is anchored nowhere in `personInScopeSql`: they appear
-// in no admin people list and no work-item recipient picker (workspace `inReach`).
+// AS a person — reading the initial password on a sheet, «تعیین رمز موقت», «رفع قفل», «ساخت حساب», a closed guardian
+// access reopened with a new password — needs every live child of that person inside their scope
+// (`requireCredentialReach` / `credentialReachSql`: security review 2026-10-19, D1 — the staff pages' account
+// operations call it too, so a school's manager cannot sign in as a COLLEAGUE who is a parent at another school), and
+// a colleague's account is never touched here (its password belongs to the staff pages). A guardian-only person is
+// anchored nowhere in `personInScopeSql`: they appear in no admin people list and no work-item recipient picker
+// (workspace `inReach`).
 //
 // Concurrency (READ COMMITTED, the lock order of ./removal): the STUDENT person rows first (ascending when several),
 // then the GUARDIAN person rows (ascending), both FOR NO KEY UPDATE — it waits for a removal (FOR UPDATE), serialises
@@ -42,7 +45,7 @@ import { audit } from "@/lib/audit";
 import { encryptInitialPassword } from "@/lib/crypto";
 import { forbidden, notFound, conflict, validation } from "@/lib/errors";
 import { findClassGroup, findSchoolById } from "@/modules/tenancy/repo";
-import { BULK_RELATION, guardianUsernameBase, isGuardianRelation, placeholderGuardianName, type GuardianAccountKind, type GuardianRelation } from "./guardian-policy";
+import { BULK_RELATION, CREDENTIALS_ORG_ADMIN_ONLY, guardianUsernameBase, isGuardianRelation, placeholderGuardianName, type GuardianAccountKind, type GuardianRelation } from "./guardian-policy";
 import { generateInitialPassword, hashPassword } from "./password";
 import { revokeAllForUser } from "./repo";
 import { authIdentity, contactPoint, guardianLink, organizationMembership, person, roleAssignment, userAccount } from "./schema";
@@ -73,8 +76,12 @@ export const GUARDIAN_MESSAGES = {
   self: "نمی‌توانید خودتان را ولیِ دانش‌آموز ثبت کنید؛ از همکار دیگری بخواهید.",
   sameAsStudent: "ولی نمی‌تواند خودِ دانش‌آموز باشد.",
   notStudent: "این شخص دانش‌آموز نیست.",
-  /** «تعیین رمز موقت» for a guardian with a child the caller does not manage. */
-  otherSchool: "این ولی فرزندی در مدرسهٴ دیگری هم دارد؛ تعیین رمز او با مدیر سازمان است.",
+  /**
+   * Acting AS someone with a child the caller does not manage (`requireCredentialReach`) — the same neutral sentence
+   * for a guardian and a colleague; it used to say «… فرزندی در مدرسهٴ دیگری هم دارد», which told a school's manager
+   * where another school's parent has children.
+   */
+  orgAdminOnly: CREDENTIALS_ORG_ADMIN_ONLY,
   /** «تعیین رمز موقت» for a colleague's account. */
   staffAccount: "این ولی از همکاران است و با حساب همکاری خودش وارد می‌شود؛ رمز او از صفحهٴ کارکنان تعیین می‌شود.",
   noAccount: "این ولی حساب کاربری ندارد.",
@@ -98,11 +105,13 @@ export function guardianOnlySql(personColumn: string): SQL {
 }
 
 /**
- * SQL «every LIVE child of the guardian in `personColumn` is inside `scope`» (the admin people rule on each child) —
- * the condition for acting AS that guardian (the sheet's initial password, «تعیین رمز موقت»). True for the
- * organization scope.
+ * SQL «every LIVE child of the person in `personColumn` is inside `scope`» (the admin people rule on each child) — the
+ * condition for acting AS that person (security review 2026-10-19, D1): reading an initial password on a sheet,
+ * «تعیین رمز موقت», «رفع قفل», «ساخت حساب کاربری», reopening a closed guardian login. True for the organization scope
+ * and for anybody who is nobody's guardian; a colleague of school A who is the parent of a school-B student is false
+ * for school A's manager. The list queries apply it row by row; the single-person paths call `requireCredentialReach`.
  */
-export function guardianWithinScopeSql(scope: AdminScope, personColumn: string): SQL {
+export function credentialReachSql(scope: AdminScope, personColumn: string): SQL {
   if (scope.kind === "organization") return sql`true`;
   const p = columnRef(personColumn);
   return sql`not exists (
@@ -110,6 +119,24 @@ export function guardianWithinScopeSql(scope: AdminScope, personColumn: string):
     join iam.student_profile wsp on wsp.id = wgl.student_profile_id
     where wgl.guardian_person_id = ${p} and wgl.status = 'active'
       and not ${personInScopeSql(scope, "wsp.person_id")})`;
+}
+
+/**
+ * The ONE gate in front of every path that sets, resets, reveals or unlocks a person's credential, creates their login
+ * or re-enables it (security review 2026-10-19, D1): `adminResetInitialPassword` / `adminUnlockAccount` (./admin), the
+ * person's credentials sheet and «ساخت حساب کاربری» (src/lib/admin), «تعیین رمز موقت» of a guardian and a closed
+ * guardian access reopened (below). Callers have checked the person's scope first (NOT_FOUND outside it). FORBIDDEN —
+ * one neutral sentence, `GUARDIAN_MESSAGES.orgAdminOnly` — unless `credentialReachSql` holds: otherwise a school's
+ * manager could sign in as a colleague, or a parent, of another school's student and read that child. The person row
+ * is taken FOR SHARE first, so a guardian link being added to them at this moment (FOR NO KEY UPDATE, «Concurrency»
+ * above) is waited for and then seen. Organization scope: nothing to check, no lock.
+ */
+export async function requireCredentialReach(tx: Tx, scope: AdminScope, personId: string): Promise<void> {
+  if (scope.kind === "organization") return;
+  const [locked] = await tx.select({ id: person.id }).from(person).where(eq(person.id, personId)).for("share");
+  if (!locked) throw notFound();
+  const res = await tx.execute<{ ok: boolean }>(sql`select ${credentialReachSql(scope, "p.id")} as ok from iam.person p where p.id = ${personId}::uuid`);
+  if (res.rows[0]?.ok !== true) throw forbidden(GUARDIAN_MESSAGES.orgAdminOnly);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -293,9 +320,10 @@ interface LinkOutcome {
  * Links a guardian person to a live student (both already locked): never yourself, never the student; the guardian
  * must be an active person. An existing live link keeps its row (a changed relation is updated, audited); a new one
  * is primary when the student has no live primary guardian yet, and carries its derived `guardian_full` assignment.
- * A guardian-only person whose access had closed is opened again (`reopenGuardianAccess`).
+ * A guardian-only person whose access had closed is opened again (`reopenGuardianAccess`) — for a caller who may act
+ * as them (`scope`).
  */
-async function linkGuardian(tx: Tx, ctx: IamCtx, student: StudentFacts, guardianPersonId: string, relation: GuardianRelation): Promise<LinkOutcome> {
+async function linkGuardian(tx: Tx, ctx: IamCtx, scope: AdminScope, student: StudentFacts, guardianPersonId: string, relation: GuardianRelation): Promise<LinkOutcome> {
   if (guardianPersonId === ctx.personId) throw forbidden(GUARDIAN_MESSAGES.self);
   if (guardianPersonId === student.personId) throw fieldError("phone", GUARDIAN_MESSAGES.sameAsStudent);
   await lockPersons(tx, [guardianPersonId]);
@@ -313,7 +341,7 @@ async function linkGuardian(tx: Tx, ctx: IamCtx, student: StudentFacts, guardian
       await tx.update(guardianLink).set({ relation }).where(eq(guardianLink.id, live.id));
       await audit(ctx, "iam.guardian_link.updated", { schema: "iam", table: "guardian_link", id: live.id }, { relation: live.relation }, { relation }, tx);
     }
-    return { linkId: live.id, alreadyLinked: true, reopened: await reopenGuardianAccess(tx, ctx, guardianPersonId) };
+    return { linkId: live.id, alreadyLinked: true, reopened: await reopenGuardianAccess(tx, ctx, scope, guardianPersonId) };
   }
 
   const [primary] = await tx
@@ -347,7 +375,7 @@ async function linkGuardian(tx: Tx, ctx: IamCtx, student: StudentFacts, guardian
     { guardianPersonId, studentProfileId: student.studentProfileId, relation, isPrimary: link.isPrimary, roleAssignmentId: ra.id },
     tx,
   );
-  return { linkId: link.id, alreadyLinked: false, reopened: await reopenGuardianAccess(tx, ctx, guardianPersonId) };
+  return { linkId: link.id, alreadyLinked: false, reopened: await reopenGuardianAccess(tx, ctx, scope, guardianPersonId) };
 }
 
 /** The live derived `guardian_full` assignments of these links, revoked; their ids. */
@@ -428,9 +456,12 @@ async function closeGuardianAccessIfOrphaned(tx: Tx, ctx: IamCtx, guardianPerson
  * The reverse, when a guardian-only person (locked by the caller) gets a live link again while their access is closed:
  * membership `active`, the account `active` with a NEW initial password (`must_change_password`, encrypted copy for the
  * sheet, its identifier's recent failures cleared) — the old password is nobody's to reuse after the school closed
- * the account. Audited as `iam.guardian.access_reopened` (no secret in it). Null when nothing was closed.
+ * the account. The new password goes to the caller, so this is acting AS the guardian: every live child of theirs —
+ * the new link included — must be inside the caller's scope (`requireCredentialReach`, FORBIDDEN otherwise; a closed
+ * account normally has no live link left, so this refuses only an account disabled under live links of another
+ * school). Audited as `iam.guardian.access_reopened` (no secret in it). Null when nothing was closed.
  */
-async function reopenGuardianAccess(tx: Tx, ctx: IamCtx, guardianPersonId: string): Promise<{ loginIdentifier: string; initialPassword: string } | null> {
+async function reopenGuardianAccess(tx: Tx, ctx: IamCtx, scope: AdminScope, guardianPersonId: string): Promise<{ loginIdentifier: string; initialPassword: string } | null> {
   const [m] = await tx
     .select({ id: organizationMembership.id, status: organizationMembership.status, userAccountId: organizationMembership.userAccountId, accountStatus: userAccount.status, loginIdentifier: userAccount.loginIdentifier })
     .from(organizationMembership)
@@ -439,6 +470,7 @@ async function reopenGuardianAccess(tx: Tx, ctx: IamCtx, guardianPersonId: strin
     .limit(1);
   if (!m || (m.status === "active" && m.accountStatus !== "disabled")) return null;
   if (!(await isGuardianOnly(tx, guardianPersonId))) return null; // a colleague's login is never reopened from here
+  await requireCredentialReach(tx, scope, guardianPersonId);
   const initialPassword = generateInitialPassword();
   const secretHash = await hashPassword(initialPassword);
   const updated = await tx
@@ -501,12 +533,12 @@ export async function addGuardian(tx: Tx, ctx: IamCtx, input: AddGuardianInput):
   const student = await requireLiveStudent(tx, scope, input.studentProfileId);
 
   const ensured = await ensureGuardianPerson(tx, ctx, { phone, names, child: student });
-  const outcome = await linkGuardian(tx, ctx, student, ensured.personId, input.relation);
+  const outcome = await linkGuardian(tx, ctx, scope, student, ensured.personId, input.relation);
 
   let renamed = false;
   if (ensured.kind === "existing") {
     const res = await tx.execute<{ first_name: string; last_name: string; within: boolean }>(sql`
-      select p.first_name, p.last_name, ${guardianWithinScopeSql(scope, "p.id")} as within
+      select p.first_name, p.last_name, ${credentialReachSql(scope, "p.id")} as within
       from iam.person p where p.id = ${ensured.personId}::uuid`);
     const g = res.rows[0];
     if (g && g.within && (g.first_name !== names.firstName || g.last_name !== names.lastName)) {
@@ -559,10 +591,10 @@ export async function unlinkGuardian(tx: Tx, ctx: IamCtx, input: { linkId: strin
 /**
  * «تعیین رمز موقت» of a guardian from the student's card: the link must be live and the student in the caller's scope
  * (NOT_FOUND), the guardian guardian-only (a colleague's account belongs to the staff pages — FORBIDDEN) and every live
- * child of theirs inside the caller's scope (FORBIDDEN otherwise: the new password would let the caller sign in as a
- * parent of another school's student). The guardian row is locked FOR SHARE first, so a link to another school's child
- * being added meanwhile is waited for; then the account service's own reset (sessions revoked, audited). The plaintext
- * is returned ONCE.
+ * child of theirs inside the caller's scope (`requireCredentialReach`, FORBIDDEN otherwise: the new password would let
+ * the caller sign in as a parent of another school's student — it locks the guardian row FOR SHARE first, so a link to
+ * another school's child being added meanwhile is waited for); then the account service's own reset (sessions revoked,
+ * audited). The plaintext is returned ONCE.
  */
 export async function resetGuardianPassword(tx: Tx, ctx: IamCtx, input: { linkId: string }): Promise<{ loginIdentifier: string; initialPassword: string }> {
   const scope = await getPermissionScope(tx, ctx, "iam.account.reset_password");
@@ -575,14 +607,8 @@ export async function resetGuardianPassword(tx: Tx, ctx: IamCtx, input: { linkId
   const facts = await studentFacts(tx, link.studentProfileId);
   if (!facts) throw notFound();
   await requirePersonInScope(tx, scope, facts.personId);
-  await tx.select({ id: person.id }).from(person).where(eq(person.id, link.guardianPersonId)).for("share");
-  const res = await tx.execute<{ guardian_only: boolean; within: boolean }>(sql`
-    select ${guardianOnlySql("p.id")} as guardian_only, ${guardianWithinScopeSql(scope, "p.id")} as within
-    from iam.person p where p.id = ${link.guardianPersonId}::uuid`);
-  const g = res.rows[0];
-  if (!g) throw notFound();
-  if (!g.guardian_only) throw forbidden(GUARDIAN_MESSAGES.staffAccount);
-  if (!g.within) throw forbidden(GUARDIAN_MESSAGES.otherSchool);
+  if (!(await isGuardianOnly(tx, link.guardianPersonId))) throw forbidden(GUARDIAN_MESSAGES.staffAccount);
+  await requireCredentialReach(tx, scope, link.guardianPersonId);
   const [acct] = await tx
     .select({ userAccountId: organizationMembership.userAccountId, loginIdentifier: userAccount.loginIdentifier })
     .from(organizationMembership)
@@ -642,7 +668,7 @@ export async function listGuardiansOfStudent(tx: Tx, ctx: IamCtx, studentPersonI
       ) as phone,
       ua.login_identifier, ua.status as account_status, m.status as membership_status, ua.must_change_password,
       not ${guardianOnlySql("p.id")} as is_staff,
-      ${guardianWithinScopeSql(scope, "p.id")} as manageable
+      ${credentialReachSql(scope, "p.id")} as manageable
     from iam.guardian_link gl
     join iam.student_profile sp on sp.id = gl.student_profile_id
     join iam.person p on p.id = gl.guardian_person_id
@@ -769,7 +795,7 @@ export async function bulkCreateClassGuardians(tx: Tx, ctx: IamCtx, input: { cla
       result.skippedSelf++;
       continue;
     }
-    const outcome = await linkGuardian(tx, ctx, student, ensured.personId, BULK_RELATION);
+    const outcome = await linkGuardian(tx, ctx, scope, student, ensured.personId, BULK_RELATION);
     if (ensured.account) {
       result.createdAccounts++;
       if (ensured.kind === "new_username") result.usernameAccounts++;
@@ -826,7 +852,7 @@ export async function listClassGuardianCredentials(tx: Tx, ctx: IamCtx, classGro
       array_agg(sp_person.first_name || ' ' || sp_person.last_name order by sp_person.last_name, sp_person.first_name) as children,
       ua.login_identifier, ua.must_change_password,
       not ${guardianOnlySql("g.id")} as is_staff,
-      case when ${guardianOnlySql("g.id")} and ua.must_change_password and ${guardianWithinScopeSql(scope, "g.id")}
+      case when ${guardianOnlySql("g.id")} and ua.must_change_password and ${credentialReachSql(scope, "g.id")}
         then (select ai.initial_password_enc from iam.auth_identity ai where ai.user_account_id = ua.id and ai.provider = 'password')
         else null end as enc
     from iam.guardian_link gl
