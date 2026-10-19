@@ -65,6 +65,9 @@ export const config = {
   // with an extension. `api/files` (POST, one file as the raw body — src/app/api/files/route.ts) must not pass through
   // here: a proxy clones the request body into memory and, past `proxyClientMaxBodySize` (10 MB), hands the route a
   // silently TRUNCATED body (node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/
-  // proxyClientMaxBodySize.md). The route does its own session gate (defineAction) and sets its own Cache-Control.
-  matcher: ["/((?!_next|api/health|api/files|manifest|icons|icon|apple-icon|sw\\.js|.*\\.[a-zA-Z0-9]+$).*)"],
+  // proxyClientMaxBodySize.md). The route does its own session gate (defineAction), sets its own Cache-Control and
+  // mints its own request id (src/lib/request-id.ts — without this proxy `x-request-id` would be the client's). The
+  // exclusion is EXACTLY `/api/files` (`$`): `/api/filesx` or `/api/files/x` still pass here (security review
+  // 2026-10-19, D4; tests/unit/request-id.test.ts runs Next's own matcher).
+  matcher: ["/((?!_next|api/health|api/files$|manifest|icons|icon|apple-icon|sw\\.js|.*\\.[a-zA-Z0-9]+$).*)"],
 };

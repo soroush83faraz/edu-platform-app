@@ -18,12 +18,14 @@
 //      (workspace/file-access `recordUpload`); on any failure the temp file AND the planned key are removed.
 // Both slots are released in `finally`, whatever the path. This path is excluded from src/proxy.ts's matcher: a proxy
 // buffers (and past `proxyClientMaxBodySize`, silently truncates) the request body —
-// node_modules/next/dist/docs/…/proxyClientMaxBodySize.md. Caddy caps bodies at 12 MB and a request's read at 120 s.
+// node_modules/next/dist/docs/…/proxyClientMaxBodySize.md — so it mints its own request id (`withMintedRequestId`).
+// Caddy caps bodies at 12 MB and a request's read at 120 s.
 import { NextResponse, type NextRequest } from "next/server";
 import type { Result } from "@/lib/actions";
 import { env } from "@/lib/env";
 import { FA_MESSAGES, HTTP_STATUS } from "@/lib/errors";
 import { logger } from "@/lib/logger";
+import { withMintedRequestId } from "@/lib/request-id";
 import { FILE_LIMITS, FILE_MESSAGES, slotCeilingFor } from "@/modules/files/limits";
 import { ReceiveError, receiveToTemp, type Received } from "@/modules/files/receive";
 import { sniffFile } from "@/modules/files/sniff";
@@ -63,7 +65,15 @@ function receiveRefusal(err: ReceiveError): { status: number; message: string } 
   }
 }
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+/**
+ * The request id of this upload's audit rows and logs is made HERE (src/lib/request-id.ts): src/proxy.ts does not run
+ * for this path, so an `x-request-id` header would be the client's (security review 2026-10-19, D4).
+ */
+export function POST(request: NextRequest): Promise<NextResponse> {
+  return withMintedRequestId(() => upload(request));
+}
+
+async function upload(request: NextRequest): Promise<NextResponse> {
   if (!isSameOriginUpload(request.headers, env.PUBLIC_ORIGIN)) return fail(403, "FORBIDDEN", FA_MESSAGES.FORBIDDEN);
   if (slots.inFlight() >= FILE_LIMITS.maxConcurrentUploads) return fail(503, "RATE_LIMITED", FILE_MESSAGES.busy);
   let release: (() => void) | null = null;

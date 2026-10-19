@@ -3,11 +3,11 @@
 // input. This is the security boundary every action and every (app) page builds on.
 import { cache } from "react";
 import { headers } from "next/headers";
-import { randomUUID } from "node:crypto";
 import { withTenant, withoutTenant } from "@/db/client";
 import { unauthenticated } from "@/lib/errors";
 import { NEXT_PATH_HEADER } from "@/lib/next-path-header";
 import { getClientIp, getUserAgent } from "@/lib/request";
+import { mintedRequestId, resolveRequestId } from "@/lib/request-id";
 import type { Assignment } from "@/modules/iam/can";
 import { safeNextPath } from "@/modules/iam/next-path";
 import { findMemberContext, listValidAssignments } from "@/modules/iam/repo";
@@ -33,11 +33,16 @@ export interface Ctx {
   session: { isPublicDevice: boolean; expiresAt: Date; extended: boolean };
 }
 
-/** `x-request-id` set by src/proxy.ts; a fresh UUID when the request bypassed the proxy (tests, internal). */
+/**
+ * `x-request-id` set by src/proxy.ts; inside `withMintedRequestId` (the routes the proxy does not run for — POST
+ * /api/files) the id minted there, never the header: there it would be the CLIENT's (src/lib/request-id.ts, security
+ * review 2026-10-19, D4); a fresh UUID when there is neither (tests, internal).
+ */
 export const getRequestId = cache(async (): Promise<string> => {
+  const own = mintedRequestId();
+  if (own) return own;
   const h = await headers();
-  const id = h.get("x-request-id");
-  return id && /^[0-9a-f-]{36}$/i.test(id) ? id : randomUUID();
+  return resolveRequestId(h.get("x-request-id"));
 });
 
 /**
