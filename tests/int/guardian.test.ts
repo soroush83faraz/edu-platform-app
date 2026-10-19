@@ -430,17 +430,20 @@ describe("«اولیا» — guardians", () => {
       const renamed = await add(tx, w.admin, w.s1, 11, "mother", { firstName: "زهره", lastName: "نیک‌خواه" });
       expect(renamed).toMatchObject({ alreadyLinked: true, renamed: true });
 
-      // The sheet of class A1: three guardians with their initial passwords for the organization admin.
+      // The sheet of class A1: our three guardians with their initial passwords for the organization admin (rows of
+      // guardians an earlier file left in the fixture class are not ours to assert on).
+      const ours = [e164(11), e164(13), "s1-v-g-5"];
       const sheet = await listClassGuardianCredentials(tx, w.admin, f.CLASS_GROUP_A1);
-      expect(sheet.rows.map((r) => r.loginIdentifier).sort()).toEqual([e164(11), e164(13), "s1-v-g-5"].sort());
-      expect(sheet.rows.every((r) => r.initialPasswordEnc !== null)).toBe(true);
+      const mine = sheet.rows.filter((r) => ours.includes(r.loginIdentifier));
+      expect(mine.map((r) => r.loginIdentifier).sort()).toEqual([...ours].sort());
+      expect(mine.every((r) => r.initialPasswordEnc !== null)).toBe(true);
 
       // The phone-11 guardian also gets a child at school B: school A's principal may no longer act as them.
       const g11 = card[0].guardianPersonId;
       await add(tx, w.admin, w.sB, 11);
       const sheetA = await listClassGuardianCredentials(tx, w.principalA, f.CLASS_GROUP_A1);
       expect(sheetA.rows.find((r) => r.guardianPersonId === g11)?.initialPasswordEnc).toBeNull();
-      expect(sheetA.rows.filter((r) => r.guardianPersonId !== g11).every((r) => r.initialPasswordEnc !== null)).toBe(true);
+      expect(sheetA.rows.filter((r) => r.guardianPersonId !== g11 && ours.includes(r.loginIdentifier)).every((r) => r.initialPasswordEnc !== null)).toBe(true);
       const cardA = await listGuardiansOfStudent(tx, w.principalA, w.s1.personId);
       expect(cardA[0]).toMatchObject({ guardianPersonId: g11, manageable: false });
       await expect(sub(tx, (sp) => resetGuardianPassword(sp, w.principalA, { linkId: cardA[0].linkId }))).rejects.toSatisfy(isError("FORBIDDEN", GUARDIAN_MESSAGES.otherSchool));
