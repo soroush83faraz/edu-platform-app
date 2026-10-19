@@ -3,16 +3,31 @@
 //
 //   • binary formats by signature: PDF, PNG (+ IHDR), JPEG, WebP (RIFF/WEBP + a VP8 chunk), WAV (RIFF/WAVE), OGG,
 //     M4A (ISO-BMFF `ftyp` with an audio/MP4 brand), MP3 (an ID3 tag or an MPEG layer-III frame header);
-//   • DOCX / XLSX / PPTX: a ZIP read through its CENTRAL DIRECTORY only — nothing is unpacked (no zip bomb can
-//     expand): `[Content_Types].xml` and exactly one main part (`word/document.xml` / `xl/workbook.xml` /
-//     `ppt/presentation.xml`) must be listed, no `vbaProject.bin`, no encrypted entry, no ZIP64 / multi-disk, and
-//     `[Content_Types].xml` itself — inflated with a hard 1 MiB output cap — must declare that main part's OOXML type
-//     and nothing `macroEnabled`. Any other ZIP is refused (a ZIP's insides cannot be vouched for without unpacking);
+//   • DOCX / XLSX / PPTX: a ZIP read through its CENTRAL DIRECTORY — nothing is unpacked but its small XML parts,
+//     `[Content_Types].xml` and every relationship part (`*.rels`), each inflated under ONE hard cap for all of them
+//     together (1 MiB — no zip bomb can expand). Refused (security review 2026-10-19, D5: what makes Office run code
+//     or reach out when the file is opened):
+//       – anything but a plain, single-disk, non-ZIP64, unencrypted ZIP whose part names are unique;
+//       – macros, by part name (`vbaProject`, `vbaData`) AND by every DECLARED type — each Default and Override of
+//         `[Content_Types].xml`, entity-decoded (`macroEnabled`, `vbaProject`, macro sheets, Word customizations) —
+//         so `word/m.bin` declared as a VBA project is one;
+//       – embedded and active objects: `embeddings/` (OLE packages, the workbook behind a chart), OLE objects,
+//         ActiveX, Excel's external links, data connections and query tables — by part name, declared type and
+//         relationship type;
+//       – every relationship with `TargetMode="External"` but a hyperlink to http(s) / mailto (an attached template,
+//         an OLE link, a frame, a linked image or video …), and the relationship types that pull content in
+//         (`aFChunk`, `attachedTemplate`, `subDocument`, `package`, `control` …) whatever their target;
+//       – a main part (exactly one of `word/document.xml` / `xl/workbook.xml` / `ppt/presentation.xml`) that is not
+//         the package's officeDocument relationship, has no matching LOCAL header (the same name, its data where the
+//         central directory says), or whose content type is not that part's OOXML type;
+//       – XML parts that are not UTF-8 or carry a DTD.
+//     Any other ZIP is refused (a ZIP's insides cannot be vouched for without unpacking);
 //   • plain text: UTF-8 (fatal decoder over the WHOLE file), no NUL / other C0 control but TAB, LF, FF, CR, and it may
-//     not START (after a BOM and white space) with `<` (HTML / SVG / XML) or `#!` (a script).
+//     not START (after a BOM and white space) with `<` (HTML / SVG / XML) or `#!` (a script). It is always stored and
+//     served as `.txt` (./kinds) — never `.csv`, so no spreadsheet opens it and runs a `=cmd|…` cell by itself.
 //
 // Tested in tests/unit/files-sniff.test.ts (spoofed extensions, HTML-as-PNG, a ZIP renamed .docx, macro documents,
-// empty files, truncated archives).
+// external relationships, embedded objects, a central-directory-only main part, empty files, truncated archives).
 import { open } from "node:fs/promises";
 import { inflateRawSync } from "node:zlib";
 import type { FileKind } from "./kinds";
@@ -23,15 +38,13 @@ export interface ByteSource {
   read(offset: number, length: number): Promise<Uint8Array>;
 }
 
-export type RejectReason = "empty" | "unknown" | "markup" | "script" | "control" | "encoding" | "zip" | "macro";
+export type RejectReason = "empty" | "unknown" | "markup" | "script" | "control" | "encoding" | "zip" | "macro" | "active";
 export type SniffResult = { ok: true; kind: FileKind } | { ok: false; reason: RejectReason };
 
 const HEAD_BYTES = 4096;
 const TEXT_CHUNK = 64 * 1024;
 const ZIP_MAX_ENTRIES = 10_000;
 const ZIP_MAX_CENTRAL_DIRECTORY = 4 * 1024 * 1024;
-const CONTENT_TYPES_MAX_COMPRESSED = 256 * 1024;
-const CONTENT_TYPES_MAX_INFLATED = 1024 * 1024;
 
 const SIG_EOCD = 0x06054b50;
 const SIG_CENTRAL = 0x02014b50;
@@ -135,11 +148,13 @@ async function textKind(src: ByteSource, head: Uint8Array): Promise<SniffResult>
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// OOXML (ZIP central directory, nothing unpacked but one capped [Content_Types].xml)
+// OOXML (ZIP central directory; nothing unpacked but the small XML parts, under one capped budget)
 // ---------------------------------------------------------------------------------------------------------------
 
 interface ZipEntry {
   name: string;
+  /** The name's bytes as the central directory holds them — compared with the local header's. */
+  rawName: Uint8Array;
   flags: number;
   method: number;
   compressedSize: number;
@@ -147,10 +162,42 @@ interface ZipEntry {
   localOffset: number;
 }
 
-const ZIP_REFUSED: SniffResult = { ok: false, reason: "zip" };
+interface ZipDirectory {
+  entries: ZipEntry[];
+  /** Where the central directory starts: every entry's local header and data lie before it. */
+  directoryOffset: number;
+}
 
-/** The central directory's entries, or null when the archive is anything but a plain, single-disk, non-ZIP64 ZIP. */
-export async function readZipDirectory(src: ByteSource): Promise<ZipEntry[] | null> {
+const ZIP_REFUSED: SniffResult = { ok: false, reason: "zip" };
+const MACRO: SniffResult = { ok: false, reason: "macro" };
+const ACTIVE: SniffResult = { ok: false, reason: "active" };
+
+// What makes Office run code or reach out when a document is opened (security review 2026-10-19, D5). Matched
+// lower-case, on percent-decoded part names, on every DECLARED content type of [Content_Types].xml (entity-decoded)
+// and on every relationship type — never on the part names alone, which a producer chooses freely (`word/m.bin`).
+/** Part names: a VBA project or its data. */
+const MACRO_PART_MARKS = ["vbaproject", "vbadata"];
+/** Part names: embedded objects (an OLE package, a workbook inside a chart), ActiveX, Excel's links to the outside. */
+const ACTIVE_PART_MARKS = ["embeddings/", "activex", "oleobject", "externallinks/", "querytables/"];
+const ACTIVE_PART_SUFFIXES = ["/connections.xml"];
+/** Declared content types: macros, macro sheets, Word's key / toolbar customizations (only macros use them). */
+const MACRO_TYPE_MARKS = ["vbaproject", "vbadata", "macroenabled", "macrosheet", "keymapcustomizations", "attachedtoolbars"];
+/** Declared content types: ActiveX, OLE objects, Excel's data connections, query tables and external links. */
+const ACTIVE_TYPE_MARKS = ["activex", "oleobject", "spreadsheetml.connections", "spreadsheetml.querytable", "spreadsheetml.externallink"];
+/** Relationship types refused whatever their target. */
+const MACRO_REL_MARKS = ["vbaproject", "vbadata", "keymapcustomizations", "attachedtoolbars"];
+const ACTIVE_REL_MARKS = ["oleobject", "activex", "afchunk", "attachedtemplate", "subdocument", "externallink", "connections", "querytable"];
+const ACTIVE_REL_SUFFIXES = ["/control", "/package", "/frame"];
+/** The one external target a document may keep: a hyperlink (opened only by a click) to the web or a mail address. */
+const HYPERLINK_REL_SUFFIX = "/relationships/hyperlink";
+const SAFE_HYPERLINK = /^(?:https?:\/\/|mailto:)/i;
+
+/** Inflated bytes ALL small XML parts of one archive may produce together ([Content_Types].xml + every .rels). */
+const XML_BUDGET = 1024 * 1024;
+const XML_PART_MAX_COMPRESSED = 256 * 1024;
+
+/** The central directory, or null when the archive is anything but a plain, single-disk, non-ZIP64 ZIP. */
+async function readZip(src: ByteSource): Promise<ZipDirectory | null> {
   if (src.size < 22) return null;
   const tailLength = Math.min(src.size, 22 + 0xffff);
   const tailStart = src.size - tailLength;
@@ -185,8 +232,10 @@ export async function readZipDirectory(src: ByteSource): Promise<ZipEntry[] | nu
     const commentLength = u16(dir, p + 32);
     const end = p + 46 + nameLength + extraLength + commentLength;
     if (end > dir.length) return null;
+    const rawName = dir.slice(p + 46, p + 46 + nameLength);
     out.push({
-      name: utf8.decode(dir.subarray(p + 46, p + 46 + nameLength)),
+      name: utf8.decode(rawName),
+      rawName,
       flags: u16(dir, p + 8),
       method: u16(dir, p + 10),
       compressedSize: u32(dir, p + 20),
@@ -195,46 +244,182 @@ export async function readZipDirectory(src: ByteSource): Promise<ZipEntry[] | nu
     });
     p = end;
   }
-  return out;
+  return { entries: out, directoryOffset };
 }
 
-/** One small entry's text — stored or deflated, with hard caps on both sides; null when it cannot be read safely. */
-async function readSmallEntry(src: ByteSource, e: ZipEntry): Promise<string | null> {
-  if (e.compressedSize > CONTENT_TYPES_MAX_COMPRESSED || e.uncompressedSize > CONTENT_TYPES_MAX_INFLATED) return null;
-  if (e.localOffset + 30 > src.size) return null;
+/** The central directory's entries (see `readZip`). */
+export async function readZipDirectory(src: ByteSource): Promise<ZipEntry[] | null> {
+  return (await readZip(src))?.entries ?? null;
+}
+
+/**
+ * Where an entry's data starts when its LOCAL header is really there and agrees with the central directory — the
+ * same name bytes, not encrypted, its data wholly before the central directory; null otherwise (a central-directory-
+ * only entry, or one a streaming reader would see under another name).
+ */
+async function localDataStart(src: ByteSource, e: ZipEntry, directoryOffset: number): Promise<number | null> {
+  if (e.localOffset + 30 > directoryOffset) return null;
   const local = await src.read(e.localOffset, 30);
-  if (u32(local, 0) !== SIG_LOCAL) return null;
-  const dataStart = e.localOffset + 30 + u16(local, 26) + u16(local, 28);
-  if (dataStart + e.compressedSize > src.size) return null;
+  if (local.length < 30 || u32(local, 0) !== SIG_LOCAL || (u16(local, 6) & 0x0001) !== 0) return null;
+  const nameLength = u16(local, 26);
+  if (nameLength !== e.rawName.length) return null;
+  const name = await src.read(e.localOffset + 30, nameLength);
+  for (let i = 0; i < nameLength; i++) if (name[i] !== e.rawName[i]) return null;
+  const dataStart = e.localOffset + 30 + nameLength + u16(local, 28);
+  return dataStart + e.compressedSize <= directoryOffset ? dataStart : null;
+}
+
+/** UTF-8 XML without a DTD, comments removed — or null (UTF-16, another declared encoding, a NUL, a DOCTYPE / ENTITY). */
+function xmlText(bytes: Uint8Array): string | null {
+  if (bytes.includes(0) || startsWith(bytes, [0xfe, 0xff]) || startsWith(bytes, [0xff, 0xfe])) return null;
+  const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  const declared = /^﻿?\s*<\?xml\b[^>]*?\bencoding\s*=\s*["']([^"']*)["']/i.exec(text);
+  if (declared && declared[1].trim().toLowerCase() !== "utf-8") return null;
+  if (/<!DOCTYPE|<!ENTITY/i.test(text)) return null;
+  return text.replace(/<!--[\s\S]*?-->/g, "");
+}
+
+/** One small XML part — stored or deflated, its inflated size taken from the archive's budget; null when unsafe. */
+async function readXmlPart(src: ByteSource, e: ZipEntry, directoryOffset: number, budget: { left: number }): Promise<string | null> {
+  if (e.compressedSize > XML_PART_MAX_COMPRESSED) return null;
+  const dataStart = await localDataStart(src, e, directoryOffset);
+  if (dataStart === null) return null;
   const data = await src.read(dataStart, e.compressedSize);
+  if (data.length !== e.compressedSize) return null;
   let bytes: Uint8Array;
   if (e.method === 0) bytes = data;
   else if (e.method === 8) {
+    if (budget.left <= 0) return null;
     try {
-      bytes = inflateRawSync(data, { maxOutputLength: CONTENT_TYPES_MAX_INFLATED });
+      bytes = inflateRawSync(data, { maxOutputLength: budget.left });
     } catch {
-      return null; // corrupt, or it would inflate past the cap
+      return null; // corrupt, or it would inflate past what is left
     }
   } else return null;
-  return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  if (bytes.length > budget.left) return null;
+  budget.left -= bytes.length;
+  return xmlText(bytes);
+}
+
+const XML_ENTITIES: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'" };
+
+/** An attribute value as an XML parser reads it: character references and the five predefined entities decoded. */
+function decodeXml(s: string): string {
+  return s.replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, (whole, ref: string) => {
+    if (ref[0] !== "#") return XML_ENTITIES[ref.toLowerCase()] ?? whole;
+    const cp = ref[1] === "x" || ref[1] === "X" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+    return Number.isFinite(cp) && cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "";
+  });
+}
+
+type XmlAttributes = Map<string, string[]>;
+
+/**
+ * Every `<[prefix:]name …>` element of `xml` with its attributes — keyed by LOCAL name, values entity-decoded, quotes
+ * of either kind, a `>` inside a value never ends the tag. Not a parser: enough to find every attribute a real one
+ * would, which is all a refusal needs.
+ */
+function elementsNamed(xml: string, name: string): XmlAttributes[] {
+  const out: XmlAttributes[] = [];
+  const open = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${name}(?=[\\s/>])`, "g");
+  const attribute = /\s*([A-Za-z_][\w.:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/y;
+  for (let m = open.exec(xml); m; m = open.exec(xml)) {
+    const attrs: XmlAttributes = new Map();
+    let i = m.index + m[0].length;
+    for (;;) {
+      attribute.lastIndex = i;
+      const a = attribute.exec(xml);
+      if (!a) break;
+      const local = a[1].slice(a[1].indexOf(":") + 1);
+      attrs.set(local, [...(attrs.get(local) ?? []), decodeXml(a[2] ?? a[3] ?? "")]);
+      i = attribute.lastIndex;
+    }
+    out.push(attrs);
+    open.lastIndex = Math.max(open.lastIndex, i);
+  }
+  return out;
+}
+
+const valuesOf = (a: XmlAttributes, key: string) => (a.get(key) ?? []).map((v) => v.trim());
+const marked = (value: string, marks: readonly string[]) => marks.some((m) => value.toLowerCase().includes(m));
+
+/** A part name as compared: `\` → `/`, percent-decoded, without a leading `/` or `./`, lower-case (OPC: ASCII case-insensitive). */
+function partKey(name: string): string {
+  let n = name.replace(/\\/g, "/");
+  try {
+    n = decodeURIComponent(n);
+  } catch {
+    /* not percent-encoded: compare it raw */
+  }
+  return n.replace(/^(?:\.?\/)+/, "").toLowerCase();
+}
+
+/** The content type [Content_Types].xml gives `part`: its one Override, else the one Default of its extension; null when absent or ambiguous. */
+function effectiveType(part: string, defaults: XmlAttributes[], overrides: XmlAttributes[]): string | null {
+  const own = overrides.filter((o) => valuesOf(o, "PartName").some((p) => partKey(p) === part)).flatMap((o) => valuesOf(o, "ContentType"));
+  if (own.length > 0) return own.length === 1 ? own[0] : null;
+  const ext = part.slice(part.lastIndexOf(".") + 1);
+  const byExt = defaults.filter((d) => valuesOf(d, "Extension").some((x) => x.toLowerCase() === ext)).flatMap((d) => valuesOf(d, "ContentType"));
+  return byExt.length === 1 ? byExt[0] : null;
+}
+
+/** A relationship's verdict: refused (macro / active content, an external target but a web / mail hyperlink) or null. */
+function relationshipVerdict(r: XmlAttributes): SniffResult | null {
+  const types = valuesOf(r, "Type").map((t) => t.toLowerCase());
+  if (types.some((t) => marked(t, MACRO_REL_MARKS))) return MACRO;
+  if (types.some((t) => marked(t, ACTIVE_REL_MARKS) || ACTIVE_REL_SUFFIXES.some((s) => t.endsWith(s)))) return ACTIVE;
+  if (!valuesOf(r, "TargetMode").some((m) => m.toLowerCase() === "external")) return null;
+  const targets = valuesOf(r, "Target");
+  const hyperlink = types.length === 1 && types[0].endsWith(HYPERLINK_REL_SUFFIX);
+  return hyperlink && targets.length === 1 && SAFE_HYPERLINK.test(targets[0]) ? null : ACTIVE;
 }
 
 async function ooxmlKind(src: ByteSource): Promise<SniffResult> {
-  const entries = await readZipDirectory(src);
-  if (!entries) return ZIP_REFUSED;
+  const zip = await readZip(src);
+  if (!zip) return ZIP_REFUSED;
+  const { entries, directoryOffset } = zip;
   if (entries.some((e) => (e.flags & 0x0001) !== 0)) return ZIP_REFUSED; // encrypted entry
-  const lower = new Set(entries.map((e) => e.name.toLowerCase()));
-  if ([...lower].some((n) => n.endsWith("vbaproject.bin"))) return { ok: false, reason: "macro" };
-  // OPC part names compare case-insensitively; every producer writes this exact one.
-  const contentTypes = entries.find((e) => e.name.toLowerCase() === "[content_types].xml");
-  if (!contentTypes) return ZIP_REFUSED;
-  const mains = OOXML_MAIN.filter((m) => lower.has(m.part));
+  const keys = entries.map((e) => partKey(e.name));
+  if (new Set(keys).size !== keys.length) return ZIP_REFUSED; // one part twice: which would Office read?
+  if (keys.some((k) => marked(k, MACRO_PART_MARKS))) return MACRO;
+  if (keys.some((k) => marked(k, ACTIVE_PART_MARKS) || ACTIVE_PART_SUFFIXES.some((s) => k.endsWith(s)))) return ACTIVE;
+
+  const budget = { left: XML_BUDGET };
+  const typesAt = keys.indexOf("[content_types].xml");
+  if (typesAt < 0) return ZIP_REFUSED;
+  const ct = await readXmlPart(src, entries[typesAt], directoryOffset, budget);
+  if (ct === null) return ZIP_REFUSED;
+  if (/macroenabled/i.test(ct)) return MACRO;
+  const defaults = elementsNamed(ct, "Default");
+  const overrides = elementsNamed(ct, "Override");
+  const declared = [...defaults, ...overrides].flatMap((a) => valuesOf(a, "ContentType"));
+  if (declared.some((t) => marked(t, MACRO_TYPE_MARKS))) return MACRO;
+  if (declared.some((t) => marked(t, ACTIVE_TYPE_MARKS))) return ACTIVE;
+
+  // Exactly one main part, of its own OOXML type, really in the archive (central directory AND local header).
+  const mains = OOXML_MAIN.filter((m) => keys.includes(m.part));
   if (mains.length !== 1) return ZIP_REFUSED;
-  const xml = await readSmallEntry(src, contentTypes);
-  if (xml === null) return ZIP_REFUSED;
-  if (/macroenabled/i.test(xml)) return { ok: false, reason: "macro" };
-  if (!xml.includes(mains[0].type)) return ZIP_REFUSED;
-  return { ok: true, kind: mains[0].kind };
+  const main = mains[0];
+  if (effectiveType(main.part, defaults, overrides) !== main.type) return ZIP_REFUSED;
+  if ((await localDataStart(src, entries[keys.indexOf(main.part)], directoryOffset)) === null) return ZIP_REFUSED;
+
+  // Every relationship part, under the same budget; the package's own must name that main part as its document.
+  let documents: string[] | null = null;
+  for (let i = 0; i < entries.length; i++) {
+    if (!keys[i].endsWith(".rels")) continue;
+    const xml = await readXmlPart(src, entries[i], directoryOffset, budget);
+    if (xml === null) return ZIP_REFUSED;
+    const relationships = elementsNamed(xml, "Relationship");
+    for (const r of relationships) {
+      const refused = relationshipVerdict(r);
+      if (refused) return refused;
+    }
+    if (keys[i] === "_rels/.rels") {
+      documents = relationships.filter((r) => valuesOf(r, "Type").some((t) => t.toLowerCase().endsWith("/officedocument"))).flatMap((r) => valuesOf(r, "Target"));
+    }
+  }
+  if (!documents || documents.length !== 1 || partKey(documents[0]) !== main.part) return ZIP_REFUSED;
+  return { ok: true, kind: main.kind };
 }
 
 /** A `ByteSource` over a buffer (tests; small in-memory checks). */

@@ -34,7 +34,9 @@ export const KIND_INFO: Record<FileKind, KindInfo> = {
   docx: { mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", extensions: ["docx"], inline: false, family: "document", labelFa: "سند ورد" },
   xlsx: { mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", extensions: ["xlsx"], inline: false, family: "spreadsheet", labelFa: "کاربرگ اکسل" },
   pptx: { mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation", extensions: ["pptx"], inline: false, family: "presentation", labelFa: "ارائهٴ پاورپوینت" },
-  txt: { mime: "text/plain; charset=utf-8", extensions: ["txt", "csv", "md"], inline: false, family: "text", labelFa: "متن" },
+  // Text is ALWAYS «.txt» — a picked «.csv» / «.md» is renamed: a «.csv» opens in a spreadsheet, which may run a
+  // `=cmd|…` / `=HYPERLINK(…)` cell (formula injection; security review 2026-10-19, D5). The picker still offers them.
+  txt: { mime: "text/plain; charset=utf-8", extensions: ["txt"], inline: false, family: "text", labelFa: "متن" },
   mp3: { mime: "audio/mpeg", extensions: ["mp3"], inline: false, family: "audio", labelFa: "صوت" },
   m4a: { mime: "audio/mp4", extensions: ["m4a"], inline: false, family: "audio", labelFa: "صوت" },
   ogg: { mime: "audio/ogg", extensions: ["ogg", "oga", "opus"], inline: false, family: "audio", labelFa: "صوت" },
@@ -54,6 +56,9 @@ export function kindOfMime(mime: string): FileKind | null {
  */
 export const ACCEPT_ATTRIBUTE = [
   ...FILE_KINDS.flatMap((k) => KIND_INFO[k].extensions.map((e) => `.${e}`)),
+  // Text the server accepts and stores as «.txt».
+  ".csv",
+  ".md",
   "application/pdf",
   "image/png",
   "image/jpeg",
@@ -62,6 +67,8 @@ export const ACCEPT_ATTRIBUTE = [
   KIND_INFO.xlsx.mime,
   KIND_INFO.pptx.mime,
   "text/plain",
+  "text/csv",
+  "text/markdown",
   "audio/mpeg",
   "audio/mp4",
   "audio/x-m4a",

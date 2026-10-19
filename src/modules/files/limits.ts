@@ -80,6 +80,7 @@ export const FILE_MESSAGES = {
   badType: "این نوع فایل پذیرفته نیست. پی‌دی‌اف، عکس، سند ورد، اکسل، پاورپوینت، متن یا فایل صوتی بفرستید.",
   badName: "نام فایل معتبر نیست.",
   macro: "سندِ دارای ماکرو پذیرفته نیست؛ آن را بدون ماکرو ذخیره کنید.",
+  activeContent: "سندِ دارای شیء جاسازی‌شده یا پیوند بیرونی پذیرفته نیست؛ آن را بدون آن‌ها ذخیره کنید یا به پی‌دی‌اف تبدیل کنید.",
   textEncoding: "این فایل متنی خوانا نیست؛ آن را با کدگذاری یونیکد ذخیره کنید.",
   tooManyItemFiles: `هر تکلیف حداکثر ${formatNumberFa(FILE_LIMITS.maxItemFiles)} فایل دارد.`,
   tooManySubmissionFiles: `هر پاسخ حداکثر ${formatNumberFa(FILE_LIMITS.maxSubmissionFiles)} فایل دارد.`,

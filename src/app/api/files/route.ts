@@ -28,7 +28,7 @@ import { logger } from "@/lib/logger";
 import { withMintedRequestId } from "@/lib/request-id";
 import { FILE_LIMITS, FILE_MESSAGES, slotCeilingFor } from "@/modules/files/limits";
 import { ReceiveError, receiveToTemp, type Received } from "@/modules/files/receive";
-import { sniffFile } from "@/modules/files/sniff";
+import { type RejectReason, sniffFile } from "@/modules/files/sniff";
 import { attemptWindow, discardTemp, freeBytes, keyedSlots, removeStored, slidingCounter, sweepTemp, tempDir, uploadSlots } from "@/modules/files/storage";
 import { isSameOriginUpload, readUploadRequest } from "@/modules/files/upload-request";
 import { authorizeUploadGate, recordUploadGate } from "@/modules/workspace/file-gates";
@@ -51,6 +51,14 @@ function fail(status: number, code: string, message: string): NextResponse {
 function fromResult(r: Extract<Result<unknown>, { ok: false }>): NextResponse {
   return fail(HTTP_STATUS[r.code], r.code, r.message);
 }
+
+/** Why the bytes were refused, in Persian; every other reason is «this type is not accepted». */
+const SNIFF_REFUSAL: Partial<Record<RejectReason, string>> = {
+  empty: FILE_MESSAGES.empty,
+  macro: FILE_MESSAGES.macro,
+  active: FILE_MESSAGES.activeContent,
+  encoding: FILE_MESSAGES.textEncoding,
+};
 
 function receiveRefusal(err: ReceiveError): { status: number; message: string } {
   switch (err.reason) {
@@ -125,8 +133,7 @@ async function upload(request: NextRequest): Promise<NextResponse> {
 
     const verdict = await sniffFile(received.tempPath);
     if (!verdict.ok) {
-      const message = verdict.reason === "empty" ? FILE_MESSAGES.empty : verdict.reason === "macro" ? FILE_MESSAGES.macro : verdict.reason === "encoding" ? FILE_MESSAGES.textEncoding : FILE_MESSAGES.badType;
-      return fail(415, "VALIDATION", message);
+      return fail(415, "VALIDATION", SNIFF_REFUSAL[verdict.reason] ?? FILE_MESSAGES.badType);
     }
 
     plannedKey = ticket.data.storageKey;

@@ -50,7 +50,7 @@ describe("nameForKind — the extension follows the sniffed bytes", () => {
     expect(nameForKind("photo.png", "jpeg")).toBe("photo.jpg");
     expect(nameForKind("notes.html", "txt")).toBe("notes.txt");
     expect(nameForKind("noext", "pdf")).toBe("noext.pdf");
-    expect(nameForKind("data.csv", "txt")).toBe("data.csv");
+    expect(nameForKind("data.csv", "txt")).toBe("data.txt"); // text is always «.txt» (D5)
   });
 
   it("double extensions: a real PDF named «x.pdf.exe» is «x.pdf», never «.exe»", () => {
