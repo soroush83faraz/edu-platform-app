@@ -12,12 +12,12 @@
 //     whose child is at another school;
 //   • removing a student ends their links and closes a guardian left with no child; a new link opens it again;
 //   • «غیبت» reaches the guardian once per child per roll call, with the child's name and nothing else; the monthly
-//     report-card notification once per child per month.
+//     report-card notification once per child per month — only once the month's card is complete (owner 2026-10-19).
 // The catalog is seeded in beforeAll; every write runs inside a withTenant transaction that ends with Rollback;
 // afterAll re-creates the fixture database (later files assert exact fixture counts).
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Client, Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { withTenant, type Tx } from "@/db/client";
 import * as schema from "@/db/schema";
@@ -26,7 +26,7 @@ import { getPersonDetail, listClassCredentials, listStaff, personCredential } fr
 import { tehranToday } from "@/lib/attendance";
 import { AppError } from "@/lib/errors";
 import { getSessionForTaking, studentAttendanceSummary, takeAttendance } from "@/modules/academic/attendance";
-import { myReportCard } from "@/modules/academic/report-card";
+import { myReportCard, saveObjectiveRatings } from "@/modules/academic/report-card";
 import { assignTeacher } from "@/modules/academic/service";
 import { getStudentFile } from "@/modules/counseling/service";
 import { adminResetInitialPassword, adminUnlockAccount, adminUpdatePerson } from "@/modules/iam/admin";
@@ -847,5 +847,81 @@ describe("«اولیا» — guardians", () => {
       expect(await of(g1, "guardian.report_card")).toEqual([{ title: `کارنامهٴ ماه مهر: ${w.s1.name}`, body: null, deepLink: `/child/report-card?child=${w.s1.studentProfileId}&month=7` }]);
       expect(await notifyGuardiansOfReportCard(tx, w.teacher, { ...rc, month: 8, monthName: "آبان" })).toBe(1);
     });
+  });
+
+  it("«کارنامهٴ ماه …» reaches the guardian only once the month's card is COMPLETE — every active objective of every درس rated — exactly once, never taken back (owner 2026-10-19)", async () => {
+    // Three ACTIVE objectives of پایهٔ اول / مهر in two درس‌ها and an ARCHIVED one, committed as app_owner (app_rw may
+    // not write the catalog) and removed afterwards; everything else rolls back.
+    const OBJ = { math1: "0199a000-00ab-7000-8000-0000000000b1", math2: "0199a000-00ab-7000-8000-0000000000b2", quran: "0199a000-00ab-7000-8000-0000000000b3", old: "0199a000-00ab-7000-8000-0000000000b4" };
+    const owner = async (fn: (c: Client) => Promise<unknown>) => {
+      const c = new Client({ connectionString: OWNER_URL });
+      await c.connect();
+      try {
+        await c.query("BEGIN");
+        await c.query("select set_config('app.current_org_id', $1, true)", [f.ORG_A]);
+        await fn(c);
+        await c.query("COMMIT");
+      } finally {
+        await c.end();
+      }
+    };
+    await owner(async (c) => {
+      const rows: Array<[string, string, string | null, string, number, string]> = [
+        [OBJ.math1, "ریاضی", f.SUBJECT_A, "عددهای یک تا ده را می‌شناسد", 1, "active"],
+        [OBJ.math2, "ریاضی", f.SUBJECT_A, "تا ده می‌شمارد", 2, "active"],
+        [OBJ.quran, "قرآن", null, "سورهٴ حمد را می‌خواند", 1, "active"],
+        [OBJ.old, "ریاضی", f.SUBJECT_A, "عددهای یک تا پنج را می‌شناسد", 3, "archived"],
+      ];
+      for (const [id, subject, subjectId, text, order, status] of rows) {
+        await c.query(
+          `insert into academic.learning_objective (id, organization_id, grade_level_id, month, subject_name, subject_id, text, sort_order, status, archived_at)
+           values ($1, $2, $3, 7, $4, $5, $6, $7, $8, case when $8 = 'archived' then now() end)`,
+          [id, f.ORG_A, f.GRADE_A, subject, subjectId, text, order, status],
+        );
+      }
+    });
+    try {
+      await rolledBack(async (tx) => {
+        const w = await buildWorld(tx);
+        const g1 = (await add(tx, w.admin, w.s1, 11)).guardianPersonId;
+        const g3 = (await add(tx, w.admin, w.s3, 13)).guardianPersonId;
+        const bell = (personId: string) =>
+          tx.select({ title: notification.title, body: notification.body }).from(notification).where(and(eq(notification.recipientPersonId, personId), eq(notification.typeCode, "guardian.report_card")));
+        type Level = "very_good" | "good" | "acceptable" | "needs_effort" | null;
+        const math = (s: Student, a: Level, b: Level) => ({
+          classGroupId: f.CLASS_GROUP_A1,
+          month: 7,
+          subjectName: "ریاضی",
+          entries: [
+            { studentProfileId: s.studentProfileId, learningObjectiveId: OBJ.math1, rating: a },
+            { studentProfileId: s.studentProfileId, learningObjectiveId: OBJ.math2, rating: b },
+          ],
+        });
+        const quran = (s: Student, r: Level) => ({ classGroupId: f.CLASS_GROUP_A1, month: 7, subjectName: "قرآن", entries: [{ studentProfileId: s.studentProfileId, learningObjectiveId: OBJ.quran, rating: r }] });
+
+        // A partial month — ریاضی rated for both, قرآن not yet: the guardians hear nothing.
+        await saveObjectiveRatings(tx, w.teacher, math(w.s1, "very_good", "good"));
+        await saveObjectiveRatings(tx, w.teacher, math(w.s3, "good", "good"));
+        expect(await bell(g1)).toEqual([]);
+        expect(await bell(g3)).toEqual([]);
+        // The last missing level completes لیلا's card (the archived objective, never rated, does not count): ONE row.
+        await saveObjectiveRatings(tx, w.teacher, quran(w.s1, "acceptable"));
+        expect(await bell(g1)).toEqual([{ title: `کارنامهٴ ماه مهر: ${w.s1.name}`, body: null }]);
+        expect(await bell(g3)).toEqual([]); // نگار's قرآن is still missing
+        // Saving again, changing a level, clearing one and rating it again: still that one row — nothing is taken back.
+        await saveObjectiveRatings(tx, w.teacher, quran(w.s1, "acceptable"));
+        await saveObjectiveRatings(tx, w.teacher, math(w.s1, "good", "good"));
+        await saveObjectiveRatings(tx, w.teacher, quran(w.s1, null));
+        expect(await bell(g1)).toHaveLength(1);
+        await saveObjectiveRatings(tx, w.teacher, quran(w.s1, "very_good"));
+        expect(await bell(g1)).toHaveLength(1);
+        // نگار's card completes with the same درس later: her guardian hears of it then, once.
+        await saveObjectiveRatings(tx, w.teacher, quran(w.s3, "good"));
+        expect(await bell(g3)).toEqual([{ title: `کارنامهٴ ماه مهر: ${w.s3.name}`, body: null }]);
+        expect(await bell(g1)).toHaveLength(1);
+      });
+    } finally {
+      await owner((c) => c.query("delete from academic.learning_objective where id = any($1::uuid[])", [Object.values(OBJ)]));
+    }
   });
 });

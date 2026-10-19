@@ -12,7 +12,7 @@
 // A student reads their OWN profile (`can(..., student)`). Anything else — a teacher of another class, the principal
 // of another school, another tenant (RLS) — is NOT_FOUND; a reader of the class saving a درس that is not theirs is
 // FORBIDDEN (they already see the sheet, so nothing is revealed).
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { tehranToday } from "@/lib/attendance";
@@ -33,6 +33,7 @@ import {
 import { can, canPure } from "@/modules/iam/can";
 import { notifyGuardiansOfReportCard } from "@/modules/iam/guardian-notify";
 import type { Permission } from "@/modules/iam/permissions";
+import { studentProfile } from "@/modules/iam/schema";
 import { jalaliMonthName, schoolMonthIndex, subjectOrder, type ObjectiveDomain } from "./primary-objectives";
 import { findClassOfStudentProfile, findStudentProfile, listClassRoster } from "./repo";
 import { objectiveRating } from "./schema";
@@ -386,6 +387,25 @@ export async function getRatingSheet(tx: Tx, ctx: ReportCtx, input: { classGroup
 // «ثبت کارنامه» — one sheet in one transaction
 // ---------------------------------------------------------------------------------------------------------------
 
+/**
+ * The students among `studentIds` whose card for `month` is COMPLETE (owner 2026-10-19): every ACTIVE objective of the
+ * class's پایه for that month — every درس, an archived objective never counts — has a level this academic year. The
+ * «ثبت‌شده» rule of a sheet (`isSheetComplete`) over the month's whole list: what the class overview shows as
+ * «missing» 0. Two teachers who complete the last two درس‌ها of a card at the same moment save in two transactions,
+ * and neither would see the other's uncommitted levels: the students' profile rows are taken FOR NO KEY UPDATE
+ * (ascending) first, so the later save waits, then reads the earlier one's committed levels and sees the card
+ * complete. Lock order: the rating rows (the save) → these profile rows → the guardians' person rows (FOR KEY SHARE,
+ * `notifyGuardiansOfReportCard`); nothing locks a profile row and then a rating.
+ */
+async function completeCardsOf(tx: Tx, cg: ReportClass, month: number, studentIds: readonly string[]): Promise<string[]> {
+  const ids = [...new Set(studentIds)].sort();
+  if (ids.length === 0) return [];
+  await tx.select({ id: studentProfile.id }).from(studentProfile).where(inArray(studentProfile.id, ids)).orderBy(asc(studentProfile.id)).for("no key update");
+  const objectiveIds = (await listObjectives(tx, cg.gradeLevelId, month)).map((o) => o.id);
+  const ratings = await ratingsOf(tx, cg.academicYearId, ids, objectiveIds);
+  return ids.filter((id) => isSheetComplete(objectiveIds, Object.fromEntries(ratings.get(id) ?? [])));
+}
+
 export interface SaveRatingsInput {
   classGroupId: string;
   month: number;
@@ -493,14 +513,19 @@ export async function saveObjectiveRatings(tx: Tx, ctx: ReportCtx, input: SaveRa
       tx,
     );
   }
-  // «اولیا»: the first level written for a child in a month tells their guardians — once per child per month and year.
+  // «اولیا» (owner 2026-10-19): a child's guardians hear of the month's card once it is COMPLETE — every active
+  // objective of the month, across every درس, rated (`completeCardsOf`) — once per child, month and year (the dedupe
+  // key). Only a save that WROTE a level can complete a card; a later change or clearing never takes the news back.
   if (writes.length > 0) {
-    await notifyGuardiansOfReportCard(tx, ctx, {
-      academicYearId: cg.academicYearId,
-      month: input.month,
-      monthName: jalaliMonthName(input.month),
-      studentProfileIds: writes.map((w) => w.studentProfileId),
-    });
+    const complete = await completeCardsOf(tx, cg, input.month, writes.map((w) => w.studentProfileId));
+    if (complete.length > 0) {
+      await notifyGuardiansOfReportCard(tx, ctx, {
+        academicYearId: cg.academicYearId,
+        month: input.month,
+        monthName: jalaliMonthName(input.month),
+        studentProfileIds: complete,
+      });
+    }
   }
 
   // Completion after the save (what the page's progress line shows).

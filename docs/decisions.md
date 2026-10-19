@@ -2092,7 +2092,9 @@ plan approval, payments. Docs: docs/db.md (`iam.guardian_link`), docs/admin.md �
   locks every roster row, then every existing guardian its phones lead to, before writing.
 - **The guardian's bell** (scripts/catalog.ts, module `guardian`): `guardian.child_absent` «غیبت: <نام>» — a roll
   call saved with the child absent, once per child per roll call (dedupe on the session); `guardian.report_card`
-  «کارنامهٴ ماه <ماه>: <نام>» — the first level written for the child in a month, once per child, month and year. The
+  «کارنامهٴ ماه <ماه>: <نام>» — since 2026-10-19 (owner; it fired on the first level before) once the child's card for
+  the month is COMPLETE — every active objective of every درس rated (below, «کارنامه: اعلان کامل») — once per child,
+  month and year. The
   title is the kind and the child's name only, no body; recipients are the live guardians but the actor, through the
   workspace notify policy; their person rows are taken FOR KEY SHARE (ascending) before the insert. **Overdue تکالیف:
   no notification** — the product has no scheduler and phase 1 adds no queue, so nothing could write it on time; it is
@@ -2118,8 +2120,9 @@ plan approval, payments. Docs: docs/db.md (`iam.guardian_link`), docs/admin.md �
   teacher-parent without bleed, bulk idempotency, the sheet and reset across schools, removal → closed → reopened, the
   bell once), `tests/int/demo-login.test.ts`, `tests/int/seed-pilot.test.ts`, `tests/int/{rls-meta,guards}.test.ts`
   (counts).
-- **Open (owner):** (a) the bulk relation for an unknown parent is «سرپرست» — or should bulk ask?; (b) the report-card
-  notification fires on the first level of the month, not when the card is complete; (c) a guardian whose child moves
+- **Open (owner):** (a) the bulk relation for an unknown parent is «سرپرست» — or should bulk ask?; (b) ~~the report-card
+  notification fires on the first level of the month, not when the card is complete~~ — decided 2026-10-19: on the
+  complete card (below); (c) a guardian whose child moves
   to another school keeps the link (the link is to the student, not the school); (d) an initial password shown to the
   admin who created a guardian stays valid until the parent changes it — if that guardian is later linked to a child at
   ANOTHER school, that admin could sign in as the parent until then (they would have to set a new password, which locks
@@ -2219,3 +2222,22 @@ is fixed in its own commit.
   go-live checklist now has «رمز اولیهٴ ولی‌ای که در چند مدرسه فرزند دارد را مدیر سازمان بسازد»: one query lists the
   guardians with live children at more than one school still on an initial password, and the organization admin
   re-issues each from a child's «اولیا» card.
+
+## 2026-10-19 — «کارنامه: اعلان کامل» (owner): the guardian hears of a month's card when it is complete
+
+- **Rule.** `guardian.report_card` «کارنامهٴ ماه <ماه>: <نام>» is written when the child's card for that month is
+  COMPLETE: every ACTIVE learning objective of the child's پایه for the month, across ALL درس‌ها, has a level this
+  academic year — the «ثبت‌شده» rule of a sheet (`isSheetComplete`) over the month's whole objective list, i.e. what the
+  class page shows as «missing» 0. Archived objectives never count (rated or not). It replaces «the first level written
+  in the month» (open item (b) of «اولیا — فاز ۱»).
+- **Where.** `saveObjectiveRatings` (src/modules/academic/report-card.ts): after a save that WROTE at least one level,
+  `completeCardsOf` checks the students it wrote for and hands the complete ones to `notifyGuardiansOfReportCard`. The
+  dedupe key (`guardian:report:<year>:<month>:<student>:<guardian>`) keeps it to one row per guardian; a later change or
+  clearing of a level takes nothing back, and completing the card again after a clearing writes nothing new.
+- **Concurrency.** Two teachers completing the last two درس‌ها of one card in overlapping transactions would each miss
+  the other's uncommitted levels (READ COMMITTED), and nobody would be told. `completeCardsOf` therefore takes the
+  students' `student_profile` rows FOR NO KEY UPDATE (ascending) before it reads: the later save waits, then sees the
+  earlier one's committed levels. Lock order: rating rows → profile rows → the guardians' person rows (FOR KEY SHARE);
+  nothing locks a profile row and then a rating; FK checks (KEY SHARE) are not blocked by it.
+- Test: `tests/int/guardian.test.ts` «… only once the month's card is COMPLETE …» (partial → none; the last missing
+  level → exactly one; re-save / change / clear / re-rate → still one; another child completes later → theirs).

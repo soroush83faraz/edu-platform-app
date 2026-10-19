@@ -3,8 +3,9 @@
 //   • «غیبت»: a roll call saved with the child marked absent — once per child per roll call (attendance session),
 //     however often it is saved again (`takeAttendance`, academic/attendance); withdrawn when a correction says the
 //     child was not absent after all (`withdrawGuardianAbsences`, D4b);
-//   • «کارنامهٴ ماه …»: the first level written for the child in a month of the report card — once per child per month
-//     and school year, whichever درس comes first (`saveObjectiveRatings`, academic/report-card);
+//   • «کارنامهٴ ماه …»: the child's card for a month is COMPLETE — every active objective of the month, across every
+//     درس, has a level (owner 2026-10-19; it fired on the first level before) — once per child per month and school
+//     year, never taken back when a level is later changed or cleared (`saveObjectiveRatings`, academic/report-card);
 //   • an overdue تکلیف is NOT a notification: phase 1 has no scheduler and no queue, so nothing could write it on time —
 //     the guardian's Home shows the child's overdue count when read instead (./guardian-views `listMyChildren`).
 // The title is the kind of event and the child's name, nothing else (`guardianNotificationTitle`); no body. The
@@ -120,7 +121,10 @@ export async function withdrawGuardianAbsences(tx: Tx, input: { attendanceSessio
   return rows.length;
 }
 
-/** «کارنامهٴ ماه <ماه>: <نام>» to the live guardians of every student who got a level in this month — once per month and year. */
+/**
+ * «کارنامهٴ ماه <ماه>: <نام>» to the live guardians of every student given — the caller passes the students whose card
+ * for that month is complete (academic/report-card `completeCardsOf`). Once per child, month, year and guardian.
+ */
 export async function notifyGuardiansOfReportCard(
   tx: Tx,
   ctx: GuardianNotifyCtx,
