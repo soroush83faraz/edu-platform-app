@@ -8,6 +8,7 @@ export {
   workItemAttachment,
   workItemComment,
   workItemStatus,
+  workItemSubmission,
   workItemTransition,
   workItemType,
   workItemWatcher,

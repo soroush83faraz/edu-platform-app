@@ -215,7 +215,54 @@ export const workItemComment = workspace.table(
   ],
 );
 
-/** Table only — the upload UI is cut from phase 1. */
+/**
+ * «تحویل پاسخ» (migration 0024; owner 2026-10-19; docs/decisions.md «پیوست تکلیف و تحویل پاسخ»): ONE student's answer
+ * to ONE تکلیف — text (optional) and up to five files (`work_item_attachment` rows with this `submission_id`). Created
+ * on the first «ثبت پاسخ», edited in place while the تکلیف is open (`submitted_at` = the first one, `updated_at` = the
+ * last); never deleted (no DELETE for app_rw) — a removed student's پاسخ stays for the giver as history.
+ * RESTRICTIVE policies for app_rw (0024): readable by its student and by the تکلیف's managers
+ * (`app.work_item_manager`: its creator, or a broad `workspace.work_item.update` holder — `managesItem`); written by its
+ * student only. Never by another student, a guardian or a counselor.
+ */
+export const workItemSubmission = workspace.table(
+  "work_item_submission",
+  {
+    id: id(),
+    organizationId: orgFk(),
+    workItemId: uuid("work_item_id").notNull(),
+    studentPersonId: uuid("student_person_id").notNull(),
+    /** The پاسخ text; null when the student sent files only. */
+    body: text("body"),
+    /** The first «ثبت پاسخ». */
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).defaultNow().notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique("work_item_submission_org_id_uq").on(t.organizationId, t.id),
+    /** The composite FK target of an attachment's (submission, work item) pair. */
+    unique("work_item_submission_org_id_item_uq").on(t.organizationId, t.id, t.workItemId),
+    unique("work_item_submission_student_uq").on(t.organizationId, t.workItemId, t.studentPersonId),
+    check("work_item_submission_body_chk", sql`${t.body} IS NULL OR char_length(${t.body}) BETWEEN 1 AND 4000`),
+    foreignKey({
+      name: "work_item_submission_work_item_fk",
+      columns: [t.organizationId, t.workItemId],
+      foreignColumns: [workItem.organizationId, workItem.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "work_item_submission_student_fk",
+      columns: [t.organizationId, t.studentPersonId],
+      foreignColumns: [person.organizationId, person.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
+ * A file on a تکلیف (migration 0024 gives it its use): `submission_id` NULL = the giver's «فایل‌های تکلیف», set = one
+ * file of that student's «پاسخ» (the composite FK pins the pair to the same تکلیف). A file is attached once
+ * (`work_item_attachment_file_uq`); removing it sets `archived_at` (and archives the file, whose bytes are deleted).
+ * RESTRICTIVE policies for app_rw (0024): a پاسخ's file row is readable only where the پاسخ is (its student, the
+ * تکلیف's managers), and only its student adds or removes it; the giver's files follow the تکلیف (`canViewWorkItem`).
+ */
 export const workItemAttachment = workspace.table(
   "work_item_attachment",
   {
@@ -226,9 +273,14 @@ export const workItemAttachment = workspace.table(
     addedByPersonId: uuid("added_by_person_id").notNull(),
     sequence: integer("sequence").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    /** The student's پاسخ this file belongs to; NULL for the giver's own files of the تکلیف. */
+    submissionId: uuid("submission_id"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (t) => [
     index("work_item_attachment_item_idx").on(t.workItemId, t.sequence),
+    unique("work_item_attachment_file_uq").on(t.organizationId, t.fileId),
+    index("work_item_attachment_submission_idx").on(t.organizationId, t.submissionId).where(sql`${t.submissionId} IS NOT NULL`),
     foreignKey({
       name: "work_item_attachment_work_item_fk",
       columns: [t.organizationId, t.workItemId],
@@ -243,6 +295,11 @@ export const workItemAttachment = workspace.table(
       name: "work_item_attachment_added_by_fk",
       columns: [t.organizationId, t.addedByPersonId],
       foreignColumns: [person.organizationId, person.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "work_item_attachment_submission_fk",
+      columns: [t.organizationId, t.submissionId, t.workItemId],
+      foreignColumns: [workItemSubmission.organizationId, workItemSubmission.id, workItemSubmission.workItemId],
     }).onDelete("restrict"),
   ],
 );

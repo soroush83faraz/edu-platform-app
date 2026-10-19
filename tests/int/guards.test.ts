@@ -57,9 +57,9 @@ describe("updated_at is maintained by the server (app.set_updated_at)", () => {
       // 11 tenancy tables (school_period since 0015) + iam: auth_identity, contact_point, guardian_link (0020), person, role,
       // role_assignment, staff_profile, student_profile, user_account (organization_membership, login_attempt,
       // user_session, permission, role_permission have no updated_at) + academic 8 (timetable_slot since 0015,
-      // attendance_session + attendance_entry since 0016, learning_objective + objective_rating since 0017) + workspace: work_item_type, work_item, inbox_entry
+      // attendance_session + attendance_entry since 0016, learning_objective + objective_rating since 0017) + workspace: work_item_type, work_item, inbox_entry, work_item_submission (0024)
       // + config: feature_flag, setting_value + counseling: counselor_note, teacher_report (0018; referral has none).
-      expect(res.rows).toHaveLength(20 + 8 + 3 + 2 + 2);
+      expect(res.rows).toHaveLength(20 + 8 + 4 + 2 + 2);
       expect(res.rows.filter((r) => !r.has_trigger).map((r) => r.table)).toEqual([]);
     });
   });
