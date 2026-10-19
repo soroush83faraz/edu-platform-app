@@ -2312,7 +2312,21 @@ is fixed in its own commit.
   principal?~~ — decided 2026-10-19 (review fix D1, below): re-routed along «same office → principal → vice principal»;
   (c) the guardian never sees WHO answered — show the office holder's name?; (d) one exchange only — no
   reply to an answer (a conversation is a later channel); (e) also a daily cap?; (f) the organization admin is never a
-  destination: a school with no principal answers «برای مدرسهٴ این فرزند مدیری ثبت نشده است».
+  destination: a school with no principal answers «برای مدرسهٴ این فرزند مدیری ثبت نشده است» — and never a re-route
+  target either (D1 of the review fixes below; a school with neither principal nor vice principal leaves the message
+  with nobody); (g) **an addressee who loses the office keeps the message (review D2 — recorded, behaviour
+  unchanged).** Scenario: a guardian writes to «مشاور مدرسه»; counselor C is its addressee. The principal revokes C's
+  «مشاور» role on /admin/roles, or C's ریاضی teaching of the child's class ends (a teacher message), or C's «معاون» /
+  «مدیر مدرسه» role is revoked — C stays an active colleague (only a REMOVAL takes the row out,
+  `withdrawRemovedAssignee`). C keeps the `work_item_assignee` row and the inbox row, so `canViewWorkItem` still opens
+  the item to C: the guardian's subject and text, the child's name, the trail. If C holds `workspace.work_item.update`
+  through another hat (a teacher of any class), C can still ANSWER it from `/inbox/<id>` — the assignee path checks the
+  row, not the office — and that answer closes the message for every addressee and reaches the guardian as «پاسخ
+  مدرسه». (A counselor with no other hat loses «مشاوره» › «پیام‌های اولیا» with the role, but still opens the item by
+  its id.) Since D1 the message is also handed to the office's current holder (or the principal / a vice
+  principal), so both read it and the first answer wins. Options: keep it (the ex-holder may know the case — today's
+  behaviour); withdraw the row like a removal does (delete it if not answered, archive the inbox row) on revoke and
+  on ended teaching; or keep reading but refuse the answer from a non-holder.
 
 ## 2026-10-19 — «ارتباط ولی و مدرسه»: review fixes
 
@@ -2380,3 +2394,7 @@ fixed in its own commit.
   (school A emptied step by step: removal → vice principals, ended teaching → vice principals, the last vice
   principal → nobody + the tags; the last counselor revoked → the principal; «افزودن تدریس» → the new teacher;
   0023's function: definer, grants, who gets what), `tests/int/concurrency.test.ts` C17.
+- **D2 — an addressee who loses the office keeps reading (and may answer) the message: recorded, not changed.** The
+  exact scenario and the options are open item (g) of «ارتباط ولی و مدرسه» above, for the owner to decide. The D1
+  re-route counts such an addressee as gone (they hold no capacity), so the message also reaches someone who can
+  answer it; nothing else of their access changed.
