@@ -28,6 +28,12 @@ export const PERMISSIONS = [
   { code: "workspace.work_item.update", module: "workspace", name: "ویرایش کار", isSensitive: false },
   { code: "workspace.work_item.comment", module: "workspace", name: "ثبت نظر روی کار", isSensitive: false },
   { code: "workspace.work_item.assign_class", module: "workspace", name: "ارسال کار به کلاس", isSensitive: false },
+  // «پیوست تکلیف و تحویل پاسخ» (owner, 2026-10-19; docs/decisions.md): the giver's files of a تکلیف — teachers, and every
+  // manager role through ALL_ROLE_PERMS — and a student's «پاسخ» (text + files) to a تکلیف given to them — students
+  // only (scripts/catalog.ts `NON_MANAGER_PERMS`). Every use ALSO needs the item's own rule: `managesItem` for the
+  // giver's files, an assignee row of the student for a پاسخ (src/modules/workspace/{work-item-files,submissions}.ts).
+  { code: "workspace.work_item.attach", module: "workspace", name: "پیوست فایل به تکلیف", isSensitive: false },
+  { code: "workspace.work_item.submit", module: "workspace", name: "تحویل پاسخ تکلیف", isSensitive: false },
   { code: "notif.notification.read", module: "notif", name: "مشاهدهٴ اعلان‌ها", isSensitive: false },
   { code: "integ.import.write", module: "integ", name: "ورود اطلاعات از اکسل", isSensitive: true },
   // «مشاوره» (owner, 2026-10-13; docs/decisions.md «مشاوره — فاز ۱»). Read = the student file (profile, academic summary,

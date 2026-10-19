@@ -3,12 +3,14 @@
 // → tenant transaction). Personal-inbox permissions are held "at any scope"; the class-level `assign_class` check
 // happens INSIDE createWorkItem against the concrete offering. Also exports the two lookups the «کار جدید»
 // form calls from the client (roster of an offering, person search) — read-only, same gate.
-import { defineAction, defineQuery } from "@/lib/actions";
+import { defineAction, defineQuery, ok, type Result } from "@/lib/actions";
 import { validation } from "@/lib/errors";
 import { parseJalaliToInstant } from "@/lib/format";
-import { ChangeStatusInput, CreateWorkItemInput, OfferingIdInput, SearchPersonsInput, SetPinnedInput, UpdateWorkItemInput, WorkItemIdInput } from "./dto";
+import { removeStored } from "@/modules/files/storage";
+import { ChangeStatusInput, CreateWorkItemInput, OfferingIdInput, SaveSubmissionInput, SearchPersonsInput, SetPinnedInput, UpdateWorkItemInput, WorkItemIdInput } from "./dto";
 import { listOfferingRoster, searchPersons } from "./repo";
-import { archiveInbox, changeStatus, createWorkItem, markInboxRead, personReach, setPinned, updateWorkItem } from "./service";
+import { archiveInbox, changeStatus, createWorkItem, markInboxRead, personReach, setPinned, updateWorkItem, type UpdateWorkItemResult } from "./service";
+import { saveSubmission, type SaveSubmissionResult } from "./submissions";
 
 /** The pickers' strings («۱۴۰۵/۰۷/۰۵», `HH:mm` or empty = end of day) → the UTC instant; field errors point at the right control. */
 function parseDue(dueDate: string | undefined, dueTime: string | undefined): Date | null {
@@ -35,6 +37,7 @@ export const createWorkItemAction = defineAction({ schema: CreateWorkItemInput, 
     dueAt,
     recipients: input.recipients,
     idempotencyKey: input.idempotencyKey ?? null,
+    attachmentFileIds: input.attachments ?? [],
   });
 });
 
@@ -46,16 +49,42 @@ export const changeStatusAction = defineAction({ schema: ChangeStatusInput, perm
   changeStatus(tx, ctx, { workItemId: input.workItemId, toStatusCode: input.toStatusCode, note: input.note ?? null }),
 );
 
+/**
+ * Deletes the bytes of the files a committed write took out, then hands the client the result WITHOUT the keys.
+ * `defineAction` resolves only after its transaction committed, so a rolled-back write never loses a file; a crash
+ * between the commit and here leaves orphan bytes of an archived row (never served — docs/decisions.md 2026-10-19).
+ */
+async function afterCommit<T extends { unlinkKeys: string[] }>(result: Result<T>): Promise<Result<Omit<T, "unlinkKeys">>> {
+  if (!result.ok) return result;
+  const { unlinkKeys, ...data } = result.data;
+  await removeStored(unlinkKeys);
+  return ok(data);
+}
+
 /** «ویرایش»: omitted fields are kept; `dueDate` present (even "") means the deadline was edited — "" clears it. */
-export const updateWorkItemAction = defineAction({ schema: UpdateWorkItemInput, permission: "workspace.work_item.update", scope: "any" }, async (tx, input, ctx) =>
+const updateWorkItemCore = defineAction({ schema: UpdateWorkItemInput, permission: "workspace.work_item.update", scope: "any" }, async (tx, input, ctx) =>
   updateWorkItem(tx, ctx, {
     workItemId: input.workItemId,
     title: input.title,
     description: input.description === undefined ? undefined : input.description || null,
     priority: input.priority,
     dueAt: input.dueDate === undefined && input.dueTime === undefined ? undefined : parseDue(input.dueDate, input.dueTime),
+    files: input.addFiles || input.removeFiles ? { add: input.addFiles ?? [], remove: input.removeFiles ?? [] } : undefined,
   }),
 );
+
+export async function updateWorkItemAction(raw: FormData | unknown): Promise<Result<Omit<UpdateWorkItemResult, "unlinkKeys">>> {
+  return afterCommit(await updateWorkItemCore(raw));
+}
+
+/** «ثبت پاسخ» / «ویرایش پاسخ» — a student's پاسخ to a تکلیف given to them (./submissions). */
+const saveSubmissionCore = defineAction({ schema: SaveSubmissionInput, permission: "workspace.work_item.submit", scope: "any" }, async (tx, input, ctx) =>
+  saveSubmission(tx, ctx, { workItemId: input.workItemId, body: input.body ?? null, addFileIds: input.addFiles, removeFileIds: input.removeFiles }),
+);
+
+export async function saveSubmissionAction(raw: FormData | unknown): Promise<Result<Omit<SaveSubmissionResult, "unlinkKeys">>> {
+  return afterCommit(await saveSubmissionCore(raw));
+}
 
 export const markInboxReadAction = defineAction({ schema: WorkItemIdInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) =>
   markInboxRead(tx, ctx, { workItemId: input.workItemId }),

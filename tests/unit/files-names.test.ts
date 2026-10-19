@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { contentDisposition, decodeHeaderName, nameForKind, sanitizeFileName } from "@/modules/files/names";
 import { STORAGE_KEY_RE, storageKeyFor, storagePathIn, tempDirIn } from "@/modules/files/paths";
 import { FILE_LIMITS } from "@/modules/files/limits";
+import { FILE_RESPONSE_SECURITY_HEADERS, fileResponseHeaders } from "@/modules/files/serve";
 
 const ORG = "0199a000-0000-7000-8000-00000000000a";
 const FILE = "0199a000-0000-7000-8000-0000000000f1";
@@ -103,5 +104,30 @@ describe("storage keys", () => {
       expect(() => storagePathIn(root, bad), bad).toThrow();
     }
     expect(tempDirIn(root)).toBe(path.join(root, ".tmp"));
+  });
+});
+
+describe("fileResponseHeaders (GET /files/[id])", () => {
+  it("images inline, everything else — PDF included — as an attachment, under the sniffed type", () => {
+    const img = fileResponseHeaders("png", "عکس.png", 1234);
+    expect(img["Content-Type"]).toBe("image/png");
+    expect(img["Content-Disposition"].startsWith("inline;")).toBe(true);
+    expect(img["Content-Length"]).toBe("1234");
+    for (const k of ["pdf", "docx", "xlsx", "pptx", "txt", "mp3", "m4a", "ogg", "wav"] as const) {
+      expect(fileResponseHeaders(k, "x", 1)["Content-Disposition"].startsWith("attachment;"), k).toBe(true);
+    }
+    expect(fileResponseHeaders("txt", "a.txt", 1)["Content-Type"]).toBe("text/plain; charset=utf-8");
+    expect(fileResponseHeaders("pdf", "a.pdf", 1)["Content-Type"]).toBe("application/pdf");
+  });
+
+  it("always nosniff, a sandboxed CSP with no sources, private no-store, same-origin resource policy", () => {
+    for (const h of [fileResponseHeaders("jpeg", "a.jpg", 1), fileResponseHeaders("pdf", "a.pdf", 1)]) {
+      expect(h["X-Content-Type-Options"]).toBe("nosniff");
+      expect(h["Content-Security-Policy"]).toContain("default-src 'none'");
+      expect(h["Content-Security-Policy"]).toMatch(/(^|; )sandbox($|;)/);
+      expect(h["Cache-Control"]).toBe("private, no-store");
+      expect(h["Cross-Origin-Resource-Policy"]).toBe("same-origin");
+    }
+    expect(FILE_RESPONSE_SECURITY_HEADERS["Content-Security-Policy"]).not.toContain("script-src");
   });
 });

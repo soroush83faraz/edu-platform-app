@@ -48,6 +48,8 @@ export const FILE_MESSAGES = {
   empty: "این فایل خالی است.",
   badType: "این نوع فایل پذیرفته نیست. پی‌دی‌اف، عکس، سند ورد، اکسل، پاورپوینت، متن یا فایل صوتی بفرستید.",
   badName: "نام فایل معتبر نیست.",
+  macro: "سندِ دارای ماکرو پذیرفته نیست؛ آن را بدون ماکرو ذخیره کنید.",
+  textEncoding: "این فایل متنی خوانا نیست؛ آن را با کدگذاری یونیکد ذخیره کنید.",
   tooManyItemFiles: `هر تکلیف حداکثر ${formatNumberFa(FILE_LIMITS.maxItemFiles)} فایل دارد.`,
   tooManySubmissionFiles: `هر پاسخ حداکثر ${formatNumberFa(FILE_LIMITS.maxSubmissionFiles)} فایل دارد.`,
   submissionTooLarge: `حجم همهٴ فایل‌های یک پاسخ حداکثر ${formatNumberFa(FILE_LIMITS.maxSubmissionBytes / MiB)} مگابایت است.`,

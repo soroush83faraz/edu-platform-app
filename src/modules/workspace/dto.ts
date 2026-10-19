@@ -1,6 +1,7 @@
 // Zod v4 `.strict()` input schemas of the workspace actions and queries. Messages are Persian; nothing here is
 // ever spread into a query — the service maps fields explicitly.
 import { z } from "zod";
+import { FILE_LIMITS, FILE_MESSAGES } from "@/modules/files/limits";
 
 export const PRIORITIES = ["low", "normal", "high", "urgent"] as const;
 /** UI tabs. «در جریان» is folded into `todo` (owner decision): an item whose effective category is `doing` is still not done. */
@@ -25,6 +26,10 @@ export const Recipients = z.discriminatedUnion("kind", [
 ]);
 export type Recipients = z.output<typeof Recipients>;
 
+/** File ids of uploads (`/api/files`) — attach or take out; the service decides whose and for what they may be. */
+const itemFileIds = z.array(uuid).max(FILE_LIMITS.maxItemFiles, FILE_MESSAGES.tooManyItemFiles);
+const submissionFileIds = z.array(uuid).max(FILE_LIMITS.maxSubmissionFiles, FILE_MESSAGES.tooManySubmissionFiles);
+
 export const CreateWorkItemInput = z
   .object({
     typeCode: z.enum(["task", "todo"]),
@@ -38,6 +43,8 @@ export const CreateWorkItemInput = z
     recipients: Recipients,
     /** UUID v7 minted when the form mounts; a resubmit within 10 minutes returns the item already created. */
     idempotencyKey: uuid.optional(),
+    /** «فایل‌های تکلیف»: the giver's pending uploads for this new تکلیف (a `task` only). */
+    attachments: itemFileIds.optional(),
   })
   .strict();
 export type CreateWorkItemInput = z.output<typeof CreateWorkItemInput>;
@@ -80,9 +87,26 @@ export const UpdateWorkItemInput = z
     priority: z.enum(PRIORITIES).optional(),
     dueDate: z.string().trim().max(12).optional(),
     dueTime: z.string().trim().max(5).optional(),
+    /** «فایل‌های تکلیف»: uploads made for THIS تکلیف to attach, and its files (by file id) to take out. */
+    addFiles: itemFileIds.optional(),
+    removeFiles: itemFileIds.optional(),
   })
   .strict();
 export type UpdateWorkItemInput = z.output<typeof UpdateWorkItemInput>;
+
+/**
+ * «ثبت پاسخ» / «ویرایش پاسخ»: the whole پاسخ text (empty = none) and the file changes — uploads made for THIS تکلیف to
+ * attach, files of the پاسخ to take out. Never empty after the change (the service says so in Persian).
+ */
+export const SaveSubmissionInput = z
+  .object({
+    workItemId: uuid,
+    body: z.string().trim().max(FILE_LIMITS.maxSubmissionBodyChars, "متن پاسخ حداکثر ۴۰۰۰ نویسه است.").optional(),
+    addFiles: submissionFileIds.default([]),
+    removeFiles: submissionFileIds.default([]),
+  })
+  .strict();
+export type SaveSubmissionInput = z.output<typeof SaveSubmissionInput>;
 
 export const ListInboxInput = z
   .object({

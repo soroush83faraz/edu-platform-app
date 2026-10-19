@@ -9,6 +9,7 @@ import { getPermissionScope } from "@/modules/iam/service";
 import { unreadNotificationCount } from "@/modules/notif";
 import { ListInboxInput, ListWorkItemsInput, WorkItemIdInput } from "./dto";
 import { type InboxSummary, inboxCounts, inboxTabCounts, isStaff, listInbox, listOfferingsInScope, listTaughtOfferings, openCountsByOffering } from "./repo";
+import { FileIdInput, findDownload, workItemFilesView } from "./file-access";
 import { getWorkItemDetail } from "./service";
 
 export const listInboxQuery = defineQuery({ schema: ListInboxInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) => {
@@ -71,8 +72,18 @@ export const openItemsByOfferingQuery = defineQuery({ permission: "workspace.wor
   openCountsByOffering(tx, ctx.personId),
 );
 
-export const workItemDetailQuery = defineQuery({ schema: WorkItemIdInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) =>
-  getWorkItemDetail(tx, ctx, input.workItemId),
+/** The item page: the detail read model plus its files — the giver's, the reader's own پاسخ, or every پاسخ for a manager. */
+export const workItemDetailQuery = defineQuery({ schema: WorkItemIdInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) => {
+  const detail = await getWorkItemDetail(tx, ctx, input.workItemId);
+  return { ...detail, files: await workItemFilesView(tx, ctx, detail) };
+});
+
+/**
+ * GET /files/[id] (src/app/files/[id]/route.ts): the file's key and kind when the caller may have it NOW — re-decided on
+ * every request (`findDownload`); any refusal is NOT_FOUND, and the route answers it with a bare 404.
+ */
+export const fileDownloadQuery = defineQuery({ schema: FileIdInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) =>
+  findDownload(tx, ctx, input.fileId),
 );
 
 const NO_WORK_COUNTS = { overdue: 0, dueToday: 0, unread: 0 } as const;

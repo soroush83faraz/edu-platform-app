@@ -30,7 +30,12 @@ const BaseEnvSchema = z.object({
   /** Shown in the manifest, the title and /roadmap; defaults to «دانینو» (src/lib/product.ts). */
   PRODUCT_NAME: z.string().trim().min(1).max(60).optional(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
-  FILES_DIR: z.string().min(1).default("/data/files"),
+  /**
+   * Where uploaded files live (src/modules/files/storage.ts reads it lazily from `process.env`, like the crypto key):
+   * unset = `/data/files` in production (the Docker volume, writable by uid 1001) and `./.data/files` (gitignored)
+   * otherwise. Must be on a disk with room — uploads stop below 1 GiB free.
+   */
+  FILES_DIR: z.string().trim().min(1).optional(),
   /** Set to "1" to allow running seed against a production database. */
   SEED_ALLOW: z.string().optional(),
   /** Set to "1" to also seed the demo organizations. */

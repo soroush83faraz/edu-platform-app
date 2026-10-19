@@ -61,6 +61,10 @@ export function proxy(request: NextRequest): NextResponse {
 }
 
 export const config = {
-  // Everything except Next internals, the anonymous health probe, PWA files and any static asset with an extension.
-  matcher: ["/((?!_next|api/health|manifest|icons|icon|apple-icon|sw\\.js|.*\\.[a-zA-Z0-9]+$).*)"],
+  // Everything except Next internals, the anonymous health probe, the upload endpoint, PWA files and any static asset
+  // with an extension. `api/files` (POST, one file as the raw body — src/app/api/files/route.ts) must not pass through
+  // here: a proxy clones the request body into memory and, past `proxyClientMaxBodySize` (10 MB), hands the route a
+  // silently TRUNCATED body (node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/
+  // proxyClientMaxBodySize.md). The route does its own session gate (defineAction) and sets its own Cache-Control.
+  matcher: ["/((?!_next|api/health|api/files|manifest|icons|icon|apple-icon|sw\\.js|.*\\.[a-zA-Z0-9]+$).*)"],
 };

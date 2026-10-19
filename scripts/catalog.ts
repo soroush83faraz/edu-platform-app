@@ -45,7 +45,14 @@ export interface Queryable {
  * stay out of management's reach. And the guardian's own «پیام به مدرسه» (`iam.guardian_message.send`, 2026-10-19):
  * a parent's voice is never a manager's — an organization admin who is also a parent sends through their «ولی» hat.
  */
-export const NON_MANAGER_PERMS: readonly Permission[] = ["counseling.note.write", "counseling.referral.create", "counseling.teacher_report.write", "iam.guardian_message.send"];
+export const NON_MANAGER_PERMS: readonly Permission[] = [
+  "counseling.note.write",
+  "counseling.referral.create",
+  "counseling.teacher_report.write",
+  "iam.guardian_message.send",
+  // «تحویل پاسخ» (2026-10-19): a student's own answer to a تکلیف given to them — never a manager's.
+  "workspace.work_item.submit",
+];
 
 /** Every manager permission: the whole catalog but the implicit `iam.account.self` and `NON_MANAGER_PERMS`. */
 export const ALL_ROLE_PERMS: Permission[] = PERMISSIONS.map((p) => p.code).filter((c) => !IMPLICIT_PERMISSIONS.includes(c) && !NON_MANAGER_PERMS.includes(c));
@@ -68,6 +75,8 @@ const WORK_ITEM_ALL: Permission[] = [
   "workspace.work_item.update",
   "workspace.work_item.comment",
   "workspace.work_item.assign_class",
+  // «فایل‌های تکلیف» (2026-10-19): the giver attaches files to the تکلیف they give (`managesItem`).
+  "workspace.work_item.attach",
 ];
 
 export interface SystemRole {
@@ -135,6 +144,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
       "workspace.work_item.create",
       "workspace.work_item.update",
       "workspace.work_item.comment",
+      // «تحویل پاسخ» (2026-10-19): text + files to a تکلیف given to them, while it is open (src/modules/workspace/submissions.ts).
+      "workspace.work_item.submit",
       "notif.notification.read",
       "academic.timetable.read",
       "academic.attendance.read",
@@ -245,6 +256,8 @@ export const NOTIFICATION_TYPES: SystemNotificationType[] = [
   // The code keeps its first name; since «ویرایش» the deadline may also move earlier or be removed.
   { code: "work_item.due_extended", module: "workspace", name: "مهلت کار تغییر کرد" },
   { code: "work_item.updated", module: "workspace", name: "کار ویرایش شد" },
+  // «تحویل پاسخ» (owner, 2026-10-19): the giver hears once per student and تکلیف — the name and the title, never the text.
+  { code: "work_item.submitted", module: "workspace", name: "پاسخ تکلیف ثبت شد" },
   { code: "work_item.due_soon", module: "workspace", name: "مهلت کار نزدیک است", urgency: "high" },
   // «مشاوره» (owner, 2026-10-14): the counselor's bell — the student's name and the kind of event, never the text.
   { code: "counseling.referral_answered", module: "counseling", name: "پاسخ مدیریت به ارجاع" },

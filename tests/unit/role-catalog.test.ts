@@ -227,3 +227,23 @@ describe("«مشاور» (counselor, owner 2026-10-13): a school role that reads
     for (const code of ["student", "guardian_full"]) expect(role(code).permissions.filter((p) => p.startsWith("counseling.")), code).toEqual([]);
   });
 });
+
+describe("«پیوست تکلیف و تحویل پاسخ» (2026-10-19): who holds attach and submit", () => {
+  const has = (code: string, p: Permission) => role(code).permissions.includes(p);
+
+  it("the giver's files: teachers and every manager role; a پاسخ: students only — never a manager, a guardian or a counselor", () => {
+    expect(has("teacher", "workspace.work_item.attach")).toBe(true);
+    expect(has("teacher", "workspace.work_item.submit")).toBe(false);
+    for (const m of ["org_admin", "school_principal", "vice_principal"]) {
+      expect(has(m, "workspace.work_item.attach"), m).toBe(true);
+      expect(has(m, "workspace.work_item.submit"), m).toBe(false);
+    }
+    expect(has("student", "workspace.work_item.submit")).toBe(true);
+    expect(has("student", "workspace.work_item.attach")).toBe(false);
+    for (const r of ["guardian_full", "counselor"]) {
+      expect(has(r, "workspace.work_item.attach"), r).toBe(false);
+      expect(has(r, "workspace.work_item.submit"), r).toBe(false);
+    }
+    expect(NON_MANAGER_PERMS).toContain("workspace.work_item.submit");
+  });
+});

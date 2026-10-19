@@ -25,6 +25,7 @@ import { notifyMany } from "@/modules/notif/service";
 import type { Recipients } from "./dto";
 import { acceptsComments, answerNeedsText, closesOnFirstAnswer, creatorParticipates, managesItem } from "./manage-policy";
 import { creationNotifiable, notifiable } from "./notify-policy";
+import { type FilesChange, applyItemFilesChange, hasFilesChange } from "./work-item-files";
 import {
   type AssigneeRow,
   type CommentRow,
@@ -106,7 +107,7 @@ export async function canViewWorkItem(tx: Tx, ctx: WorkspaceCtx, workItemId: str
  * item (their foreign-key checks take KEY SHARE) are not held up. Callers take `lockItemPeople` first. Lock order:
  * iam/removal «Concurrency».
  */
-async function lockWorkItem(tx: Tx, workItemId: string): Promise<WorkItemCore> {
+export async function lockWorkItem(tx: Tx, workItemId: string): Promise<WorkItemCore> {
   await tx.select({ id: workItem.id }).from(workItem).where(eq(workItem.id, workItemId)).for("no key update");
   const item = await findWorkItemCore(tx, workItemId);
   if (!item) throw notFound();
@@ -171,6 +172,11 @@ export interface CreateWorkItemInput {
   recipients: Recipients;
   /** Client-generated UUID v7 of one «کار جدید» form; a resubmit within `IDEMPOTENCY_WINDOW_MS` returns the first item. */
   idempotencyKey?: string | null;
+  /**
+   * «فایل‌های تکلیف» (2026-10-19): the caller's own pending uploads made for a NEW تکلیف (./work-item-files) — attached
+   * in this same transaction; only a `task` takes them, and `workspace.work_item.attach` is required.
+   */
+  attachmentFileIds?: readonly string[];
 }
 
 export interface CreateWorkItemResult {
@@ -340,7 +346,8 @@ export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWor
   const type = await findTypeWithInitialStatus(tx, input.typeCode);
   if (!type) throw invalidReference(`نوع ${nouns(ctx).singular} یافت نشد.`);
   const recipientIds = [...new Set(await resolveRecipients(tx, ctx, input.recipients))];
-  return insertWorkItem(tx, ctx, {
+  const attachmentFileIds = input.attachmentFileIds ?? [];
+  const created = await insertWorkItem(tx, ctx, {
     type,
     title: input.title,
     description: input.description ?? null,
@@ -354,8 +361,12 @@ export async function createWorkItem(tx: Tx, ctx: WorkspaceCtx, input: CreateWor
     creatorParticipates: true,
     notify: (others) => creationNotifiable(ctx.assignments, input.recipients.kind, others),
     notificationTitle: `${nouns(ctx).new}: ${input.title}`,
-    auditAfter: { typeCode: input.typeCode, title: input.title, priority: input.priority, dueAt: input.dueAt ?? null, recipients: input.recipients.kind },
+    auditAfter: { typeCode: input.typeCode, title: input.title, priority: input.priority, dueAt: input.dueAt ?? null, recipients: input.recipients.kind, attachmentCount: attachmentFileIds.length },
   });
+  // The giver's files ride in the same transaction: a refusal (not a `task`, a stranger's or expired upload, too many)
+  // rolls the whole تکلیف back. The bell stays «تکلیف جدید: …» — the files are on the item page, not in the bell.
+  await applyItemFilesChange(tx, ctx, { id: created.id, typeCode: input.typeCode, isConfidential: false }, { add: attachmentFileIds, remove: [] }, { isNew: true });
+  return created;
 }
 
 export interface ConfidentialWorkItemInput {
@@ -876,18 +887,22 @@ export interface UpdateWorkItemInput {
   description?: string | null;
   priority?: Priority;
   dueAt?: Date | null;
+  /** «فایل‌های تکلیف»: pending uploads made for THIS تکلیف to attach, and its files to take out (file ids). */
+  files?: FilesChange;
 }
 
 type EditableField = "title" | "description" | "priority" | "dueAt";
 
 export interface UpdateWorkItemResult {
-  /** The fields that actually changed — empty for a save that changed nothing (no write, no audit, no notification). */
-  changed: EditableField[];
+  /** The fields that actually changed (`files` for the files) — empty for a save that changed nothing (no write, no audit, no notification). */
+  changed: Array<EditableField | "files">;
   notified: number;
+  /** Storage keys of the files taken out — the ACTION deletes their bytes after the commit; never sent to the client. */
+  unlinkKeys: string[];
 }
 
 /** The Persian names of the content fields, for the notification body («عنوان و اولویت تغییر کرد»). */
-const FIELD_FA: Record<Exclude<EditableField, "dueAt">, string> = { title: "عنوان", description: "توضیح", priority: "اولویت" };
+const FIELD_FA: Record<Exclude<EditableField, "dueAt"> | "files", string> = { title: "عنوان", description: "توضیح", priority: "اولویت", files: "فایل‌ها" };
 
 function listFa(parts: string[]): string {
   return parts.length <= 1 ? (parts[0] ?? "") : `${parts.slice(0, -1).join("، ")} و ${parts[parts.length - 1]}`;
@@ -902,7 +917,9 @@ function listFa(parts: string[]): string {
  * `workspace.work_item.updated` with the before/after of the changed fields only, and every assignee is told in ONE
  * notification: a moved deadline is `work_item.due_extended` (deduped per new due value, as «تمدید» always was —
  * «… تمدید شد» when it moved later, «… تغییر کرد» / «… برداشته شد» otherwise, the content changes named in its
- * body), a content-only edit is `work_item.updated`. Their inbox rows flip back to unread either way.
+ * body), a content-only edit is `work_item.updated`. Their inbox rows flip back to unread either way. The giver's files
+ * («فایل‌های تکلیف», 2026-10-19) change in the same write (`applyItemFilesChange`, its own audit row) and count as one
+ * more changed field, «فایل‌ها», in that notification — never a file name; their removed bytes go after the commit.
  */
 export async function updateWorkItem(tx: Tx, ctx: WorkspaceCtx, input: UpdateWorkItemInput): Promise<UpdateWorkItemResult> {
   const seen = await canViewWorkItem(tx, ctx, input.workItemId);
@@ -942,16 +959,20 @@ export async function updateWorkItem(tx: Tx, ctx: WorkspaceCtx, input: UpdateWor
     before.dueAt = item.dueAt;
     set.dueAt = after.dueAt = dueAt;
   }
-  const changed = Object.keys(after) as EditableField[];
-  if (changed.length === 0) return { changed, notified: 0 };
+  const fields = Object.keys(after) as EditableField[];
+  const filesChanging = hasFilesChange(input.files);
+  if (fields.length === 0 && !filesChanging) return { changed: [], notified: 0, unlinkKeys: [] };
 
-  await tx.update(workItem).set(set).where(eq(workItem.id, item.id));
+  if (fields.length > 0) await tx.update(workItem).set(set).where(eq(workItem.id, item.id));
+  // «فایل‌های تکلیف»: under the same lock and the same «manager of an open item» decision (./work-item-files).
+  const files = filesChanging ? await applyItemFilesChange(tx, ctx, item, input.files!, { isNew: false }) : null;
+  const changed: Array<EditableField | "files"> = [...fields, ...(files ? (["files"] as const) : [])];
 
   const recipients = notifiable(ctx.assignments, (await listAssignees(tx, item.id)).map((a) => a.personId).filter((id) => id !== ctx.personId));
   let notified = 0;
   if (recipients.length > 0) {
     const shown = set.title ?? item.title;
-    const content = changed.filter((f): f is Exclude<EditableField, "dueAt"> => f !== "dueAt").map((f) => FIELD_FA[f]);
+    const content = changed.filter((f): f is Exclude<EditableField, "dueAt"> | "files" => f !== "dueAt").map((f) => FIELD_FA[f]);
     const common = { sourceKind: "work_item", sourceId: item.id, deepLink: `/inbox/${item.id}` } as const;
     if (set.dueAt !== undefined) {
       const newDue = set.dueAt;
@@ -980,8 +1001,9 @@ export async function updateWorkItem(tx: Tx, ctx: WorkspaceCtx, input: UpdateWor
   // A confidential item's text never enters the trail: its changed fields are named, the text replaced by lengths.
   const redact = (v: Partial<Record<EditableField, unknown>>) =>
     item.isConfidential ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "title" || k === "description" ? { length: typeof x === "string" ? x.length : 0 } : x])) : v;
-  await audit(ctx, "workspace.work_item.updated", { schema: "workspace", table: "work_item", id: item.id }, redact(before), redact(after), tx);
-  return { changed, notified };
+  // A files-only save has its own row (`workspace.work_item.files_changed`, ./work-item-files).
+  if (fields.length > 0) await audit(ctx, "workspace.work_item.updated", { schema: "workspace", table: "work_item", id: item.id }, redact(before), redact(after), tx);
+  return { changed, notified, unlinkKeys: files?.unlinkKeys ?? [] };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
