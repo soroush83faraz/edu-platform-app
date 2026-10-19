@@ -2241,6 +2241,7 @@ is fixed in its own commit.
   nothing locks a profile row and then a rating; FK checks (KEY SHARE) are not blocked by it.
 - Test: `tests/int/guardian.test.ts` «… only once the month's card is COMPLETE …» (partial → none; the last missing
   level → exactly one; re-save / change / clear / re-rate → still one; another child completes later → theirs).
+  The race: `tests/int/concurrency.test.ts` C13 (the second save waits, the guardian hears of the card once).
 
 ## 2026-10-19 — «ارتباط ولی و مدرسه» (owner): a guardian's question / suggestion / criticism to the school
 
@@ -2304,7 +2305,8 @@ is fixed in its own commit.
 - Tests: `tests/unit/guardian-message-policy.test.ts`, `tests/unit/manage-policy.test.ts`,
   `tests/unit/guardian-policy.test.ts`, `tests/int/guardian-message.test.ts` (0022's RLS/grants, every destination,
   the refusals, who opens it — service and database, the answer + bell + audit, the counselor's path, the rate limit,
-  an ended link), `tests/int/seed-pilot.test.ts`, `tests/int/rls-meta.test.ts` (counts).
+  an ended link), `tests/int/concurrency.test.ts` C14 (two sends at the limit: the second waits and is refused),
+  `tests/int/seed-pilot.test.ts`, `tests/int/rls-meta.test.ts` (counts).
 - **Open (owner):** (a) answers are bounded by the transition note (500) — longer?; (b) a message whose only
   addressee is removed (`withdrawRemovedAssignee`) stays «ارسال‌شده» with nobody to answer — re-route it to the
   principal?; (c) the guardian never sees WHO answered — show the office holder's name?; (d) one exchange only — no

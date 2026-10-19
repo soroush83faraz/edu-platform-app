@@ -16,14 +16,19 @@
 //      whichever runs first (the reopening locks its assignees' person rows before the item);
 //   C12 a removal that holds its person row (and has not reached the items yet) against «اتمام» / «ویرایش» of an
 //      item they are assigned: no deadlock — the item write waits BEFORE taking the item (its notification would
-//      otherwise lock the person after the item, through the foreign-key check), and the removed one is not notified.
+//      otherwise lock the person after the item, through the foreign-key check), and the removed one is not notified;
+//   C13 two teachers completing the last two درس‌ها of one child's month card at once: the second waits for the first
+//      (the students' profile rows, `completeCardsOf`) and sees the card complete — the guardian hears of it ONCE, never
+//      zero times (owner 2026-10-19, «کارنامه: اعلان کامل»);
+//   C14 a guardian's two messages about one child at once with one left under the hourly limit: the second waits for
+//      the first at the live link's row and is refused (RATE_LIMITED) — never both («ارتباط ولی و مدرسه»).
 // Each race asserts that the second transaction really WAITED for the first (pg_blocking_pids), so a pass means the
 // lock was there, not that the timing happened to be kind. The rows must be COMMITTED for the second connection to
 // see them, so the catalog is seeded in beforeAll and the database is re-created in afterAll (as
 // admin-remove-person.test.ts does) — the files after this one see the fixtures only.
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Client, Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { withTenant, type Tx } from "@/db/client";
 import * as schema from "@/db/schema";
@@ -42,12 +47,18 @@ import {
   workItemStatus,
 } from "@/db/schema";
 import { AppError } from "@/lib/errors";
+import { saveObjectiveRatings } from "@/modules/academic/report-card";
 import { assignTeacher } from "@/modules/academic/service";
 import { adminPlaceStudent, adminResetInitialPassword, type AdminCtx } from "@/modules/iam/admin";
 import type { Assignment } from "@/modules/iam/can";
 import { PERSON_REMOVED_MESSAGE } from "@/modules/iam/messages";
 import { PERMISSIONS } from "@/modules/iam/permissions";
 import { removePerson } from "@/modules/iam/removal";
+import { addGuardian } from "@/modules/iam/guardian";
+import { MESSAGE_RATE_LIMIT } from "@/modules/iam/guardian-message-policy";
+import { sendGuardianMessage } from "@/modules/iam/guardian-messages";
+import { listValidAssignments } from "@/modules/iam/repo";
+import { createClassOffering, createSubject } from "@/modules/tenancy/service";
 import { assignRole, createStaff, createStudent, MESSAGES } from "@/modules/iam/service";
 import { listOfferingRoster } from "@/modules/workspace/repo";
 import { changeStatus, createWorkItem, updateWorkItem } from "@/modules/workspace/service";
@@ -490,5 +501,88 @@ describe("concurrency: a removal against the doors that would bring the person b
     expect(expectFulfilled(edit.second)).toMatchObject({ changed: ["title"], notified: 1 });
     expect(await itemState(item2)).toEqual({ title: "تمرین ویرایشی (تازه)", category: "todo", assignees: [{ personId: staying2.personId, state: "pending" }] });
     expect(await notifiedOn(leaving2.personId, item2)).toEqual([{ type: "work_item.assigned" }]);
+  });
+
+  /** A person's real assignments as a service ctx (committed rows). */
+  const realCtx = (personId: string): Promise<AdminCtx & { assignments: Assignment[] }> => committed(async (tx) => ({ ...orgAdmin, personId, assignments: await listValidAssignments(tx, personId) }));
+  /** Binds `app.current_person_id` (what withTenant does for that person's request; 0022's policies read it). */
+  const bind = (tx: Tx, personId: string) => tx.execute(sql`select set_config('app.current_person_id', ${personId}, true)`);
+  const guardianOf = (studentProfileId: string, n: number) =>
+    committed((tx) => addGuardian(tx, orgAdmin, { studentProfileId, firstName: "پروانه", lastName: "صالحی", phone: `0912741${String(n).padStart(4, "0")}`, relation: "mother" }));
+
+  it("C13: two teachers completing the last two درس‌ها of one card at once — the second waits, sees the card complete, and the guardian hears of it exactly once", async () => {
+    // Two ACTIVE objectives of پایهٔ اول / مهر in two درس‌ها, committed as app_owner (app_rw may not write the catalog).
+    const owner = new Client({ connectionString: OWNER_URL });
+    await owner.connect();
+    try {
+      await owner.query("BEGIN");
+      await owner.query("select set_config('app.current_org_id', $1, true)", [f.ORG_A]);
+      await owner.query(
+        `insert into academic.learning_objective (id, organization_id, grade_level_id, month, subject_name, subject_id, text, sort_order) values
+           ('0199a000-00cd-7000-8000-0000000000c1', $1, $2, 7, 'ریاضی', $3, 'تا بیست می‌شمارد', 1),
+           ('0199a000-00cd-7000-8000-0000000000c2', $1, $2, 7, 'قرآن', null, 'سورهٴ کوثر را می‌خواند', 1)`,
+        [f.ORG_A, f.GRADE_A, f.SUBJECT_A],
+      );
+      await owner.query("COMMIT");
+    } finally {
+      await owner.end();
+    }
+    const child = await newStudent("مهتاب");
+    const g = await guardianOf(child.studentProfileId, 1);
+    // The ریاضی teacher of the class (the fixture offering) and the علوم teacher, who also writes قرآن (no offering).
+    const math = await newStaff("بهرام");
+    const science = await newStaff("شهلا");
+    await committed(async (tx) => {
+      const subj = await createSubject(tx, orgAdmin, { name: "علوم", code: "SC13" });
+      const off = await createClassOffering(tx, orgAdmin, { classGroupId: f.CLASS_GROUP_A1, subjectId: subj.subjectId, termId: f.TERM_A });
+      await assignTeacher(tx, orgAdmin, { staffProfileId: math.staffProfileId, classOfferingId: f.OFFERING_A1 });
+      await assignTeacher(tx, orgAdmin, { staffProfileId: science.staffProfileId, classOfferingId: off.classOfferingId });
+    });
+    const mathCtx = await realCtx(math.personId);
+    const scienceCtx = await realCtx(science.personId);
+    const sheet = (subjectName: string, objectiveId: string) => ({
+      classGroupId: f.CLASS_GROUP_A1,
+      month: 7,
+      subjectName,
+      entries: [{ studentProfileId: child.studentProfileId, learningObjectiveId: objectiveId, rating: "good" as const }],
+    });
+    const r = await race(
+      (tx) => saveObjectiveRatings(tx, mathCtx, sheet("ریاضی", "0199a000-00cd-7000-8000-0000000000c1")),
+      (tx) => saveObjectiveRatings(tx, scienceCtx, sheet("قرآن", "0199a000-00cd-7000-8000-0000000000c2")),
+    );
+    expect(r.waited).toBe(true);
+    expect(r.first).toMatchObject({ set: 1 });
+    expect(expectFulfilled(r.second)).toMatchObject({ set: 1 });
+    const bell = await committed((tx) =>
+      tx.select({ title: notification.title }).from(notification).where(and(eq(notification.recipientPersonId, g.guardianPersonId), eq(notification.typeCode, "guardian.report_card"))),
+    );
+    expect(bell).toEqual([{ title: "کارنامهٴ ماه مهر: مهتاب صالحی" }]);
+  });
+
+  it(`C14: a guardian's two messages about one child at once with ${MESSAGE_RATE_LIMIT - 1} already sent this hour — the second waits at the link and is refused, never both`, async () => {
+    const child = await newStudent("مهسا");
+    const g = await guardianOf(child.studentProfileId, 2);
+    const principal = await committed((tx) =>
+      createStaff(tx, orgAdmin, { firstName: "فریبا", lastName: "صالحی", phone: "09127419999", createAccount: false, schoolId: f.SCHOOL_A, roles: [{ roleCode: "school_principal", schoolId: f.SCHOOL_A }] }),
+    );
+    expect(principal.personId).toBeTruthy();
+    const gctx = await realCtx(g.guardianPersonId);
+    const send = (tx: Tx, subject: string) =>
+      bind(tx, g.guardianPersonId).then(() => sendGuardianMessage(tx, gctx, { studentProfileId: child.studentProfileId, kind: "question", destination: "principal", subject, body: "متن پیام" }));
+    await committed(async (tx) => {
+      for (let i = 0; i < MESSAGE_RATE_LIMIT - 1; i++) await send(tx, `پیام ${i}`);
+    });
+    const r = await race(
+      (tx) => send(tx, "پیام دهم"),
+      (tx) => send(tx, "پیام یازدهم"),
+    );
+    expect(r.waited).toBe(true);
+    expect(r.first).toMatchObject({ duplicate: false });
+    expectRejected(r.second, isError("RATE_LIMITED"));
+    const n = await committed(async (tx) => {
+      await bind(tx, g.guardianPersonId);
+      return tx.select({ id: schema.guardianMessage.id }).from(schema.guardianMessage).where(eq(schema.guardianMessage.studentProfileId, child.studentProfileId));
+    });
+    expect(n).toHaveLength(MESSAGE_RATE_LIMIT);
   });
 });
