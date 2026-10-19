@@ -8,6 +8,7 @@ import { notFound } from "@/lib/errors";
 import { endTeacherAssignment } from "@/modules/academic/service";
 import { adminCreateStaff, adminCreateStudent, adminPlaceStudent, adminResetInitialPassword, adminUnlockAccount, adminUpdatePerson } from "@/modules/iam/admin";
 import { requireCredentialReach } from "@/modules/iam/guardian";
+import { GUARDIAN_PHONE_CHANGED_NOTICE } from "@/modules/iam/guardian-policy";
 import { removePerson } from "@/modules/iam/removal";
 import { assignRole, createAccountForPerson, getAdminScope, resolveIdentifier, revokeRoleAssignment, MESSAGES } from "@/modules/iam/service";
 import { findSchoolById } from "@/modules/tenancy/repo";
@@ -44,8 +45,12 @@ export const createStudentAction = defineAction({ schema: CreateStudentInput, pe
   return { personId: res.personId, loginIdentifier: res.loginIdentifier, initialPassword: res.initialPassword };
 });
 
+/**
+ * `guardianNotice` (D4a): the «ولی» phone changed or went while links made from the old number are still live — the
+ * form shows it; the «اولیا» card flags those links («قطع اتصال» / «حفظ اتصال»). Nothing is unlinked by itself.
+ */
 export const updateStudentAction = defineAction({ schema: UpdateStudentInput, permission: "iam.person.write", scope: "any" }, async (tx, input, ctx) => {
-  await adminUpdatePerson(tx, ctx, input.personId, {
+  const res = await adminUpdatePerson(tx, ctx, input.personId, {
     firstName: input.firstName,
     lastName: input.lastName,
     gender: input.gender ?? null,
@@ -54,7 +59,7 @@ export const updateStudentAction = defineAction({ schema: UpdateStudentInput, pe
     contactPhone: input.contactPhone ?? null,
     guardianPhone: input.guardianPhone ?? null,
   });
-  return { personId: input.personId };
+  return { personId: input.personId, guardianNotice: res.guardianLinksToReview > 0 ? GUARDIAN_PHONE_CHANGED_NOTICE : null };
 });
 
 export const createStaffAction = defineAction({ schema: CreateStaffInput, permission: "iam.person.write", scope: "any" }, async (tx, input, ctx) => {

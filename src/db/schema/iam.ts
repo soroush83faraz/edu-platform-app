@@ -235,6 +235,14 @@ export const guardianLink = iam.table(
     isPrimary: boolean("is_primary").notNull().default(false),
     status: text("status").notNull().default("active"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    /**
+     * Migration 0021 (security review 2026-10-19, D4a): the student's «ولی» phone (E.164 — a `contact_point` labelled
+     * 'ولی' of the child) this link was made FROM — always for the class bulk, for «افزودن ولی» when the typed number
+     * was one of the child's «ولی» phones; NULL for a guardian added with another number, and once an admin kept the
+     * link after that phone changed («حفظ اتصال»). A live link whose value is no longer among the child's «ولی» phones
+     * is flagged for review on the «اولیا» card («شمارهٴ ولی با این اتصال نمی‌خواند») — never unlinked by itself.
+     */
+    studentGuardianPhone: text("student_guardian_phone"),
     ...timestamps(),
   },
   (t) => [

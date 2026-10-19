@@ -1049,17 +1049,32 @@ export async function updatePerson(tx: Tx, ctx: IamCtx, personId: string, input:
   await audit(ctx, "iam.person.updated", { schema: "iam", table: "person", id: personId }, before, input, tx);
 }
 
-/** Replaces the guardian / own mobile contact points of a person (label 'ولی' = guardian). */
-export async function setPersonPhones(tx: Tx, ctx: IamCtx, personId: string, input: { contactPhone?: string | null; guardianPhone?: string | null }): Promise<void> {
+/**
+ * Replaces the guardian / own mobile contact points of a person (label 'ولی' = guardian). `guardianPhoneChanged`: the
+ * «ولی» phone(s) are now different from before (changed or removed) — the «اولیا» review of the links made from the
+ * old number (src/modules/iam/guardian.ts `countGuardianLinksToReview`, security review 2026-10-19 D4a).
+ */
+export async function setPersonPhones(
+  tx: Tx,
+  ctx: IamCtx,
+  personId: string,
+  input: { contactPhone?: string | null; guardianPhone?: string | null },
+): Promise<{ guardianPhoneChanged: boolean }> {
   const contactPhone = input.contactPhone === undefined ? undefined : cleanPhone(input.contactPhone, "contactPhone");
   const guardianPhone = input.guardianPhone === undefined ? undefined : cleanPhone(input.guardianPhone, "guardianPhone");
   if (contactPhone !== undefined) {
     await tx.delete(contactPoint).where(and(eq(contactPoint.personId, personId), eq(contactPoint.kind, "mobile"), isNull(contactPoint.label)));
     if (contactPhone) await tx.insert(contactPoint).values({ organizationId: ctx.orgId, personId, kind: "mobile", value: contactPhone, isPrimary: true });
   }
+  let guardianPhoneChanged = false;
   if (guardianPhone !== undefined) {
-    await tx.delete(contactPoint).where(and(eq(contactPoint.personId, personId), eq(contactPoint.kind, "mobile"), eq(contactPoint.label, "ولی")));
+    const guardianOf = and(eq(contactPoint.personId, personId), eq(contactPoint.kind, "mobile"), eq(contactPoint.label, "ولی"));
+    const before = (await tx.select({ value: contactPoint.value }).from(contactPoint).where(guardianOf)).map((r) => r.value);
+    const after = guardianPhone ? [guardianPhone] : [];
+    guardianPhoneChanged = before.length !== after.length || before.some((v) => !after.includes(v));
+    await tx.delete(contactPoint).where(guardianOf);
     if (guardianPhone) await tx.insert(contactPoint).values({ organizationId: ctx.orgId, personId, kind: "mobile", value: guardianPhone, label: "ولی" });
   }
-  await audit(ctx, "iam.person.phones_updated", { schema: "iam", table: "person", id: personId }, null, { hasContactPhone: !!contactPhone, hasGuardianPhone: !!guardianPhone }, tx);
+  await audit(ctx, "iam.person.phones_updated", { schema: "iam", table: "person", id: personId }, null, { hasContactPhone: !!contactPhone, hasGuardianPhone: !!guardianPhone, guardianPhoneChanged }, tx);
+  return { guardianPhoneChanged };
 }

@@ -356,15 +356,34 @@ async function isGuardianKnown(tx: Tx, scope: AdminScope, personId: string): Pro
   return res.rows[0]?.known === true;
 }
 
+/** The child's «ولی» phones (contact points labelled 'ولی' — the student form's field; E.164 as `cleanPhone` wrote them). */
+async function studentGuardianPhones(tx: Tx, studentPersonId: string): Promise<string[]> {
+  const rows = await tx
+    .select({ value: contactPoint.value })
+    .from(contactPoint)
+    .where(and(eq(contactPoint.personId, studentPersonId), eq(contactPoint.kind, "mobile"), eq(contactPoint.label, "ولی")));
+  return rows.map((r) => r.value);
+}
+
 /**
  * Links a guardian person to a live student (both already locked): never yourself, never the student; the guardian
  * must be an active person. An existing live link keeps its row (a changed relation is updated, audited); a new one
  * is primary when the student has no live primary guardian yet, and carries its derived `guardian_full` assignment.
- * A guardian-only person whose access had closed is opened again (`reopenGuardianAccess`) — for a caller who may act
- * as them (`scope`). Whether the caller's schools already know the guardian is read under the guardian's lock (the
- * new link, of a student in scope, changes nothing about it).
+ * `fromStudentPhone` is the child's «ولی» phone the link is made from (D4a: `guardian_link.student_guardian_phone`) or
+ * null for another number; adding an already-linked guardian again re-states it (so re-adding them with their own
+ * number after the «ولی» phone changed also keeps the link). A guardian-only person whose access had closed is opened
+ * again (`reopenGuardianAccess`) — for a caller who may act as them (`scope`). Whether the caller's schools already
+ * know the guardian is read under the guardian's lock (the new link, of a student in scope, changes nothing about it).
  */
-async function linkGuardian(tx: Tx, ctx: IamCtx, scope: AdminScope, student: StudentFacts, guardianPersonId: string, relation: GuardianRelation): Promise<LinkOutcome> {
+async function linkGuardian(
+  tx: Tx,
+  ctx: IamCtx,
+  scope: AdminScope,
+  student: StudentFacts,
+  guardianPersonId: string,
+  relation: GuardianRelation,
+  fromStudentPhone: string | null,
+): Promise<LinkOutcome> {
   if (guardianPersonId === ctx.personId) throw forbidden(GUARDIAN_MESSAGES.self);
   if (guardianPersonId === student.personId) throw fieldError("phone", GUARDIAN_MESSAGES.sameAsStudent);
   await lockPersons(tx, [guardianPersonId]);
@@ -374,14 +393,21 @@ async function linkGuardian(tx: Tx, ctx: IamCtx, scope: AdminScope, student: Stu
   const known = await isGuardianKnown(tx, scope, guardianPersonId);
 
   const [live] = await tx
-    .select({ id: guardianLink.id, relation: guardianLink.relation })
+    .select({ id: guardianLink.id, relation: guardianLink.relation, studentGuardianPhone: guardianLink.studentGuardianPhone })
     .from(guardianLink)
     .where(and(eq(guardianLink.guardianPersonId, guardianPersonId), eq(guardianLink.studentProfileId, student.studentProfileId), eq(guardianLink.status, "active")))
     .limit(1);
   if (live) {
-    if (live.relation !== relation) {
-      await tx.update(guardianLink).set({ relation }).where(eq(guardianLink.id, live.id));
-      await audit(ctx, "iam.guardian_link.updated", { schema: "iam", table: "guardian_link", id: live.id }, { relation: live.relation }, { relation }, tx);
+    if (live.relation !== relation || live.studentGuardianPhone !== fromStudentPhone) {
+      await tx.update(guardianLink).set({ relation, studentGuardianPhone: fromStudentPhone }).where(eq(guardianLink.id, live.id));
+      await audit(
+        ctx,
+        "iam.guardian_link.updated",
+        { schema: "iam", table: "guardian_link", id: live.id },
+        { relation: live.relation, fromStudentPhone: live.studentGuardianPhone !== null },
+        { relation, fromStudentPhone: fromStudentPhone !== null },
+        tx,
+      );
     }
     return { linkId: live.id, alreadyLinked: true, reopened: await reopenGuardianAccess(tx, ctx, scope, student, guardianPersonId, known), known };
   }
@@ -393,7 +419,7 @@ async function linkGuardian(tx: Tx, ctx: IamCtx, scope: AdminScope, student: Stu
     .limit(1);
   const [link] = await tx
     .insert(guardianLink)
-    .values({ organizationId: ctx.orgId, guardianPersonId, studentProfileId: student.studentProfileId, relation, isPrimary: !primary, status: "active" })
+    .values({ organizationId: ctx.orgId, guardianPersonId, studentProfileId: student.studentProfileId, relation, isPrimary: !primary, status: "active", studentGuardianPhone: fromStudentPhone })
     .returning({ id: guardianLink.id, isPrimary: guardianLink.isPrimary });
   const tpl = await findSystemRole(tx, GUARDIAN_ROLE_CODE);
   const [ra] = await tx
@@ -414,7 +440,7 @@ async function linkGuardian(tx: Tx, ctx: IamCtx, scope: AdminScope, student: Stu
     "iam.guardian_link.created",
     { schema: "iam", table: "guardian_link", id: link.id },
     null,
-    { guardianPersonId, studentProfileId: student.studentProfileId, relation, isPrimary: link.isPrimary, roleAssignmentId: ra.id },
+    { guardianPersonId, studentProfileId: student.studentProfileId, relation, isPrimary: link.isPrimary, roleAssignmentId: ra.id, fromStudentPhone: fromStudentPhone !== null },
     tx,
   );
   return { linkId: link.id, alreadyLinked: false, reopened: await reopenGuardianAccess(tx, ctx, scope, student, guardianPersonId, known), known };
@@ -623,7 +649,9 @@ export async function addGuardian(tx: Tx, ctx: IamCtx, input: AddGuardianInput):
   const student = await requireLiveStudent(tx, scope, input.studentProfileId);
 
   const ensured = await ensureGuardianPerson(tx, ctx, { phone, names, child: student });
-  const outcome = await linkGuardian(tx, ctx, scope, student, ensured.personId, input.relation);
+  // D4a: the link remembers whether it was made from the child's «ولی» number (the form's suggestion) or another one.
+  const fromStudentPhone = (await studentGuardianPhones(tx, student.personId)).includes(phone) ? phone : null;
+  const outcome = await linkGuardian(tx, ctx, scope, student, ensured.personId, input.relation, fromStudentPhone);
 
   // D2b: the typed name replaces the stored one only for a guardian the caller's schools already know (every link,
   // live or ended, theirs) — never the name another school stored, not even through a reopened account.
@@ -739,6 +767,57 @@ export interface GuardianRow {
   known: boolean;
   /** A guardian-only account all of whose live children are in the caller's scope — «تعیین رمز موقت» is the caller's. */
   manageable: boolean;
+  /**
+   * D4a: the link was made from a «ولی» phone of this student that is no longer one of them (changed or removed on the
+   * student form) — the card asks for a review («قطع اتصال» / «حفظ اتصال»); nothing was unlinked by itself.
+   */
+  phoneMismatch: boolean;
+}
+
+/** SQL «the link aliased `linkAlias` was made from a «ولی» phone of its child that is no longer one of them» (D4a). */
+function phoneMismatchSql(linkAlias: string, studentPersonColumn: string): SQL {
+  const l = columnRef(linkAlias);
+  const sp = columnRef(studentPersonColumn);
+  return sql`(${l}.student_guardian_phone is not null and not exists (
+    select 1 from iam.contact_point mcp
+    where mcp.person_id = ${sp} and mcp.kind = 'mobile' and mcp.label = 'ولی' and mcp.value = ${l}.student_guardian_phone))`;
+}
+
+/**
+ * D4a: how many live links of this student were made from a «ولی» phone they no longer have — what the student form's
+ * answer warns about right after the phone changed (`adminUpdatePerson`). Callers have checked the student's scope.
+ */
+export async function countGuardianLinksToReview(tx: Tx, studentPersonId: string): Promise<number> {
+  const res = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n
+    from iam.guardian_link gl
+    join iam.student_profile sp on sp.id = gl.student_profile_id
+    where sp.person_id = ${studentPersonId}::uuid and gl.status = 'active' and ${phoneMismatchSql("gl", "sp.person_id")}`);
+  return Number(res.rows[0]?.n ?? 0);
+}
+
+/**
+ * «حفظ اتصال» on a link the card flagged (D4a): an admin who reviewed it keeps it — the link no longer counts as made
+ * from the child's «ولی» phone (`student_guardian_phone` NULL), so the flag goes. Same gate as «حذف از اولیا»
+ * (`iam.person.write`, the student in scope — NOT_FOUND; the student row locked FOR NO KEY UPDATE like every link
+ * edit). Idempotent: an unflagged or ended link is left alone (`kept: false`, nothing written).
+ */
+export async function keepGuardianLink(tx: Tx, ctx: IamCtx, input: { linkId: string }): Promise<{ kept: boolean }> {
+  const scope = await getPermissionScope(tx, ctx, "iam.person.write");
+  const [link] = await tx.select({ id: guardianLink.id, studentProfileId: guardianLink.studentProfileId }).from(guardianLink).where(eq(guardianLink.id, input.linkId)).limit(1);
+  if (!link) throw notFound();
+  const facts = await studentFacts(tx, link.studentProfileId);
+  if (!facts) throw notFound();
+  await lockPersons(tx, [facts.personId]);
+  await requirePersonInScope(tx, scope, facts.personId);
+  const kept = await tx.execute<{ id: string }>(sql`
+    update iam.guardian_link gl set student_guardian_phone = null
+    from iam.student_profile sp
+    where gl.id = ${link.id}::uuid and sp.id = gl.student_profile_id and gl.status = 'active' and ${phoneMismatchSql("gl", "sp.person_id")}
+    returning gl.id`);
+  if (kept.rows.length === 0) return { kept: false };
+  await audit(ctx, "iam.guardian_link.kept", { schema: "iam", table: "guardian_link", id: link.id }, { fromStudentPhone: true }, { fromStudentPhone: false }, tx);
+  return { kept: true };
 }
 
 /**
@@ -767,8 +846,10 @@ export async function listGuardiansOfStudent(tx: Tx, ctx: IamCtx, studentPersonI
     account_status: string | null;
     membership_status: string | null;
     must_change_password: boolean | null;
+    phone_mismatch: boolean;
   }>(sql`
     select gl.id as link_id, gl.guardian_person_id, k.known, k.guardian_only, k.reach,
+      ${phoneMismatchSql("gl", "sp.person_id")} as phone_mismatch,
       case when k.known then p.first_name end as first_name,
       case when k.known then p.last_name end as last_name,
       gl.relation, gl.is_primary,
@@ -806,6 +887,7 @@ export async function listGuardiansOfStudent(tx: Tx, ctx: IamCtx, studentPersonI
     isStaff: r.known && !r.guardian_only,
     known: r.known,
     manageable: r.guardian_only && r.reach && r.login_identifier !== null,
+    phoneMismatch: r.phone_mismatch,
   }));
 }
 
@@ -911,7 +993,8 @@ export async function bulkCreateClassGuardians(tx: Tx, ctx: IamCtx, input: { cla
       result.skippedSelf++;
       continue;
     }
-    const outcome = await linkGuardian(tx, ctx, scope, student, ensured.personId, BULK_RELATION);
+    // The bulk's phone IS the child's «ولی» phone (normalized as stored): the link is made from it (D4a).
+    const outcome = await linkGuardian(tx, ctx, scope, student, ensured.personId, BULK_RELATION, w.phone);
     if (ensured.account) {
       result.createdAccounts++;
       if (ensured.kind === "new_username") result.usernameAccounts++;

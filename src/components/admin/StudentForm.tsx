@@ -95,6 +95,8 @@ export function StudentForm({ classes, schools, detail }: Props) {
         });
         if (r.ok) {
           toast.success("تغییرات ذخیره شد.");
+          // D4a: the «ولی» phone changed while links made from the old number are live — the «اولیا» card flags them.
+          if (r.data.guardianNotice) toast.warning(r.data.guardianNotice);
           router.refresh();
           setErrors({});
         } else setErrors(flatten(r.fieldErrors, r.message, rendered));

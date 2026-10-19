@@ -31,9 +31,9 @@ import { assignTeacher } from "@/modules/academic/service";
 import { getStudentFile } from "@/modules/counseling/service";
 import { adminResetInitialPassword, adminUnlockAccount, adminUpdatePerson } from "@/modules/iam/admin";
 import { type Assignment, can, canAtAnyScope } from "@/modules/iam/can";
-import { GUARDIAN_MESSAGES, addGuardian, bulkCreateClassGuardians, listClassGuardianCredentials, listGuardiansOfStudent, resetGuardianPassword, unlinkGuardian } from "@/modules/iam/guardian";
+import { GUARDIAN_MESSAGES, addGuardian, bulkCreateClassGuardians, keepGuardianLink, listClassGuardianCredentials, listGuardiansOfStudent, resetGuardianPassword, unlinkGuardian } from "@/modules/iam/guardian";
 import { notifyGuardiansOfReportCard } from "@/modules/iam/guardian-notify";
-import { GUARDIAN_ACCOUNT_NOTES } from "@/modules/iam/guardian-policy";
+import { GUARDIAN_ACCOUNT_NOTES, GUARDIAN_PHONE_CHANGED_NOTICE, GUARDIAN_PHONE_MISMATCH_TAG } from "@/modules/iam/guardian-policy";
 import { listChildWorkItems, listMyChildren, requireChild } from "@/modules/iam/guardian-views";
 import { getHats } from "@/modules/iam/hats";
 import { PERMISSIONS } from "@/modules/iam/permissions";
@@ -613,6 +613,66 @@ describe("«اولیا» — guardians", () => {
       const slip = (await listClassGuardianCredentials(tx, w.principalA, f.CLASS_GROUP_A1)).rows.find((r) => r.guardianPersonId === g.guardianPersonId);
       expect(slip).toMatchObject({ known: false, loginIdentifier: "s1-v-g-3", firstName: "ولیِ نگار", lastName: "رضایی" });
       expect(slip?.initialPasswordEnc).not.toBeNull();
+    });
+  });
+
+  it("security review D4a: changing or removing a student's «ولی» phone flags the links made from the old number — never unlinks them; «حفظ اتصال» and «قطع اتصال» settle each", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const flags = async (s: Student) => (await listGuardiansOfStudent(tx, w.principalA, s.personId)).map((r) => [r.guardianPersonId, r.phoneMismatch] as const);
+      // لیلا and سارا: the bulk links phone 11's guardian to both (made FROM their «ولی» phone); لیلا's father is added
+      // on the card with his own number (18) — a legitimately different number.
+      await bulkCreateClassGuardians(tx, w.principalA, { classGroupId: f.CLASS_GROUP_A1 });
+      await bulkCreateClassGuardians(tx, w.principalA, { classGroupId: f.CLASS_GROUP_A2 });
+      const g11 = (await listGuardiansOfStudent(tx, w.principalA, w.s1.personId))[0].guardianPersonId;
+      const g18 = (await add(tx, w.principalA, w.s1, 18, "father", { firstName: "رضا", lastName: "نیک‌خواه" })).guardianPersonId;
+      expect(await flags(w.s1)).toEqual([
+        [g11, false],
+        [g18, false],
+      ]);
+
+      // The school corrects لیلا's «ولی» phone (11 was mistyped): the answer warns, the card flags phone 11's link —
+      // and only it (18 was never the «ولی» phone) — and nothing is unlinked.
+      expect(await adminUpdatePerson(tx, w.principalA, w.s1.personId, { guardianPhone: phone(19) })).toEqual({ guardianLinksToReview: 1 });
+      expect(await flags(w.s1)).toEqual([
+        [g11, true],
+        [g18, false],
+      ]);
+      expect(GUARDIAN_PHONE_CHANGED_NOTICE).toBe("شمارهٴ ولی تغییر کرد؛ اتصال‌های قبلی هنوز برقرارند — بازبینی کنید.");
+      expect(GUARDIAN_PHONE_MISMATCH_TAG).toBe("شمارهٴ ولی با این اتصال نمی‌خواند");
+      // Saving the form again without touching the phone says nothing new (the card still flags it).
+      expect(await adminUpdatePerson(tx, w.principalA, w.s1.personId, { firstName: "لیلا", guardianPhone: phone(19) })).toEqual({ guardianLinksToReview: 0 });
+      expect((await flags(w.s1))[0]).toEqual([g11, true]);
+
+      // «حفظ اتصال»: reviewed — phone 11 IS the father of both children; the flag goes (a second tap writes nothing).
+      const link11 = (await listGuardiansOfStudent(tx, w.principalA, w.s1.personId))[0].linkId;
+      expect(await keepGuardianLink(tx, w.principalA, { linkId: link11 })).toEqual({ kept: true });
+      expect(await keepGuardianLink(tx, w.principalA, { linkId: link11 })).toEqual({ kept: false });
+      expect(await flags(w.s1)).toEqual([
+        [g11, false],
+        [g18, false],
+      ]);
+      // The same school only: school B's student's link is NOT_FOUND for principal A; a teacher may not.
+      const bLink = await add(tx, w.admin, w.sB, 16);
+      await expect(sub(tx, (sp) => keepGuardianLink(sp, w.principalA, { linkId: bLink.linkId }))).rejects.toSatisfy(isError("NOT_FOUND"));
+      await expect(sub(tx, (sp) => keepGuardianLink(sp, w.teacher, { linkId: link11 }))).rejects.toSatisfy(isError("FORBIDDEN"));
+
+      // سارا's «ولی» phone is removed: phone 11's link to her is flagged; «قطع اتصال» ends it — her other link (لیلا)
+      // keeps phone 11's guardian open.
+      expect(await adminUpdatePerson(tx, w.principalA, w.s2.personId, { guardianPhone: null })).toEqual({ guardianLinksToReview: 1 });
+      const [s2Link] = await listGuardiansOfStudent(tx, w.principalA, w.s2.personId);
+      expect(s2Link).toMatchObject({ guardianPersonId: g11, phoneMismatch: true });
+      expect(await unlinkGuardian(tx, w.principalA, { linkId: s2Link.linkId })).toEqual({ alreadyEnded: false, accessClosed: false });
+      expect(await listGuardiansOfStudent(tx, w.principalA, w.s2.personId)).toEqual([]);
+
+      // Adding a guardian with the child's CURRENT «ولی» number makes the link track it; changing it back clears the flag.
+      const g19 = await add(tx, w.principalA, w.s1, 19, "mother", { firstName: "زهره", lastName: "نیک‌خواه" });
+      const [row19] = await tx.select({ phone: guardianLink.studentGuardianPhone }).from(guardianLink).where(eq(guardianLink.id, g19.linkId));
+      expect(row19.phone).toBe(e164(19));
+      await adminUpdatePerson(tx, w.principalA, w.s1.personId, { guardianPhone: phone(20) });
+      expect((await flags(w.s1)).find(([id]) => id === g19.guardianPersonId)).toEqual([g19.guardianPersonId, true]);
+      await adminUpdatePerson(tx, w.principalA, w.s1.personId, { guardianPhone: phone(19) });
+      expect((await flags(w.s1)).every(([, flagged]) => !flagged)).toBe(true);
     });
   });
 

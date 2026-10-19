@@ -52,6 +52,15 @@ export const GUARDIAN_ACCOUNT_NOTES: Record<GuardianAccountKind, string> = {
   linked: "شمارهٴ ثبت‌شده؛ اتصال انجام شد.",
 };
 
+/**
+ * Security review 2026-10-19, D4a: a child's «ولی» phone changed (or went) while links made FROM the old number are
+ * still live — a mistyped number keeps a stranger's read access to a minor until someone looks. Nothing is unlinked by
+ * itself (a sibling's parent may rightly have another number): the student form's answer and the «اولیا» card say
+ * this, and each such link carries `GUARDIAN_PHONE_MISMATCH_TAG` with one-tap «قطع اتصال» / «حفظ اتصال».
+ */
+export const GUARDIAN_PHONE_CHANGED_NOTICE = "شمارهٴ ولی تغییر کرد؛ اتصال‌های قبلی هنوز برقرارند — بازبینی کنید.";
+export const GUARDIAN_PHONE_MISMATCH_TAG = "شمارهٴ ولی با این اتصال نمی‌خواند";
+
 /** What the bulk «ساخت حساب اولیا» writes for a guardian whose relation nobody told the school. */
 export const BULK_RELATION: GuardianRelation = "guardian";
 

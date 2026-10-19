@@ -1,16 +1,16 @@
 "use client";
 
-import { KeyRound, Plus, UserMinus, UsersRound } from "lucide-react";
+import { Check, KeyRound, Plus, Unlink, UserMinus, UsersRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Chip } from "@/components/Chip";
 import { RowMark } from "@/components/RowMark";
 import { Button } from "@/components/ui/button";
-import { addGuardianAction, resetGuardianPasswordAction, unlinkGuardianAction } from "@/lib/admin/guardian-actions";
+import { addGuardianAction, keepGuardianLinkAction, resetGuardianPasswordAction, unlinkGuardianAction } from "@/lib/admin/guardian-actions";
 import { formatLoginIdentifierFa, formatPhoneFa } from "@/lib/format";
 import type { GuardianRow } from "@/modules/iam/guardian";
-import { GUARDIAN_ACCOUNT_NOTES, GUARDIAN_RELATIONS, RELATION_LABELS, relationLabel } from "@/modules/iam/guardian-policy";
+import { GUARDIAN_ACCOUNT_NOTES, GUARDIAN_PHONE_CHANGED_NOTICE, GUARDIAN_PHONE_MISMATCH_TAG, GUARDIAN_RELATIONS, RELATION_LABELS, relationLabel } from "@/modules/iam/guardian-policy";
 import { CredentialsDialog, type Credentials } from "./CredentialsDialog";
 import { Field, FieldError } from "./ResourceForm";
 import { ResponsiveModal } from "./ResponsiveModal";
@@ -37,7 +37,9 @@ function AccountChip({ row }: { row: GuardianRow }) {
  * a colleague's account or, when it is someone else's login, a generated username — and says which, except for a
  * person the caller's schools do not know: then only «شمارهٴ ثبت‌شده؛ اتصال انجام شد.», and the row reads «ولیِ
  * <student>» with no login — D3, the server masks it), «حذف از اولیا» (confirmed) and, for a guardian-only account
- * all of whose children the caller manages, «تعیین رمز موقت».
+ * all of whose children the caller manages, «تعیین رمز موقت». A link made from a «ولی» phone the student no longer has
+ * (D4a — changed or removed on the student form) is flagged: one notice above the list, the tag on the row, and two
+ * one-tap answers in place of «حذف از اولیا»: «قطع اتصال» (ends it) and «حفظ اتصال» (reviewed, kept).
  * Writes need `iam.person.write` (`canWrite`); the password `iam.account.reset_password` (`canReset`). The server
  * re-checks everything; a password is shown ONCE (`CredentialsDialog`).
  */
@@ -74,6 +76,15 @@ export function GuardiansCard({
         router.refresh();
       } else toast.error(r.message);
     });
+  const keep = (row: GuardianRow) =>
+    start(async () => {
+      const r = await keepGuardianLinkAction({ linkId: row.linkId });
+      if (r.ok) {
+        toast.success("اتصال حفظ شد.");
+        router.refresh();
+      } else toast.error(r.message);
+    });
+  const toReview = rows.some((r) => r.phoneMismatch);
   const reset = (row: GuardianRow) =>
     start(async () => {
       const r = await resetGuardianPasswordAction({ linkId: row.linkId });
@@ -97,6 +108,11 @@ export function GuardiansCard({
           </Button>
         ) : null}
       </div>
+      {toReview ? (
+        <p role="status" className="surface-panel px-3 py-2 text-sm text-warning-text">
+          {GUARDIAN_PHONE_CHANGED_NOTICE}
+        </p>
+      ) : null}
       {rows.length === 0 ? (
         <p className="text-sm text-text-muted">هنوز ولی‌ای برای این دانش‌آموز ثبت نشده است؛ ولی با شمارهٴ موبایل خودش وارد می‌شود و تکالیف، حضور و غیاب و کارنامهٴ فرزندش را می‌بیند.</p>
       ) : (
@@ -112,6 +128,7 @@ export function GuardiansCard({
                     </bdi>
                     <Chip tone="neutral">{relationLabel(row.relation)}</Chip>
                     {row.isPrimary ? <Chip tone="primary">ولی اصلی</Chip> : null}
+                    {row.phoneMismatch ? <Chip tone="warning">{GUARDIAN_PHONE_MISMATCH_TAG}</Chip> : null}
                   </p>
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta text-text-muted">
                     {row.phone ? (
@@ -138,7 +155,18 @@ export function GuardiansCard({
                     تعیین رمز موقت
                   </Button>
                 ) : null}
-                {canWrite ? (
+                {canWrite && row.phoneMismatch ? (
+                  <>
+                    <Button type="button" variant="ghost" size="sm" className="gap-1.5 text-danger" onClick={() => unlink(row)} disabled={pending}>
+                      <Unlink className="size-4" aria-hidden />
+                      قطع اتصال
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="gap-1.5" onClick={() => keep(row)} disabled={pending}>
+                      <Check className="size-4" aria-hidden />
+                      حفظ اتصال
+                    </Button>
+                  </>
+                ) : canWrite ? (
                   <Button type="button" variant="ghost" size="sm" className="gap-1.5 text-danger" onClick={() => setRemoving(row)} disabled={pending}>
                     <UserMinus className="size-4" aria-hidden />
                     حذف از اولیا

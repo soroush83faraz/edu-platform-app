@@ -10,7 +10,7 @@ import { enrollStudent, moveEnrollment } from "@/modules/academic/service";
 import { classEnrollment } from "@/modules/academic/schema";
 import { findClassGroup } from "@/modules/tenancy/repo";
 import type { Assignment } from "./can";
-import { requireCredentialReach } from "./guardian";
+import { countGuardianLinksToReview, requireCredentialReach } from "./guardian";
 import { organizationMembership, studentProfile } from "./schema";
 import {
   assertSchoolInScope,
@@ -77,7 +77,17 @@ export async function adminCreateStaff(tx: Tx, ctx: AdminCtx, input: CreateStaff
   return createStaff(tx, ctx, { ...input, schoolId });
 }
 
-export async function adminUpdatePerson(tx: Tx, ctx: AdminCtx, personId: string, input: UpdatePersonInput & { contactPhone?: string | null; guardianPhone?: string | null }): Promise<void> {
+/**
+ * Edits a person in scope. `guardianLinksToReview` (D4a, security review 2026-10-19): when this edit changed or
+ * removed the student's «ولی» phone, the live guardian links still made from the old number — they are NOT ended (a
+ * sibling's parent may rightly have another number); the form says so and the «اولیا» card flags each one.
+ */
+export async function adminUpdatePerson(
+  tx: Tx,
+  ctx: AdminCtx,
+  personId: string,
+  input: UpdatePersonInput & { contactPhone?: string | null; guardianPhone?: string | null },
+): Promise<{ guardianLinksToReview: number }> {
   const scope = await getAdminScope(tx, ctx);
   await requirePersonInScope(tx, scope, personId);
   // Re-anchoring staff: a school admin may only move them between their own schools, never detach them.
@@ -88,7 +98,9 @@ export async function adminUpdatePerson(tx: Tx, ctx: AdminCtx, personId: string,
   }
   const { contactPhone, guardianPhone, ...rest } = input;
   await updatePerson(tx, ctx, personId, rest);
-  if (contactPhone !== undefined || guardianPhone !== undefined) await setPersonPhones(tx, ctx, personId, { contactPhone, guardianPhone });
+  if (contactPhone === undefined && guardianPhone === undefined) return { guardianLinksToReview: 0 };
+  const phones = await setPersonPhones(tx, ctx, personId, { contactPhone, guardianPhone });
+  return { guardianLinksToReview: phones.guardianPhoneChanged ? await countGuardianLinksToReview(tx, personId) : 0 };
 }
 
 /**
