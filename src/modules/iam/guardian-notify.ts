@@ -18,7 +18,7 @@
 // children: ending a link (and so closing, or reopening, a guardian login) prunes the rest (`pruneGuardianNotifications`,
 // security review 2026-10-19 D2 — a reopened account would otherwise show the next school a former child's name).
 // A leaf module — notif + schema only — so academic and workspace can call it without an import cycle.
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import type { AssignmentLike } from "@/lib/work-item-words";
 import { notification } from "@/modules/notif/schema";
@@ -199,6 +199,10 @@ export async function notifyGuardianOfMessageAnswer(tx: Tx, ctx: GuardianNotifyC
  * guardian login later (possibly another school's manager, who receives its new password) ever reads a former child's
  * name in that bell. A row without a recorded child (none are written so any more) counts as stale. Deleted, not
  * expired: the rows are derived signals, and a dedupe key left behind would mute the event if the link comes back.
+ * Also deleted, whichever child: any WORK-ITEM notification (`source_kind` 'work_item' — a comment's above all) about a
+ * «پیام ولی» the person wrote. Its creator is no participant, so no such row is theirs to receive — none is written any
+ * more (`addComment` refuses the type, security review 2026-10-19 D3), and one written before would name the child and
+ * quote a comment to whoever holds the login next. A colleague's own work-item rows are never touched.
  * Called inside the transaction that ended the links / reopened the account (its audit row carries the count).
  */
 export async function pruneGuardianNotifications(tx: Tx, guardianPersonIds: readonly string[]): Promise<number> {
@@ -209,11 +213,22 @@ export async function pruneGuardianNotifications(tx: Tx, guardianPersonIds: read
     .where(
       and(
         inArray(notification.recipientPersonId, ids),
-        inArray(notification.typeCode, [...GUARDIAN_NOTIFICATION_TYPES]),
-        sql`not exists (
-          select 1 from iam.guardian_link pgl
-          where pgl.guardian_person_id = ${notification.recipientPersonId} and pgl.status = 'active'
-            and pgl.student_profile_id::text = ${notification.payload} ->> 'studentProfileId')`,
+        or(
+          and(
+            inArray(notification.typeCode, [...GUARDIAN_NOTIFICATION_TYPES]),
+            sql`not exists (
+              select 1 from iam.guardian_link pgl
+              where pgl.guardian_person_id = ${notification.recipientPersonId} and pgl.status = 'active'
+                and pgl.student_profile_id::text = ${notification.payload} ->> 'studentProfileId')`,
+          ),
+          and(
+            eq(notification.sourceKind, "work_item"),
+            sql`exists (
+              select 1 from workspace.work_item pwi
+              join workspace.work_item_type pt on pt.id = pwi.type_id and pt.code = 'parent_message'
+              where pwi.id = ${notification.sourceId} and pwi.created_by_person_id = ${notification.recipientPersonId})`,
+          ),
+        ),
       ),
     )
     .returning({ id: notification.id });

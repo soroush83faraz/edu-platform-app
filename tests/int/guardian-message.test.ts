@@ -22,7 +22,7 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { withTenant, type Tx } from "@/db/client";
 import * as schema from "@/db/schema";
-import { auditLog, guardianMessage, inboxEntry, notification, workItem, workItemAssignee, workItemWatcher } from "@/db/schema";
+import { auditLog, guardianLink, guardianMessage, inboxEntry, notification, workItem, workItemAssignee, workItemComment, workItemWatcher } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { assignTeacher } from "@/modules/academic/service";
 import { type Assignment } from "@/modules/iam/can";
@@ -35,7 +35,16 @@ import { listValidAssignments } from "@/modules/iam/repo";
 import { assignRole, createStaff, createStudent } from "@/modules/iam/service";
 import { createAcademicYear, createClassGroup, createClassOffering, createSchool, createSubject } from "@/modules/tenancy/service";
 import { listInbox } from "@/modules/workspace/repo";
-import { ANSWER_TEXT_MESSAGE, CONFIDENTIAL_NOTE_MESSAGE, canViewWorkItem, changeStatus, getWorkItemDetail } from "@/modules/workspace/service";
+import {
+  ANSWER_TEXT_MESSAGE,
+  COMMENT_REFUSED_MESSAGE,
+  CONFIDENTIAL_NOTE_MESSAGE,
+  addComment,
+  canViewWorkItem,
+  changeStatus,
+  createWorkItem,
+  getWorkItemDetail,
+} from "@/modules/workspace/service";
 import { runMigrations } from "../../scripts/migrate";
 import { seedCatalog } from "../../scripts/seed";
 import { OWNER_URL } from "./env";
@@ -521,6 +530,48 @@ describe("«ارتباط ولی و مدرسه» — guardian messages", () => {
       expect(await as(tx, w.principalA, (t) => changeStatus(t, w.principalA, { workItemId: m.workItemId, toStatusCode: "answered", note: "پاسخ" }))).toMatchObject({ itemChanged: true });
       expect(await tx.select({ id: notification.id }).from(notification).where(and(eq(notification.recipientPersonId, w.g1.personId), eq(notification.typeCode, "guardian.message_answered")))).toEqual([]);
       expect(await canViewWorkItem(tx, w.principalA, m.workItemId)).toMatchObject({ statusCategory: "done" });
+    });
+  });
+
+  it("security review D3 — no comment on a «پیام ولی»: `addComment` refuses it and nothing reaches the guardian; a work-item bell about their own message (written before the fix) is pruned when a link ends, a colleague's work-item bell never", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const m = await as(tx, w.g1, (t) => sendGuardianMessage(t, w.g1, toTeacher(w, w.s1, "math")));
+      const comment = (who: Actor, body: string) => sub(tx, (sp) => as(sp, who, (t) => addComment(t, who, { workItemId: m.workItemId, body })));
+      // The addressee holds `workspace.work_item.comment` (a teacher) and is refused; anyone else still gets NOT_FOUND first.
+      await expect(comment(w.teacherMath, "نظری دربارهٴ این پیام")).rejects.toSatisfy(isError("VALIDATION", COMMENT_REFUSED_MESSAGE));
+      for (const who of [w.teacherScience, w.principalA, w.g1]) await expect(comment(who, "نظر"), who.personId).rejects.toSatisfy(isError("NOT_FOUND"));
+      expect(await tx.select({ id: workItemComment.id }).from(workItemComment).where(eq(workItemComment.workItemId, m.workItemId))).toEqual([]);
+      expect(await tx.select({ id: notification.id }).from(notification).where(eq(notification.recipientPersonId, w.g1.personId))).toEqual([]);
+
+      // Rows a comment wrote before this fix: to the guardian about their message, and to its addressee. The teacher-parent
+      // (A2's teacher, s3's parent) has one about THEIR message and an ordinary «تسک» bell as a colleague.
+      const tp = await as(tx, w.teacherA2, (t) => sendGuardianMessage(t, w.teacherA2, toTeacher(w, w.s3, "math", { kind: "suggestion" })));
+      const task = await createWorkItem(tx, w.admin, { typeCode: "task", title: "تحویل برنامهٴ درسی", priority: "normal", recipients: { kind: "persons", ids: [w.teacherA2.personId] } });
+      const legacy = (recipientPersonId: string, workItemId: string) => ({
+        organizationId: f.ORG_A,
+        recipientPersonId,
+        typeCode: "work_item.comment",
+        title: "نظر جدید: پیام ولی",
+        body: "علی حسینی: متن نظر",
+        sourceKind: "work_item",
+        sourceId: workItemId,
+        deepLink: `/inbox/${workItemId}`,
+      });
+      await tx.insert(notification).values([legacy(w.g1.personId, m.workItemId), legacy(w.teacherMath.personId, m.workItemId), legacy(w.teacherA2.personId, tp.workItemId)]);
+      const bellOf = async (personId: string) =>
+        (await tx.select({ type: notification.typeCode, source: notification.sourceId }).from(notification).where(eq(notification.recipientPersonId, personId))).map((n) => `${n.type}:${n.source}`).sort();
+
+      // g1 keeps the sibling (s2): the link to s1 ends, the login stays — and the comment row about their message goes.
+      await unlinkGuardian(tx, w.admin, { linkId: w.g1LinkS1 });
+      expect(await bellOf(w.g1.personId)).toEqual([]);
+      expect(await bellOf(w.teacherMath.personId)).toContain(`work_item.comment:${m.workItemId}`);
+      const [linkS3] = await tx
+        .select({ id: guardianLink.id })
+        .from(guardianLink)
+        .where(and(eq(guardianLink.guardianPersonId, w.teacherA2.personId), eq(guardianLink.studentProfileId, w.s3.studentProfileId)));
+      await unlinkGuardian(tx, w.admin, { linkId: linkS3.id });
+      expect(await bellOf(w.teacherA2.personId)).toEqual([`work_item.assigned:${task.id}`]);
     });
   });
 });

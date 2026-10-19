@@ -54,3 +54,13 @@ export function creatorParticipates(typeCode: string): boolean {
 export function answerNeedsText(typeCode: string): boolean {
   return typeCode === "parent_message";
 }
+
+/**
+ * May an item of this type take a comment (`addComment`)? Not when its creator is no participant — a `parent_message`
+ * (security review 2026-10-19, D3): a comment's bell goes to the item's creator, so it would carry the comment's text
+ * to the guardian (whose bell outlives an ended link), and the closing answer is the one text a guardian may read.
+ * Every other type keeps its comments.
+ */
+export function acceptsComments(typeCode: string): boolean {
+  return creatorParticipates(typeCode);
+}

@@ -23,7 +23,7 @@ import { notifyConfidentialAnswer } from "@/modules/counseling/notify";
 import { notifyGuardianOfMessageAnswer } from "@/modules/iam/guardian-notify";
 import { notifyMany } from "@/modules/notif/service";
 import type { Recipients } from "./dto";
-import { answerNeedsText, closesOnFirstAnswer, creatorParticipates, managesItem } from "./manage-policy";
+import { acceptsComments, answerNeedsText, closesOnFirstAnswer, creatorParticipates, managesItem } from "./manage-policy";
 import { creationNotifiable, notifiable } from "./notify-policy";
 import {
   type AssigneeRow,
@@ -440,12 +440,13 @@ export interface AddCommentInput {
  *   unread flips per student comment, and one student's words are not shown to the whole class);
  * - a creator's / staff comment reaches everyone attached (creator, assignees, watchers);
  * - `staff_only` narrows either set to people with a staff profile.
- * The author is never a recipient.
+ * The author is never a recipient, nor is the creator of a type whose creator is no participant (`creatorParticipates`
+ * — a guardian's «پیام ولی», which `addComment` refuses anyway: security review 2026-10-19, D3).
  */
 async function commentRecipients(tx: Tx, item: WorkItemCore, authorId: string, opts: { staffOnly: boolean; assigneeOnMulti: boolean; assignees: AssigneeRow[] }): Promise<string[]> {
   // Sequential on purpose: one pg client per transaction, and pg@9 drops overlapping queries.
   const watchers = await listWatchers(tx, item.id);
-  const ids = new Set<string>([item.createdByPersonId, ...watchers.map((w) => w.personId)]);
+  const ids = new Set<string>([...(creatorParticipates(item.typeCode) ? [item.createdByPersonId] : []), ...watchers.map((w) => w.personId)]);
   if (!opts.assigneeOnMulti) for (const a of opts.assignees) ids.add(a.personId);
   ids.delete(authorId);
   if (ids.size === 0) return [];
@@ -454,9 +455,14 @@ async function commentRecipients(tx: Tx, item: WorkItemCore, authorId: string, o
   return staff.map((s) => s.personId);
 }
 
+/** `addComment` on an item whose creator is no participant (`acceptsComments` — a guardian's «پیام ولی», D3). */
+export const COMMENT_REFUSED_MESSAGE = "روی پیام ولی نظر ثبت نمی‌شود؛ پاسخ را با «ثبت پاسخ» بنویسید.";
+
 export async function addComment(tx: Tx, ctx: WorkspaceCtx, input: AddCommentInput): Promise<{ id: string; visibility: "all" | "staff_only" }> {
   const item = await canViewWorkItem(tx, ctx, input.workItemId);
   if (!canAtAnyScope(ctx.assignments, "workspace.work_item.comment")) throw forbidden();
+  // A «پیام ولی» takes no comment: its bell would carry the text to the guardian who wrote it (D3, `acceptsComments`).
+  if (!acceptsComments(item.typeCode)) throw validation({ fieldErrors: { body: [COMMENT_REFUSED_MESSAGE] } }, COMMENT_REFUSED_MESSAGE);
   const body = input.body.trim();
   if (body.length === 0) throw validation({ fieldErrors: { body: ["متن نظر را وارد کنید."] } });
   const staff = await isStaff(tx, ctx.personId);

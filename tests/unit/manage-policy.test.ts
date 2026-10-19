@@ -4,7 +4,7 @@
 // spam). Pure — the service paths are covered end to end in tests/int/workspace-service.test.ts.
 import { describe, expect, it } from "vitest";
 import type { Assignment } from "@/modules/iam/can";
-import { answerNeedsText, closesOnFirstAnswer, creatorParticipates, managesItem } from "@/modules/workspace/manage-policy";
+import { acceptsComments, answerNeedsText, closesOnFirstAnswer, creatorParticipates, managesItem } from "@/modules/workspace/manage-policy";
 
 const WORK = ["workspace.work_item.read", "workspace.work_item.create", "workspace.work_item.update", "workspace.work_item.comment"];
 const hat = (roleCode: string, scopeType: Assignment["scopeType"], permissions: string[] = WORK): Assignment => ({ roleCode, roleId: `r-${roleCode}`, scopeType, scopeId: `s-${scopeType}`, permissions });
@@ -62,5 +62,10 @@ describe("the type rules of «پیام ولی»", () => {
     for (const t of ["admin_request", "task", "todo"]) expect(answerNeedsText(t), t).toBe(false);
     expect(creatorParticipates("parent_message")).toBe(false);
     for (const t of ["admin_request", "task", "todo", "reminder", "approval"]) expect(creatorParticipates(t), t).toBe(true);
+  });
+
+  it("takes no comment (security review 2026-10-19, D3): a comment's bell would reach the guardian who wrote it — every other type keeps its comments", () => {
+    expect(acceptsComments("parent_message")).toBe(false);
+    for (const t of ["admin_request", "task", "todo", "reminder", "approval"]) expect(acceptsComments(t), t).toBe(true);
   });
 });

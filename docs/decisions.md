@@ -2312,3 +2312,19 @@ is fixed in its own commit.
   principal?; (c) the guardian never sees WHO answered — show the office holder's name?; (d) one exchange only — no
   reply to an answer (a conversation is a later channel); (e) also a daily cap?; (f) the organization admin is never a
   destination: a school with no principal answers «برای مدرسهٴ این فرزند مدیری ثبت نشده است».
+
+## 2026-10-19 — «ارتباط ولی و مدرسه»: review fixes
+
+An adversarial review of commits 862e07d, fee07b7 and 24502b4 found no authorization bypass but these defects; each is
+fixed in its own commit.
+
+- **D3 — a comment never carries text to the guardian who wrote a «پیام ولی».** `commentRecipients` always added the
+  item's creator and `addComment` took any item the caller could open, so an addressee's comment on a `parent_message`
+  would have reached the GUARDIAN's bell with an 80-character excerpt — and that row survived an ended link (the prune
+  only knew the `guardian.*` types). No UI adds comments today; the service is fixed for the channel that will. Now a
+  type whose creator is no participant takes no comment (`acceptsComments`, workspace/manage-policy — `parent_message`
+  only): `addComment` answers VALIDATION «روی پیام ولی نظر ثبت نمی‌شود؛ پاسخ را با «ثبت پاسخ» بنویسید.» (after the
+  visibility check — NOT_FOUND for anyone else — and the permission), and `commentRecipients` never adds such a creator.
+  `pruneGuardianNotifications` also deletes, whichever child, any work-item notification (`source_kind` 'work_item')
+  about a «پیام ولی» its recipient wrote — none is theirs to receive; a colleague's own work-item bell is untouched.
+  Tests: `tests/unit/manage-policy.test.ts`, `tests/int/guardian-message.test.ts` «security review D3».
