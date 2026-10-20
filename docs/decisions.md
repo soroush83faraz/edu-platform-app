@@ -2587,3 +2587,89 @@ f08e932, 7116591, e78e119, 41ab99b). Where its numbers differ from the entry abo
   (g) The sweeper deletes the bytes of ARCHIVED rows too (garbage by definition — the app deletes them itself right
   after the commit); only pending / attached rows protect bytes.
   (h) The demo unlock route's `no-referrer` (see D1) — exclude `/login/demo` from the app-wide header rule too, or keep.
+
+## 2026-10-20 — «زیرساخت فنی: صف، زمان‌بند و Feature Flag» + «تنظیمات سامانه» (owner; migration 0026)
+
+The owner asked to finish the half-built capabilities; his original architecture (edu-platform-architecture
+`01-system-overview.md`, `10-cross-domain-relationships.md`) already had an outbox in the same database and background
+workers. **Owner decision: a POSTGRES-ONLY job runner is allowed** — it is the one sanctioned mechanism for background
+work; Redis and BullMQ stay out of the stack (CLAUDE.md «NOT in Phase 1» amended accordingly).
+
+**Queue (`ops.job`, src/modules/ops, src/lib/jobs).**
+- A tenant table: every job carries `organization_id` and runs inside `withTenant` of that organization. Enqueued with
+  `enqueueJob(tx, ctx, kind, payload, { runAt, dedupeKey })` INSIDE the business transaction — outbox semantics, the
+  job commits or rolls back with the change. Payloads are ids and numbers only (each kind's zod schema is `.strict()`
+  and may hold uuid / datetime strings, numbers, booleans, enums; `kindProblems` refuses text fields; ≤ 2 KiB CHECK).
+  `dedupe_key` is unique per organization (an idempotent enqueue).
+- The ONE cross-organization operation is the claim: `app.claim_jobs(worker, kinds[], limits[], leases[])` (SECURITY
+  DEFINER, owner app_owner — the 0025 pattern), `FOR UPDATE SKIP LOCKED`, per-kind limits and leases; two permissive
+  policies `TO app_owner` on ops.job let it (and only the migration role) see every organization's due rows. It returns
+  ids, organizations, kinds and attempts — never a payload. `check-forbidden` refuses `claim_jobs(` outside the runner.
+- A run is ONE tenant transaction: the job row re-read `FOR UPDATE SKIP LOCKED` and fenced on `locked_by`, the payload
+  re-validated, the handler run, the row marked `done` in the SAME transaction (the handler's writes and the completion
+  commit together). After the commit an optional `afterCommit` step (deleting bytes). On failure a second transaction
+  marks `failed` with exponential backoff (30 s · 2^(n−1), ±20 % jitter, cap 1 h) or `dead` after `max_attempts` / a
+  `PermanentJobError`; `last_error` is one scrubbed line (class, SQLSTATE, message without e-mails, digit runs, quoted
+  values). Delivery is at least once; handlers are idempotent.
+- **No heartbeat, by design:** the lease is the kind's `timeoutMs` + 30 s, the runner aborts a run at its timeout
+  (cooperative AbortSignal + `SET LOCAL statement_timeout`) and a run past its timeout never commits; while it runs the
+  row is locked, so a claim past the lease SKIPs it rather than running it twice. A dead worker's connection drops, its
+  transaction rolls back, and the job is re-claimed when the lease expires (or dead-lettered if that was the last
+  attempt). A job that needs longer splits itself into follow-up jobs.
+- Per-kind concurrency (`concurrency` in the registry, per process) and a process cap (`WORKER_MAX_CONCURRENCY`, 2),
+  handed out from a rotating start so no kind starves. Graceful shutdown: SIGTERM stops claiming and waits
+  `WORKER_SHUTDOWN_GRACE_MS` (20 s; compose `stop_grace_period` 30 s).
+
+**System actor.** A handler gets a `SystemCtx` (src/modules/ops/system-ctx.ts): no person, no user, no assignments —
+it can never pass `can()` and is not a request `Ctx`. Authorization of system work is by construction: a job exists only
+because an authorized action enqueued it in its own transaction or a code-registered schedule fired; the handler runs
+in the job's tenant (RLS) and re-checks the domain rule it acts on. Audit rows of a run: `actor_person_id` /
+`actor_user_id` NULL, `request_id = job:<job id>`, `user_agent = system:worker` (no audit schema change). The only
+constructor is in src/lib/jobs/runner.ts, and ESLint blocks `@/lib/jobs/*` everywhere but src/lib/jobs, scripts/ and
+tests/ — request code cannot obtain the context, `withTenant` of another organization, or the claim.
+
+**Scheduler (`ops.schedule`, global).** Schedules are registered in code (`SCHEDULES`): name, five-field cron in
+Asia/Tehran wall-clock time (src/modules/ops/cron.ts — Intl tz data, no fixed-offset assumption), kind. Every worker
+ticks every 20 s; a tick takes the due rows `FOR UPDATE SKIP LOCKED` (one worker gets each), fans out one job per
+organization that is not suspended with the dedupe key `schedule:<name>:<tick>`, then moves `next_fire_at` on. A crash
+before the move re-fires the same tick, which the dedupe keys make a no-op; a missed tick fires once, not as a burst.
+Registered now: `files.sweep_orphans` hourly at :17, `files.expire_uploads` hourly at :47, `ops.prune_jobs` nightly at
+03:30 (done > 14 days, dead > 90 days).
+
+**Process.** A `worker` compose service from the SAME image: `node scripts/worker.mjs`, bundled at `pnpm build` by
+scripts/build-worker.ts (esbuild from tsx, like the seed bundles; pg and pino external), app_rw, `DB_POOL_MAX=4`, the
+files volume, `mem_limit: 256m`, a healthcheck on the mtime of a file the loop touches. `deploy.sh` starts it,
+`rollback.sh` restarts it on the previous image (or stops it when that image predates it), `watchdog.sh` alerts when it
+is not healthy or a job died in the last 24 h. Dev: `pnpm worker`. Runbook: docs/ops/runbook.md §۳-الف.
+
+**The two existing sweeps.** The orphan-bytes sweep moved OFF the upload route (it ran after a response, at most hourly
+per organization and process, as the uploader) onto the hourly `files.sweep_orphans` job — one owner per sweep, every
+organization covered whether it uploads or not, no sweep inside a web request. Stale `pending` uploads still expire on
+every upload (cheap, inside the upload's transaction) AND hourly in `files.expire_uploads` (as «سامانه»), so a school
+that stops uploading still gets them expired; `expireStaleUploads` moved to src/modules/files/expire.ts.
+`pnpm files:sweep` stays the operator's lever.
+
+**Feature flags and settings («تنظیمات»).** `config.feature_flag` gets `school_id` (composite FK; unique
+`(organization_id, school_id, key)` NULLS NOT DISTINCT — the table had never been written). Typed registries
+(src/modules/config/flags.ts, settings.ts) with Persian labels, defaults and `schoolOverridable`; precedence school >
+organization > default; a stored value that no longer validates is skipped. Readers: `flagEnabled(tx, key, schoolId?)`
+/ `settingOf(tx, key, schoolId?)` inside any transaction (rows read once per transaction), `isEnabled(key, schoolId?)`
+/ `getSetting(key, schoolId?)` for pages (once per request; on failure every key reads its default). The request
+variants take no `ctx` argument: the organization is always the session's. Writes: new permission
+`config.settings.manage` (every manager role): the organization level needs it at the ORGANIZATION, a school's override
+needs that school in scope and a school-overridable key; «پیروی» deletes the level's row (pure configuration, like
+`school_period`); every change audited in the same transaction. Page `/admin/settings` (level picker, one save per
+row) and a Home tile «تنظیمات» for admins.
+- Flags (all default OFF, `upcoming` — marked «به‌زودی»; turning one on before its feature ships changes nothing):
+  `messaging`, `grades_monthly`, `grade_appeals`, `leave_requests`, `class_register`, `deadline_reminders` — school-
+  overridable; `request_center` — organization only. The demo quick login stays on env (DEMO_LOGIN), not a flag.
+- Settings: `grades.appeal_window_days` 7 (owner), `grades.appeal_response_days` 2, `notif.quiet_hours` 22:00–07:00,
+  `reminders.deadline_lead_hours` 24, `requests.sla_hours.{admin_request 72, parent_message 48, leave_request 24}`.
+
+**Open (owner decisions):**
+  (a) The SLA, reminder, response and quiet-hour defaults above are proposals (only the 7-day appeal window is yours).
+  (b) `request_center` organization-only; every other flag school-overridable — and vice principals can change their
+      school's values (they hold every manager permission).
+  (c) Upcoming flags can be switched on now (no effect until the feature exists) — or should they be locked until built?
+  (d) cPanel/Passenger has no long-running process: there, the orphan sweep runs only by hand (`pnpm files:sweep`).
+  (e) Scheduled fan-out includes `trial` organizations and skips `suspended` ones.

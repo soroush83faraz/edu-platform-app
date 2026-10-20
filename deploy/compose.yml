@@ -92,6 +92,44 @@ services:
       seed:
         condition: service_completed_successfully
 
+  # Background jobs + recurring schedules (owner 2026-10-20; src/lib/jobs, docs/ops/runbook.md «کارهای پس‌زمینه»): the
+  # SAME image as `app`, its own process — scripts/worker.mjs, bundled by `pnpm build`. Connects as app_rw
+  # (DATABASE_URL, like the app; a small pool), mounts the files volume for the file sweeps. Stateless: stop / start /
+  # restart any time — a run in flight rolls back and its job is claimed again when its lease expires. The healthcheck
+  # reads the mtime of the file the loop touches every turn (the image's own HEALTHCHECK is the app's HTTP probe).
+  worker:
+    image: ${APP_IMAGE:?set APP_IMAGE in .env}
+    command: ["node", "--max-old-space-size=160", "scripts/worker.mjs"]
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+    env_file: .env
+    environment:
+      TZ: UTC
+      NODE_ENV: production
+      APP_VERSION: ${APP_VERSION:-${APP_IMAGE}}
+      FILES_DIR: /data/files
+      DB_POOL_MAX: "4"
+      WORKER_ALIVE_FILE: /tmp/edu-worker-alive
+    volumes:
+      - files:/data/files
+    mem_limit: 256m
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "-e", "const s=require('fs').statSync('/tmp/edu-worker-alive');process.exit(Date.now()-s.mtimeMs<90000?0:1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      seed:
+        condition: service_completed_successfully
+
   caddy:
     image: caddy:2
     restart: unless-stopped

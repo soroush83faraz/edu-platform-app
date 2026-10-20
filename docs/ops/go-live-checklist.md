@@ -58,6 +58,7 @@ where c.relkind = 'r'
 | ☐ | ■ هیچ هاست خارجی در باندل | لپ‌تاپ، روی ایمیجی که deploy شده: `docker run --rm --entrypoint sh edu-app:<sha> -c "grep -rhoE 'https?://[a-zA-Z0-9.-]+' .next/static \| sort -u"` | فقط `localhost`/`schemas`/`w3.org`/`reactjs.org`-گونه‌های داخل لایبرری؛ **هیچ** `googleapis`, `gstatic`, `cdn`, `unpkg`, `jsdelivr`, `fonts.` |
 | ☐ | ■ gitleaks تمیز | لپ‌تاپ: `gitleaks detect --source . --no-banner` (یا `git grep -nE 'app_rw_dev\|INITIAL_PASSWORD_KEY=[0-9a-f]{64}\|SESSION_SECRET=[A-Za-z0-9_-]{32,}' -- ':!*.example'`) | `no leaks found` / خالی |
 | ☐ | ■ health و smoke | `curl -s https://$H/api/health` · لپ‌تاپ: `BASE_URL=https://$H SMOKE_IDENTIFIER=<qa> SMOKE_PASSWORD=<pw> pnpm smoke:prod` | `ok:true, db:up, pendingMigrations:0, version:<sha امروز>`؛ ۷/۷ سبز |
+| ☐ | ■ `worker` سالم و بدون کار مرده | `docker compose ps worker` · `docker compose exec -T db psql -U app_backup -d app -tAc "select status, count(*) from ops.job group by 1"` · `docker compose exec -T db psql -U app_backup -d app -tAc "select name, next_fire_at from ops.schedule"` | `(healthy)`؛ هیچ `dead`؛ سه زمان‌بند با `next_fire_at` در آینده (runbook §۳-الف) |
 | ☐ | □ تگ قبلی برای rollback | `cat .last_tag && docker image inspect $(cat .last_tag) --format '{{.Id}}'` | تگ قبلی موجود و ایمیجش روی دیسک |
 | ☐ | □ `git tag phase1-freeze` روی همان sha | لپ‌تاپ: `git describe --tags --exact-match` و `curl -s https://$H/api/health \| grep -o '"version":"[^"]*"'` | sha ایمیج = sha تگ |
 

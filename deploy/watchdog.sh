@@ -7,6 +7,8 @@
 #   mem      MemAvailable < WATCHDOG_MEM_MIN_MB (300)
 #   backup   backups/LAST_OK missing or older than WATCHDOG_BACKUP_MAX_H (26) hours, or LAST_FAILURE present
 #   health   GET /api/health from inside the app container (app is not published on the host) not ok
+#   worker   the background worker container not running / not healthy, or jobs dead-lettered in the last 24 h
+#            (ops.job, read as app_backup — docs/ops/runbook.md «کارهای پس‌زمینه»)
 #
 # Alerting: every alert is appended to $APP_DIR/watchdog.log. Additionally, if ALERT_WEBHOOK is set → POST JSON;
 # if KAVENEGAR_API_KEY + ALERT_PHONE are set → SMS through Kavenegar's simple send API (GET). Notifications for a
@@ -122,8 +124,21 @@ check_health() {
   recovered health
 }
 
+# ---- background worker -------------------------------------------------------------------------------------------
+check_worker() {
+  local id status dead
+  id="$(compose ps -q worker 2>/dev/null)"
+  if [[ -z "$id" ]]; then alert worker "worker container not running"; return; fi
+  status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$id" 2>/dev/null)"
+  if [[ "$status" != "healthy" ]]; then alert worker "worker container is ${status:-unknown}"; return; fi
+  dead="$(compose exec -T db psql -U app_backup -d app -tAc     "select count(*) from ops.job where status = 'dead' and finished_at > now() - interval '24 hours'" 2>/dev/null | tr -d '[:space:]')"
+  if [[ "$dead" =~ ^[0-9]+$ ]] && (( dead > 0 )); then alert worker "${dead} background job(s) dead-lettered in the last 24 h"; return; fi
+  recovered worker
+}
+
 check_disk   || logline "disk check crashed"
 check_mem    || logline "mem check crashed"
 check_backup || logline "backup check crashed"
 check_health || logline "health check crashed"
+check_worker || logline "worker check crashed"
 exit 0

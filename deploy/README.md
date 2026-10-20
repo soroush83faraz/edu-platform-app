@@ -182,6 +182,58 @@ AGE_IDENTITY=key.txt  APP_DIR=. COMPOSE_FILE=docker-compose.dev.yml bash deploy/
 - **یک‌بار برای سرورِ موجود** (۱۴۰۵/۰۶/۳۱): `ship.ps1` فقط ایمیج را می‌فرستد؛ `compose.yml` (سرویس `seed`) و `deploy.sh` (گام سید) را پیش از استقرار بعدی دوباره کپی کنید: `scp deploy/compose.yml deploy/deploy.sh deploy@SERVER:/srv/school/`. بدون آن `deploy.sh` قدیمی سرویس `seed` را نمی‌شناسد و کاتالوگ همگام نمی‌شود.
 - اجرای دستی روی سرور (مثلاً بعد از بازیابی دیتابیس): `cd /srv/school && docker compose run --rm --no-deps seed`. همان کد را `pnpm seed` (TypeScript، `scripts/seed.ts --catalog`) روی ماشین توسعه اجرا می‌کند — یک پیاده‌سازی (`seedCatalogWith` در `scripts/catalog.ts`)، دو ورودی؛ `tests/int/seed.test.ts` باندل را می‌سازد، با `node` اجرا می‌کند و برابریِ خروجی و صفر بودن تفاوت جدول‌ها را می‌سنجد.
 
+## سرویس `worker` — کارهای پس‌زمینه (از ۲۰۲۶-۱۰-۲۰)
+
+صف و زمان‌بندِ فقط-Postgres (`ops.job`، `ops.schedule`؛ مهاجرت `0026`؛ `docs/decisions.md` «صف، زمان‌بند و Feature Flag»). **همان ایمیج** `app`، فرایندِ خودش: `pnpm build` (مرحلهٔ builder) با `scripts/build-worker.ts` فایل `scripts/worker.mjs` را می‌سازد (drizzle/zod درونش؛ `pg` و `pino` از node_modulesِ standalone) و `COPY /app/scripts` آن را در ایمیج می‌گذارد. به‌عنوان `app_rw` وصل می‌شود (همان `DATABASE_URL`)، با pool کوچک (`DB_POOL_MAX=4`)، و volume فایل‌ها را برای جاروی فایل‌ها mount می‌کند. healthcheck = mtime فایلی که حلقه هر دور لمس می‌کند (`/tmp/edu-worker-alive`، کمتر از ۹۰ ثانیه)؛ `HEALTHCHECK` خود ایمیج (HTTP اپ) را بازنویسی می‌کند. عملیات: `docs/ops/runbook.md` §۳-الف.
+
+تغییرِ `compose.yml` (در مخزن اعمال شده) — یک سرویس تازه بین `app` و `caddy`:
+
+```yaml
+  worker:
+    image: ${APP_IMAGE:?set APP_IMAGE in .env}
+    command: ["node", "--max-old-space-size=160", "scripts/worker.mjs"]
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+    env_file: .env
+    environment:
+      TZ: UTC
+      NODE_ENV: production
+      APP_VERSION: ${APP_VERSION:-${APP_IMAGE}}
+      FILES_DIR: /data/files
+      DB_POOL_MAX: "4"
+      WORKER_ALIVE_FILE: /tmp/edu-worker-alive
+    volumes:
+      - files:/data/files
+    mem_limit: 256m
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "-e", "const s=require('fs').statSync('/tmp/edu-worker-alive');process.exit(Date.now()-s.mtimeMs<90000?0:1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      seed:
+        condition: service_completed_successfully
+```
+
+و `deploy.sh` حالا `docker compose up -d app caddy worker` می‌زند، `rollback.sh` worker را هم با ایمیج قبلی بالا می‌آورد (یا اگر ایمیج قبلی worker ندارد متوقفش می‌کند)، `watchdog.sh` بررسیِ `worker` دارد (کانتینر نبود/ناسالم، یا کار مرده در ۲۴ ساعت اخیر).
+
+- **یک‌بار برای سرورِ موجود، پیش از اولین `ship.ps1` با این نسخه:** `ship.ps1` فقط ایمیج را می‌فرستد؛ چهار فایل را کپی کنید:
+  ```bash
+  scp deploy/compose.yml deploy/deploy.sh deploy/rollback.sh deploy/watchdog.sh deploy@SERVER:/srv/school/
+  ssh deploy@SERVER 'chmod +x /srv/school/*.sh'
+  ```
+  سپس `.\deploy\ship.ps1` مثل همیشه (مهاجرت `0026` با سرویس `migrate` اجرا می‌شود، مجوز تازهٔ `config.settings.manage` با `seed`). بررسی: `ssh deploy@SERVER 'cd /srv/school && docker compose ps worker && docker compose logs --tail=20 worker'` — باید `worker: started` و حداکثر نیم ساعت بعد (دقیقهٔ ۱۷ یا ۴۷) `scheduler: tick fired` دیده شود. `.env` تغییری لازم ندارد (متغیرهای `WORKER_*` اختیاری‌اند: `deploy/.env.example`).
+- **حافظه:** سقف ۲۵۶ مگابایت (`mem_limit`)؛ در عمل ≈ ۸۰ مگابایت. اگر سرور کم‌حافظه است `WORKER_MAX_CONCURRENCY=1`.
+- **cPanel/Passenger** (مسیر دوم پایین): فرایندِ پس‌زمینهٔ همیشگی ندارد؛ آن‌جا worker اجرا نمی‌شود — جارو و انقضای بارگذاری‌ها فقط دستی (`docs/ops/runbook.md` §۴-الف) و با هر بارگذاری.
+
 ## آروان CDN و IP واقعی کاربر (`Caddyfile`)
 
 با روشن بودن «ابر» آروان روی رکورد `donino`، همتای TCP هر درخواست یک لبهٔ آروان است، نه کاربر؛ اما throttle ورود (`getClientIp` در `src/lib/request.ts`: اولین مقدار `X-Forwarded-For`) IP واقعی کاربر را می‌خواهد. پس Caddy فقط از رنج‌های آروان `X-Forwarded-For` را می‌پذیرد (`trusted_proxies` + `trusted_proxies_strict`: راست‌ترین IP غیرآروانی، یعنی همانی که آروان افزوده) و به اپ دقیقاً **یک** IP می‌دهد (`header_up X-Forwarded-For/X-Real-IP {client_ip}`). همتای غیرآروانی (اتصال مستقیم به IP سرور) خودش کاربر حساب می‌شود و `X-Forwarded-For` جعلی‌اش نادیده گرفته می‌شود. `X-Forwarded-Host/-Proto` همان است که خود Caddy دیده؛ دو هشدار «Unnecessary header_up» هنگام بارگذاری عمدی‌اند.
@@ -191,12 +243,12 @@ AGE_IDENTITY=key.txt  APP_DIR=. COMPOSE_FILE=docker-compose.dev.yml bash deploy/
 - **یک‌بار پس از روشن کردن ابر:** `docker compose exec -T db psql -U postgres -d app -c "select ip, count(*) from iam.login_attempt where at > now() - interval '1 day' group by 1 order by 2 desc limit 10"` — اگر IPهای پرتکرار در رنج‌های آروان بودند، آروان IP کاربر را در `X-Forwarded-For` نمی‌فرستد؛ ابر را خاموش و بررسی کنید.
 
 ## یادداشت‌ها
-- `scripts/migrate.js` (اجرای مهاجرت‌ها در سرویس `migrate`)، `scripts/seed-catalog.js` (سید کاتالوگ در سرویس `seed`؛ تولیدشده در build) و `db/initdb/01-roles.sh` (ساخت نقش‌ها و دیتابیس‌ها در اولین اجرای `db`) آماده‌اند؛ جزئیات در `docs/db.md`.
+- `scripts/migrate.js` (اجرای مهاجرت‌ها در سرویس `migrate`)، `scripts/seed-catalog.js` (سید کاتالوگ در سرویس `seed`؛ تولیدشده در build)، `scripts/worker.mjs` (سرویس `worker`؛ تولیدشده در build) و `db/initdb/01-roles.sh` (ساخت نقش‌ها و دیتابیس‌ها در اولین اجرای `db`) آماده‌اند؛ جزئیات در `docs/db.md`.
 - بکاپ شبانه/رمزگذاری/آپلود به آروان: `backup/backup.sh` (بالا).
 
 ## دو مسیر استقرار: VPS/Docker (این فایل) و cPanel/Passenger
 
-هر چیزی که تا این‌جا آمد مربوط به مسیر **VPS + Docker + Caddy** است و مسیر اصلی تولید باقی می‌ماند: `ship.ps1` → `deploy.sh` → `migrate` → `seed` → `app` + `caddy`.
+هر چیزی که تا این‌جا آمد مربوط به مسیر **VPS + Docker + Caddy** است و مسیر اصلی تولید باقی می‌ماند: `ship.ps1` → `deploy.sh` → `migrate` → `seed` → `app` + `caddy` + `worker`.
 
 مسیر دوم، برای میزبانی اشتراکی: **cPanel + Phusion Passenger**، با بیلد در GitHub Actions و آپلود FTPS. راهنمای کامل (تنظیمات Application Manager، متغیرهای محیطی، secrets، چک‌لیست تأیید و محدودیت‌ها): **`docs/ops/cpanel-deploy.md`**.
 

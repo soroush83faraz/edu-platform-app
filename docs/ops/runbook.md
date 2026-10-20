@@ -52,12 +52,42 @@ docker compose logs --since 30m app | grep '"level":50'      # فقط error
 docker compose logs --tail=50 caddy        # certificate obtained / renew
 docker compose logs migrate                # خروجی آخرین مهاجرت
 docker compose logs seed                   # خروجی سید کاتالوگ ([seed] catalog: …)
+docker compose logs -f --tail=100 worker   # کارهای پس‌زمینه (§۳-الف)
 journalctl -u docker --since "1 hour ago"  # اگر خود docker مشکوک است
 ```
 
 اگر برنامه «کند شده» اما health سبز است (روز اول مهر، همه در یک زنگ): `docker stats --no-stream school-app-1 school-db-1` — CPU کانتینر app نزدیک ۱۰۰٪ یعنی به سقف یک هسته رسیده‌ایم (≈ ۵۰ درخواست/ثانیه؛ `docs/ops/capacity.md`)، و `docker compose exec -T db psql -U app_backup -d app -tAc "select state, count(*) from pg_stat_activity where usename='app_rw' group by 1"` — اگر بیش از ۱۰ اتصال `idle in transaction` باشد همان فشار است، نه دیتابیس. خطا نمی‌دهد، فقط کند می‌شود؛ چیزی ری‌استارت نکنید.
 
 لاگ کانتینرها json-file با `max-size 50m × 5` است (compose.yml)؛ دیسک را پر نمی‌کند. سرور بعد از ریبوت (جمعه ۰۴:۰۰ اگر `reboot-required` باشد) خودش برمی‌گردد؛ ۰۹:۰۰ صبح شنبه یک health بزنید.
+
+## ۳-الف. کارهای پس‌زمینه (`worker`)
+
+صف و زمان‌بندِ فقط-Postgres (مالک ۲۰۲۶-۱۰-۲۰؛ `docs/decisions.md` «صف، زمان‌بند و Feature Flag»): سرویس `worker` در `compose.yml` — همان ایمیج `app`، فرمان `node scripts/worker.mjs`، به‌عنوان `app_rw`، با volume فایل‌ها. کارها در جدول `ops.job` (هر کار مال یک سازمان)، زمان‌بندها در `ops.schedule`. بدون حالت: هر وقت لازم شد `docker compose restart worker` — اجرای نیمه‌کاره rollback می‌شود و بعد از تمام شدنِ lease (مهلتِ کار + ۳۰ ثانیه) دوباره برداشته می‌شود.
+
+| زمان‌بند (به وقت تهران) | کار | چه می‌کند |
+|---|---|---|
+| هر ساعت، دقیقهٔ ۱۷ | `files.sweep_orphans` | جاروی بایت‌های یتیمِ هر سازمان (§۴-الف) |
+| هر ساعت، دقیقهٔ ۴۷ | `files.expire_uploads` | بارگذاری‌های پیوست‌نشدهٔ بیش از ۲۴ ساعت → بایگانی + پاک کردن بایت‌ها |
+| هر شب ۰۳:۳۰ | `ops.prune_jobs` | پاک کردن کارهای `done` قدیمی‌تر از ۱۴ روز و `dead` قدیمی‌تر از ۹۰ روز |
+
+```bash
+docker compose ps worker                                     # باید (healthy) باشد؛ healthcheck = فایلی که حلقه هر دور لمس می‌کند
+docker compose logs --since 1h worker | grep '"msg":"job: '  # هر اجرا یک خط: jobId, kind, organizationId, attempt, ms
+docker compose logs --since 1d worker | grep -E 'job: dead|scheduler: tick failed|claim failed'
+# وضعیت صف (فقط‌خواندنی، app_backup):
+docker compose exec -T db psql -U app_backup -d app -c "select kind, status, count(*) from ops.job group by 1, 2 order by 1, 2"
+docker compose exec -T db psql -U app_backup -d app -c "select id, organization_id, kind, attempts, finished_at, last_error from ops.job where status = 'dead' order by finished_at desc limit 20"
+docker compose exec -T db psql -U app_backup -d app -c "select name, cron, last_fired_at, next_fire_at from ops.schedule order by name"
+```
+
+- **کار مرده (`dead`)** = همهٴ تلاش‌ها شکست خورد (هر شکست: `failed` و تلاش دوباره با فاصلهٔ ۳۰ث، ۱د، ۲د … تا سقف ۱ ساعت)، یا خطای دائمی (`PermanentJobError` / payload نامعتبر)، یا worker در آخرین تلاش مرد. `last_error` یک خطِ پاک‌شده است (نوع خطا + SQLSTATE + پیامِ کوتاه؛ ایمیل/شماره/مقدارِ داخل گیومه حذف شده). watchdog اگر در ۲۴ ساعت اخیر کار مرده‌ای باشد هشدار `worker` می‌دهد. علت را از لاگ همان `jobId` پیدا و رفع کنید، بعد **اجرای دوباره** (به‌عنوان `app_owner`، تنها نقشی که می‌تواند کار هر سازمانی را بی‌context به‌روز کند):
+  ```bash
+  docker compose exec -T db psql -U app_owner -d app -c "update ops.job set status='queued', attempts=0, run_at=now(), finished_at=null, last_error=null where id='<job id>' and status='dead'"
+  ```
+- **اجرای فوریِ یک زمان‌بند** (مثلاً جارو بعد از بازیابی): `docker compose exec -T db psql -U app_owner -d app -c "update ops.schedule set next_fire_at=now() where name='files.sweep_orphans.hourly'"` — در ۲۰ ثانیهٔ بعد برای همهٔ سازمان‌ها کار ساخته می‌شود (کلید یکتای هر tick جلوی تکرار را می‌گیرد).
+- **توقف موقت همهٔ کارها:** `docker compose stop worker` (و بعد `start`). زمان‌بندِ جاافتاده فقط **یک‌بار** اجرا می‌شود، نه به تعداد دفعاتی که گذشته؛ کارهای صف‌شده منتظر می‌مانند.
+- **«صف گیر کرده»** (کارهای `queued` با `run_at` گذشته که برداشته نمی‌شوند): worker سالم است؟ لاگ `worker: claim failed`؟ اتصال دیتابیس؟ `select kind, count(*) from ops.job where status in ('queued','failed') and run_at < now() - interval '10 minutes' group by 1`. سقف هم‌زمانی هر نوع در `src/modules/ops/kinds.ts`، سقف کل فرایند `WORKER_MAX_CONCURRENCY` (پیش‌فرض ۲).
+- **حافظه:** `mem_limit: 256m` و `--max-old-space-size=160`؛ `docker stats --no-stream school-worker-1`.
 
 ## ۴. بازیابی از بکاپ
 
@@ -100,7 +130,7 @@ docker compose up -d app
 - **قابل نوشتن برای uid 1001 (`nextjs`)؟** `docker compose exec -T app sh -c 'id; ls -ld /data/files; touch /data/files/.w && rm /data/files/.w && echo writable'` — اگر `Permission denied`: `docker run --rm -v school_files:/data alpine chown -R 1001:1001 /data`.
 - **بارگذاریِ کند** (بازبینی امنیتی ۲۰۲۶-۱۰-۱۹، D2): هر شخص فقط **یک** بارگذاریِ هم‌زمان؛ هر فرایند ۸ تا، که ۲ تای آخرش فقط برای کسی است که در ۱۰ دقیقهٔ اخیر بارگذاریِ کندِ قطع‌شده نداشته. بدنه‌ای که ۱۵ ثانیه هیچ بایتی نفرستد، بعد از ۱۰ ثانیه میانگینش زیر ۱۰۰ کیلوبایت بر ثانیه باشد، یا روی هم بیش از ۹۰ ثانیه طول بکشد، قطع می‌شود (۴۰۸، لاگ `files: upload aborted — too slow` با `pace` = `idle`/`slow`/`total`)؛ سه بار در ۱۰ دقیقه ⇐ ۴۲۹ تا آخر همان پنجره. Caddy هر درخواست را حداکثر ۱۲۰ ثانیه می‌خواند (`servers › timeouts › read_body` در `deploy/Caddyfile`) و Node ۳۰۰ ثانیه (`requestTimeout`). اعداد در `src/modules/files/limits.ts`.
 - **دیسک:** بارگذاری زیر ۱ گیگابایت فضای آزاد متوقف می‌شود («فضای ذخیره‌سازی سرور پر است»، لاگ `files: upload refused — the files volume is below the free-space floor`)؛ watchdog بالای ۸۰٪ هشدار می‌دهد (volumeهای Docker روی همان دیسکِ ریشه‌اند). حجم: `docker run --rm -v school_files:/data alpine du -sh /data`.
-- **پاک‌سازی:** بارگذاری‌های پیوست‌نشده بعد از ۲۴ ساعت با بارگذاریِ بعدیِ همان سازمان بایگانی و پاک می‌شوند (`app.expire_stale_uploads`، مهاجرت `0025`)؛ فایلِ برداشته‌شده همان لحظه پاک می‌شود. **یتیم‌ها** (فقط بعد از crash بین rename و commit، یا بین commit و پاک‌کردن): بایتِ بدون ردیفِ زنده هرگز سرو نمی‌شود، و **جاروی یتیم‌ها** (`src/modules/files/sweep.ts`؛ بازبینی امنیتی ۲۰۲۶-۱۰-۱۹، D6) پاکشان می‌کند: بعد از هر بارگذاریِ موفق، حداکثر ساعتی یک بار برای هر سازمان (هر فرایند)، فقط پوشه‌های امسال و پارسالِ **همان** سازمان، حداکثر ۵۰۰ فایل در هر دور؛ فقط فایلی با نامِ شناسهٔ فایل که **هیچ ردیفِ زنده‌ای** (pending / attached) ندارد و **بیش از ۲۴ ساعت** پیش نوشته شده پاک می‌شود. اگر پرسش از پایگاه داده شکست بخورد هیچ چیز پاک نمی‌شود؛ اگر در یک دور بیشترِ فایل‌ها (از دست‌کم ۱۰ تا) یتیم به نظر برسند — `FILES_DIR` اشتباه، پایگاه دادهٔ دیگر، بازیابیِ ناهم‌زمان — هیچ چیز پاک نمی‌شود و لاگ `files: orphan sweep braked` می‌آید. هر پاک‌کردن یک خط لاگِ `files: orphan sweep` با کلیدها (بدون نام فایل).
+- **پاک‌سازی:** بارگذاری‌های پیوست‌نشده بعد از ۲۴ ساعت با بارگذاریِ بعدیِ همان سازمان **و** هر ساعت سرِ دقیقهٔ ۴۷ در `worker` (کار `files.expire_uploads`) بایگانی و پاک می‌شوند (`app.expire_stale_uploads`، مهاجرت `0025`)؛ فایلِ برداشته‌شده همان لحظه پاک می‌شود. **یتیم‌ها** (فقط بعد از crash بین rename و commit، یا بین commit و پاک‌کردن): بایتِ بدون ردیفِ زنده هرگز سرو نمی‌شود، و **جاروی یتیم‌ها** (`src/modules/files/sweep.ts`؛ بازبینی امنیتی ۲۰۲۶-۱۰-۱۹، D6) پاکشان می‌کند: هر ساعت سرِ دقیقهٔ ۱۷ (به وقت تهران) برای هر سازمان، در سرویس `worker` (کار `files.sweep_orphans`؛ §۳-الف — تا ۲۰۲۶-۱۰-۲۰ بعد از بارگذاری‌ها اجرا می‌شد)، فقط پوشه‌های امسال و پارسالِ **همان** سازمان، حداکثر ۵۰۰ فایل در هر دور؛ فقط فایلی با نامِ شناسهٔ فایل که **هیچ ردیفِ زنده‌ای** (pending / attached) ندارد و **بیش از ۲۴ ساعت** پیش نوشته شده پاک می‌شود. اگر پرسش از پایگاه داده شکست بخورد هیچ چیز پاک نمی‌شود؛ اگر در یک دور بیشترِ فایل‌ها (از دست‌کم ۱۰ تا) یتیم به نظر برسند — `FILES_DIR` اشتباه، پایگاه دادهٔ دیگر، بازیابیِ ناهم‌زمان — هیچ چیز پاک نمی‌شود و لاگ `files: orphan sweep braked` می‌آید. هر پاک‌کردن یک خط لاگِ `files: orphan sweep` با کلیدها (بدون نام فایل).
   دستی (همان قاعده، برای همهٔ سازمان‌ها یا یکی؛ اول `--dry-run`):
   ```bash
   pnpm files:sweep --dry-run                     # روی ماشین توسعه، با FILES_DIR و DATABASE_URL همان محیط
@@ -178,12 +208,14 @@ pnpm sessions:revoke --all --yes           # همه — بعد از نشت DB/se
 |---|---|---|---|
 | هر روز ۰۲:۳۰ (۲۳:۰۰ UTC) | `backup.sh` | pg_dump + tar volume → age → rclone آروان → prune ۷ روز | `backups/backup.log`, `backups/LAST_OK` (timestamp), `backups/LAST_FAILURE` |
 | جمعه ۰۶:۳۰ (۰۳:۰۰ UTC) | `restore-test.sh` | بازیابی آخرین dump در `app_restore_test` + مقایسهٴ شمارش‌ها (نیازمند `AGE_IDENTITY`؛ بدون کلید روی سرور خطای پیکربندی می‌دهد → از لپ‌تاپ اجرا کنید) | `backups/restore-test.log`, `backups/LAST_RESTORE_TEST` |
-| هر ۱۰ دقیقه | `watchdog.sh` | دیسک > ۸۰٪، RAM < ۳۰۰ MB، بکاپ > ۲۶ ساعت، health | `watchdog.log` + webhook/پیامک (اگر تنظیم شده) |
+| هر ۱۰ دقیقه | `watchdog.sh` | دیسک > ۸۰٪، RAM < ۳۰۰ MB، بکاپ > ۲۶ ساعت، health، `worker` (نبودن/ناسالم، کار مرده در ۲۴ ساعت) | `watchdog.log` + webhook/پیامک (اگر تنظیم شده) |
 | جمعه ۰۴:۰۰ (systemd timer `reboot-window`) | `shutdown -r +5` فقط اگر `/var/run/reboot-required` | ریبوت بعد از unattended-upgrades | `systemctl list-timers`, `journalctl -u reboot-window` |
 | روزانه (apt timer) | `unattended-upgrades` | وصله‌های امنیتی اوبونتو | `/var/log/unattended-upgrades/` |
 | — (هفتهٴ ۱) | پاک‌سازی `initial_password_enc` بعد از ۷۲ ساعت | هنوز نیست؛ تا آن زمان دستی: `update iam.auth_identity set initial_password_enc=null where initial_password_enc is not null and updated_at < now() - interval '72 hours'` (به‌عنوان `app_owner`؛ `updated_at` با هر تعیین رمز موقت تازه می‌شود) | — |
 
 `crontab -l -u deploy` لیست فعلی؛ `bootstrap-server.sh` آن را می‌نویسد.
+
+زمان‌بندهای **داخل برنامه** (جاروی فایل‌ها، انقضای بارگذاری‌ها، پاک‌سازی صف) crontab نیستند: سرویس `worker` آن‌ها را اجرا می‌کند (§۳-الف).
 
 ## ۱۰. تماس‌ها و مسیرها
 
