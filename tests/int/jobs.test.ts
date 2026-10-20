@@ -2,6 +2,8 @@
 // expiry, fencing, retries with backoff, dead-letter, the system actor's audit rows, RLS of ops.job, and the scheduler
 // firing a tick once with two workers. Test kinds (`test.*`) are passed in a registry of the test's own; the real
 // registry's handlers are smoke-run at the end.
+import os from "node:os";
+import path from "node:path";
 import { sql } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -11,6 +13,7 @@ import { REGISTRY } from "@/lib/jobs/handlers";
 import { claimWants } from "@/lib/jobs/plan";
 import { type ClaimedJob, type JobHandler, type JobRegistry, claimJobs, runJob } from "@/lib/jobs/runner";
 import { syncSchedules, tickSchedules } from "@/lib/jobs/scheduler";
+import { runWorker } from "@/lib/jobs/worker";
 import { enqueueJob, insertJob } from "@/modules/ops/enqueue";
 import type { JobKindDef } from "@/modules/ops/kinds";
 import { PermanentJobError } from "@/modules/ops/retry";
@@ -326,6 +329,37 @@ describe("scheduler", () => {
   it("refuses a schedule with a bad cron or an unknown kind", async () => {
     await expect(syncSchedules([{ name: "test.bad", cron: "61 * * * *", kind: "test.record" }], kinds)).rejects.toThrow(/minute/);
     await expect(syncSchedules([{ name: "test.bad", cron: "* * * * *", kind: "test.nope" }], kinds)).rejects.toThrow(/unknown job kind/);
+  });
+});
+
+describe("the worker loop", () => {
+  it("runs what is queued, wakes when a run finishes, and on abort waits for the run in flight before returning", async () => {
+    for (let n = 0; n < 3; n++) await enqueue(f.ORG_A, "test.record", n);
+    const reg = registry({ "test.record": record("loop", 150) }, { "test.record": def({ concurrency: 1 }) });
+    const ac = new AbortController();
+    const loop = runWorker({
+      workerId: "w-loop",
+      pollMs: 200,
+      tickEveryMs: 60_000,
+      maxConcurrency: 1,
+      shutdownGraceMs: 5_000,
+      aliveFile: path.join(os.tmpdir(), "edu-worker-alive-test"),
+      registry: reg,
+      schedules: [],
+      signal: ac.signal,
+    });
+    for (let i = 0; i < 50 && ran.length < 3; i++) await new Promise((r) => setTimeout(r, 100));
+    expect(ran.map((r) => r.n).sort()).toEqual([0, 1, 2]);
+    // One more, then stop while it runs: the loop returns only after it is done.
+    await enqueue(f.ORG_A, "test.record", 9);
+    for (let i = 0; i < 30 && !(await withTenant({ orgId: f.ORG_A }, (tx) => tx.execute<{ n: number }>(sql`select count(*)::int as n from ops.job where status = 'running'`))).rows[0].n; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    ac.abort();
+    await loop;
+    expect(ran.map((r) => r.n)).toContain(9);
+    const left = await withTenant({ orgId: f.ORG_A }, (tx) => tx.execute<{ n: number }>(sql`select count(*)::int as n from ops.job where status <> 'done'`));
+    expect(left.rows[0].n).toBe(0);
   });
 });
 
