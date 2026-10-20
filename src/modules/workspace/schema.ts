@@ -3,6 +3,7 @@
 export {
   guardianMessage,
   inboxEntry,
+  requestSla,
   workItem,
   workItemAssignee,
   workItemAttachment,

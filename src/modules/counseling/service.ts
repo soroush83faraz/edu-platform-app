@@ -31,6 +31,7 @@ import { countStudentAttendance } from "@/modules/academic/repo";
 import { can, canAtAnyScope, type Assignment, type CanContext } from "@/modules/iam/can";
 import type { Permission } from "@/modules/iam/permissions";
 import { getPermissionScope } from "@/modules/iam/service";
+import { openRequestSla } from "@/modules/workspace/requests";
 import { createConfidentialWorkItem } from "@/modules/workspace/service";
 import { notifyTeacherReport } from "./notify";
 import {
@@ -486,6 +487,8 @@ export async function referToManagement(tx: Tx, ctx: CounselingCtx, input: Refer
   });
   const referralId = await linkReferral(tx, ctx, s, "management", wi.id, wi.duplicate === true);
   if (!wi.duplicate) {
+    // «مرکز درخواست‌ها»: the referral's response clock starts now (workspace/requests).
+    await openRequestSla(tx, ctx, { kind: "admin_request", workItemId: wi.id, schoolId: s.schoolId });
     await audit(
       ctx,
       "counseling.referral.created",

@@ -132,6 +132,8 @@ export const ListWorkItemsInput = z
     createdByMe: z.boolean().default(false),
     unreadOnly: z.boolean().default(false),
     offeringId: uuid.optional(),
+    /** «درخواست‌های من»: only requests with a response clock the caller is an addressee of («مرکز درخواست‌ها»). */
+    requestsOnly: z.boolean().default(false),
     cursor: z.string().max(200).optional(),
     allDone: z.boolean().default(false),
   })
@@ -144,3 +146,12 @@ export const OfferingIdInput = z.object({ classOfferingId: uuid }).strict();
 export const SearchPersonsInput = z.object({ q: z.string().trim().max(60) }).strict();
 
 export const EmptyInput = z.object({}).strict();
+
+/** «مرکز درخواست‌ها» (owner 2026-10-20): the managers' list filters — kind, response-time status, one school. */
+export const RequestCenterInput = z
+  .object({
+    kind: z.enum(["admin_request", "parent_message", "leave_request"]).nullable().default(null),
+    status: z.enum(["on_time", "near", "overdue"]).nullable().default(null),
+    schoolId: uuid.nullable().default(null),
+  })
+  .strict();

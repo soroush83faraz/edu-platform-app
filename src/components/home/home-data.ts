@@ -7,6 +7,7 @@ import type { Ctx } from "@/lib/ctx";
 import { homeTilesFor, showUpcomingOnHome, upcomingTilesFor, type HomeTile, type UpcomingTile } from "@/lib/modules-registry";
 import { getUiVariant, type UiVariant } from "@/lib/ui-variant";
 import { myClassQuery, myTimetableQuery, reportCardReachQuery } from "@/modules/academic/queries";
+import { isEnabled } from "@/modules/config/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 import { myChildrenQuery, type GuardianChild } from "@/modules/iam/guardian-queries";
 import { hatsQuery, type Hats } from "@/modules/iam/hats";
@@ -69,7 +70,9 @@ export const resolveHomeTiles = cache(async (ctx: Ctx): Promise<HomeTiles> => {
   const reach = has("academic.objective_rating.read") ? await reportCardReachQuery() : null;
   const reportCard = reach?.ok ? reach.data : { staff: false, student: false };
   const tileHats = { isStudent, isTeacher, isAdmin: adminScope !== null, adminScope, singleSchoolId: hats?.adminSingleSchoolId ?? null, reportCard };
-  const tiles = homeTilesFor(tileHats, has, { variant });
+  // Tiles behind a feature switch (organization-level ones only: Home names no school).
+  const requestCenter = adminScope !== null && (await isEnabled("request_center"));
+  const tiles = homeTilesFor(tileHats, has, { variant, flags: (k) => k === "request_center" && requestCenter });
   const upcoming = variant === "hub" && showUpcomingOnHome(tileHats) ? upcomingTilesFor(tileHats) : [];
   return { tiles, upcoming, hats, isStudent, isTeacher, variant };
 });

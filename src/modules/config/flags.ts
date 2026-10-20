@@ -55,17 +55,15 @@ export const FEATURE_FLAGS = {
   },
   deadline_reminders: {
     labelFa: "یادآوری مهلت تکالیف",
-    descriptionFa: "اعلان به دانش‌آموز پیش از پایان مهلت تکلیفی که هنوز انجام نشده.",
+    descriptionFa: "اعلان به کسی که تکلیف را هنوز انجام نداده، پیش از پایان مهلت؛ و به دهندهٴ آن وقتی مهلت بگذرد و کسانی تمامش نکرده باشند.",
     default: false,
     schoolOverridable: true,
-    upcoming: true,
   },
   request_center: {
     labelFa: "مرکز درخواست‌ها",
-    descriptionFa: "پیگیری درخواست‌ها با مهلت رسیدگی و ارجاع خودکار به مدیر وقتی مهلت بگذرد.",
+    descriptionFa: "پیگیری ارجاع‌های مشاور و پیام‌های اولیا با مهلت پاسخ: یادآوری نزدیک مهلت و ارجاع خودکار به سطح بالاتر وقتی مهلت بگذرد.",
     default: false,
     schoolOverridable: false,
-    upcoming: true,
   },
 } as const satisfies Record<string, FlagDef>;
 

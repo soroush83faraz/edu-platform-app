@@ -28,6 +28,8 @@ export interface JobKindDef<P extends z.ZodType = z.ZodType> {
 }
 
 const Empty = z.object({}).strict();
+/** One deadline of one work item (the deadline is part of the job: a moved deadline is a new one). */
+const DeadlineOf = z.object({ workItemId: z.uuid(), dueAt: z.iso.datetime() }).strict();
 
 export const JOB_KINDS = {
   /** Bytes under FILES_DIR no live row names, older than a day — one organization (files/sweep; security review D6). */
@@ -49,6 +51,38 @@ export const JOB_KINDS = {
   /** The queue's own housekeeping: done jobs after 14 days, dead ones after 90. */
   "ops.prune_jobs": {
     description: "ops: delete one organization's finished jobs (done > 14 days, dead > 90 days)",
+    payload: Empty,
+    maxAttempts: 3,
+    concurrency: 1,
+    timeoutMs: 2 * 60_000,
+  },
+  /** «یادآوری مهلت تکالیف»: one organization's open items near or past their deadline → the two jobs below (workspace/deadline-reminders). */
+  "workspace.scan_deadlines": {
+    description: "workspace: enqueue the deadline reminders and overdue notices of one organization's open items",
+    payload: Empty,
+    maxAttempts: 3,
+    concurrency: 1,
+    timeoutMs: 2 * 60_000,
+  },
+  /** The assignees who have not finished one item hear that its deadline is near (once per deadline). */
+  "workspace.remind_deadline": {
+    description: "workspace: remind the unfinished assignees of one work item of its deadline",
+    payload: DeadlineOf,
+    maxAttempts: 5,
+    concurrency: 4,
+    timeoutMs: 30_000,
+  },
+  /** The giver of one item hears how many have not finished it once its deadline has passed (once per deadline). */
+  "workspace.notify_overdue": {
+    description: "workspace: tell the giver of one work item how many assignees missed its deadline",
+    payload: DeadlineOf,
+    maxAttempts: 5,
+    concurrency: 4,
+    timeoutMs: 30_000,
+  },
+  /** «مرکز درخواست‌ها»: one organization's open requests — the 80 % reminder, the escalation at the deadline (workspace/requests). */
+  "workspace.check_request_slas": {
+    description: "workspace: remind and escalate one organization's open requests by their response time",
     payload: Empty,
     maxAttempts: 3,
     concurrency: 1,

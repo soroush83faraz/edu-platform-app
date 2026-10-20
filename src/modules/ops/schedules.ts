@@ -18,6 +18,8 @@ export interface ScheduleDef {
 export const SCHEDULES: readonly ScheduleDef[] = [
   { name: "files.sweep_orphans.hourly", cron: "17 * * * *", kind: "files.sweep_orphans", description: "orphan upload bytes, every hour at :17" },
   { name: "files.expire_uploads.hourly", cron: "47 * * * *", kind: "files.expire_uploads", description: "uploads left pending for 24 h, every hour at :47" },
+  { name: "workspace.scan_deadlines.15min", cron: "7,22,37,52 * * * *", kind: "workspace.scan_deadlines", description: "deadline reminders and overdue notices, every 15 minutes at :07" },
+  { name: "workspace.check_request_slas.15min", cron: "4,19,34,49 * * * *", kind: "workspace.check_request_slas", description: "request response times, every 15 minutes at :04" },
   { name: "ops.prune_jobs.nightly", cron: "30 3 * * *", kind: "ops.prune_jobs", description: "finished jobs, every night at 03:30 Tehran" },
 ];
 

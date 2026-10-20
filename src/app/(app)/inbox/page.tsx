@@ -24,6 +24,8 @@ interface Filters {
   bucket?: Bucket;
   mine: boolean;
   unread: boolean;
+  /** «درخواست‌های من»: the requests I am an addressee of («مرکز درخواست‌ها»). */
+  requests: boolean;
   cursor?: string;
   /** «نمایش همه» of the finished tail (the latest 20 otherwise). */
   allDone: boolean;
@@ -38,6 +40,7 @@ function readFilters(sp: Search): Filters {
     bucket: (BUCKETS as readonly string[]).includes(bucket ?? "") ? (bucket as Bucket) : undefined,
     mine: one("mine") === "1",
     unread: one("unread") === "1",
+    requests: one("requests") === "1",
     cursor: one("cursor") || undefined,
     allDone: one("done") === "all",
   };
@@ -48,6 +51,7 @@ function href(f: Partial<Filters>): string {
   if (f.bucket) p.set("bucket", f.bucket);
   if (f.mine) p.set("mine", "1");
   if (f.unread) p.set("unread", "1");
+  if (f.requests) p.set("requests", "1");
   if (f.cursor) p.set("cursor", f.cursor);
   if (f.allDone) p.set("done", "all");
   const q = p.toString();
@@ -59,22 +63,23 @@ function href(f: Partial<Filters>): string {
  * deadline-bucket boxes): every open item, overdue first then by deadline, each with its status tag at the end; then
  * «انجام‌شده‌ها» with the latest finished ones. Each row leads with its مُهر درس (a personal note / an admin task with
  * its quiet type glyph) and names its درس in the meta line. The filters that are features stay as chips:
- * «فقط تکالیف داده‌شده» for staff, and the removable deadline / unread filters Home and the notifications link to.
+ * «فقط تکالیف داده‌شده» for staff, «درخواست‌های من» for staff while «مرکز درخواست‌ها» is on (the requests with a
+ * response clock I am an addressee of), and the removable deadline / unread filters Home and the notifications link to.
  */
 export default async function InboxPage({ searchParams }: { searchParams: Promise<Search> }) {
   const f = readFilters(await searchParams);
-  const result = await listWorkItemsQuery({ bucket: f.bucket, createdByMe: f.mine, unreadOnly: f.unread, cursor: f.cursor, allDone: f.allDone });
+  const result = await listWorkItemsQuery({ bucket: f.bucket, createdByMe: f.mine, unreadOnly: f.unread, requestsOnly: f.requests, cursor: f.cursor, allDone: f.allDone });
   if (!result.ok) {
     if (result.code === "UNAUTHENTICATED") redirect("/login");
     return <EmptyState title="پنل من در دسترس نیست" description={result.message} />;
   }
-  const { open, done, nextCursor, counts, isStaff, canCreate, voice, createVoice } = result.data;
+  const { open, done, nextCursor, counts, isStaff, canCreate, voice, createVoice, requestCenter } = result.data;
   // «تکلیف» for a teacher, «تسک» for مدیر/معاون — one noun set for the header, the filters, the empties.
   const words = workItemWords(voice);
   // What THIS person opens, which differs only for a student: the تکالیف in the list keep their name while
   // the button above them says «تسک جدید» (src/lib/work-item-words, round 6).
   const createWords = workItemWords(createVoice);
-  const filtered = Boolean(f.bucket || f.unread || f.mine);
+  const filtered = Boolean(f.bucket || f.unread || f.mine || f.requests);
   // A teacher's rows wear the colour of their class (owner 2026-10-06); everyone else's the درس's.
   const hues = await getTeacherHues();
   const audience = audienceOf((await requireContext()).assignments);
@@ -106,6 +111,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
       {isStaff || filtered ? (
         <div className="flex flex-wrap items-center gap-2" aria-label="فیلترها">
           {isStaff ? <FilterChip href={href({ ...f, mine: !f.mine, cursor: undefined })} active={f.mine} label={`فقط ${words.given}`} /> : null}
+          {requestCenter || f.requests ? <FilterChip href={href({ ...f, requests: !f.requests, cursor: undefined })} active={f.requests} label="درخواست‌های من" /> : null}
           {f.bucket ? <FilterChip href={href({ ...f, bucket: undefined, cursor: undefined })} active removable label={BUCKET_LABELS[f.bucket]} /> : null}
           {f.unread ? <FilterChip href={href({ ...f, unread: false, cursor: undefined })} active removable label="خوانده‌نشده" /> : null}
         </div>

@@ -6,6 +6,8 @@ import { expireStaleUploads } from "@/modules/files/expire";
 import { filesRoot, removeStored } from "@/modules/files/storage";
 import { liveFileIds, sweepOrphans } from "@/modules/files/sweep";
 import { JOB_KINDS, type JobKind, type JobPayload } from "@/modules/ops/kinds";
+import { notifyOverdue, remindDeadline, scanDeadlines } from "@/modules/workspace/deadline-reminders";
+import { checkRequestSlas } from "@/modules/workspace/requests";
 import type { JobHandler, JobRegistry } from "./runner";
 
 /** One expire call archives at most this many uploads; a job takes up to EXPIRE_BATCHES of them. */
@@ -41,6 +43,22 @@ export const HANDLERS: { [K in JobKind]: JobHandler<JobPayload<K>> } = {
            or (status = 'dead' and finished_at < now() - interval '90 days')
         order by finished_at
         limit ${PRUNE_LIMIT})`);
+  },
+
+  "workspace.scan_deadlines": async (tx, ctx) => {
+    await scanDeadlines(tx, ctx);
+  },
+
+  "workspace.remind_deadline": async (tx, ctx, payload) => {
+    await remindDeadline(tx, ctx, payload);
+  },
+
+  "workspace.notify_overdue": async (tx, ctx, payload) => {
+    await notifyOverdue(tx, ctx, payload);
+  },
+
+  "workspace.check_request_slas": async (tx, ctx) => {
+    await checkRequestSlas(tx, ctx);
   },
 };
 

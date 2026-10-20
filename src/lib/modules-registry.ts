@@ -9,6 +9,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   FileSpreadsheet,
+  FolderClock,
   Handshake,
   HeartHandshake,
   Inbox,
@@ -31,6 +32,7 @@ import {
   Video,
   Wallet,
 } from "lucide-react";
+import type { FlagKey } from "@/modules/config/flags";
 import type { ClayShade } from "@/components/ClayIcon";
 import { ADMIN_SECTIONS, type AdminSectionKey, schoolsLabelFa } from "@/lib/admin/nav";
 import type { UiVariant } from "@/lib/ui-variant";
@@ -417,6 +419,8 @@ export interface HomeTile {
   oneSchool?: { href: (schoolId: string) => string; only?: boolean; label?: boolean };
   /** Shown only when `hats.reportCard[this]` is true — the report-card tiles are for primary classes only. */
   reportCard?: "staff" | "student";
+  /** Shown only while this feature switch is on for the viewer's organization (`HomeTileOptions.flags`). */
+  flag?: FlagKey;
   /** The glyph implies a direction (send, arrows) and must flip in RTL. */
   mirror?: boolean;
   /**
@@ -596,6 +600,9 @@ export const HUB_TILES: readonly HomeTile[] = [
   // «تنظیمات» (owner, 2026-10-20; docs/decisions.md «صف، زمان‌بند و Feature Flag»): the organization's feature switches
   // and settings — the organization admin's, and a principal's / vice principal's for their own school.
   { code: "settings", labelFa: "تنظیمات", href: "/admin/settings", icon: SlidersHorizontal, role: "admin", permission: "config.settings.manage" },
+  // «مرکز درخواست‌ها» (owner, 2026-10-20; docs/decisions.md «یادآوری مهلت و مرکز درخواست‌ها»): the open requests of the
+  // admin's schools with their response times — only while the organization has the center on.
+  { code: "request-center", labelFa: "مرکز درخواست‌ها", href: "/admin/requests", icon: FolderClock, role: "admin", permission: "iam.admin.access", flag: "request_center" },
 
   // «مشاوره» (owner, 2026-10-13): the counselor's door — and the principal's / vice principal's / organization
   // admin's, who read the files of their schools — after the admin's own tiles.
@@ -623,6 +630,8 @@ export const HUB_TILES: readonly HomeTile[] = [
 /** Options of `homeTilesFor`: which layout the viewer runs (`getUiVariant()`); classic when omitted. */
 export interface HomeTileOptions {
   variant?: UiVariant;
+  /** Which feature switches are on (`isEnabled`); a tile with a `flag` is hidden when this is omitted. */
+  flags?: (key: FlagKey) => boolean;
 }
 
 /**
@@ -650,6 +659,7 @@ export function homeTilesFor(
       (!t.permission || has(t.permission)) &&
       (!t.adminScope || hats.adminScope === t.adminScope) &&
       (!t.reportCard || hats.reportCard?.[t.reportCard] === true) &&
+      (!t.flag || opts.flags?.(t.flag) === true) &&
       (!t.oneSchool?.only || schoolId !== null),
   ).map((t) => {
     return t.oneSchool && schoolId

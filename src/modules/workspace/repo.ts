@@ -11,7 +11,7 @@ import { type AdminScope, personInScopeSql } from "@/modules/iam/service";
 import { classEnrollment } from "@/modules/academic/schema";
 import { branch, classGroup, classOffering, gradeLevel, subject } from "@/modules/tenancy/schema";
 import type { InboxTab } from "./dto";
-import { inboxEntry, workItem, workItemAssignee, workItemComment, workItemStatus, workItemTransition, workItemType, workItemWatcher } from "./schema";
+import { inboxEntry, requestSla, workItem, workItemAssignee, workItemComment, workItemStatus, workItemTransition, workItemType, workItemWatcher } from "./schema";
 
 export type Priority = "low" | "normal" | "high" | "urgent";
 export type StatusCategory = "todo" | "doing" | "done" | "cancelled";
@@ -293,6 +293,8 @@ export interface ListInboxOptions {
   openOnly?: boolean;
   /** Only items of one درس (`work_item.class_offering_id`) — the subject page. */
   offeringId?: string | null;
+  /** «درخواست‌های من»: only requests with a response clock (`workspace.request_sla`) the caller is an addressee of. */
+  requestsOnly?: boolean;
   cursor?: string | null;
   limit?: number;
   /**
@@ -342,6 +344,7 @@ export async function listInbox(tx: Tx, personId: string, opts: ListInboxOptions
   if (opts.unreadOnly) filters.push(sql`r.unread`);
   if (opts.openOnly) filters.push(sql`r.category in ('todo', 'doing')`);
   if (opts.offeringId) filters.push(sql`r.class_offering_id = ${opts.offeringId}::uuid`);
+  if (opts.requestsOnly) filters.push(sql`r.my_assignee_state is not null and exists (select 1 from ${requestSla} rs where rs.work_item_id = r.id)`);
   if (after) {
     filters.push(
       after.dueAt
@@ -520,11 +523,12 @@ export interface InboxTabCounts {
  * The «فقط کارهایی که دادم» / «خوانده‌نشده» filters narrow the counts too, so the tabs never promise rows the
  * filtered list does not show.
  */
-export async function inboxTabCounts(tx: Tx, personId: string, opts: { createdByMe?: boolean; unreadOnly?: boolean; offeringId?: string | null } = {}): Promise<InboxTabCounts> {
+export async function inboxTabCounts(tx: Tx, personId: string, opts: { createdByMe?: boolean; unreadOnly?: boolean; offeringId?: string | null; requestsOnly?: boolean } = {}): Promise<InboxTabCounts> {
   const filters = [sql`ie.person_id = ${personId}::uuid and ie.state <> 'archived' and wi.archived_at is null`];
   if (opts.createdByMe) filters.push(sql`wi.created_by_person_id = ie.person_id`);
   if (opts.unreadOnly) filters.push(sql`ie.state = 'unread'`);
   if (opts.offeringId) filters.push(sql`wi.class_offering_id = ${opts.offeringId}::uuid`);
+  if (opts.requestsOnly) filters.push(sql`wa.person_id is not null and exists (select 1 from ${requestSla} rs where rs.work_item_id = wi.id)`);
   const res = await tx.execute<{ todo: number; done: number }>(sql`
     select
       (count(*) filter (where eff.category in ('todo', 'doing')))::int as todo,

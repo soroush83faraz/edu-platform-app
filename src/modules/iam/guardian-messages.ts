@@ -43,6 +43,7 @@ import { audit, type AuditCtx } from "@/lib/audit";
 import { notFound, rateLimited, validation } from "@/lib/errors";
 import { findStudentAnchor, lockActivePersons } from "@/modules/counseling/repo";
 import { guardianMessage } from "@/modules/workspace/schema";
+import { openRequestSla } from "@/modules/workspace/requests";
 import { answerAsAddressee, createConfidentialWorkItem } from "@/modules/workspace/service";
 import {
   COUNSELOR_MESSAGES_HREF,
@@ -380,6 +381,8 @@ export async function sendGuardianMessage(tx: Tx, ctx: GuardianMessageCtx, input
       classOfferingId,
     })
     .returning({ id: guardianMessage.id });
+  // «مرکز درخواست‌ها»: the message's response clock starts now (workspace/requests).
+  await openRequestSla(tx, ctx, { kind: "parent_message", workItemId: wi.id, schoolId: d.schoolId });
   await audit(
     ctx,
     "workspace.guardian_message.created",

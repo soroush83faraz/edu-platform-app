@@ -192,6 +192,20 @@ export function formatDueFa(dueAt: Date, now = new Date(), open = true): string 
   return `${formatJalaliShort(dueAt, now)} گذشت`;
 }
 
+/**
+ * A deadline inside a sentence (the automatic reminders' titles — «یادآوری: مهلت «…» تا …»): «امروز ساعت ۱۸» /
+ * «پایان امروز» / «فردا ساعت ۱۰:۳۰» / «پایان فردا» / «پنج‌شنبه ۱۰ مهر ساعت ۱۸» — the day relative to `now`, which is
+ * when the notification is written.
+ */
+export function formatDeadlineAtFa(dueAt: Date, now = new Date()): string {
+  const diff = tehranDayDiff(now, dueAt);
+  const clock = isEndOfDay(dueAt) ? null : formatClockFa(dueAt);
+  if (diff === 0) return clock ? `امروز ${clock}` : "پایان امروز";
+  if (diff === 1) return clock ? `فردا ${clock}` : "پایان فردا";
+  const day = toFaDigits(format(tehranNow(dueAt), "EEEE d MMMM", { locale: faIR }));
+  return clock ? `${day} ${clock}` : `پایان ${day}`;
+}
+
 /** The distance in days, without a cutoff: «امروز» / «فردا» / «دیروز» / «۱۲ روز دیگر» / «۳ روز پیش». */
 export function formatDayDistanceFa(at: Date, now = new Date()): string {
   const diff = tehranDayDiff(now, at);

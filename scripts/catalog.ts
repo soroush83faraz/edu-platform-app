@@ -261,6 +261,12 @@ export const NOTIFICATION_TYPES: SystemNotificationType[] = [
   // «تحویل پاسخ» (owner, 2026-10-19): the giver hears once per student and تکلیف — the name and the title, never the text.
   { code: "work_item.submitted", module: "workspace", name: "پاسخ تکلیف ثبت شد" },
   { code: "work_item.due_soon", module: "workspace", name: "مهلت کار نزدیک است", urgency: "high" },
+  // «یادآوری مهلت» + «مرکز درخواست‌ها» (owner, 2026-10-20): the giver hears once that a deadline passed with people
+  // unfinished (a count, never names); a request's addressees are reminded at 80 % of its response time, and the next
+  // level of the chain hears that it was escalated to them — the item's title only, never its text.
+  { code: "work_item.overdue", module: "workspace", name: "مهلت کار گذشت" },
+  { code: "work_item.response_due", module: "workspace", name: "مهلت پاسخ به درخواست نزدیک است", urgency: "high" },
+  { code: "work_item.escalated", module: "workspace", name: "درخواست به شما ارجاع شد", urgency: "high" },
   // «مشاوره» (owner, 2026-10-14): the counselor's bell — the student's name and the kind of event, never the text.
   { code: "counseling.referral_answered", module: "counseling", name: "پاسخ مدیریت به ارجاع" },
   { code: "counseling.report_request_done", module: "counseling", name: "پاسخ دبیر به درخواست گزارش" },

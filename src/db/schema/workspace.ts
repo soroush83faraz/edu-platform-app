@@ -8,6 +8,7 @@ import {
   jsonb,
   pgSchema,
   primaryKey,
+  smallint,
   text,
   timestamp,
   unique,
@@ -429,6 +430,64 @@ export const guardianMessage = workspace.table(
       name: "guardian_message_offering_fk",
       columns: [t.organizationId, t.classOfferingId],
       foreignColumns: [classOffering.organizationId, classOffering.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
+ * «مرکز درخواست‌ها» (migration 0028; owner 2026-10-20; docs/decisions.md «یادآوری مهلت و مرکز درخواست‌ها»): the
+ * response clock of ONE request — a counselor's «ارجاع به مدیریت» (`admin_request`), a guardian's «پیام به مدرسه»
+ * (`parent_message`), later a «درخواست مرخصی» (`leave_request`, which carries no work item: it adds its own nullable
+ * reference then). Written in the transaction that sends the request (`openRequestSla`, src/modules/workspace/
+ * requests.ts) and advanced by the `workspace.check_request_slas` job: `warned_at` at 80 % of the current period,
+ * `escalation_level` + a new period when it ends (the next level of the chain added as addressees), `closed_at` once
+ * the request was answered or closed. NO TEXT: ids, the kind, the school and times only — so the system actor (no
+ * person, plain tenant RLS) can read it, and a manager's list can show a confidential request's kind, age and status
+ * without its title (the title stays on the work item, behind `canViewWorkItem`). Never deleted (RESTRICTIVE policy
+ * for app_rw, 0028).
+ */
+export const requestSla = workspace.table(
+  "request_sla",
+  {
+    id: id(),
+    organizationId: orgFk(),
+    /** The school the request was sent to — where the chain is resolved and whose quiet hours apply. */
+    schoolId: uuid("school_id").notNull(),
+    kind: text("kind").notNull(),
+    /** The work item carrying the request (admin_request, parent_message); null only for a kind without one. */
+    workItemId: uuid("work_item_id"),
+    openedAt: timestamp("opened_at", { withTimezone: true }).defaultNow().notNull(),
+    /** Start of the current response period (the sending, or the last escalation). */
+    periodStartedAt: timestamp("period_started_at", { withTimezone: true }).notNull(),
+    /** End of the current period: past it the request is escalated. */
+    dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+    /** The 80 % reminder of the current period (null = not sent in this period). */
+    warnedAt: timestamp("warned_at", { withTimezone: true }),
+    /** Escalations so far (0 = still with the addressees it was sent to). */
+    escalationLevel: smallint("escalation_level").notNull().default(0),
+    escalatedAt: timestamp("escalated_at", { withTimezone: true }),
+    /** When the check saw it answered or closed; the clock stops. */
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    ...timestamps(),
+  },
+  (t) => [
+    unique("request_sla_org_id_uq").on(t.organizationId, t.id),
+    uniqueIndex("request_sla_work_item_uq").on(t.organizationId, t.workItemId).where(sql`${t.workItemId} IS NOT NULL`),
+    index("request_sla_org_open_due_idx").on(t.organizationId, t.dueAt).where(sql`${t.closedAt} IS NULL`),
+    index("request_sla_org_school_open_idx").on(t.organizationId, t.schoolId).where(sql`${t.closedAt} IS NULL`),
+    check("request_sla_kind_chk", sql`${t.kind} IN ('admin_request', 'parent_message', 'leave_request')`),
+    check("request_sla_work_item_chk", sql`${t.kind} = 'leave_request' OR ${t.workItemId} IS NOT NULL`),
+    check("request_sla_period_chk", sql`${t.dueAt} > ${t.periodStartedAt} AND ${t.periodStartedAt} >= ${t.openedAt}`),
+    check("request_sla_escalation_chk", sql`${t.escalationLevel} BETWEEN 0 AND 10 AND (${t.escalationLevel} = 0) = (${t.escalatedAt} IS NULL)`),
+    foreignKey({
+      name: "request_sla_school_fk",
+      columns: [t.organizationId, t.schoolId],
+      foreignColumns: [school.organizationId, school.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "request_sla_work_item_fk",
+      columns: [t.organizationId, t.workItemId],
+      foreignColumns: [workItem.organizationId, workItem.id],
     }).onDelete("restrict"),
   ],
 );

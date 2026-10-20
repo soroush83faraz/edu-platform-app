@@ -5,11 +5,13 @@ import { z } from "zod";
 import { defineQuery } from "@/lib/actions";
 import { createVoice, workItemVoice } from "@/lib/work-item-words";
 import { canAtAnyScope, canBroadly } from "@/modules/iam/can";
+import { flagEnabled } from "@/modules/config/service";
 import { getPermissionScope } from "@/modules/iam/service";
 import { unreadNotificationCount } from "@/modules/notif";
-import { ListInboxInput, ListWorkItemsInput, WorkItemIdInput } from "./dto";
+import { ListInboxInput, ListWorkItemsInput, RequestCenterInput, WorkItemIdInput } from "./dto";
 import { type InboxSummary, inboxCounts, inboxTabCounts, isStaff, listInbox, listOfferingsInScope, listTaughtOfferings, openCountsByOffering } from "./repo";
 import { FileIdInput, findDownload, isDemoSession, workItemFilesView } from "./file-access";
+import { requestCenterView } from "./requests";
 import { getWorkItemDetail } from "./service";
 
 export const listInboxQuery = defineQuery({ schema: ListInboxInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) => {
@@ -49,7 +51,7 @@ const DONE_ALL = 100;
  */
 export const listWorkItemsQuery = defineQuery({ schema: ListWorkItemsInput, permission: "workspace.work_item.read", scope: "any" }, async (tx, input, ctx) => {
   const staff = await isStaff(tx, ctx.personId);
-  const common = { createdByMe: input.createdByMe, unreadOnly: input.unreadOnly, offeringId: input.offeringId ?? null, viewerIsStaff: staff };
+  const common = { createdByMe: input.createdByMe, unreadOnly: input.unreadOnly, offeringId: input.offeringId ?? null, requestsOnly: input.requestsOnly, viewerIsStaff: staff };
   const open = await listInbox(tx, ctx.personId, { ...common, tab: "todo", bucket: input.bucket, cursor: input.cursor ?? null, limit: OPEN_PAGE });
   const done =
     open.nextCursor || input.bucket
@@ -64,6 +66,8 @@ export const listWorkItemsQuery = defineQuery({ schema: ListWorkItemsInput, perm
     canCreate: canAtAnyScope(ctx.assignments, "workspace.work_item.create"),
     voice: workItemVoice(ctx.assignments),
     createVoice: createVoice(ctx.assignments),
+    // «درخواست‌های من» (owner 2026-10-20): the chip shows for staff while «مرکز درخواست‌ها» is on.
+    requestCenter: staff && (await flagEnabled(tx, "request_center")),
   };
 });
 
@@ -133,3 +137,12 @@ export const homeOpenItemsQuery = defineQuery({ schema: HomeListInput, permissio
   const page = await listInbox(tx, ctx.personId, { tab: "all", openOnly: true, createdByMe: input.createdByMe, limit: input.limit, viewerIsStaff: staff });
   return page.rows;
 });
+
+/**
+ * «مرکز درخواست‌ها» (owner 2026-10-20; ./requests.ts): the open requests of the caller's schools for a manager —
+ * `iam.admin.access` (the organization admin, a principal, a vice principal), narrowed to their admin scope; a
+ * confidential request's title only for its participants.
+ */
+export const requestCenterQuery = defineQuery({ schema: RequestCenterInput, permission: "iam.admin.access", scope: "any" }, (tx, input, ctx) =>
+  requestCenterView(tx, ctx, input),
+);
