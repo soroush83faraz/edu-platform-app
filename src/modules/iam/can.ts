@@ -136,6 +136,30 @@ export function canAtAnyScope(assignments: readonly Assignment[], permission: Pe
   return assignments.some((a) => a.permissions.includes(permission));
 }
 
+/** Where a capability reaches: the whole organization, or these schools (structurally `AdminScope`, ./service). */
+export type SchoolReach = { kind: "organization" } | { kind: "school"; schoolIds: string[] };
+
+/**
+ * Where the caller holds `permission` AT THE SCHOOL LEVEL — exactly the schools `can(permission, { scopeType: "school",
+ * id })` accepts: an organization-scoped holder → the organization; otherwise the schools of the SCHOOL-scoped
+ * assignments carrying it. Unlike `getPermissionScope` (./service), a BRANCH-scoped one never counts (a school-wide
+ * decision — a school's switches, a leave request filed with the school — is not a branch's). Pure; null when there is
+ * none. The list twin of that check: a page that offers what an action at the school accepts narrows by THIS, so the
+ * two never disagree (security review 2026-10-20, F9 — docs/decisions.md).
+ */
+export function schoolLevelScope(assignments: readonly Assignment[], permission: Permission): SchoolReach | null {
+  const holders = assignments.filter((a) => a.permissions.includes(permission));
+  if (holders.some((a) => a.scopeType === "organization")) return { kind: "organization" };
+  const schoolIds = [...new Set(holders.filter((a) => a.scopeType === "school" && a.scopeId !== null).map((a) => a.scopeId as string))];
+  return schoolIds.length === 0 ? null : { kind: "school", schoolIds };
+}
+
+/** Holds `permission` AT this school of the tenant (`schoolLevelScope`) — the pure `can(permission, { scopeType: "school", id })`. */
+export function holdsAtSchool(assignments: readonly Assignment[], permission: Permission, schoolId: string): boolean {
+  const reach = schoolLevelScope(assignments, permission);
+  return reach !== null && (reach.kind === "organization" || reach.schoolIds.includes(schoolId));
+}
+
 /** Scope types that see "everything below them" — an admin/principal/vice-principal hat, never a teacher's or student's. */
 export const BROAD_SCOPE_TYPES: readonly ScopeType[] = ["organization", "school", "branch"];
 

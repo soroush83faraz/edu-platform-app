@@ -8,7 +8,7 @@ import { homeTilesFor, showUpcomingOnHome, upcomingTilesFor, type HomeTile, type
 import { getUiVariant, type UiVariant } from "@/lib/ui-variant";
 import { myClassQuery, myTimetableQuery, pendingLeaveCountQuery, reportCardReachQuery } from "@/modules/academic/queries";
 import { isEnabled } from "@/modules/config/queries";
-import { canAtAnyScope } from "@/modules/iam/can";
+import { canAtAnyScope, schoolLevelScope } from "@/modules/iam/can";
 import { myChildrenQuery, type GuardianChild } from "@/modules/iam/guardian-queries";
 import { hatsQuery, type Hats } from "@/modules/iam/hats";
 import type { Permission } from "@/modules/iam/permissions";
@@ -74,7 +74,11 @@ export const resolveHomeTiles = cache(async (ctx: Ctx): Promise<HomeTiles> => {
   const tileHats = { isStudent, isTeacher, isAdmin: adminScope !== null, adminScope, singleSchoolId: hats?.adminSingleSchoolId ?? null, reportCard };
   // Tiles behind a feature switch (organization-level ones only: Home names no school).
   const requestCenter = adminScope !== null && (await isEnabled("request_center"));
-  const tiles = homeTilesFor(tileHats, has, { variant, flags: (k) => k === "request_center" && requestCenter });
+  // «درخواست‌های مرخصی» is decided AT the school (`decideLeave`): no tile for whoever holds the permission only below it
+  // (a branch-scoped vice principal) — the page would refuse them.
+  const tiles = homeTilesFor(tileHats, has, { variant, flags: (k) => k === "request_center" && requestCenter }).filter(
+    (t) => t.code !== "admin-leave" || schoolLevelScope(ctx.assignments, "academic.leave.decide") !== null,
+  );
   const upcoming = variant === "hub" && showUpcomingOnHome(tileHats) ? upcomingTilesFor(tileHats) : [];
   // One more read, only for a person whose Home carries the «درخواست‌های مرخصی» tile.
   const leave = tiles.some((t) => t.code === "admin-leave") ? await pendingLeaveCountQuery() : null;

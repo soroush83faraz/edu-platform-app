@@ -350,7 +350,9 @@ export async function getSessionForTaking(
       coverage: covered,
     };
   });
-  const canRecordExit = date === tehranToday(now) && (await can(tx, ctx, "academic.early_exit.write", { scopeType: "class_group", id: cg.id }));
+  // The same check `recordEarlyExit` makes — the permission AT the student's school — so the button never offers a write
+  // the action refuses (a branch-scoped vice principal holds it at the class's branch, not at the school).
+  const canRecordExit = date === tehranToday(now) && (await can(tx, ctx, "academic.early_exit.write", { scopeType: "school", id: cg.schoolId }));
 
   // The day's other زنگ‌ها: the class's timetable row for this weekday, with «ثبت‌شده» marks.
   const weekday = weekdayOfIso(date);

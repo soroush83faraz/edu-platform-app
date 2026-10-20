@@ -6,7 +6,7 @@
 //   E  Mousavi wears three hats (vice principal @ boys school — the principal's permission set since 2026-09-27 —,
 //      teacher @ one offering of the girls school, guardian of one student)
 import { describe, expect, it } from "vitest";
-import { canAtAnyScope, canBroadly, canPure, organizationChain, type Assignment, type ScopeChain } from "@/modules/iam/can";
+import { canAtAnyScope, canBroadly, canPure, holdsAtSchool, organizationChain, schoolLevelScope, type Assignment, type ScopeChain } from "@/modules/iam/can";
 
 const ORG = "org-A";
 const SCHOOL_G = "school-girls";
@@ -201,5 +201,33 @@ describe("canAtAnyScope / canBroadly — personal-inbox checks", () => {
     expect(canBroadly(rezaei, "iam.admin.access")).toBe(false);
     expect(canAtAnyScope([], "iam.account.self")).toBe(true);
     expect(canAtAnyScope([], "workspace.work_item.read")).toBe(false);
+  });
+});
+
+// The list twin of `can(perm, { scopeType: "school" })` (security review 2026-10-20, F9): a page that offers a
+// school-level write narrows by it, so a branch-scoped holder — who fails that check — is offered nothing.
+describe("schoolLevelScope / holdsAtSchool — the schools a school-level check accepts", () => {
+  const P = "config.settings.manage";
+  it("organization holder → the organization; school holders → their schools; branch holders never count", () => {
+    expect(schoolLevelScope([a("org_admin", "organization", ORG, [P])], P)).toEqual({ kind: "organization" });
+    expect(schoolLevelScope([a("school_principal", "school", SCHOOL_G, [P]), a("vice_principal", "school", SCHOOL_B, [P])], P)).toEqual({ kind: "school", schoolIds: [SCHOOL_G, SCHOOL_B] });
+    expect(schoolLevelScope([a("vice_principal", "branch", BRANCH_B, [P])], P)).toBeNull();
+    expect(schoolLevelScope([a("vice_principal", "branch", BRANCH_B, [P]), a("school_principal", "school", SCHOOL_G, [P])], P)).toEqual({ kind: "school", schoolIds: [SCHOOL_G] });
+    // Without the permission, or only below the school (a teacher's offering), nothing.
+    expect(schoolLevelScope([a("school_principal", "school", SCHOOL_G, ["iam.person.read"])], P)).toBeNull();
+    expect(schoolLevelScope([a("teacher", "class_offering", OFF_MATH_10_1, [P])], P)).toBeNull();
+  });
+  it("agrees with canPure on a school chain for every assignment kind", () => {
+    const schoolChain: ScopeChain = [{ scopeType: "school", id: SCHOOL_B }, ...organizationChain(ORG)];
+    for (const as of [
+      [a("org_admin", "organization", ORG, [P])],
+      [a("school_principal", "school", SCHOOL_B, [P])],
+      [a("school_principal", "school", SCHOOL_G, [P])],
+      [a("vice_principal", "branch", BRANCH_B, [P])],
+      [a("teacher", "class_group", CG_10_1, [P])],
+      [],
+    ]) {
+      expect(holdsAtSchool(as, P, SCHOOL_B), JSON.stringify(as)).toBe(canPure(as, schoolChain, P));
+    }
   });
 });

@@ -7,7 +7,9 @@
 //
 // Scope: both permissions (`academic.leave.decide`, `academic.early_exit.write`) are held by the school managers only
 // (`ALL_ROLE_PERMS`, scripts/catalog.ts) and checked AT THE CHILD'S SCHOOL (`can(…, { scopeType: "school" })`): a manager
-// of another school, a teacher and a guardian all read NOT_FOUND. The lists narrow by `getPermissionScope`.
+// of another school, a teacher and a guardian all read NOT_FOUND. The lists narrow by the SAME rule (`schoolLevelScope`:
+// the organization, or the schools of school-scoped holders) — a branch-scoped vice principal holds neither a list nor
+// a decision, so a page never offers what its action refuses (security review 2026-10-20, docs/decisions.md).
 // Privacy: audit rows carry ids, dates, categories and the LENGTH of a note — never its text; the guardians' bell
 // names the child and the kind of event only (src/modules/iam/guardian-notify.ts).
 // What an approval does NOT do: it does not rewrite a roll call already saved — a student the teacher has already marked
@@ -17,7 +19,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { tehranToday } from "@/lib/attendance";
-import { notFound, validation } from "@/lib/errors";
+import { forbidden, notFound, validation } from "@/lib/errors";
 import {
   EARLY_EXIT_NOTE_MAX,
   EARLY_EXIT_PICKUP_MAX,
@@ -30,9 +32,9 @@ import {
 } from "@/lib/leave";
 import { normalizeFa, toAsciiDigits } from "@/lib/normalize";
 import { findStudentAnchor } from "@/modules/counseling/repo";
-import { can } from "@/modules/iam/can";
+import { can, schoolLevelScope } from "@/modules/iam/can";
 import { notifyGuardiansOfEarlyExit, notifyGuardiansOfLeaveDecision } from "@/modules/iam/guardian-notify";
-import { assertSchoolInScope, getPermissionScope, type AdminScope } from "@/modules/iam/service";
+import { assertSchoolInScope, type AdminScope } from "@/modules/iam/service";
 import type { AttendanceCtx } from "./attendance";
 import type { DecideLeaveInput, RecordEarlyExitInput } from "./leave-dto";
 import { earlyExit, leaveRequest } from "./schema";
@@ -151,11 +153,13 @@ const QUEUE_COLUMNS = sql`
 
 /**
  * The school's queue «درخواست‌های مرخصی»: the pending requests (oldest first) and the last 60 days' decided ones, of the
- * schools the caller holds `academic.leave.decide` at (the organization admin: every school); `schoolId` narrows to one
- * (NOT_FOUND outside the scope). FORBIDDEN for a caller who holds the permission nowhere.
+ * schools the caller holds `academic.leave.decide` at — AT the school, as `decideLeave` checks it (`schoolLevelScope`; the
+ * organization admin: every school); `schoolId` narrows to one (NOT_FOUND outside the scope). FORBIDDEN for a caller who
+ * holds the permission at no school.
  */
 export async function listLeaveQueue(tx: Tx, ctx: LeaveCtx, input: { schoolId?: string }, now = new Date()): Promise<LeaveQueue> {
-  const scope = await getPermissionScope(tx, ctx, "academic.leave.decide");
+  const scope = schoolLevelScope(ctx.assignments, "academic.leave.decide");
+  if (!scope) throw forbidden();
   const schools = schoolFilter(scope, input.schoolId);
   let school: LeaveQueue["school"] = null;
   if (input.schoolId) {
@@ -173,9 +177,8 @@ export async function listLeaveQueue(tx: Tx, ctx: LeaveCtx, input: { schoolId?: 
 
 /** How many requests wait for the caller's schools — Home's tile badge. 0 for a caller who holds the permission nowhere. */
 export async function pendingLeaveCount(tx: Tx, ctx: LeaveCtx): Promise<number> {
-  const holds = ctx.assignments.some((a) => a.permissions.includes("academic.leave.decide"));
-  if (!holds) return 0;
-  const scope = await getPermissionScope(tx, ctx, "academic.leave.decide");
+  const scope = schoolLevelScope(ctx.assignments, "academic.leave.decide");
+  if (!scope) return 0;
   const schools = schoolFilter(scope, undefined);
   const res = await tx.execute<{ n: number }>(sql`select count(*)::int as n from academic.leave_request lr where lr.status = 'pending' ${inSchools("lr", schools)}`);
   return Number(res.rows[0]?.n ?? 0);
@@ -247,7 +250,8 @@ export interface EarlyExitRow {
 
 /** Today's active authorized exits of the caller's schools (`schoolId` narrows to one; NOT_FOUND outside the scope). */
 export async function listTodaysEarlyExits(tx: Tx, ctx: LeaveCtx, input: { schoolId?: string }, now = new Date()): Promise<EarlyExitRow[]> {
-  const scope = await getPermissionScope(tx, ctx, "academic.early_exit.write");
+  const scope = schoolLevelScope(ctx.assignments, "academic.early_exit.write");
+  if (!scope) throw forbidden();
   const schools = schoolFilter(scope, input.schoolId);
   const res = await tx.execute<{
     id: string;

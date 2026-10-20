@@ -19,8 +19,9 @@
 // reason category, who picked up — never a manager's note); a teacher never reads a reason (the roster shows a
 // «مرخصی» tag, academic/leave-coverage). Privacy of the trail: the audit rows carry ids, dates, the category and the
 // note's LENGTH — never its text; the managers' bell names the child only (`leaveRequestedTitle`).
-// The school's managers hear of a new request: the live principals and vice principals of the child's school (the
-// school's offices, `officeHolders`), never the guardian; a school without either is read from the queue only.
+// The school's managers hear of a new request: the live holders of `academic.leave.decide` AT the child's school
+// (`leaveDeciders` — its principal and vice principals; exactly who may decide it), never the guardian; a school without
+// either is read from the queue only (and, with «مرکز درخواست‌ها» on, escalated to the organization admin).
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
@@ -37,12 +38,12 @@ import {
   validateLeaveRange,
 } from "@/lib/leave";
 import { normalizeFa } from "@/lib/normalize";
+import { leaveDeciders } from "@/modules/academic/leave-deciders";
 import { earlyExit, leaveRequest } from "@/modules/academic/schema";
 import { listPeriodsOfSchools, type PeriodRow } from "@/modules/academic/repo";
 import type { RequestLeaveInput } from "@/modules/academic/leave-dto";
 import { lockActivePersons, findStudentAnchor } from "@/modules/counseling/repo";
 import { notifyMany } from "@/modules/notif/service";
-import { officeHolders } from "./guardian-message-routing";
 import { requireChild, type ChildContext, type GuardianViewCtx } from "./guardian-views";
 
 export type GuardianLeaveCtx = GuardianViewCtx & AuditCtx;
@@ -220,9 +221,8 @@ export async function requestLeave(tx: Tx, ctx: GuardianLeaveCtx, input: Request
     tx,
   );
 
-  // The school's managers hear of it: the child's name and the kind of event, nothing else.
-  const holders = await officeHolders(tx, anchor.schoolId, ctx.personId);
-  const managers = await lockActivePersons(tx, [...new Set([...holders.principal, ...holders.vice_principal])]);
+  // The school's managers hear of it — those who may decide it there: the child's name and the kind of event, nothing else.
+  const managers = await lockActivePersons(tx, await leaveDeciders(tx, { schoolId: anchor.schoolId, level: "school", exceptPersonId: ctx.personId }));
   const notified =
     managers.length === 0
       ? 0

@@ -31,7 +31,7 @@ import { DEFAULT_PERIODS } from "@/lib/timetable";
 import { getSessionForTaking, takeAttendance } from "@/modules/academic/attendance";
 import { cancelEarlyExit, decideLeave, listLeaveQueue, listTodaysEarlyExits, pendingLeaveCount, recordEarlyExit } from "@/modules/academic/leave";
 import { assignTeacher, setTimetableSlot } from "@/modules/academic/service";
-import { type Assignment } from "@/modules/iam/can";
+import { holdsAtSchool, type Assignment } from "@/modules/iam/can";
 import { addGuardian, unlinkGuardian } from "@/modules/iam/guardian";
 import { cancelLeave, childLeavePage, requestLeave } from "@/modules/iam/guardian-leave";
 import { PERMISSIONS } from "@/modules/iam/permissions";
@@ -599,6 +599,35 @@ describe("«مرخصی و خروج مجاز» — leave requests and authorized 
       // The school can still decide the request that was already filed — its guardians (none left) are simply not told.
       const done = await decide(tx, w.principalA, req.id, "approved");
       expect(done.notified).toBe(0);
+    });
+  });
+
+  it("a BRANCH-scoped vice principal holds the permissions below the school: no bell, no queue, no count, no door, no decision, no exit — the lists never offer what the actions refuse", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const vb = await createStaff(tx, w.admin, { firstName: "نرگس", lastName: "صادقی", phone: phone(9), createAccount: false, schoolId: f.SCHOOL_A });
+      const roleRes = await tx.execute<{ id: string }>(sql`select id from iam.role where organization_id is null and code = 'vice_principal'`);
+      await tx.execute(sql`
+        insert into iam.role_assignment (id, organization_id, person_id, role_id, scope_type, branch_id, source_type, granted_by_person_id)
+        values (gen_random_uuid(), ${f.ORG_A}::uuid, ${vb.personId}::uuid, ${roleRes.rows[0].id}::uuid, 'branch', ${f.BRANCH_A}::uuid, 'manual', ${w.admin.personId}::uuid)`);
+      const branchVice = await actor(tx, vb.personId);
+      expect(branchVice.assignments.some((a) => a.scopeType === "branch" && a.permissions.includes("academic.leave.decide"))).toBe(true);
+
+      const req = await ask(tx, w, w.g1, w.s1);
+      // The bell goes to the school's principal and (school-scoped) vice principal only — the people who can decide it.
+      expect(req.notified).toBe(2);
+      expect(await bells(tx, branchVice, "academic.leave_requested")).toEqual([]);
+      // No list, no badge, no door, no decision — the same answer everywhere.
+      await expect(as(tx, branchVice, (t) => listLeaveQueue(t, branchVice, {}, NOW))).rejects.toSatisfy(isError("FORBIDDEN"));
+      expect(await as(tx, branchVice, (t) => pendingLeaveCount(t, branchVice))).toBe(0);
+      expect(holdsAtSchool(branchVice.assignments, "academic.leave.decide", f.SCHOOL_A)).toBe(false);
+      expect(holdsAtSchool(w.viceA.assignments, "academic.leave.decide", f.SCHOOL_A)).toBe(true);
+      expect(holdsAtSchool(w.admin.assignments, "academic.leave.decide", f.SCHOOL_A)).toBe(true);
+      await expect(decide(tx, branchVice, req.id, "approved")).rejects.toSatisfy(isError("NOT_FOUND"));
+      // «خروج مجاز»: the roll call of a class of their branch offers no button, and the write refuses.
+      expect((await roster(tx, branchVice, 4)).canRecordExit).toBe(false);
+      await expect(exitFor(tx, branchVice, w.s1)).rejects.toSatisfy(isError("NOT_FOUND"));
+      await expect(as(tx, branchVice, (t) => listTodaysEarlyExits(t, branchVice, {}, NOW))).rejects.toSatisfy(isError("FORBIDDEN"));
     });
   });
 });

@@ -9,7 +9,7 @@ import { notFound } from "@/lib/errors";
 import { assertSchoolInScope, getAdminScope } from "@/modules/iam/service";
 import { findSchoolById } from "@/modules/tenancy/repo";
 import { academicYear, branch, classGroup, classOffering } from "@/modules/tenancy/schema";
-import { canAtAnyScope } from "@/modules/iam/can";
+import { canAtAnyScope, holdsAtSchool } from "@/modules/iam/can";
 import { resourceOpGate, type AnyResourceDef, type ResourceOp } from "./defineResource";
 import { schoolsLabelFa } from "./nav";
 import { withSchoolCodeFor } from "./school-code";
@@ -59,7 +59,7 @@ export interface SchoolHubData {
    * `attendance`: the «حضور و غیاب» door to `/admin/attendance?school=<id>` — shown to whoever may read the admin
    * attendance report (`academic.attendance.report`, the permission its queries check); the school is in scope here.
    */
-  can: { school: boolean; classes: boolean; attendance: boolean; /** «درخواست‌های مرخصی» door (`academic.leave.decide`, 2026-10-20). */ leave?: boolean };
+  can: { school: boolean; classes: boolean; attendance: boolean; /** «درخواست‌های مرخصی» door (`academic.leave.decide` AT this school, 2026-10-20). */ leave?: boolean };
   /**
    * The way back, per caller. A school-scoped admin (one school in scope) arrived from Home's «مدرسه» tile, which
    * has no list behind it any more, so the door back is «خانه» → `/home`. The organization admin (or an admin
@@ -125,7 +125,10 @@ export const schoolHubQuery = defineQuery<SchoolHubData, typeof SchoolIdInput>(
       offerings: { total: Number(offerings?.total ?? 0), withoutTeacher: Number(offerings?.withoutTeacher ?? 0) },
       staff,
       students,
-      can: { school: gate(schoolResource, "update"), classes: gate(classResource, "create"), attendance: canAtAnyScope(ctx.assignments, "academic.attendance.report"), leave: canAtAnyScope(ctx.assignments, "academic.leave.decide") },
+      can: { school: gate(schoolResource, "update"), classes: gate(classResource, "create"), attendance: canAtAnyScope(ctx.assignments, "academic.attendance.report"),
+        // The queue decides AT the school (`decideLeave`), so the door shows only where that check passes.
+        leave: holdsAtSchool(ctx.assignments, "academic.leave.decide", sch.id),
+      },
       backHref: scope.kind === "school" && scope.schoolIds.length === 1 ? "/home" : "/admin/schools",
       backLabelFa: scope.kind === "school" && scope.schoolIds.length === 1 ? "خانه" : schoolsLabelFa(scope),
     };
