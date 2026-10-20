@@ -24,6 +24,7 @@ import {
   School,
   Settings2,
   ShieldAlert,
+  SlidersHorizontal,
   Ticket,
   Trophy,
   UserCheck,
@@ -592,6 +593,9 @@ export const HUB_TILES: readonly HomeTile[] = [
   sectionTile("classes"),
   sectionTile("roles"),
   homeTile("periods"),
+  // «تنظیمات» (owner, 2026-10-20; docs/decisions.md «صف، زمان‌بند و Feature Flag»): the organization's feature switches
+  // and settings — the organization admin's, and a principal's / vice principal's for their own school.
+  { code: "settings", labelFa: "تنظیمات", href: "/admin/settings", icon: SlidersHorizontal, role: "admin", permission: "config.settings.manage" },
 
   // «مشاوره» (owner, 2026-10-13): the counselor's door — and the principal's / vice principal's / organization
   // admin's, who read the files of their schools — after the admin's own tiles.

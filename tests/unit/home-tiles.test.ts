@@ -199,10 +199,10 @@ describe("homeTilesFor — hub layout", () => {
     expect(hrefs(tiles)).toEqual(["/inbox", "/classes/offerings", "/classes/timetable", "/attendance"]);
   });
 
-  it("organization admin: پنل من · مدرسه‌ها · دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها · مشاوره — no «نمای کلی», no «حضور و غیاب»", () => {
+  it("organization admin: پنل من · مدرسه‌ها · دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها · تنظیمات · مشاوره — no «نمای کلی», no «حضور و غیاب»", () => {
     const tiles = homeTilesFor(orgAdmin, has(ORG_PERMS), hub);
-    expect(labels(tiles)).toEqual(["پنل من", "مدرسه‌ها", "دانش‌آموزان", "کارکنان", "کلاس‌ها", "نقش‌ها", "مشاوره"]);
-    expect(hrefs(tiles)).toEqual(["/inbox", "/admin/schools", "/admin/students", "/admin/staff", "/admin/classes", "/admin/roles", "/counseling"]);
+    expect(labels(tiles)).toEqual(["پنل من", "مدرسه‌ها", "دانش‌آموزان", "کارکنان", "کلاس‌ها", "نقش‌ها", "تنظیمات", "مشاوره"]);
+    expect(hrefs(tiles)).toEqual(["/inbox", "/admin/schools", "/admin/students", "/admin/staff", "/admin/classes", "/admin/roles", "/admin/settings", "/counseling"]);
     // Attendance is per school (owner, 2026-09-27): «مدرسه‌ها» → the school → «حضور و غیاب» (the school hub's door).
     expect(codes(tiles)).not.toContain("admin-attendance");
     expect(codes(homeTilesFor({ ...orgAdmin, isTeacher: true }, has([...ORG_PERMS, ...TEACHER_PERMS]), hub))).not.toContain("admin-attendance");
@@ -211,10 +211,10 @@ describe("homeTilesFor — hub layout", () => {
     expect(hrefs(tiles)).not.toContain("/admin");
   });
 
-  it("principal of ONE school: پنل من · مدرسه · دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها · برنامهٴ کلاسی · مشاوره · حضور و غیاب", () => {
+  it("principal of ONE school: پنل من · مدرسه · دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها · برنامهٴ کلاسی · تنظیمات · مشاوره · حضور و غیاب", () => {
     for (const perms of [PRINCIPAL_PERMS, VICE_PERMS]) {
       const tiles = homeTilesFor(principal, has(perms), hub);
-      expect(labels(tiles)).toEqual(["پنل من", "مدرسه", "دانش‌آموزان", "کارکنان", "کلاس‌ها", "نقش‌ها", "برنامهٴ کلاسی", "مشاوره", "حضور و غیاب"]);
+      expect(labels(tiles)).toEqual(["پنل من", "مدرسه", "دانش‌آموزان", "کارکنان", "کلاس‌ها", "نقش‌ها", "برنامهٴ کلاسی", "تنظیمات", "مشاوره", "حضور و غیاب"]);
       expect(tile(tiles, "schools")?.href).toBe("/admin/schools/s1");
       expect(tile(tiles, "periods")?.href).toBe("/admin/schools/s1/periods");
       expect(tile(tiles, "admin-attendance")?.href).toBe("/admin/attendance");
@@ -253,6 +253,7 @@ describe("homeTilesFor — hub layout", () => {
       "کلاس‌ها",
       "نقش‌ها",
       "برنامهٴ کلاسی",
+      "تنظیمات",
       "مشاوره",
       "حضور و غیاب",
       "گزارش حضور و غیاب",

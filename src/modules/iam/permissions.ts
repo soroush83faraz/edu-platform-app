@@ -50,6 +50,10 @@ export const PERMISSIONS = [
   // «ولی» role at the child's student scope (never a manager's: scripts/catalog.ts `NON_MANAGER_PERMS`), and every use
   // ALSO needs the live link (`requireChild`, src/modules/iam/guardian-messages.ts).
   { code: "iam.guardian_message.send", module: "iam", name: "پیام ولی به مدرسه", isSensitive: false },
+  // «تنظیمات» (owner, 2026-10-20; docs/decisions.md «صف، زمان‌بند و Feature Flag»): the organization's feature switches
+  // and settings, overridden per school. Every manager role through ALL_ROLE_PERMS; the organization-level value needs
+  // it at the ORGANIZATION, a school override at that school (src/modules/config/service.ts).
+  { code: "config.settings.manage", module: "config", name: "مدیریت تنظیمات و قابلیت‌ها", isSensitive: true },
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number]["code"];
