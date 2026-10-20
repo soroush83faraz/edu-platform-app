@@ -2410,12 +2410,12 @@ fixed in its own commit.
   volume — and `./.data/files`, gitignored, elsewhere). Key `<organization id>/<yyyy>/<file id>`: server values only,
   never a part of the client's name; re-validated on every resolve and CHECKed in the database against the row's own
   organization and id (`file_object_storage_key_chk`), so no row points at another tenant's bytes or outside the root.
-  The body streams to `<root>/.tmp/<random>.part` (O_EXCL, 0600, size cap, idle 60 s / total 10 min timeouts,
+  The body streams to `<root>/.tmp/<random>.part` (O_EXCL, 0600, size cap, idle 60 s / total 10 min timeouts — 15 s / 100 KiB/s / 90 s since the review below —,
   SHA-256, fsync) and is renamed into place as the LAST statement of the transaction that records it; on any failure
   the temp file and the planned key are removed. Directories 0750, files 0600 (uid 1001 `nextjs`).
 - **Limits** (`src/modules/files/limits.ts`, the one place; unit-tested): 10 MiB per file; 5 files per تکلیف; 5 files
   and 25 MiB per پاسخ; پاسخ text ≤ 4000; a rolling 24 h quota per person — 50 MiB / 100 files for a student's پاسخ
-  uploads, 200 MiB / 300 files for a giver's — counted over every recorded upload; 2 uploads in flight per person, 8
+  uploads, 200 MiB / 300 files for a giver's — counted over every recorded upload; 2 uploads in flight per person (1 since the review below), 8
   per process, 60 attempts per person per hour (refused ones included); uploads stop below 1 GiB free on the files
   volume (the database shares the disk). Display names ≤ 120 code points.
 - **Allowed types — by MAGIC BYTES, default deny** (`src/modules/files/sniff.ts`): PDF, PNG (+ IHDR), JPEG, WebP,
@@ -2511,3 +2511,79 @@ fixed in its own commit.
   (d) strip photo metadata (GPS) on upload; (e) the quotas (50 / 200 MiB a day) and the 10 MiB file cap; (f) a school
   manager of school A reads the پاسخ‌ها of a تکلیف of school B when they open it — the phase-1 organization-wide manager
   rule (`managesItem` / the broad read) carried over unchanged.
+
+## 2026-10-19 — «پیوست تکلیف و تحویل پاسخ»: security review fixes (before the first deploy of 0024 / 0025)
+
+An adversarial review of the unshipped file feature (commits d3a715b..107d78b) found authorization, path safety,
+sniffing, quotas and the business rules sound, and these defects; each is fixed in its own commit (1c9d1dd, 4faac37,
+f08e932, 7116591, e78e119, 41ab99b). Where its numbers differ from the entry above, this one holds.
+
+- **D1 — the download's own headers now reach the browser.** Next sets next.config.ts's `headers()` rules on the
+  response BEFORE a route handler's and adds a handler header only where none of that name exists
+  (node_modules/next/dist/server/send-response.js), so the app-wide `/(.*)` rule replaced GET /files/<id>'s sandbox CSP
+  and `no-referrer`; Caddy's deferred header block then overwrote Referrer-Policy / X-Frame-Options on every response.
+  Now the app-wide rule matches neither `/files`, `/files/…` nor exactly `/api/files`; `/files/:path*` has the complete
+  file set in next.config.ts (`default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; sandbox`,
+  nosniff, DENY, no-referrer, CORP same-origin, private no-store — also on the route's 404 / 303) and `/api/files` its
+  own strict set; Caddy only DEFAULTS X-Frame-Options / Referrer-Policy (`header ?…`, one per directive). Proven with
+  Next's own routing + `sendResponse` (tests/unit/files-serve-headers.test.ts, which also keeps next.config.ts and
+  src/modules/files/serve.ts equal). The demo unlock route's `Referrer-Policy: no-referrer` (2026-10-18) is overridden
+  by the same app-wide rule — left as is (it only redirects to a clean `/login`); see Open (h).
+- **D2 — a slow body can no longer hold the upload slots.** The pace rule (src/modules/files/receive.ts, limits.ts):
+  aborted after 15 s without a byte, when the average since the start falls under 100 KiB/s once 10 s have passed, or
+  after 90 s in all (a full 10 MiB file needs ~114 KiB/s) — under Caddy's new `read_body 120s` and Node's 300 s
+  `requestTimeout`, so the app answers first, in Persian. ONE upload in flight per person (was 2); of the 8 per process
+  the last 2 go only to a person with no slow abort in the last 10 minutes; 3 slow aborts in 10 minutes → 429; both
+  slots released in `finally` on every path. A client disconnect is not a slow abort.
+- **D3 — file rows fail closed in the database (migration 0025).** RESTRICTIVE policies for app_rw on
+  `files.file_object`: read by the uploader or through an attachment the caller may read (a giver's file only for a
+  viewer of the item — `app.work_item_viewer` = `canViewWorkItem`); insert only one's own `pending` row; update only the
+  app's own writes (own pending → attached, attached → archived by whoever manages that attachment).
+  `attachment_insert` / `attachment_update` tightened (a giver's rows only by the item's manager). `app.work_item_manager`
+  now matches `managesItem` exactly (a broad holder who is an assignee is no manager). Expiry of other people's stale
+  uploads and the sweeper's lookup go through two SECURITY DEFINER functions (`app.expire_stale_uploads`,
+  `app.live_file_ids`; app_owner, pinned search_path, EXECUTE app_rw only, tenant-bound by FORCE RLS). The reviewer's
+  probes (a classmate / guardian / counselor reading or archiving others' file rows, a student archiving a giver's
+  attachment) fail closed in tests/int/work-item-files.test.ts.
+- **D4 — the client can no longer pick `audit_log.request_id`.** POST /api/files (excluded from the proxy, which mints
+  `x-request-id` everywhere else) runs inside `withMintedRequestId` (src/lib/request-id.ts); getRequestId never reads
+  the header there, and elsewhere accepts only a UUID. The matcher excludes exactly `/api/files` (`api/files$`).
+  GET /files/<id> keeps the proxy's id (the proxy runs for it; tested with Next's own matcher).
+- **D5 — Office documents that run code or reach out are refused** (src/modules/files/sniff.ts): every declared content
+  type of `[Content_Types].xml` and every `.rels` part is read (local headers checked, one 1 MiB inflate budget for all,
+  UTF-8 only, no DTD, entity-decoded): macros by name, declared type or relationship (`word/m.bin` declared as a VBA
+  project) → «macro»; embedded objects (`embeddings/`, OLE, ActiveX), Excel external links / data connections / query
+  tables, every `TargetMode="External"` but a hyperlink to http(s) / mailto, and aFChunk / attachedTemplate /
+  subDocument / package / control / frame relationships → a new message «سندِ دارای شیء جاسازی‌شده یا پیوند بیرونی
+  پذیرفته نیست…»; a main part that is not the package's officeDocument relationship or has no matching local header,
+  and duplicate part names → refused. Plain text is always stored and served as `.txt` (never `.csv` / `.md`), so no
+  spreadsheet opens it and runs a `=cmd|…` cell; the picker still offers `.csv` / `.md`.
+- **D6 — orphan bytes are swept** (src/modules/files/sweep.ts): after an upload, at most once an hour per organization,
+  one organization's current and previous year directories, ≤ 500 files per run; deleted only when no live
+  (pending / attached) row names the id AND the bytes are older than 24 h; a failed lookup, or a run in which most of
+  at least 10 files look orphaned, deletes nothing; `pnpm files:sweep [--dry-run] [--org] [--max-files] [--force]` for
+  operators (docs/ops/runbook.md).
+- **Server changes (deploy/Caddyfile, applied with the next deploy):** `servers { timeouts { read_body 120s } }` in the
+  global options; the site's header block keeps `-Server`, HSTS and nosniff; `header ?X-Frame-Options DENY` and
+  `header ?Referrer-Policy strict-origin-when-cross-origin` become separate directives. Validate before reloading
+  (`caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`, deploy/README.md).
+- **Open (owner decisions):**
+  (a) **Cross-school reach of پاسخ‌ها** — a school manager (principal / vice principal of school A) who opens a تکلیف
+  of school B is one of its managers and reads its پاسخ‌ها and their files: the phase-1 organization-wide rule
+  (`canBroadly` in `managesItem` / `canViewWorkItem`, and `app.work_item_manager` / `app.work_item_viewer` in the
+  database) carried over unchanged. Option: narrow both to the item's school.
+  (b) **No antivirus** — uploads are not scanned; ClamAV (`clamd` in a sidecar) later, `file_object.scan_status` is
+  ready for it.
+  (c) **EXIF / GPS of photos is not stripped** — a student's photo may carry where it was taken; the owner decides
+  whether to strip metadata on upload (it needs an image re-encoder).
+  (d) **No image-dimension limit** — a decompression-bomb image (huge dimensions, small file) can only hang the tab of
+  whoever opens it; nothing decodes images on the server.
+  (e) **The compatibility cost of D5** — refused on purpose: Word / PowerPoint documents with a native CHART (its data
+  is an embedded workbook under `embeddings/`) or any embedded / linked object, and documents attached to a template
+  (an `attachedTemplate` relationship — Word writes one for documents made from a downloaded template, even with a
+  local `file:///` path). Option: allow `embeddings/*.xlsx` chart data and local `file:///<drive>:` templates.
+  (f) **The pace numbers** — 100 KiB/s on average after 10 s and 90 s in all may be strict on slow mobile networks;
+  they live in `FILE_LIMITS` only.
+  (g) The sweeper deletes the bytes of ARCHIVED rows too (garbage by definition — the app deletes them itself right
+  after the commit); only pending / attached rows protect bytes.
+  (h) The demo unlock route's `no-referrer` (see D1) — exclude `/login/demo` from the app-wide header rule too, or keep.
