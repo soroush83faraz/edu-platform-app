@@ -35,6 +35,7 @@ import { findStudentAnchor } from "@/modules/counseling/repo";
 import { can, schoolLevelScope } from "@/modules/iam/can";
 import { notifyGuardiansOfEarlyExit, notifyGuardiansOfLeaveDecision } from "@/modules/iam/guardian-notify";
 import { assertSchoolInScope, type AdminScope } from "@/modules/iam/service";
+import { closeLeaveRequestClock } from "@/modules/workspace/request-clock";
 import type { AttendanceCtx } from "./attendance";
 import type { DecideLeaveInput, RecordEarlyExitInput } from "./leave-dto";
 import { earlyExit, leaveRequest } from "./schema";
@@ -216,6 +217,7 @@ export async function decideLeave(tx: Tx, ctx: LeaveCtx, input: DecideLeaveInput
     .where(and(eq(leaveRequest.id, row.id), eq(leaveRequest.status, "pending")))
     .returning({ id: leaveRequest.id });
   if (done.length === 0) throw fail("id", MSG.notPending);
+  await closeLeaveRequestClock(tx, row.id);
   await audit(
     ctx,
     input.decision === "approved" ? "academic.leave_request.approved" : "academic.leave_request.rejected",

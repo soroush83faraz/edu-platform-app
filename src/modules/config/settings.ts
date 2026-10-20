@@ -79,7 +79,7 @@ export const SETTINGS = {
   "requests.sla_hours.admin_request": {
     kind: "int",
     labelFa: "مهلت رسیدگی به درخواست از مدیریت",
-    descriptionFa: "اگر ارجاع مشاور در این مدت پاسخ نگیرد، به سطح بالاتر (معاون، مدیر مدرسه، مدیر سازمان) هم ارجاع می‌شود.",
+    descriptionFa: "اگر ارجاع مشاور در این مدت پاسخ نگیرد، به سطح بالاتر (معاون، مدیر مدرسه، مدیر سازمان) هم ارجاع می‌شود. زمانِ «در حال بررسی» شمرده نمی‌شود.",
     min: 1,
     max: 720,
     unitFa: "ساعت",
@@ -89,7 +89,7 @@ export const SETTINGS = {
   "requests.sla_hours.parent_message": {
     kind: "int",
     labelFa: "مهلت پاسخ به پیام اولیا",
-    descriptionFa: "اگر پیام ولی در این مدت پاسخ نگیرد، به سطح بالاتر (معاون، مدیر مدرسه، مدیر سازمان) هم ارجاع می‌شود.",
+    descriptionFa: "اگر پیام ولی در این مدت پاسخ نگیرد، به سطح بالاتر در مدرسه (معاون، مدیر مدرسه) هم ارجاع می‌شود. زمانِ «در حال بررسی» شمرده نمی‌شود.",
     min: 1,
     max: 720,
     unitFa: "ساعت",
@@ -99,13 +99,12 @@ export const SETTINGS = {
   "requests.sla_hours.leave_request": {
     kind: "int",
     labelFa: "مهلت رسیدگی به درخواست مرخصی",
-    descriptionFa: "اگر درخواست مرخصی در این مدت پاسخ نگیرد، به مدیر مدرسه ارجاع می‌شود.",
+    descriptionFa: "اگر درخواست مرخصی در این مدت پاسخ نگیرد، به مدیر مدرسه هم ارجاع می‌شود.",
     min: 1,
     max: 720,
     unitFa: "ساعت",
     default: 24,
     schoolOverridable: true,
-    upcoming: true,
   },
 } as const satisfies Record<string, SettingDef>;
 

@@ -16,6 +16,9 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { id, timestamps } from "./_common";
+// A cycle with ./academic (its session_report references workItem) — harmless: both sides use the other's table only
+// inside the lazily evaluated constraint callbacks, never at module evaluation.
+import { leaveRequest } from "./academic";
 import { fileObject } from "./files";
 import { person, studentProfile } from "./iam";
 import { classOffering, orgFk, organization, school } from "./tenancy";
@@ -437,14 +440,16 @@ export const guardianMessage = workspace.table(
 /**
  * «مرکز درخواست‌ها» (migration 0028; owner 2026-10-20; docs/decisions.md «یادآوری مهلت و مرکز درخواست‌ها»): the
  * response clock of ONE request — a counselor's «ارجاع به مدیریت» (`admin_request`), a guardian's «پیام به مدرسه»
- * (`parent_message`), later a «درخواست مرخصی» (`leave_request`, which carries no work item: it adds its own nullable
- * reference then). Written in the transaction that sends the request (`openRequestSla`, src/modules/workspace/
- * requests.ts) and advanced by the `workspace.check_request_slas` job: `warned_at` at 80 % of the current period,
- * `escalation_level` + a new period when it ends (the next level of the chain added as addressees), `closed_at` once
- * the request was answered or closed. NO TEXT: ids, the kind, the school and times only — so the system actor (no
- * person, plain tenant RLS) can read it, and a manager's list can show a confidential request's kind, age and status
- * without its title (the title stays on the work item, behind `canViewWorkItem`). Never deleted (RESTRICTIVE policy
- * for app_rw, 0028).
+ * (`parent_message`) — both on a work item — or a guardian's «درخواست مرخصی» (`leave_request`, migration 0030: no work
+ * item, its own `leave_request_id`). Written in the transaction that sends the request (`openRequestSla`,
+ * src/modules/workspace/requests.ts) and advanced by the `workspace.check_request_slas` job: `warned_at` at 80 % of the
+ * current period's ACTIVE time, `escalation_level` + a new period when it ends (the next level of the chain added as
+ * addressees), `closed_at` once the request was answered or closed. «در حال بررسی» stops the clock (owner, 2026-10-20,
+ * migration 0030): `paused_at` while it lasts; on the way back to «باز» the paused time moves `due_at` on and is added to
+ * `paused_seconds` (the current period's — reset with each new period). NO TEXT: ids, the kind, the school and times
+ * only — so the system actor (no person, plain tenant RLS) can read it, and a manager's list can show a confidential
+ * request's kind, age and status without its title (the title stays on the work item, behind `canViewWorkItem`).
+ * Never deleted (RESTRICTIVE policy for app_rw, 0028).
  */
 export const requestSla = workspace.table(
   "request_sla",
@@ -456,6 +461,8 @@ export const requestSla = workspace.table(
     kind: text("kind").notNull(),
     /** The work item carrying the request (admin_request, parent_message); null only for a kind without one. */
     workItemId: uuid("work_item_id"),
+    /** The guardian's leave request (`leave_request` only; migration 0030). */
+    leaveRequestId: uuid("leave_request_id"),
     openedAt: timestamp("opened_at", { withTimezone: true }).defaultNow().notNull(),
     /** Start of the current response period (the sending, or the last escalation). */
     periodStartedAt: timestamp("period_started_at", { withTimezone: true }).notNull(),
@@ -466,19 +473,30 @@ export const requestSla = workspace.table(
     /** Escalations so far (0 = still with the addressees it was sent to). */
     escalationLevel: smallint("escalation_level").notNull().default(0),
     escalatedAt: timestamp("escalated_at", { withTimezone: true }),
-    /** When the check saw it answered or closed; the clock stops. */
+    /** When it was answered or closed (the status change, or the check); the clock stops. */
     closedAt: timestamp("closed_at", { withTimezone: true }),
+    /** «در حال بررسی» since then — the clock is stopped (null = running). Migration 0030. */
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
+    /** Seconds the CURRENT period was paused — already added to `due_at`; reset with a new period. Migration 0030. */
+    pausedSeconds: integer("paused_seconds").notNull().default(0),
     ...timestamps(),
   },
   (t) => [
     unique("request_sla_org_id_uq").on(t.organizationId, t.id),
     uniqueIndex("request_sla_work_item_uq").on(t.organizationId, t.workItemId).where(sql`${t.workItemId} IS NOT NULL`),
+    uniqueIndex("request_sla_leave_request_uq").on(t.organizationId, t.leaveRequestId).where(sql`${t.leaveRequestId} IS NOT NULL`),
     index("request_sla_org_open_due_idx").on(t.organizationId, t.dueAt).where(sql`${t.closedAt} IS NULL`),
     index("request_sla_org_school_open_idx").on(t.organizationId, t.schoolId).where(sql`${t.closedAt} IS NULL`),
     check("request_sla_kind_chk", sql`${t.kind} IN ('admin_request', 'parent_message', 'leave_request')`),
     check("request_sla_work_item_chk", sql`${t.kind} = 'leave_request' OR ${t.workItemId} IS NOT NULL`),
     check("request_sla_period_chk", sql`${t.dueAt} > ${t.periodStartedAt} AND ${t.periodStartedAt} >= ${t.openedAt}`),
     check("request_sla_escalation_chk", sql`${t.escalationLevel} BETWEEN 0 AND 10 AND (${t.escalationLevel} = 0) = (${t.escalatedAt} IS NULL)`),
+    // A leave request's clock names its request and no work item; every other kind no leave request (0030).
+    check(
+      "request_sla_subject_chk",
+      sql`CASE WHEN ${t.kind} = 'leave_request' THEN ${t.leaveRequestId} IS NOT NULL AND ${t.workItemId} IS NULL ELSE ${t.leaveRequestId} IS NULL END`,
+    ),
+    check("request_sla_paused_chk", sql`${t.pausedSeconds} >= 0`),
     foreignKey({
       name: "request_sla_school_fk",
       columns: [t.organizationId, t.schoolId],
@@ -488,6 +506,11 @@ export const requestSla = workspace.table(
       name: "request_sla_work_item_fk",
       columns: [t.organizationId, t.workItemId],
       foreignColumns: [workItem.organizationId, workItem.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "request_sla_leave_request_fk",
+      columns: [t.organizationId, t.leaveRequestId],
+      foreignColumns: [leaveRequest.organizationId, leaveRequest.id],
     }).onDelete("restrict"),
   ],
 );

@@ -2723,8 +2723,8 @@ row) and a Home tile «تنظیمات» for admins.
   escalation. Both are feature switches of 0026 that are now BUILT (no «به‌زودی»), both still default OFF:
   `deadline_reminders` (school-overridable) and `request_center` (organization-level only). Settings read:
   `reminders.deadline_lead_hours` (24), `notif.quiet_hours` (22:00–07:00 Tehran), `requests.sla_hours.admin_request`
-  (72), `requests.sla_hours.parent_message` (48); `requests.sla_hours.leave_request` (24) stays «به‌زودی» until leave
-  requests plug in.
+  (72), `requests.sla_hours.parent_message` (48); `requests.sla_hours.leave_request` (24) stayed «به‌زودی» until leave
+  requests plugged in (0030 — see the owner's answers below).
 - **Quiet hours** (`src/modules/notif/quiet-hours.ts`, pure) apply to the SYSTEM's nudges only — a reminder, a response
   reminder, an escalation; what a person does still notifies at once. A nudge inside the window moves to its end; a
   deadline reminder whose window ends after the deadline goes one minute before the window starts instead, or is
@@ -2786,10 +2786,40 @@ row) and a Home tile «تنظیمات» for admins.
   referral's addressees to the school's case readers.
 - **«درخواست‌های من»** in «پنل من»: a filter chip for staff while the switch is on — the requests with a clock the
   caller is an addressee of, in the same `WorkItemList` (`listInbox({ requestsOnly })`).
-- **Open (owner).** (a) The chain reaches the **organization admin for a guardian's message too** (as asked) — the
-  re-routing of 2026-10-19 never goes there (open item (f) of «ارتباط ولی و مدرسه»); confirm, or stop guardian messages
-  at the principal. (b) A **counselor** counts as staff in the chain (a counselor-addressed message escalates to the
-  vice principal). (c) «در حال بررسی» does not count as a response. (d) The leave-request kind is reserved, not wired.
+- **Open (owner) — as first written.** (a) The chain reaches the **organization admin for a guardian's message too**
+  (as asked) — the re-routing of 2026-10-19 never goes there (open item (f) of «ارتباط ولی و مدرسه»); confirm, or stop
+  guardian messages at the principal. (b) A **counselor** counts as staff in the chain (a counselor-addressed message
+  escalates to the vice principal). (c) «در حال بررسی» does not count as a response. (d) The leave-request kind is
+  reserved, not wired.
+- **The owner's answers (2026-10-20) — implemented with migration 0030.**
+  (a) **A guardian's message NEVER escalates to the organization admin**: its chain is staff / counselor → vice
+  principal → principal; past the principal a new period for the same addressees (reminded again at its 80 %), no
+  further level. Every kind now names its TOP level (`REQUEST_KINDS[k].topLevel`, `nextLevel(…, top)`): `admin_request`
+  `org_admin` (unchanged), `parent_message` `principal`, `leave_request` `principal` (what a guardian asks stays in the
+  school, by the same reasoning). (b) Kept: a counselor-addressed message escalates to the vice principal.
+  (c) **«در حال بررسی» PAUSES the clock**: `request_sla.paused_at` (set while the item's status category is `doing`) and
+  `paused_seconds` (the current period's paused time). The ONE writer of a work item's status (`setItemStatus`) keeps the
+  clock in step in the same transaction (src/modules/workspace/request-clock.ts): doing → pause; back to todo → the pause,
+  in whole seconds, moves `due_at` on and is added to `paused_seconds`; done / cancelled → `closed_at` at once (the answer's
+  moment is the response time — previously the next check closed it; a request reopened after its answer has no clock).
+  The 80 % mark is `due_at − 0.2 × (due_at − period_started_at − paused_seconds)` and the breach `due_at`: ACTIVE time
+  only (`warnAt`, `activeLength`); a paused clock is not read by the check, reads in the managers' list as it stood when
+  it stopped (with «مهلت متوقف»), and never escalates; a new period starts unpaused. A request already «در حال بررسی»
+  when 0030 is applied (its clock ran) is stopped by the first check after the deploy (`CheckReport.paused`). Note: no
+  manager can reopen today's confidential requests from «در حال بررسی» (their addressees are assignees, nobody else sees
+  them), so the resume path serves future kinds and admin tools; it is tested through the real status path.
+  (d) **Leave requests are wired** (0030): `request_sla.leave_request_id` (composite FK to academic.leave_request, partial
+  UNIQUE, CHECK `request_sla_subject_chk`: a leave clock names its request and no work item; every other kind no leave
+  request). `requestLeave` opens the clock (`requests.sla_hours.leave_request`, 24 h — no longer «به‌زودی»), the
+  decision or the guardian's withdrawal closes it in its own transaction. Its addressee reader: the holders of
+  `academic.leave.decide` AT the child's school (`leaveDeciders`) — first the vice principals (none → the principal); the
+  one escalation ADDS the principal (no assignee rows: the addressees are read again at each check); then renewals.
+  Bells: `work_item.response_due` / `work_item.escalated` with the title «یادآوری: پاسخ به «درخواست مرخصی: <نام>» تا …» /
+  «ارجاع خودکار: «درخواست مرخصی: <نام>»» — the child's name only, never the dates, the reason or a note — linking to
+  `/admin/leave?school=`; audit rows carry `leaveRequestId`. The managers' list shows a leave request's title (the child's
+  name) and link only to someone who may decide it AT that school (`holdsAtSchool`), «درخواست محرمانه» to everyone else.
+  «درخواست‌های من» stays work items only. The leave switch (`leave_requests`) gates new requests, not the clocks of
+  pending ones: what was asked is still answered on time.
 
 ## 2026-10-20 — «مرخصی و خروج مجاز» (owner): a guardian's leave request and the school's authorized early exit (migration 0029)
 

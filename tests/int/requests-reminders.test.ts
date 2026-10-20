@@ -15,11 +15,14 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { withTenant, type Tx } from "@/db/client";
 import * as schema from "@/db/schema";
+import { tehranToday } from "@/lib/attendance";
+import { decideLeave } from "@/modules/academic/leave";
 import { assignTeacher } from "@/modules/academic/service";
 import { setFlag, setSetting } from "@/modules/config/service";
 import { referToManagement } from "@/modules/counseling/service";
 import { type Assignment } from "@/modules/iam/can";
 import { addGuardian } from "@/modules/iam/guardian";
+import { requestLeave } from "@/modules/iam/guardian-leave";
 import { sendGuardianMessage } from "@/modules/iam/guardian-messages";
 import { PERMISSIONS } from "@/modules/iam/permissions";
 import { listValidAssignments } from "@/modules/iam/repo";
@@ -162,15 +165,39 @@ async function jobsOf(tx: Tx, kind: string): Promise<Array<{ payload: { workItem
   return res.rows.map((r) => ({ payload: r.payload, runAt: new Date(r.run_at), dedupeKey: r.dedupe_key }));
 }
 
-async function slaRow(tx: Tx, workItemId: string) {
-  const res = await tx.execute<{ id: string; kind: string; school_id: string; opened_at: string; period_started_at: string; due_at: string; warned_at: string | null; escalation_level: number; closed_at: string | null }>(
-    sql`select id, kind, school_id, opened_at, period_started_at, due_at, warned_at, escalation_level, closed_at from workspace.request_sla where work_item_id = ${workItemId}::uuid`,
+async function slaRowBy(tx: Tx, column: "work_item_id" | "leave_request_id", subjectId: string) {
+  const res = await tx.execute<{
+    id: string;
+    kind: string;
+    school_id: string;
+    work_item_id: string | null;
+    leave_request_id: string | null;
+    opened_at: string;
+    period_started_at: string;
+    due_at: string;
+    warned_at: string | null;
+    escalation_level: number;
+    closed_at: string | null;
+    paused_at: string | null;
+    paused_seconds: number;
+  }>(
+    sql`select id, kind, school_id, work_item_id, leave_request_id, opened_at, period_started_at, due_at, warned_at, escalation_level, closed_at, paused_at, paused_seconds
+        from workspace.request_sla where ${sql.raw(column)} = ${subjectId}::uuid`,
   );
   const r = res.rows[0];
   return r
-    ? { ...r, periodStartedAt: new Date(r.period_started_at), dueAt: new Date(r.due_at), openedAt: new Date(r.opened_at), escalationLevel: Number(r.escalation_level) }
+    ? {
+        ...r,
+        periodStartedAt: new Date(r.period_started_at),
+        dueAt: new Date(r.due_at),
+        openedAt: new Date(r.opened_at),
+        escalationLevel: Number(r.escalation_level),
+        pausedAt: r.paused_at ? new Date(r.paused_at) : null,
+        pausedSeconds: Number(r.paused_seconds),
+      }
     : undefined;
 }
+const slaRow = (tx: Tx, workItemId: string) => slaRowBy(tx, "work_item_id", workItemId);
 
 const assigneesOf = async (tx: Tx, workItemId: string) =>
   (await tx.execute<{ person_id: string }>(sql`select person_id from workspace.work_item_assignee where work_item_id = ${workItemId}::uuid and role = 'assignee' order by person_id`)).rows.map(
@@ -275,7 +302,7 @@ describe("«یادآوری مهلت» and «مرکز درخواست‌ها»", (
   });
 
   describe("request center", () => {
-    it("a guardian's message: reminded at 80 %, escalated teacher → vice principal → principal → organization admin, then renewed", async () => {
+    it("a guardian's message: reminded at 80 %, escalated teacher → vice principal → principal, then renewed — never the organization admin; the answer stops the clock at once", async () => {
       await rolledBack(async (tx) => {
         const w = await buildWorld(tx);
         await quiet(tx, w, "00:00", "00:00"); // no quiet window: the times below need not dodge the night
@@ -301,7 +328,7 @@ describe("«یادآوری مهلت» and «مرکز درخواست‌ها»", (
         await flag(tx, w, "request_center", "on");
 
         // Before 80 %: nothing. At 80 %: the teacher is reminded — once.
-        expect(await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(30)))).toEqual({ warned: 0, escalated: 0, renewed: 0, closed: 0, skipped: 0 });
+        expect(await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(30)))).toEqual({ warned: 0, escalated: 0, renewed: 0, closed: 0, skipped: 0, paused: 0 });
         expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(40)))).warned).toBe(1);
         expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(41)))).warned).toBe(0);
         const warned = await notificationsOf(tx, "work_item.response_due", id);
@@ -325,21 +352,25 @@ describe("«یادآوری مهلت» and «مرکز درخواست‌ها»", (
         // Ids and levels only: neither the title nor the text.
         expect(JSON.stringify(auditRows.rows[0].after)).not.toContain("تمرین");
 
-        // The vice principal can now open it; the next deadline adds the principal, then the organization admin.
+        // The vice principal can now open it; the next deadline adds the principal — and there the chain ends: what a
+        // guardian wrote never reaches the organization admin (owner, 2026-10-20). Past the principal: a new period for
+        // the same addressees, again and again.
         expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(49 + 49)))).escalated).toBe(1);
         expect(await assigneesOf(tx, id)).toContain(w.principalA.personId);
-        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(49 + 49 + 49)))).escalated).toBe(1);
-        expect(await assigneesOf(tx, id)).toContain(w.admin.personId);
-        // Past the organization admin: a new period for the same addressees.
         const before = await assigneesOf(tx, id);
+        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(49 + 49 + 49)))).renewed).toBe(1);
         expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(49 * 4)))).renewed).toBe(1);
         expect(await assigneesOf(tx, id)).toEqual(before);
-        expect((await slaRow(tx, id))!.escalationLevel).toBe(3);
+        expect(await assigneesOf(tx, id)).not.toContain(w.admin.personId);
+        expect(await notificationsOf(tx, "work_item.escalated", id).then((ns) => ns.map((n) => n.recipient))).not.toContain(w.admin.personId);
+        expect((await slaRow(tx, id))!.escalationLevel).toBe(2);
+        const renewedAudit = await tx.execute<{ n: number }>(sql`select count(*)::int as n from audit.audit_log where action = 'workspace.request.sla_renewed' and entity_id = ${row1.id}::uuid`);
+        expect(renewedAudit.rows[0].n).toBe(2);
 
-        // Answered: the clock stops at the next check.
+        // Answered: the clock stops AT the answer (the status change closes it in its own transaction), not at a check.
         await as(tx, w.teacher, (t) => changeStatus(t, w.teacher, { workItemId: id, toStatusCode: "answered", note: "هفتهٴ آینده." }));
-        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(49 * 6)))).closed).toBe(1);
         expect((await slaRow(tx, id))!.closed_at).not.toBeNull();
+        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(49 * 6)))).closed).toBe(0);
       });
     });
 
@@ -410,6 +441,136 @@ describe("«یادآوری مهلت» and «مرکز درخواست‌ها»", (
         expect((await tx.execute<{ n: number }>(sql`select count(*)::int as n from workspace.request_sla`)).rows[0].n).toBe(0);
         expect(await asSystem(tx, (t) => checkRequestSlas(t, { ...SYSTEM, orgId: f.ORG_B }, new Date(Date.now() + 30 * DAY)))).toMatchObject({ escalated: 0, warned: 0 });
         await tx.execute(sql`select set_config('app.current_org_id', ${f.ORG_A}, true)`);
+      });
+    });
+
+    it("«در حال بررسی» stops the clock: no reminder and no escalation while in progress, the deadline moves on by the paused time when it is back at «باز» (owner, 2026-10-20)", async () => {
+      await rolledBack(async (tx) => {
+        const w = await buildWorld(tx);
+        await quiet(tx, w, "00:00", "00:00");
+        await flag(tx, w, "request_center", "on");
+        const sent = await as(tx, w.g1, (t) =>
+          sendGuardianMessage(t, w.g1, {
+            studentProfileId: w.s1.studentProfileId,
+            kind: "question",
+            destination: "teacher",
+            classOfferingId: f.OFFERING_A1,
+            teacherPersonId: w.teacher.personId,
+            subject: "برنامهٴ امتحان",
+            body: "امتحان ریاضی کی است؟",
+          }),
+        );
+        const id = sent.workItemId;
+        const row0 = (await slaRow(tx, id))!;
+        const at = (hours: number) => new Date(row0.periodStartedAt.getTime() + hours * H);
+        expect(row0).toMatchObject({ pausedAt: null, pausedSeconds: 0 });
+
+        // The teacher starts on it: «در حال بررسی» — the clock stops in the same transaction.
+        await as(tx, w.teacher, (t) => changeStatus(t, w.teacher, { workItemId: id, toStatusCode: "in_review" }));
+        const paused = (await slaRow(tx, id))!;
+        expect(paused.pausedAt).not.toBeNull();
+        expect(paused.dueAt).toEqual(row0.dueAt);
+        // Long past the 48 h deadline: nothing — no reminder, no escalation, nobody added.
+        expect(await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(60)))).toEqual({ warned: 0, escalated: 0, renewed: 0, closed: 0, skipped: 0, paused: 0 });
+        expect(await assigneesOf(tx, id)).toEqual([w.teacher.personId]);
+        expect(await notificationsOf(tx, "work_item.response_due", id)).toEqual([]);
+        // The managers' list shows it as it stood when it stopped, marked paused.
+        const view = await sub(tx, (sp) => as(sp, w.principalA, (t) => requestCenterView(t, w.principalA, {}, at(60))));
+        expect(view.rows.find((r) => r.kind === "parent_message")).toMatchObject({ status: "on_time", paused: true });
+
+        // The pause lasted 30 hours (moved back by hand: the whole test is one transaction, whose now() never moves).
+        // Back to «باز»: only a MANAGER of the item reopens one (`managesItem`) — a broad holder who is a participant but
+        // no assignee; today's confidential requests have none (their addressees are assignees, nobody else sees them),
+        // so the principal is made a participant here (an inbox row) to drive the real status path.
+        await tx.execute(sql`update workspace.request_sla set paused_at = paused_at - interval '30 hours' where id = ${row0.id}::uuid`);
+        await tx.execute(sql`insert into workspace.inbox_entry (id, organization_id, person_id, work_item_id, relation, state)
+                             values (gen_random_uuid(), ${f.ORG_A}::uuid, ${w.principalA.personId}::uuid, ${id}::uuid, 'watcher', 'unread')`);
+        await as(tx, w.principalA, (t) => changeStatus(t, w.principalA, { workItemId: id, toStatusCode: "open" }));
+        const resumed = (await slaRow(tx, id))!;
+        expect(resumed.pausedAt).toBeNull();
+        expect(resumed.pausedSeconds).toBe(30 * 3600);
+        expect(resumed.dueAt).toEqual(at(48 + 30));
+        expect(resumed.periodStartedAt).toEqual(row0.periodStartedAt);
+
+        // Active time only: 80 % of 48 h is reached at 38.4 h of ACTIVE time = 68.4 h after the start, the deadline at 78 h.
+        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(60)))).warned).toBe(0);
+        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(69)))).warned).toBe(1);
+        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(77)))).escalated).toBe(0);
+        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(78.5)))).escalated).toBe(1);
+        const next = (await slaRow(tx, id))!;
+        expect(next).toMatchObject({ escalationLevel: 1, pausedSeconds: 0, pausedAt: null });
+        expect(next.dueAt).toEqual(at(78.5 + 48));
+        const audited = await tx.execute<{ before: Record<string, unknown> }>(sql`select before from audit.audit_log where action = 'workspace.request.escalated' and entity_id = ${row0.id}::uuid`);
+        expect(audited.rows[0].before).toMatchObject({ pausedSeconds: 30 * 3600 });
+
+        // A request already «در حال بررسی» whose clock still runs (moved there before the clock followed the status):
+        // the first check stops it instead of counting.
+        await as(tx, w.viceA, (t) => changeStatus(t, w.viceA, { workItemId: id, toStatusCode: "in_review" }));
+        await tx.execute(sql`update workspace.request_sla set paused_at = null where id = ${row0.id}::uuid`);
+        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(78.5 + 45)))).paused).toBe(1);
+        expect((await slaRow(tx, id))!.pausedAt).toEqual(at(78.5 + 45));
+        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(78.5 + 100)))).escalated).toBe(0);
+      });
+    });
+
+    it("a guardian's leave request: its clock opens with it; at 80 % the school's vice principals are reminded, at the deadline the principal is ADDED, then renewed — never the organization admin; the decision closes it", async () => {
+      await rolledBack(async (tx) => {
+        const w = await buildWorld(tx);
+        await quiet(tx, w, "00:00", "00:00");
+        const today = tehranToday(new Date());
+        const req = await as(tx, w.g1, (t) => requestLeave(t, w.g1, { child: w.s1.studentProfileId, fromDate: today, toDate: today, category: "illness", note: "تب دارد" }));
+        const row0 = (await slaRowBy(tx, "leave_request_id", req.id))!;
+        expect(row0).toMatchObject({ kind: "leave_request", school_id: f.SCHOOL_A, work_item_id: null, escalationLevel: 0, closed_at: null, pausedSeconds: 0 });
+        expect(row0.dueAt.getTime() - row0.periodStartedAt.getTime()).toBe(24 * H);
+        const at = (hours: number) => new Date(row0.periodStartedAt.getTime() + hours * H);
+        // The database ties a leave clock to its request and to no work item.
+        const bad = await sub(tx, (sp) => sp.execute(sql`update workspace.request_sla set leave_request_id = null where id = ${row0.id}::uuid`)).then(
+          () => "ok",
+          (e: { cause?: { code?: string }; code?: string }) => e.cause?.code ?? e.code,
+        );
+        expect(bad).toBe("23514");
+
+        await flag(tx, w, "request_center", "on");
+        // 80 % of 24 h: the vice principal (the first addressee) is reminded — the child's name only, the queue's link.
+        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(20)))).warned).toBe(1);
+        const warned = await notificationsOf(tx, "work_item.response_due", req.id);
+        expect(warned.map((n) => n.recipient)).toEqual([w.viceA.personId]);
+        expect(warned[0].title).toMatch(/^یادآوری: پاسخ به «درخواست مرخصی: .+» تا /);
+        expect(warned[0].deepLink).toBe(`/admin/leave?school=${f.SCHOOL_A}`);
+        expect(JSON.stringify(warned)).not.toContain("تب دارد");
+
+        // The deadline: the principal is added (bell «ارجاع خودکار»), audited with ids and levels only.
+        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(25)))).escalated).toBe(1);
+        expect((await notificationsOf(tx, "work_item.escalated", req.id)).map((n) => n.recipient)).toEqual([w.principalA.personId]);
+        const row1 = (await slaRowBy(tx, "leave_request_id", req.id))!;
+        expect(row1).toMatchObject({ escalationLevel: 1, warned_at: null });
+        expect(row1.dueAt).toEqual(at(25 + 24));
+        const esc = await tx.execute<{ after: Record<string, unknown> }>(sql`select after from audit.audit_log where action = 'workspace.request.escalated' and entity_id = ${row0.id}::uuid`);
+        expect(esc.rows[0].after).toMatchObject({ kind: "leave_request", leaveRequestId: req.id, fromLevel: "vice_principal", toLevel: "principal", addedPersonIds: [w.principalA.personId] });
+        expect(JSON.stringify(esc.rows)).not.toContain("تب دارد");
+
+        // Both are reminded in the next period; past the principal: renewed, never the organization admin.
+        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(25 + 20)))).warned).toBe(1);
+        expect((await notificationsOf(tx, "work_item.response_due", req.id)).map((n) => n.recipient).sort()).toEqual([w.viceA.personId, w.viceA.personId, w.principalA.personId].sort());
+        expect((await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(25 + 25)))).renewed).toBe(1);
+        expect((await notificationsOf(tx, "work_item.escalated", req.id)).map((n) => n.recipient)).not.toContain(w.admin.personId);
+        expect((await slaRowBy(tx, "leave_request_id", req.id))!.escalationLevel).toBe(1);
+
+        // The managers' list: whoever may decide it reads the child's name and opens the queue; the addressees by name.
+        const view = (who: Actor) => sub(tx, (sp) => as(sp, who, (t) => requestCenterView(t, who, {}, at(30))));
+        const p = (await view(w.principalA)).rows.find((r) => r.kind === "leave_request");
+        expect(p).toMatchObject({ kindLabel: "درخواست مرخصی", titleHidden: false, href: `/admin/leave?school=${f.SCHOOL_A}`, escalations: 1 });
+        expect(p!.title).toMatch(/^درخواست مرخصی: /);
+        expect([...p!.addressees].sort()).toEqual(["سارا کاظمی", "مریم رضایی"].sort());
+        expect((await sub(tx, (sp) => as(sp, w.principalA, (t) => requestCenterView(t, w.principalA, { kind: "leave_request" }, at(30))))).rows).toHaveLength(1);
+        expect((await sub(tx, (sp) => as(sp, w.principalA, (t) => requestCenterView(t, w.principalA, { kind: "parent_message" }, at(30))))).rows).toEqual([]);
+        expect((await view(w.principalB)).rows).toEqual([]);
+
+        // Decided: the clock stops in the decision's transaction; the next check has nothing to do with it.
+        await as(tx, w.viceA, (t) => decideLeave(t, w.viceA, { id: req.id, decision: "approved", note: null }));
+        expect((await slaRowBy(tx, "leave_request_id", req.id))!.closed_at).not.toBeNull();
+        expect(await asSystem(tx, (t) => checkRequestSlas(t, SYSTEM, at(100)))).toMatchObject({ warned: 0, escalated: 0, renewed: 0 });
+        expect((await view(w.principalA)).rows.find((r) => r.kind === "leave_request")).toBeUndefined();
       });
     });
   });

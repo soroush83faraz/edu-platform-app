@@ -25,10 +25,11 @@ const KIND_ICON: Record<RequestKind, typeof ClipboardList> = { admin_request: Cl
 
 /**
  * «مرکز درخواست‌ها» (owner 2026-10-20; docs/decisions.md «یادآوری مهلت و مرکز درخواست‌ها»): every OPEN request of the
- * manager's schools — a counselor's referral, a guardian's message — with its kind, school, age, response-time status
- * (در مهلت / نزدیک مهلت / گذشته), automatic escalations and current addressees; overdue first by deadline. A
- * confidential request shows its title and opens only for its participants (`requestCenterView`); everyone else reads
- * «درخواست محرمانه». Filters are a GET form (the URL is the state). Off until the organization turns the center on.
+ * manager's schools — a counselor's referral, a guardian's message or leave request — with its kind, school, age,
+ * response-time status (در مهلت / نزدیک مهلت / گذشته; stopped while «در حال بررسی»), automatic escalations and current
+ * addressees; overdue first by deadline. A confidential request shows its title and opens only for its participants,
+ * a leave request for whoever may decide it (`requestCenterView`); everyone else reads «درخواست محرمانه». Filters are a
+ * GET form (the URL is the state). Off until the organization turns the center on.
  */
 export default async function RequestCenterPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
@@ -117,7 +118,7 @@ export default async function RequestCenterPage({ searchParams }: { searchParams
       {view.rows.length === 0 ? (
         <EmptyState
           title={filtered ? "با این فیلتر درخواستی پیدا نشد" : "درخواست بازی در انتظار پاسخ نیست"}
-          description={filtered ? undefined : "ارجاع‌های مشاور و پیام‌های اولیا تا پاسخ بگیرند این‌جا می‌مانند."}
+          description={filtered ? undefined : "ارجاع‌های مشاور، پیام‌ها و درخواست‌های مرخصی اولیا تا پاسخ بگیرند این‌جا می‌مانند."}
           className="surface-work"
         />
       ) : (
@@ -155,6 +156,7 @@ function RowBody({ row }: { row: RequestCenterRow }) {
             <bdi>{row.title}</bdi>
           </span>
           <Chip tone={STATUS_TONE[row.status]}>{SLA_STATUS_FA[row.status]}</Chip>
+          {row.paused ? <Chip>در حال بررسی · مهلت متوقف</Chip> : null}
           {row.escalations > 0 ? <Chip>ارجاع خودکار{row.escalations > 1 ? ` ×${formatNumberFa(row.escalations)}` : ""}</Chip> : null}
         </span>
         <span className="text-meta text-text-muted">
@@ -164,7 +166,13 @@ function RowBody({ row }: { row: RequestCenterRow }) {
           <span aria-hidden> · </span>
           ارسال <RelativeTime at={row.openedAt} mode="time" />
           <span aria-hidden> · </span>
-          مهلت پاسخ <RelativeTime at={row.dueAt} mode="due" />
+          {row.paused ? (
+            "مهلت پاسخ تا بازگشت به «باز» شمرده نمی‌شود"
+          ) : (
+            <>
+              مهلت پاسخ <RelativeTime at={row.dueAt} mode="due" />
+            </>
+          )}
         </span>
         <span className="text-meta text-text-muted">
           {row.addressees.length > 0 ? (

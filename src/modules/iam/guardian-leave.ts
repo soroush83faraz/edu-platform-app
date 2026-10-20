@@ -38,12 +38,14 @@ import {
   validateLeaveRange,
 } from "@/lib/leave";
 import { normalizeFa } from "@/lib/normalize";
-import { leaveDeciders } from "@/modules/academic/leave-deciders";
+import { allDeciders, leaveDeciders } from "@/modules/academic/leave-deciders";
 import { earlyExit, leaveRequest } from "@/modules/academic/schema";
 import { listPeriodsOfSchools, type PeriodRow } from "@/modules/academic/repo";
 import type { RequestLeaveInput } from "@/modules/academic/leave-dto";
 import { lockActivePersons, findStudentAnchor } from "@/modules/counseling/repo";
 import { notifyMany } from "@/modules/notif/service";
+import { closeLeaveRequestClock } from "@/modules/workspace/request-clock";
+import { openRequestSla } from "@/modules/workspace/requests";
 import { requireChild, type ChildContext, type GuardianViewCtx } from "./guardian-views";
 
 export type GuardianLeaveCtx = GuardianViewCtx & AuditCtx;
@@ -220,9 +222,12 @@ export async function requestLeave(tx: Tx, ctx: GuardianLeaveCtx, input: Request
     },
     tx,
   );
+  // «مرکز درخواست‌ها»: the request's response clock starts now (the school's `requests.sla_hours.leave_request`), whether
+  // or not the center is on — as for every request (src/modules/workspace/requests.ts).
+  await openRequestSla(tx, ctx, { kind: "leave_request", leaveRequestId: row.id, schoolId: anchor.schoolId });
 
   // The school's managers hear of it — those who may decide it there: the child's name and the kind of event, nothing else.
-  const managers = await lockActivePersons(tx, await leaveDeciders(tx, { schoolId: anchor.schoolId, level: "school", exceptPersonId: ctx.personId }));
+  const managers = await lockActivePersons(tx, allDeciders(await leaveDeciders(tx, anchor.schoolId, ctx.personId)));
   const notified =
     managers.length === 0
       ? 0
@@ -256,6 +261,7 @@ export async function cancelLeave(tx: Tx, ctx: GuardianLeaveCtx, input: { id: st
     .where(and(eq(leaveRequest.id, row.id), eq(leaveRequest.status, "pending")))
     .returning({ id: leaveRequest.id });
   if (done.length === 0) throw fail("id", MSG.notPending);
+  await closeLeaveRequestClock(tx, row.id);
   await audit(ctx, "academic.leave_request.cancelled", { schema: "academic", table: "leave_request", id: row.id }, { status: "pending" }, { status: "cancelled", studentProfileId: row.studentProfileId }, tx);
   return { id: row.id };
 }

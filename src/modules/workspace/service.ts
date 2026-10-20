@@ -25,6 +25,7 @@ import { notifyMany } from "@/modules/notif/service";
 import type { Recipients } from "./dto";
 import { acceptsComments, answerNeedsText, closesOnFirstAnswer, creatorParticipates, managesItem } from "./manage-policy";
 import { creationNotifiable, notifiable } from "./notify-policy";
+import { syncRequestClock } from "./request-clock";
 import { type FilesChange, applyItemFilesChange, hasFilesChange } from "./work-item-files";
 import {
   type AssigneeRow,
@@ -557,6 +558,8 @@ async function setItemStatus(tx: Tx, ctx: WorkspaceCtx, item: WorkItemCore, to: 
   const completedAt = to.category === "done" ? sql`now()` : null;
   await tx.update(workItem).set({ statusId: to.id, completedAt }).where(eq(workItem.id, item.id));
   await tx.insert(workItemTransition).values({ organizationId: ctx.orgId, workItemId: item.id, fromStatusId: item.statusId, toStatusId: to.id, byPersonId: ctx.personId, note });
+  // A request's response clock follows its status: «در حال بررسی» stops it, «باز» runs it again, an answer closes it.
+  await syncRequestClock(tx, item.id, to.category);
 }
 
 /**

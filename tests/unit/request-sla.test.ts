@@ -1,7 +1,8 @@
 // «مرکز درخواست‌ها» (owner 2026-10-20; src/modules/workspace/request-sla.ts): the response-time math — the 80 % mark,
-// the three statuses, what a check does — the escalation chain (staff → معاون → مدیر مدرسه → مدیر سازمان, a level
-// nobody holds skipped, nobody past the organization admin), the request kinds and their settings, the job kinds and
-// schedules, and the Home tile that only shows while the center is on.
+// the three statuses, what a check does, «در حال بررسی» stopping the clock (the owner's answer (c)) — the escalation
+// chain (staff → معاون → مدیر مدرسه → مدیر سازمان, a level nobody holds skipped, nothing past the kind's top: a
+// guardian's message or leave request stops at the principal, answer (a)), the request kinds and their settings, the
+// job kinds and schedules, and the Home tile that only shows while the center is on.
 import { describe, expect, it } from "vitest";
 import { homeTilesFor, type TileHats } from "@/lib/modules-registry";
 import { FEATURE_FLAGS } from "@/modules/config/flags";
@@ -11,10 +12,13 @@ import { SCHEDULES } from "@/modules/ops/schedules";
 import type { Permission } from "@/modules/iam/permissions";
 import {
   REQUEST_KINDS,
+  activeLength,
+  clockOnStatus,
   currentLevel,
   levelOf,
   nextLevel,
   nextPeriod,
+  resumeShiftSeconds,
   slaAction,
   slaStatus,
   warnAt,
@@ -49,8 +53,48 @@ describe("response time", () => {
     expect(slaAction(clock(48), at(60))).toBe("escalate");
   });
 
-  it("a new period starts at the escalation", () => {
-    expect(nextPeriod(at(48), 48)).toEqual({ periodStartedAt: at(48), dueAt: at(96) });
+  it("a new period starts at the escalation — running, nothing paused", () => {
+    expect(nextPeriod(at(48), 48)).toEqual({ periodStartedAt: at(48), dueAt: at(96), pausedSeconds: 0, pausedAt: null });
+  });
+});
+
+describe("«در حال بررسی» stops the clock (owner, 2026-10-20)", () => {
+  // A 48 h period that was paused for 10 h: the deadline moved from 48 h to 58 h after its start.
+  const resumed = { periodStartedAt: start, dueAt: at(58), warnedAt: null, pausedSeconds: 10 * 3600 };
+
+  it("the 80 % mark and the deadline count ACTIVE time only", () => {
+    expect(activeLength(resumed)).toBe(48 * H);
+    // 80 % of 48 h = 38.4 h of active time, + the 10 paused hours.
+    expect(warnAt(resumed)).toEqual(at(48.4));
+    expect(slaStatus(resumed, at(48))).toBe("on_time"); // without the pause it would be overdue
+    expect(slaStatus(resumed, at(48.4))).toBe("near");
+    expect(slaStatus(resumed, at(58))).toBe("overdue");
+    expect(slaAction(resumed, at(48.5))).toBe("warn");
+    expect(slaAction(resumed, at(57.9))).toBe("warn");
+    expect(slaAction(resumed, at(58))).toBe("escalate");
+  });
+
+  it("while paused nothing happens, and the status reads as it stood when the clock stopped", () => {
+    const paused = { ...clock(48), pausedAt: at(10) };
+    expect(slaAction(paused, at(40))).toBe("none");
+    expect(slaAction(paused, at(500))).toBe("none");
+    expect(slaStatus(paused, at(500))).toBe("on_time");
+    expect(slaStatus({ ...clock(48), pausedAt: at(40) }, at(500))).toBe("near");
+    expect(slaStatus({ ...clock(48), pausedAt: at(50) }, at(500))).toBe("overdue");
+  });
+
+  it("back to «باز»: the whole seconds of the pause move the deadline (never negative)", () => {
+    expect(resumeShiftSeconds(at(10), at(20))).toBe(10 * 3600);
+    expect(resumeShiftSeconds(at(10), new Date(at(10).getTime() + 1999))).toBe(1);
+    expect(resumeShiftSeconds(at(10), at(9))).toBe(0);
+  });
+
+  it("the status category decides: doing stops, todo runs, done / cancelled close", () => {
+    expect(clockOnStatus("doing")).toBe("pause");
+    expect(clockOnStatus("todo")).toBe("resume");
+    expect(clockOnStatus("done")).toBe("close");
+    expect(clockOnStatus("cancelled")).toBe("close");
+    expect(clockOnStatus("other")).toBe("none");
   });
 });
 
@@ -79,6 +123,19 @@ describe("the escalation chain", () => {
     expect(nextLevel(0, none, new Set(["t"]))).toBeNull();
     // Nobody live is left at all: the chain starts at the vice principals.
     expect(nextLevel(-1, { ...none, vice_principal: ["v1", "v2"] }, new Set(["gone"]))).toEqual({ level: "vice_principal", personIds: ["v1", "v2"] });
+  });
+
+  it("a guardian's message and a leave request never leave the school: past the principal there is nobody (owner, 2026-10-20)", () => {
+    const c = { vice_principal: ["v"], principal: ["p"], org_admin: ["o"] };
+    expect(REQUEST_KINDS.parent_message.topLevel).toBe("principal");
+    expect(REQUEST_KINDS.leave_request.topLevel).toBe("principal");
+    expect(REQUEST_KINDS.admin_request.topLevel).toBe("org_admin");
+    // A counselor-addressed message (staff) still goes to the vice principal, then the principal — and stops.
+    expect(nextLevel(currentLevel(["staff"]), c, new Set(["c"]), "principal")).toEqual({ level: "vice_principal", personIds: ["v"] });
+    expect(nextLevel(currentLevel(["staff", "vice_principal"]), c, new Set(["c", "v"]), "principal")).toEqual({ level: "principal", personIds: ["p"] });
+    expect(nextLevel(currentLevel(["principal"]), c, new Set(["p"]), "principal")).toBeNull();
+    // A school with neither office: nothing to add rather than the organization admin.
+    expect(nextLevel(0, { vice_principal: [], principal: [], org_admin: ["o"] }, new Set(["t"]), "principal")).toBeNull();
   });
 
   it("someone who is already an addressee (or the creator) is never added again", () => {
@@ -114,10 +171,11 @@ describe("kinds, settings, jobs, flags", () => {
       expect(FEATURE_FLAGS[k].default, k).toBe(false);
     }
     expect(FEATURE_FLAGS.request_center.schoolOverridable).toBe(false);
-    for (const k of ["notif.quiet_hours", "reminders.deadline_lead_hours", "requests.sla_hours.admin_request", "requests.sla_hours.parent_message"] as const) {
+    for (const k of ["notif.quiet_hours", "reminders.deadline_lead_hours", "requests.sla_hours.admin_request", "requests.sla_hours.parent_message", "requests.sla_hours.leave_request"] as const) {
       expect("upcoming" in SETTINGS[k], k).toBe(false);
     }
-    expect(SETTINGS["requests.sla_hours.leave_request"]).toMatchObject({ upcoming: true });
+    // The leave requests are wired (0030): their response time is no longer «به‌زودی».
+    expect("upcoming" in SETTINGS["requests.sla_hours.leave_request"]).toBe(false);
   });
 
   it("the «مرکز درخواست‌ها» tile shows for an admin only while the flag is on", () => {
