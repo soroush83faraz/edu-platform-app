@@ -2716,3 +2716,77 @@ row) and a Home tile «تنظیمات» for admins.
 - **Guardian pages: skipped.** The child pages of «اولیا» (`requireChild`) do not show session reports in this step; adding
   them means a `requireChild`-gated read of the child's class offerings and is a separate slice. A guardian never sees the
   private note either way.
+
+## 2026-10-20 — «یادآوری مهلت و مرکز درخواست‌ها» (owner): automatic follow-up in «صندوق کارها» (migration 0028)
+
+- **Owner request.** Finish «صندوق کارها»: deadline reminders and a request center with response times (SLA) and
+  escalation. Both are feature switches of 0026 that are now BUILT (no «به‌زودی»), both still default OFF:
+  `deadline_reminders` (school-overridable) and `request_center` (organization-level only). Settings read:
+  `reminders.deadline_lead_hours` (24), `notif.quiet_hours` (22:00–07:00 Tehran), `requests.sla_hours.admin_request`
+  (72), `requests.sla_hours.parent_message` (48); `requests.sla_hours.leave_request` (24) stays «به‌زودی» until leave
+  requests plug in.
+- **Quiet hours** (`src/modules/notif/quiet-hours.ts`, pure) apply to the SYSTEM's nudges only — a reminder, a response
+  reminder, an escalation; what a person does still notifies at once. A nudge inside the window moves to its end; a
+  deadline reminder whose window ends after the deadline goes one minute before the window starts instead, or is
+  dropped when that moment has passed. The request check skips a request while its school is quiet (the first
+  15-minute check after the window acts). Response times are wall-clock (nights count); only the moment of acting moves.
+- **Deadline reminders** (`src/modules/workspace/deadline-reminders.ts`, rules in `reminder-policy.ts`): every 15 minutes
+  (`workspace.scan_deadlines`, :07/:22/:37/:52) one job per organization reads its OPEN `task` / `todo` items with a
+  deadline from a day ago to the longest lead ahead and, per item whose school has the switch on (the درس's school;
+  the organization's value for an item without a درس), enqueues `workspace.remind_deadline` at the reminder's moment
+  and, for an item given to someone else, `workspace.notify_overdue` at the deadline. Dedupe keys
+  `deadline:<item>:<due>` / `overdue:<item>:<due>` (job) and `wi:<item>:due_soon:<due>` / `wi:<item>:overdue:<due>`
+  (notification, per recipient). **Once per item per assignee and deadline**: a MOVED deadline is a new deadline and
+  gets its own reminder (the old job re-reads the item, sees another deadline and does nothing) — deliberately: a
+  teacher who extends a تکلیف should not leave it unreminded. An item given INSIDE the lead window is reminded halfway
+  between its creation and its deadline (never on top of the «کار جدید» bell). Recipients: `assignee` rows not `done`
+  whose person is still `active` (a removed student never). Title «یادآوری: مهلت «<title>» تا <فردا ساعت ۱۸>»
+  (`formatDeadlineAtFa`) — the item's own title, which every assignee already sees; no noun, so a row stored once for
+  many readers needs no vocabulary choice. The giver's notice: «<n> نفر هنوز «<title>» را تمام نکرده‌اند» (a count,
+  never names), once, to the creator if active; never for a personal note (its only assignee is its author).
+  **Never a confidential item** (`is_confidential` — a counselor's report request, a referral, a guardian's message):
+  those are the request center's. Notifications only, no business row changes → no audit row (as every bell).
+- **Request center — the data** (`workspace.request_sla`, migration 0028): ONE row per request — kind
+  (`admin_request` / `parent_message` / `leave_request`), school, work item, `opened_at`, the current period
+  (`period_started_at`, `due_at`), `warned_at`, `escalation_level` + `escalated_at`, `closed_at`. **A separate table, not
+  columns on `work_item`**: (1) leave requests are NOT work items (`academic.leave_request`, built separately) — they
+  plug in by kind with a nullable reference of their own, additively, plus their addressee reader; (2) the school of a
+  request lives on rows the system actor cannot read (`workspace.guardian_message`, `counseling.referral` are behind
+  RESTRICTIVE person policies), so the clock carries its school; (3) the row holds NO TEXT, so it stays under plain
+  tenant RLS for the job and the manager list while the title stays behind `canViewWorkItem`. Written in the sending
+  transaction (`openRequestSla` from `referToManagement` and `sendGuardianMessage`), **whatever the switch**: turning
+  the center on later finds every request since this release with its true clock. **No backfill**: a request sent
+  before 0028 has no clock and is not in the center (pilot data; a backfill would have to read the RESTRICTIVE tables
+  as the owner role — not worth it). Never deleted by app_rw (RESTRICTIVE `FOR DELETE … USING (false)`, as 0027 — not a
+  REVOKE, so `apply_grants()` is not redefined).
+- **Request center — the clock** (`src/modules/workspace/requests.ts`, rules in `request-sla.ts`): every 15 minutes
+  (`workspace.check_request_slas`, :04/:19/:34/:49), nothing while the switch is off. A response = the request is
+  answered or closed (status category done / cancelled, or archived) — «در حال بررسی» does not stop the clock. At 80 %
+  of the period the live addressees are reminded once per period («یادآوری: پاسخ به «…» تا …», type
+  `work_item.response_due`; a counselor addressee of a guardian's message is sent to «مشاوره» › «پیام‌های اولیا»),
+  audited `workspace.request.sla_warned`. At the end the request is **escalated by ADDING the next level** of the chain
+  as addressees (assignee row + unread inbox row + the bell «ارجاع خودکار: «…»», type `work_item.escalated`) — the
+  earlier addressees keep theirs — and a new period of the same length starts; audited `workspace.request.escalated`
+  with the request, item, school, from / to level and the persons added (ids and levels only). **The chain** = the
+  highest office a live addressee holds AT the request's school: staff (دبیر, مشاور, anyone else) → معاون → مدیر مدرسه →
+  مدیر سازمان (SYSTEM roles; the organization admin at the organization). A level nobody holds is skipped; the request's
+  creator is never added; past the organization admin — or with nobody to add — a new period starts for the same
+  addressees (`workspace.request.sla_renewed`), so they are reminded again at its 80 %. Locks: candidates' person rows
+  FOR KEY SHARE SKIP LOCKED → the work item FOR NO KEY UPDATE SKIP LOCKED (an answer in flight → the next check), then
+  everything is re-read; the clock rows themselves are taken FOR UPDATE SKIP LOCKED.
+- **Confidentiality.** An escalation makes the added person a PARTICIPANT of a confidential request, as the first
+  addressees were — that is what handing a request up means; they open it in «پنل من». Their bell carries the item's
+  title only — never a referral's description or a guardian's words. **The managers' page** («مرکز درخواست‌ها»,
+  `/admin/requests`, `iam.admin.access` in their admin scope; a Home tile only while the switch is on) lists every OPEN
+  request of their schools with kind, school, age, status (در مهلت / نزدیک مهلت / گذشته), escalations and the current
+  addressees' names; filters kind / status / school. A confidential request's **title is shown only to a participant**
+  (an inbox row, as `canViewWorkItem` decides); anyone else reads «درخواست محرمانه» with no link. Why: kind, age and
+  who holds it are what a manager needs to follow up; a referral's title names a student and a subject the counselor
+  addressed to specific people. The addressees' names are shown (whom to ask), as the counseling file already shows a
+  referral's addressees to the school's case readers.
+- **«درخواست‌های من»** in «پنل من»: a filter chip for staff while the switch is on — the requests with a clock the
+  caller is an addressee of, in the same `WorkItemList` (`listInbox({ requestsOnly })`).
+- **Open (owner).** (a) The chain reaches the **organization admin for a guardian's message too** (as asked) — the
+  re-routing of 2026-10-19 never goes there (open item (f) of «ارتباط ولی و مدرسه»); confirm, or stop guardian messages
+  at the principal. (b) A **counselor** counts as staff in the chain (a counselor-addressed message escalates to the
+  vice principal). (c) «در حال بررسی» does not count as a response. (d) The leave-request kind is reserved, not wired.
