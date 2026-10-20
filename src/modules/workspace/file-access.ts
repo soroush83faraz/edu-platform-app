@@ -15,7 +15,11 @@
 // Download — `findDownload`, on EVERY request: the file must be live and attached; the caller must see its تکلیف
 // (`canViewWorkItem` — assignees, the giver, the broad readers it allows); a پاسخ's file only its student or the
 // item's managers (and 0024's RESTRICTIVE policy hides the row from anyone else). Every refusal is NOT_FOUND.
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+// The database says the same of the FILE rows (migration 0025, security review 2026-10-19, D3): app_rw reads a
+// `files.file_object` row only as its uploader or through an attachment it may read (a giver's file: an item it may
+// open, `app.work_item_viewer`), inserts only its own `pending` row, and updates exactly what the app writes — its own
+// pending upload (attached), an attached file it manages (archived).
+import { and, eq, gt, sql } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
 import { z } from "zod";
 import type { Tx } from "@/lib/actions";
@@ -26,7 +30,7 @@ import { DEMO_SESSION_LABEL } from "@/modules/iam/demo-login/repo";
 import { userSession } from "@/modules/iam/schema";
 import { fileObject } from "@/modules/files/schema";
 import { KIND_INFO, kindOfMime, type FileKind } from "@/modules/files/kinds";
-import { FILE_LIMITS, FILE_MESSAGES, UPLOAD_PURPOSES, fileSizeProblem, withinDailyQuota, type UploadPurpose } from "@/modules/files/limits";
+import { FILE_MESSAGES, UPLOAD_PURPOSES, fileSizeProblem, withinDailyQuota, type UploadPurpose } from "@/modules/files/limits";
 import { nameForKind, sanitizeFileName } from "@/modules/files/names";
 import { STORAGE_KEY_RE, storageKeyFor } from "@/modules/files/paths";
 import { publishTemp } from "@/modules/files/storage";
@@ -184,23 +188,16 @@ export async function recordUpload(tx: Tx, ctx: FileAccessCtx, meta: UploadMeta,
 
 /**
  * Uploads of this organization left `pending` (never attached by the form they were made for) for longer than
- * `pendingTtlMs`: archived, at most 50 per call, rows nobody holds (SKIP LOCKED — an attach in flight wins). One
- * audit row with their ids. Returns their keys; the caller deletes the bytes after the commit. Runs on every upload,
- * so the files volume needs no cron for them.
+ * `pendingTtlMs` (24 h — the same interval is written in the SQL function): archived, at most 50 per call, rows nobody
+ * holds (SKIP LOCKED — an attach in flight wins). One audit row with their ids. Returns their keys; the caller deletes
+ * the bytes after the commit. Runs on every upload, so the files volume needs no cron for them. Through
+ * `app.expire_stale_uploads` (migration 0025, SECURITY DEFINER, the current organization only): since 0025's
+ * RESTRICTIVE policies app_rw sees no one else's pending upload, so it can no longer pick them itself.
  */
 export async function expireStaleUploads(tx: Tx, ctx: FileAccessCtx, limit = 50): Promise<string[]> {
-  const stale = await tx
-    .select({ id: fileObject.id, storageKey: fileObject.storageKey })
-    .from(fileObject)
-    .where(and(eq(fileObject.status, "pending"), sql`${fileObject.createdAt} < now() - make_interval(secs => ${FILE_LIMITS.pendingTtlMs / 1000})`))
-    .orderBy(asc(fileObject.createdAt))
-    .limit(limit)
-    .for("update", { skipLocked: true });
+  const res = await tx.execute<{ file_id: string; file_storage_key: string }>(sql`select file_id, file_storage_key from app.expire_stale_uploads(${limit}::int)`);
+  const stale = res.rows.map((r) => ({ id: r.file_id, storageKey: r.file_storage_key }));
   if (stale.length === 0) return [];
-  await tx
-    .update(fileObject)
-    .set({ status: "archived", archivedAt: sql`now()` })
-    .where(inArray(fileObject.id, stale.map((s) => s.id)));
   await audit(ctx, "files.file_object.expired", { schema: "files", table: "file_object", id: null }, null, { ids: stale.map((s) => s.id) }, tx);
   return stale.map((s) => s.storageKey);
 }

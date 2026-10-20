@@ -11,14 +11,18 @@
 //     one — service AND database; one bell to the giver, title only; editing replaces files (old bytes deleted);
 //   • limits: 5 files per تکلیف, a stranger's or another تکلیف's upload, an empty پاسخ, the daily quota;
 //   • a closed تکلیف takes no پاسخ (and «بازیابی» opens it again); a removed student's پاسخ stays for the giver;
-//   • the audit trail has ids, sizes and types only; stale pending uploads expire.
+//   • the audit trail has ids, sizes and types only; stale pending uploads expire;
+//   • 0025 (security review 2026-10-19, D3): the FILE rows fail closed too — a classmate, another class, a guardian, a
+//     counselor read none of another's file rows and archive nothing; nobody but the item's manager touches a giver's
+//     attachment; `app.work_item_manager` = `managesItem`; expiry and the sweeper's lookup through their SECURITY
+//     DEFINER functions, the current organization only.
 // FILES_DIR is a fresh temp directory for this file. The catalog is seeded in beforeAll; every write runs inside a
 // withTenant transaction that ends with Rollback; afterAll re-creates the fixture database (later files assert exact
 // fixture counts).
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { type SQL, and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { v7 as uuidv7 } from "uuid";
@@ -299,6 +303,33 @@ describe("«پیوست تکلیف و تحویل پاسخ» — files on a تکل
     });
   });
 
+  it("migration 0025: files.file_object has its three RESTRICTIVE policies; the two new functions are SECURITY DEFINER, pinned, app_rw-only; 0023's is unchanged", async () => {
+    await asAppRw(async (c) => {
+      const policies = await c.query<{ policyname: string; cmd: string; permissive: string; roles: string[] }>(
+        `select policyname, cmd, permissive, roles::text[] as roles from pg_policies where schemaname = 'files' and tablename = 'file_object' order by policyname`,
+      );
+      expect(policies.rows).toEqual([
+        { policyname: "file_insert", cmd: "INSERT", permissive: "RESTRICTIVE", roles: ["app_rw"] },
+        { policyname: "file_read", cmd: "SELECT", permissive: "RESTRICTIVE", roles: ["app_rw"] },
+        { policyname: "file_update", cmd: "UPDATE", permissive: "RESTRICTIVE", roles: ["app_rw"] },
+        { policyname: "tenant_isolation", cmd: "ALL", permissive: "PERMISSIVE", roles: ["public"] },
+      ]);
+      const fns = await c.query<{ name: string; definer: boolean; owner: string; config: string[] | null; rw: boolean; backup: boolean; anyone: boolean }>(
+        `select p.proname as name, p.prosecdef as definer, pg_get_userbyid(p.proowner) as owner, p.proconfig as config,
+                has_function_privilege('app_rw', p.oid, 'EXECUTE') as rw, has_function_privilege('app_backup', p.oid, 'EXECUTE') as backup,
+                has_function_privilege('public', p.oid, 'EXECUTE') as anyone
+           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'app' and p.proname in ('expire_stale_uploads', 'live_file_ids', 'guardian_message_routes', 'work_item_manager', 'work_item_viewer')
+          order by 1`,
+      );
+      const byName = Object.fromEntries(fns.rows.map((r) => [r.name, r]));
+      for (const name of ["expire_stale_uploads", "live_file_ids", "guardian_message_routes"]) {
+        expect(byName[name], name).toMatchObject({ definer: true, owner: "app_owner", config: ["search_path=pg_catalog, app, pg_temp"], rw: true, backup: false, anyone: false });
+      }
+      for (const name of ["work_item_manager", "work_item_viewer"]) expect(byName[name], name).toMatchObject({ definer: false, config: ["search_path=pg_catalog, pg_temp"] });
+    });
+  });
+
   it("the storage key is pinned to its own row: another organization's prefix, another id, a traversal and a bad hash are refused by CHECKs", async () => {
     await rolledBack(async (tx) => {
       const sub = <T>(fn: (sp: Tx) => Promise<T>) => tx.transaction((sp) => fn(sp));
@@ -565,19 +596,155 @@ describe("«پیوست تکلیف و تحویل پاسخ» — files on a تکل
       const saved = rows.find((r) => r.action === "workspace.work_item_submission.saved");
       expect(saved?.after).toMatchObject({ workItemId: itemId, first: true, bodyLength: "متنِ خصوصیِ پاسخ".length, fileCount: 1 });
 
-      // A pending upload older than a day is archived by the next upload of the organization (its key handed back for deletion).
+      // A pending upload older than a day — SOMEONE ELSE's, which app_rw no longer sees since 0025 — is archived by the
+      // next upload of the organization through app.expire_stale_uploads (its key handed back for deletion); another
+      // organization's stale upload is out of its reach.
       const staleId = await rawFileRow(tx, w.teacherA2, { createdAt: new Date(Date.now() - FILE_LIMITS.pendingTtlMs - 60_000) });
       const fresh = await rawFileRow(tx, w.teacherA2);
+      const staleB = uuidv7();
+      await as(tx, adminB, (t) =>
+        t.insert(fileObject).values({
+          id: staleB,
+          organizationId: f.ORG_B,
+          storageKey: storageKeyFor(f.ORG_B, staleB, new Date()),
+          mime: "application/pdf",
+          sizeBytes: 10,
+          sha256: "d".repeat(64),
+          uploadedByPersonId: f.PERSON_B1,
+          purpose: "work_item",
+          createdAt: new Date(Date.now() - FILE_LIMITS.pendingTtlMs - 60_000),
+        }),
+      );
       const ticket = await as(tx, w.teacher, (t) => authorizeUpload(t, w.teacher, { purpose: "work_item", name: "b.pdf" }, 10));
       const received = await receiveToTemp(streamOf(pdf("b")), { tempDir: tempDir(), maxBytes: FILE_LIMITS.maxFileBytes, idleTimeoutMs: 5000, totalTimeoutMs: 10_000 });
       const res = await as(tx, w.teacher, (t) =>
         recordUpload(t, w.teacher, { purpose: "work_item", name: "b.pdf" }, { fileId: ticket.fileId, storageKey: ticket.storageKey }, { tempPath: received.tempPath, sizeBytes: received.size, sha256: received.sha256, kind: "pdf" }),
       );
-      const [stale] = await tx.select({ status: fileObject.status, key: fileObject.storageKey }).from(fileObject).where(eq(fileObject.id, staleId));
+      // The teacher cannot even read teacherA2's rows any more; their uploader can.
+      expect(await as(tx, w.teacher, (t) => t.select({ id: fileObject.id }).from(fileObject).where(inArray(fileObject.id, [staleId, fresh])))).toEqual([]);
+      const [stale] = await as(tx, w.teacherA2, (t) => t.select({ status: fileObject.status, key: fileObject.storageKey }).from(fileObject).where(eq(fileObject.id, staleId)));
       expect(stale.status).toBe("archived");
       expect(res.expiredKeys).toContain(stale.key);
-      const [kept] = await tx.select({ status: fileObject.status }).from(fileObject).where(and(eq(fileObject.id, fresh)));
+      const [kept] = await as(tx, w.teacherA2, (t) => t.select({ status: fileObject.status }).from(fileObject).where(and(eq(fileObject.id, fresh))));
       expect(kept.status).toBe("pending");
+      const [otherTenant] = await as(tx, adminB, (t) => t.select({ status: fileObject.status }).from(fileObject).where(eq(fileObject.id, staleB)));
+      expect(otherTenant.status).toBe("pending");
+      expect(res.expiredKeys.some((k) => k.startsWith(f.ORG_B))).toBe(false);
+      const [expired] = await as(tx, w.teacher, (t) => t.select({ after: auditLog.after }).from(auditLog).where(eq(auditLog.action, "files.file_object.expired")));
+      expect((expired.after as { ids: string[] }).ids).toContain(staleId);
+    });
+  });
+
+  it("0025: file rows fail closed — a classmate, another class, a guardian, a counselor read none of another's files and archive nothing (P1, P1b, P2, P3)", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const given = await upload(tx, w.teacher, { purpose: "work_item", name: "کاربرگ.pdf" }, pdf("given"));
+      const itemId = await classItem(tx, w, [given.id]);
+      const answer = await upload(tx, w.s1.actor, { purpose: "submission", workItemId: itemId, name: "پاسخ-لیلا.pdf" }, pdf("answer"));
+      await as(tx, w.s1.actor, (t) => saveSubmission(t, w.s1.actor, { workItemId: itemId, body: "پاسخ", addFileIds: [answer.id], removeFileIds: [] }));
+      const draft = await upload(tx, w.s1.actor, { purpose: "submission", workItemId: itemId, name: "پیش‌نویس.pdf" }, pdf("draft"));
+      const sub = <T>(fn: (sp: Tx) => Promise<T>) => tx.transaction((sp) => fn(sp));
+      const ids = [given.id, answer.id, draft.id];
+
+      // P1 / P1b: whatever a query asks for, a person reads their own uploads and the files they may open — nothing else.
+      const readable = async (who: Actor) => (await as(tx, who, (t) => t.select({ id: fileObject.id, name: fileObject.originalName, key: fileObject.storageKey }).from(fileObject))).map((r) => r.id).sort();
+      expect(await readable(w.s1.actor)).toEqual([...ids].sort());
+      expect(await readable(w.s3.actor), "a classmate: the giver's file of a تکلیف given to them, nothing of s1's").toEqual([given.id]);
+      for (const [label, who] of [
+        ["another class's student", w.s2.actor],
+        ["s1's guardian", w.guardian],
+        ["the school's counselor", w.counselor],
+        ["another class's teacher", w.teacherA2],
+        ["another tenant's admin", adminB],
+      ] as const) {
+        expect(await readable(who), label).toEqual([]);
+      }
+      // The giver and a manager: the تکلیف's file and the پاسخ's — never s1's pending draft.
+      expect(await readable(w.teacher)).toEqual([given.id, answer.id].sort());
+      expect(await readable(w.principal)).toEqual([given.id, answer.id].sort());
+
+      // P2: nobody archives a file row they do not manage — not even one they may read.
+      const archive = (who: Actor, fileIds: string[]) =>
+        as(tx, who, () => sub((sp) => sp.update(fileObject).set({ status: "archived", archivedAt: sql`now()` }).where(inArray(fileObject.id, fileIds)).returning({ id: fileObject.id })));
+      for (const who of [w.s3.actor, w.s2.actor, w.guardian, w.counselor, w.teacherA2]) expect(await archive(who, ids)).toEqual([]);
+      expect(await archive(w.s1.actor, [given.id]), "a student and the giver's file").toEqual([]);
+      expect(await archive(w.teacher, [draft.id]), "the giver and a student's pending draft").toEqual([]);
+      // …and a pending upload is attached only by its uploader, through an attachment row they added.
+      await as(tx, w.s1.actor, async () => {
+        await expect(sub((sp) => sp.update(fileObject).set({ status: "attached" }).where(eq(fileObject.id, draft.id)))).rejects.toMatchObject({ cause: { code: "42501" } });
+      });
+
+      // P3: no student archives — or adds — a giver's attachment row; nobody touches another student's پاسخ row.
+      const archiveLinks = (who: Actor, where: SQL) =>
+        as(tx, who, () => sub((sp) => sp.update(workItemAttachment).set({ archivedAt: sql`now()` }).where(where).returning({ id: workItemAttachment.id })));
+      for (const who of [w.s1.actor, w.s3.actor, w.s2.actor, w.guardian, w.counselor, w.teacherA2]) {
+        expect(await archiveLinks(who, sql`${workItemAttachment.submissionId} is null`), "the giver's rows").toEqual([]);
+      }
+      for (const who of [w.s3.actor, w.s2.actor, w.guardian, w.counselor, w.teacherA2]) {
+        expect(await archiveLinks(who, sql`${workItemAttachment.submissionId} is not null`), "s1's پاسخ rows").toEqual([]);
+      }
+      await as(tx, w.s1.actor, async () => {
+        await expect(
+          sub((sp) => sp.insert(workItemAttachment).values({ organizationId: f.ORG_A, workItemId: itemId, fileId: draft.id, addedByPersonId: w.s1.personId, sequence: 9 })),
+          "a student's upload smuggled in as a giver's file",
+        ).rejects.toMatchObject({ cause: { code: "42501" } });
+      });
+      // A file row in someone else's name, or born attached, is refused.
+      await as(tx, w.s3.actor, async () => {
+        const id = uuidv7();
+        const row = { id, organizationId: f.ORG_A, storageKey: storageKeyFor(f.ORG_A, id, new Date()), mime: "application/pdf", sizeBytes: 10, sha256: "c".repeat(64), purpose: "work_item" as const };
+        await expect(sub((sp) => sp.insert(fileObject).values({ ...row, uploadedByPersonId: w.s1.personId }))).rejects.toMatchObject({ cause: { code: "42501" } });
+        await expect(sub((sp) => sp.insert(fileObject).values({ ...row, uploadedByPersonId: w.s3.personId, status: "attached" }))).rejects.toMatchObject({ cause: { code: "42501" } });
+      });
+
+      // The legitimate paths still hold: a manager who did not upload it removes the giver's file (row + file archived),
+      // and the پاسخ's student replaces their own file.
+      const removed = await as(tx, w.principal, (t) => updateWorkItem(t, w.principal, { workItemId: itemId, files: { add: [], remove: [given.id] } }));
+      expect(removed.unlinkKeys).toHaveLength(1);
+      const [givenNow] = await as(tx, w.teacher, (t) => t.select({ status: fileObject.status }).from(fileObject).where(eq(fileObject.id, given.id)));
+      expect(givenNow.status).toBe("archived");
+      const swapped = await as(tx, w.s1.actor, (t) => saveSubmission(t, w.s1.actor, { workItemId: itemId, body: "پاسخ", addFileIds: [draft.id], removeFileIds: [answer.id] }));
+      expect(swapped).toMatchObject({ changed: true, fileCount: 1 });
+      await expect(as(tx, w.teacher, (t) => findDownload(t, w.teacher, draft.id))).resolves.toMatchObject({ kind: "pdf" });
+    });
+  });
+
+  it("0025: app.work_item_manager is managesItem — the creator, or a broad holder who is NOT an assignee; app.live_file_ids needs a bound organization", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const classTask = await classItem(tx, w);
+      const toPrincipal = (await as(tx, w.admin, (t) => createWorkItem(t, w.admin, { typeCode: "task", title: "گزارش هفتگی", priority: "normal", recipients: { kind: "persons", ids: [w.principal.personId] } }))).id;
+      const manages = async (who: Actor, item: string) => (await as(tx, who, (t) => t.execute<{ m: boolean | null }>(sql`select app.work_item_manager(${item}::uuid) as m`))).rows[0].m === true;
+      expect(await manages(w.teacher, classTask), "the giver").toBe(true);
+      expect(await manages(w.principal, classTask), "a broad manager, not assigned").toBe(true);
+      expect(await manages(w.s1.actor, classTask), "an assignee student").toBe(false);
+      expect(await manages(w.teacherA2, classTask), "another class's teacher").toBe(false);
+      expect(await manages(w.admin, toPrincipal), "its creator").toBe(true);
+      expect(await manages(w.principal, toPrincipal), "a broad holder who IS an assignee").toBe(false);
+      expect(await manages(w.admin, uuidv7()), "an unknown id").toBe(false);
+
+      // A pending upload of the teacher's, a stale one archived by app.expire_stale_uploads (which any member's upload
+      // runs), and an unknown id.
+      const file = await upload(tx, w.teacher, { purpose: "work_item", name: "a.pdf" }, pdf("live"));
+      const staleId = await rawFileRow(tx, w.teacher, { createdAt: new Date(Date.now() - FILE_LIMITS.pendingTtlMs - 60_000) });
+      const expired = await as(tx, w.s2.actor, (t) => t.execute<{ file_id: string; file_storage_key: string }>(sql`select file_id, file_storage_key from app.expire_stale_uploads(50)`));
+      expect(expired.rows).toContainEqual({ file_id: staleId, file_storage_key: storageKeyFor(f.ORG_A, staleId, new Date()) });
+      const unknown = uuidv7();
+      const live = async (who: { orgId: string; personId: string }) =>
+        (await as(tx, who, (t) => t.execute<{ id: string }>(sql`select id from app.live_file_ids(${`{${[file.id, staleId, unknown].join(",")}}`}::uuid[]) as id`))).rows.map((r) => r.id);
+      // Any member of the organization gets the answer (the sweeper runs as whoever uploaded); archived and unknown ids are not live.
+      expect(await live(w.s2.actor)).toEqual([file.id]);
+      expect(await live(adminB)).toEqual([]);
+      const sub = <T>(fn: (sp: Tx) => Promise<T>) => tx.transaction((sp) => fn(sp));
+      await expect(
+        sub(async (sp) => {
+          await sp.execute(sql`select set_config('app.current_org_id', '', true)`);
+          return sp.execute(sql`select * from app.live_file_ids(array[${file.id}]::uuid[])`);
+        }),
+        "no organization bound: an error, never an empty answer",
+      ).rejects.toMatchObject({ cause: { code: "42501" } });
+      const tooMany = `{${Array.from({ length: 1001 }, () => uuidv7()).join(",")}}`;
+      await expect(as(tx, w.teacher, () => sub((sp) => sp.execute(sql`select * from app.live_file_ids(${tooMany}::uuid[])`)))).rejects.toMatchObject({ cause: { code: "22023" } });
     });
   });
 });
