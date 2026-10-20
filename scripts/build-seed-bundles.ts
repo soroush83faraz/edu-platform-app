@@ -3,7 +3,10 @@
 // inside the production image, which has no tsx, no pnpm and no internet. Unlike scripts/build-seed-catalog.ts this
 // is NOT part of `pnpm build`: the pilot data is loaded by hand, for a demo, on a server that asks for it.
 //
-//   pnpm tsx scripts/build-seed-bundles.ts      → build/seed-bundles/{seed-pilot,seed-demo-extras}.mjs (gitignored)
+//   pnpm tsx scripts/build-seed-bundles.ts      → build/seed-bundles/{seed-pilot,seed-demo-extras,sweep-files}.mjs (gitignored)
+//
+// sweep-files (the operator's orphan sweep of FILES_DIR, docs/ops/runbook.md «فایل‌ها») rides along: it too must run
+// inside the image, next to the files volume.
 //
 // External = what the image's standalone node_modules already ships (pg, @node-rs/argon2 with its native binary,
 // pino, next); everything else is inlined. The files resolve those packages from /app/node_modules, so they must be
@@ -20,7 +23,7 @@ import { readFile } from "node:fs/promises";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT_DIR = resolve(ROOT, "build/seed-bundles");
-const ENTRIES = ["scripts/seed-pilot.ts", "scripts/seed-demo-extras.ts"];
+const ENTRIES = ["scripts/seed-pilot.ts", "scripts/seed-demo-extras.ts", "scripts/sweep-files.ts"];
 /** Packages present in the standalone image (`docker run --rm --entrypoint ls edu-app:<tag> node_modules`). */
 const EXTERNAL = ["pg", "@node-rs/argon2", "pino", "next", "next/*"];
 

@@ -100,11 +100,20 @@ docker compose up -d app
 - **قابل نوشتن برای uid 1001 (`nextjs`)؟** `docker compose exec -T app sh -c 'id; ls -ld /data/files; touch /data/files/.w && rm /data/files/.w && echo writable'` — اگر `Permission denied`: `docker run --rm -v school_files:/data alpine chown -R 1001:1001 /data`.
 - **بارگذاریِ کند** (بازبینی امنیتی ۲۰۲۶-۱۰-۱۹، D2): هر شخص فقط **یک** بارگذاریِ هم‌زمان؛ هر فرایند ۸ تا، که ۲ تای آخرش فقط برای کسی است که در ۱۰ دقیقهٔ اخیر بارگذاریِ کندِ قطع‌شده نداشته. بدنه‌ای که ۱۵ ثانیه هیچ بایتی نفرستد، بعد از ۱۰ ثانیه میانگینش زیر ۱۰۰ کیلوبایت بر ثانیه باشد، یا روی هم بیش از ۹۰ ثانیه طول بکشد، قطع می‌شود (۴۰۸، لاگ `files: upload aborted — too slow` با `pace` = `idle`/`slow`/`total`)؛ سه بار در ۱۰ دقیقه ⇐ ۴۲۹ تا آخر همان پنجره. Caddy هر درخواست را حداکثر ۱۲۰ ثانیه می‌خواند (`servers › timeouts › read_body` در `deploy/Caddyfile`) و Node ۳۰۰ ثانیه (`requestTimeout`). اعداد در `src/modules/files/limits.ts`.
 - **دیسک:** بارگذاری زیر ۱ گیگابایت فضای آزاد متوقف می‌شود («فضای ذخیره‌سازی سرور پر است»، لاگ `files: upload refused — the files volume is below the free-space floor`)؛ watchdog بالای ۸۰٪ هشدار می‌دهد (volumeهای Docker روی همان دیسکِ ریشه‌اند). حجم: `docker run --rm -v school_files:/data alpine du -sh /data`.
-- **پاک‌سازی:** بارگذاری‌های پیوست‌نشده بعد از ۲۴ ساعت با بارگذاریِ بعدیِ همان سازمان بایگانی و پاک می‌شوند؛ فایلِ برداشته‌شده همان لحظه پاک می‌شود. **یتیم‌ها** (فقط بعد از crash بین rename و commit، یا بین commit و پاک‌کردن): بایتِ بدون ردیفِ زنده هرگز سرو نمی‌شود؛ برای یافتنشان (به‌عنوان `app_backup`، فقط‌خواندنی):
+- **پاک‌سازی:** بارگذاری‌های پیوست‌نشده بعد از ۲۴ ساعت با بارگذاریِ بعدیِ همان سازمان بایگانی و پاک می‌شوند (`app.expire_stale_uploads`، مهاجرت `0025`)؛ فایلِ برداشته‌شده همان لحظه پاک می‌شود. **یتیم‌ها** (فقط بعد از crash بین rename و commit، یا بین commit و پاک‌کردن): بایتِ بدون ردیفِ زنده هرگز سرو نمی‌شود، و **جاروی یتیم‌ها** (`src/modules/files/sweep.ts`؛ بازبینی امنیتی ۲۰۲۶-۱۰-۱۹، D6) پاکشان می‌کند: بعد از هر بارگذاریِ موفق، حداکثر ساعتی یک بار برای هر سازمان (هر فرایند)، فقط پوشه‌های امسال و پارسالِ **همان** سازمان، حداکثر ۵۰۰ فایل در هر دور؛ فقط فایلی با نامِ شناسهٔ فایل که **هیچ ردیفِ زنده‌ای** (pending / attached) ندارد و **بیش از ۲۴ ساعت** پیش نوشته شده پاک می‌شود. اگر پرسش از پایگاه داده شکست بخورد هیچ چیز پاک نمی‌شود؛ اگر در یک دور بیشترِ فایل‌ها (از دست‌کم ۱۰ تا) یتیم به نظر برسند — `FILES_DIR` اشتباه، پایگاه دادهٔ دیگر، بازیابیِ ناهم‌زمان — هیچ چیز پاک نمی‌شود و لاگ `files: orphan sweep braked` می‌آید. هر پاک‌کردن یک خط لاگِ `files: orphan sweep` با کلیدها (بدون نام فایل).
+  دستی (همان قاعده، برای همهٔ سازمان‌ها یا یکی؛ اول `--dry-run`):
+  ```bash
+  pnpm files:sweep --dry-run                     # روی ماشین توسعه، با FILES_DIR و DATABASE_URL همان محیط
+  pnpm tsx scripts/build-seed-bundles.ts         # روی سرور: build/seed-bundles/sweep-files.mjs را بسازید و بفرستید
+  scp build/seed-bundles/sweep-files.mjs deploy@SERVER:/srv/school/tools/
+  docker compose run --rm --no-deps -v /srv/school/tools:/app/tools:ro app node /app/tools/sweep-files.mjs --dry-run
+  docker compose run --rm --no-deps -v /srv/school/tools:/app/tools:ro app node /app/tools/sweep-files.mjs   # بعد از بررسیِ خروجی
+  ```
+  هر سازمان یک خط JSON: `examined` / `orphans` / `deleted` / `braked` / `lookupFailed`؛ `--org <uuid>`، `--max-files <n>`، و `--force` (فقط بعد از یک dry-run بررسی‌شده، وقتی `braked` درست است). بررسیِ فقط‌خواندنیِ دستی (به‌عنوان `app_backup`):
   ```bash
   docker compose exec -T db psql -U app_backup -d app -tAc "select storage_key from files.file_object where status <> 'archived'" | sort > /tmp/live.txt
   docker run --rm -v school_files:/data alpine sh -c 'cd /data && find . -type f ! -path "./.tmp/*" | sed "s|^./||"' | sort > /tmp/disk.txt
-  comm -13 /tmp/live.txt /tmp/disk.txt   # روی دیسک ولی بدون ردیفِ زنده → بعد از بررسی می‌شود پاکشان کرد
+  comm -13 /tmp/live.txt /tmp/disk.txt   # روی دیسک ولی بدون ردیفِ زنده
   ```
 - **`seed:pilot --reset`** ردیف‌های سه سازمانِ آزمایشی را پاک می‌کند، نه بایت‌هایشان را: بعد از آن `docker run --rm -v school_files:/data alpine rm -rf /data/<org id>`.
 - **cPanel:** `FILES_DIR` را به مسیری بیرون از پوشهٔ انتشار بدهید (مثلاً `/home/<user>/app-files`) — هر انتشار پوشهٔ اپ را عوض می‌کند — و آن را جدا بکاپ کنید (`backup.sh` مسیرِ Docker است). سقف بدنهٔ درخواستِ Apache/LiteSpeed باید ≥ ۱۱ مگابایت باشد.

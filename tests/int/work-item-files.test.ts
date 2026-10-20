@@ -15,11 +15,12 @@
 //   • 0025 (security review 2026-10-19, D3): the FILE rows fail closed too — a classmate, another class, a guardian, a
 //     counselor read none of another's file rows and archive nothing; nobody but the item's manager touches a giver's
 //     attachment; `app.work_item_manager` = `managesItem`; expiry and the sweeper's lookup through their SECURITY
-//     DEFINER functions, the current organization only.
+//     DEFINER functions, the current organization only;
+//   • D6: the orphan sweep deletes only bytes no live row names, older than a day — through app.live_file_ids.
 // FILES_DIR is a fresh temp directory for this file. The catalog is seeded in beforeAll; every write runs inside a
 // withTenant transaction that ends with Rollback; afterAll re-creates the fixture database (later files assert exact
 // fixture counts).
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { type SQL, and, eq, inArray, sql } from "drizzle-orm";
@@ -46,7 +47,7 @@ import { storageKeyFor, storagePathIn } from "@/modules/files/paths";
 import { receiveToTemp } from "@/modules/files/receive";
 import { sniffFile } from "@/modules/files/sniff";
 import { filesRoot, removeStored, tempDir } from "@/modules/files/storage";
-import { type UploadMeta, type UploadedFile, authorizeUpload, findDownload, recordUpload, workItemFilesView } from "@/modules/workspace/file-access";
+import { type UploadMeta, type UploadedFile, authorizeUpload, findDownload, recordUpload, sweepOrphanFiles, workItemFilesView } from "@/modules/workspace/file-access";
 import { changeStatus, createWorkItem, getWorkItemDetail, updateWorkItem } from "@/modules/workspace/service";
 import { saveSubmission, submittedTitle } from "@/modules/workspace/submissions";
 import { runMigrations } from "../../scripts/migrate";
@@ -745,6 +746,47 @@ describe("«پیوست تکلیف و تحویل پاسخ» — files on a تکل
       ).rejects.toMatchObject({ cause: { code: "42501" } });
       const tooMany = `{${Array.from({ length: 1001 }, () => uuidv7()).join(",")}}`;
       await expect(as(tx, w.teacher, () => sub((sp) => sp.execute(sql`select * from app.live_file_ids(${tooMany}::uuid[])`)))).rejects.toMatchObject({ cause: { code: "22023" } });
+    });
+  });
+
+  it("D6: the orphan sweep deletes the old bytes no live row names — an orphan, an archived row's — and keeps live and young ones", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const old = (key: string) => {
+        const t = (Date.now() - 3 * 24 * 60 * 60 * 1000) / 1000;
+        utimesSync(storagePathIn(filesRoot(), key), t, t);
+      };
+      const place = (key: string, ageOld: boolean) => {
+        const p = storagePathIn(filesRoot(), key);
+        mkdirSync(path.dirname(p), { recursive: true });
+        writeFileSync(p, "orphan");
+        if (ageOld) old(key);
+      };
+      // A live upload, last written three days ago: kept.
+      const live = await upload(tx, w.teacher, { purpose: "work_item", name: "زنده.pdf" }, pdf("live"));
+      const liveKey = storageKeyFor(f.ORG_A, live.id, new Date());
+      old(liveKey);
+      // Bytes with no row at all (a crash between the rename and the commit), three days old: deleted.
+      const orphanKey = storageKeyFor(f.ORG_A, uuidv7(), new Date());
+      place(orphanKey, true);
+      // An archived row whose bytes were never removed: deleted.
+      const staleId = await rawFileRow(tx, w.teacher, { createdAt: new Date(Date.now() - FILE_LIMITS.pendingTtlMs - 60_000) });
+      await as(tx, w.teacher, (t) => t.execute(sql`select * from app.expire_stale_uploads(50)`));
+      const archivedKey = storageKeyFor(f.ORG_A, staleId, new Date());
+      place(archivedKey, true);
+      // No row yet but written an hour ago (an upload between its rename and its commit): kept.
+      const youngKey = storageKeyFor(f.ORG_A, uuidv7(), new Date());
+      place(youngKey, false);
+
+      const report = await as(tx, w.s2.actor, (t) => sweepOrphanFiles(t, w.s2.actor));
+      expect(report).toMatchObject({ organizationId: f.ORG_A, deleted: 2, braked: false, lookupFailed: false });
+      const there = (key: string) => existsSync(storagePathIn(filesRoot(), key));
+      expect({ live: there(liveKey), orphan: there(orphanKey), archived: there(archivedKey), young: there(youngKey) }).toEqual({ live: true, orphan: false, archived: false, young: true });
+      // Another organization's sweep never walks this one's directory.
+      place(orphanKey, true);
+      expect(await as(tx, adminB, (t) => sweepOrphanFiles(t, adminB))).toMatchObject({ organizationId: f.ORG_B, deleted: 0 });
+      expect(there(orphanKey)).toBe(true);
+      rmSync(storagePathIn(filesRoot(), orphanKey), { force: true });
     });
   });
 });

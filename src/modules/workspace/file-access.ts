@@ -33,7 +33,8 @@ import { KIND_INFO, kindOfMime, type FileKind } from "@/modules/files/kinds";
 import { FILE_MESSAGES, UPLOAD_PURPOSES, fileSizeProblem, withinDailyQuota, type UploadPurpose } from "@/modules/files/limits";
 import { nameForKind, sanitizeFileName } from "@/modules/files/names";
 import { STORAGE_KEY_RE, storageKeyFor } from "@/modules/files/paths";
-import { publishTemp } from "@/modules/files/storage";
+import { filesRoot, publishTemp } from "@/modules/files/storage";
+import { type SweepReport, liveFileIds, sweepOrphans } from "@/modules/files/sweep";
 import { managesItem } from "./manage-policy";
 import { findMyAssigneeRow, type WorkItemCore } from "./repo";
 import { workItemAttachment, workItemSubmission } from "./schema";
@@ -71,6 +72,8 @@ export interface UploadPlan {
 export interface UploadTicket extends UploadPlan {
   /** The uploader (the route's per-person concurrency key) — from the session, never from input. */
   personId: string;
+  /** The uploader's organization (the route's orphan-sweep key) — from the session. */
+  orgId: string;
   purpose: UploadPurpose;
   workItemId: string | null;
   /** The sanitised display name (its extension is fixed to the sniffed kind on record). */
@@ -138,7 +141,7 @@ export async function authorizeUpload(tx: Tx, ctx: FileAccessCtx, meta: UploadMe
   }
   if (!withinDailyQuota(meta.purpose, await usedToday(tx, ctx.personId), announcedBytes ?? 1)) throw rateLimited(FILE_MESSAGES.quota);
   const fileId = uuidv7();
-  return { personId: ctx.personId, purpose: meta.purpose, workItemId: meta.workItemId ?? null, name, fileId, storageKey: storageKeyFor(ctx.orgId, fileId, new Date()) };
+  return { personId: ctx.personId, orgId: ctx.orgId, purpose: meta.purpose, workItemId: meta.workItemId ?? null, name, fileId, storageKey: storageKeyFor(ctx.orgId, fileId, new Date()) };
 }
 
 /**
@@ -200,6 +203,16 @@ export async function expireStaleUploads(tx: Tx, ctx: FileAccessCtx, limit = 50)
   if (stale.length === 0) return [];
   await audit(ctx, "files.file_object.expired", { schema: "files", table: "file_object", id: null }, null, { ids: stale.map((s) => s.id) }, tx);
   return stale.map((s) => s.storageKey);
+}
+
+/**
+ * The bounded orphan sweep of the caller's organization (files/sweep; security review 2026-10-19, D6): bytes under
+ * FILES_DIR that no live row names, last written more than 24 h ago. Run by the upload route after a recorded upload,
+ * in a transaction of its own through the gate (workspace/file-gates `sweepOrphansGate`); app.live_file_ids answers for
+ * this organization only. Reads only — the deletions are the files' own.
+ */
+export function sweepOrphanFiles(tx: Tx, ctx: { orgId: string }): Promise<SweepReport> {
+  return sweepOrphans({ root: filesRoot(), orgId: ctx.orgId, liveIds: (ids) => liveFileIds(tx, ids) });
 }
 
 export interface DownloadMeta {
