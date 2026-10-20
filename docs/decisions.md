@@ -2673,3 +2673,46 @@ row) and a Home tile «تنظیمات» for admins.
   (c) Upcoming flags can be switched on now (no effect until the feature exists) — or should they be locked until built?
   (d) cPanel/Passenger has no long-running process: there, the orphan sweep runs only by hand (`pnpm files:sweep`).
   (e) Scheduled fan-out includes `trial` organizations and skips `suspended` ones.
+
+## 2026-10-20 — «دفتر کلاسی — گزارش جلسه» (owner): the end-of-session report (migration 0027)
+
+- **Owner request.** Finishing «دفتر کلاسی» (attendance per زنگ, the timetable and the subject page already existed): after
+  a session the دبیر records what was taught. Fields: «موضوع تدریس‌شده» (required, ≤ 200), «صفحه یا فصل» (≤ 100),
+  «تکلیف این جلسه» (an existing تکلیف of the same درس), «یادداشت دبیر» (≤ 1000, **staff only**), «برنامهٴ جلسهٴ بعد»
+  (≤ 300). The limits live in `src/lib/session-report.ts` (`SESSION_REPORT_LIMITS`), repeated by the Zod `.strict()` DTO
+  and by the table's CHECKs.
+- **A session is the roll call's cell**: `(class_group, date, period_no)` — the key `attendance_session` uses — with the
+  درس of that زنگ in `class_offering_id` (NOT NULL; from the weekly timetable, or the named offering validated against
+  the class, exactly as `takeAttendance` resolves it, via the shared `resolveOffering`). The report does NOT hang on an
+  `attendance_session` row: a دبیر may write it before or without the roll call; there is no FK to it. One report per
+  session (`session_report_cell_uq`); saving again updates it.
+- **Permission `academic.session_report.write`** (teacher, and every manager role through `ALL_ROLE_PERMS`), checked
+  with the same `allowed()` as attendance writes: at the class (the school's admins) or at the درس of that زنگ (its
+  teacher); anything else is NOT_FOUND. A date in the future is refused (as for the roll call). READING has no
+  permission of its own: the «دفتر کلاسی» list on the subject page rides on that page's gate (`openOffering`: the
+  offering's teacher, a student of its class, a holder of `academic.timetable.read` there).
+- **Privacy of «یادداشت دبیر».** It is selected from the table ONLY for a holder of the write permission at that class /
+  درس (`includesPrivate`); for every other reader the query returns a SQL `null` in its place, and
+  `shapeSessionReport` hands the page an object with no `privateNote` key at all. Students and anyone else see topic,
+  page / chapter, the تکلیف and the next-session plan. A linked تکلیف's title is shown only to a viewer who may open it
+  (`canViewWorkItem`) — a student the تکلیف was not given to sees no title.
+- **The تکلیف link** accepts only a non-archived, non-confidential item with `class_offering_id` = this درس that the
+  caller GAVE (`created_by_person_id`), or — for a broad `workspace.work_item.update` holder (the school's admins) — any
+  such item; the same filter feeds the form's select and the check on save. DB: composite FK
+  `(organization_id, work_item_id)`.
+- **Soft clear, no DELETE.** «پاک‌کردن گزارش» sets `status = 'archived'` + `archived_at` (CHECKed together); saving again
+  revives the same row. `app_rw` may not DELETE: a RESTRICTIVE `FOR DELETE … USING (false)` policy in migration 0027.
+  **Deliberately NOT a `REVOKE DELETE` inside `app.apply_grants()`**: the migration does not redefine that function
+  (a concurrent migration may). The `REVOKE DELETE ON academic.session_report FROM app_rw` line can join the next
+  migration that has to redefine `apply_grants()` anyway; until then the policy is the barrier (a DELETE as app_rw
+  matches no row, tests/int/session-report.test.ts).
+- **Audit** (`academic.session_report.created` / `.updated` / `.cleared`): ids, date, زنگ, status and the LENGTH of each
+  text (`reportAuditShape`) — never the topic, page, plan or private note.
+- **UI.** The roll-call page (`/attendance/[classGroupId]?period=`) shows the «گزارش جلسه» card (`SessionReportCard`)
+  under the roster and above the sticky save bar — only at a زنگ that has a درس and only for someone who may write the
+  report (`sessionReportCellQuery` answers null otherwise). The subject page (`/subjects/[offeringId]`) ends with
+  «دفتر کلاسی» (`SessionReportLog`): newest first, day · زنگ · topic · page · تکلیف (link) · next plan, and the private
+  note in a quiet panel for staff.
+- **Guardian pages: skipped.** The child pages of «اولیا» (`requireChild`) do not show session reports in this step; adding
+  them means a `requireChild`-gated read of the child's class offerings and is a separate slice. A guardian never sees the
+  private note either way.

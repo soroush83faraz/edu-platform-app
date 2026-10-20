@@ -8,9 +8,10 @@ import { can } from "@/modules/iam/can";
 import { getAdminScope, assertSchoolInScope } from "@/modules/iam/service";
 import { setSchoolPeriods } from "@/modules/tenancy/service";
 import { takeAttendance } from "./attendance";
-import { SaveObjectiveRatingsInput, SetSchoolPeriodsInput, SetTimetableSlotInput, TakeAttendanceInput } from "./dto";
+import { SaveObjectiveRatingsInput, SaveSessionReportInput, SessionReportCellInput, SetSchoolPeriodsInput, SetTimetableSlotInput, TakeAttendanceInput } from "./dto";
 import { saveObjectiveRatings } from "./report-card";
 import { setTimetableSlot } from "./service";
+import { clearSessionReport, saveSessionReport } from "./session-report";
 
 export const setTimetableSlotAction = defineAction({ schema: SetTimetableSlotInput, permission: "academic.timetable.write", scope: "any" }, async (tx, input, ctx) =>
   setTimetableSlot(tx, ctx, { classGroupId: input.classGroupId, weekday: input.weekday, periodNo: input.periodNo, classOfferingId: input.classOfferingId, room: input.room ?? null }),
@@ -50,4 +51,28 @@ export const saveObjectiveRatingsAction = defineAction({ schema: SaveObjectiveRa
     subjectName: input.subjectName,
     entries: input.entries.map((e) => ({ studentProfileId: e.studentProfileId, learningObjectiveId: e.learningObjectiveId, rating: e.rating })),
   }),
+);
+
+/**
+ * «ذخیرهٴ گزارش جلسه» — the end-of-session report of one cell (upsert). `scope: "any"` like the roll call: the service
+ * decides the real scope (the class for an admin, the درس of that زنگ for its teacher) and answers NOT_FOUND otherwise.
+ * Every field is mapped explicitly; the author and the organization come from the session.
+ */
+export const saveSessionReportAction = defineAction({ schema: SaveSessionReportInput, permission: "academic.session_report.write", scope: "any" }, async (tx, input, ctx) =>
+  saveSessionReport(tx, ctx, {
+    classGroupId: input.classGroupId,
+    date: input.date,
+    periodNo: input.periodNo,
+    classOfferingId: input.classOfferingId ?? null,
+    topic: input.topic,
+    pageRef: input.pageRef ?? null,
+    workItemId: input.workItemId ?? null,
+    privateNote: input.privateNote ?? null,
+    nextPlan: input.nextPlan ?? null,
+  }),
+);
+
+/** «پاک‌کردن گزارش جلسه» — soft: the report is withdrawn (archived), never deleted. Same scope rule as saving it. */
+export const clearSessionReportAction = defineAction({ schema: SessionReportCellInput, permission: "academic.session_report.write", scope: "any" }, async (tx, input, ctx) =>
+  clearSessionReport(tx, ctx, { classGroupId: input.classGroupId, date: input.date, periodNo: input.periodNo }),
 );

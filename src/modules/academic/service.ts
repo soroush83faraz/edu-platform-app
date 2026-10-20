@@ -648,7 +648,7 @@ export async function getStudentTimetable(tx: Tx, studentPersonId: string, now =
 }
 
 /** The one gate of the subject page (see `getOfferingPage`): the offering and the viewer's relation, or NOT_FOUND. */
-async function openOffering(tx: Tx, ctx: TimetableCtx, offeringId: string): Promise<{ offering: OfferingFacts; isTeacher: boolean; isStudent: boolean }> {
+export async function openOffering(tx: Tx, ctx: TimetableCtx, offeringId: string): Promise<{ offering: OfferingFacts; isTeacher: boolean; isStudent: boolean }> {
   const offering = await findOfferingFacts(tx, offeringId);
   if (!offering) throw notFound();
   const isTeacher = await teachesOffering(tx, ctx.personId, offeringId);

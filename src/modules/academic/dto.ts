@@ -142,3 +142,34 @@ export type ReportPrintInput = z.output<typeof ReportPrintInput>;
 /** «کارنامهٴ من». */
 export const MyReportCardInput = z.object({ month: jalaliMonth.optional() }).strict();
 export type MyReportCardInput = z.output<typeof MyReportCardInput>;
+
+// ---------------------------------------------------------------------------------------------------------------
+// «دفتر کلاسی — گزارش جلسه» (migration 0027)
+// ---------------------------------------------------------------------------------------------------------------
+
+const reportPeriodNo = z.number("شمارهٴ زنگ نامعتبر است.").int("شمارهٴ زنگ نامعتبر است.").min(1, "شمارهٴ زنگ نامعتبر است.").max(MAX_PERIODS, "شمارهٴ زنگ نامعتبر است.");
+
+/** One session = the roll call's cell: a class on a date at a زنگ (a report always has a زنگ — unlike the daily roll call). */
+export const SessionReportCellInput = z.object({ classGroupId: uuid, date: isoDate, periodNo: reportPeriodNo }).strict();
+export type SessionReportCellInput = z.output<typeof SessionReportCellInput>;
+
+/**
+ * «ذخیرهٴ گزارش جلسه»: the lengths mirror the CHECKs of `academic.session_report`. The درس is NOT trusted from the
+ * client unless named — then the service validates it against the class, exactly like the roll call; the author is
+ * always the session's person.
+ */
+export const SaveSessionReportInput = z
+  .object({
+    classGroupId: uuid,
+    date: isoDate,
+    periodNo: reportPeriodNo,
+    classOfferingId: uuid.nullable().optional(),
+    topic: z.string("موضوع تدریس‌شده را بنویسید.").trim().min(1, "موضوع تدریس‌شده را بنویسید.").max(200, "موضوع تدریس‌شده حداکثر ۲۰۰ نویسه است."),
+    pageRef: z.string().trim().max(100, "صفحه یا فصل حداکثر ۱۰۰ نویسه است.").nullable().optional(),
+    /** `""` from the form's «بدون تکلیف» option = none. */
+    workItemId: z.preprocess((v) => (v === "" ? null : v), uuid.nullable().optional()),
+    privateNote: z.string().trim().max(1000, "یادداشت دبیر حداکثر ۱۰۰۰ نویسه است.").nullable().optional(),
+    nextPlan: z.string().trim().max(300, "برنامهٴ جلسهٴ بعد حداکثر ۳۰۰ نویسه است.").nullable().optional(),
+  })
+  .strict();
+export type SaveSessionReportInput = z.output<typeof SaveSessionReportInput>;

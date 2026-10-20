@@ -88,7 +88,7 @@ function requireDate(date: string, field = "date"): string {
  * The درس of a cell: the offering the caller named (validated against the class) or, when they named none, the
  * offering the weekly timetable puts at that (weekday, زنگ). Null for a daily roll call with no timetable cell.
  */
-async function resolveOffering(tx: Tx, cg: ClassGroupRef, date: string, periodNo: number | null, classOfferingId: string | null): Promise<string | null> {
+export async function resolveOffering(tx: Tx, cg: ClassGroupRef, date: string, periodNo: number | null, classOfferingId: string | null): Promise<string | null> {
   if (classOfferingId) {
     const [o] = await tx
       .select({ id: classOffering.id, classGroupId: classOffering.classGroupId, status: classOffering.status })
@@ -111,7 +111,7 @@ async function resolveOffering(tx: Tx, cg: ClassGroupRef, date: string, periodNo
 }
 
 /** Holds `permission` at the class (admins) or at the درس of this cell (the teacher of that زنگ)? */
-async function allowed(tx: Tx, ctx: AttendanceCtx, permission: "academic.attendance.read" | "academic.attendance.write", classGroupId: string, offeringId: string | null): Promise<boolean> {
+export async function allowed(tx: Tx, ctx: AttendanceCtx, permission: "academic.attendance.read" | "academic.attendance.write" | "academic.session_report.write", classGroupId: string, offeringId: string | null): Promise<boolean> {
   if (await can(tx, ctx, permission, { scopeType: "class_group", id: classGroupId })) return true;
   if (offeringId && (await can(tx, ctx, permission, { scopeType: "class_offering", id: offeringId }))) return true;
   return false;

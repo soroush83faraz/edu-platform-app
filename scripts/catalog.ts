@@ -123,6 +123,8 @@ export const SYSTEM_ROLES: SystemRole[] = [
       "academic.timetable.read",
       "academic.attendance.read",
       "academic.attendance.write",
+      // «دفتر کلاسی — گزارش جلسه»: held at the teacher's class_offering, like the roll call of that زنگ.
+      "academic.session_report.write",
       "academic.objective_rating.read",
       "academic.objective_rating.write",
       // «گزارش به مشاور» about a student of the teacher's OWN classes (the service checks the teaching, NOT_FOUND

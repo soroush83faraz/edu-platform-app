@@ -18,11 +18,13 @@ import {
   ReportPrintInput,
   ReportSheetInput,
   SchoolIdInput,
+  SessionReportCellInput,
   StudentAttendanceInput,
 } from "./dto";
 import { classReportCards, classReportOverview, getRatingSheet, listRatableClasses, myReportCard, reportCardReach } from "./report-card";
 import { findStudentProfile, getMyClass, listClassesForPicker } from "./repo";
 import { getClassTimetable, getMyTimetable, getOfferingLink, getOfferingPage } from "./service";
+import { getSessionReportCell, listOfferingSessionReports } from "./session-report";
 
 export type { MyClass, MyClassTeacher } from "./repo";
 export type { ClassTimetable, DayPlan, MyTimetable, OfferingPage, Session, TimetableOffering } from "./service";
@@ -140,6 +142,22 @@ export const ratingSheetQuery = defineQuery({ schema: ReportSheetInput, permissi
 /** The printable cards of a class (all students, or one). */
 export const classReportCardsQuery = defineQuery({ schema: ReportPrintInput, permission: "academic.objective_rating.read", scope: "any" }, async (tx, input, ctx) =>
   classReportCards(tx, ctx, { classGroupId: input.classGroupId, month: input.month, studentProfileId: input.studentProfileId }),
+);
+
+// ---------------------------------------------------------------------------------------------------------------
+// «دفتر کلاسی — گزارش جلسه»
+// ---------------------------------------------------------------------------------------------------------------
+
+export type { OfferingSessionReport, OfferingSessionReports, SessionReportCell, WorkItemChoice } from "./session-report";
+
+/** The «گزارش جلسه» card under the roll call: null unless the caller may write the report of that cell. */
+export const sessionReportCellQuery = defineQuery({ schema: SessionReportCellInput, permission: "academic.session_report.write", scope: "any" }, async (tx, input, ctx) =>
+  getSessionReportCell(tx, ctx, { classGroupId: input.classGroupId, date: input.date, periodNo: input.periodNo }),
+);
+
+/** «دفتر کلاسی» of the subject page — the same gate as the page; the private note only for a writer. */
+export const offeringSessionReportsQuery = defineQuery({ schema: OfferingIdInput, permission: "academic.timetable.read", scope: "any" }, async (tx, input, ctx) =>
+  listOfferingSessionReports(tx, ctx, input.offeringId),
 );
 
 /** «کارنامهٴ من» — null when the person is not a primary student. */

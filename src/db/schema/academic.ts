@@ -3,6 +3,7 @@ import { check, date, foreignKey, index, pgSchema, smallint, text, timestamp, un
 import { id, timestamps } from "./_common";
 import { person, staffProfile, studentProfile } from "./iam";
 import { academicYear, classGroup, classOffering, gradeLevel, orgFk, school, subject } from "./tenancy";
+import { workItem } from "./workspace";
 
 export const academic = pgSchema("academic");
 
@@ -277,6 +278,70 @@ export const attendanceEntry = academic.table(
       name: "attendance_entry_student_fk",
       columns: [t.organizationId, t.studentProfileId],
       foreignColumns: [studentProfile.organizationId, studentProfile.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
+ * «دفتر کلاسی — گزارش جلسه» (migration 0027): the end-of-session report a دبیر writes for ONE session — the same cell a
+ * roll call is taken for, `(class_group, date, period_no)`, with the درس of that زنگ in `class_offering_id` (always set:
+ * a report is about a subject). One row per session (`session_report_cell_uq`); writing again UPDATES it, clearing it
+ * is soft (`status = 'archived'` + `archived_at`; `app_rw` may not DELETE). `topic` («موضوع تدریس‌شده», required),
+ * `page_ref` («صفحه/فصل»), `work_item_id` («تکلیف این جلسه»: an existing non-confidential تکلیف of the SAME درس —
+ * composite FK; the service checks the درس and the caller), `next_plan` («برنامهٴ جلسهٴ بعد») are read by whoever
+ * opens the subject page; `private_note` («یادداشت دبیر») is for staff who can write the report only (the service
+ * never selects it for anyone else — src/lib/session-report.ts). `author_person_id` is the last writer.
+ * The audit trail carries ids and text LENGTHS, never the text (`academic.session_report.saved`).
+ */
+export const sessionReport = academic.table(
+  "session_report",
+  {
+    id: id(),
+    organizationId: orgFk(),
+    classGroupId: uuid("class_group_id").notNull(),
+    classOfferingId: uuid("class_offering_id").notNull(),
+    date: date("date").notNull(),
+    periodNo: smallint("period_no").notNull(),
+    topic: text("topic").notNull(),
+    pageRef: text("page_ref"),
+    workItemId: uuid("work_item_id"),
+    privateNote: text("private_note"),
+    nextPlan: text("next_plan"),
+    status: text("status").notNull().default("active"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    authorPersonId: uuid("author_person_id").notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique("session_report_cell_uq").on(t.organizationId, t.classGroupId, t.date, t.periodNo),
+    unique("session_report_org_id_uq").on(t.organizationId, t.id),
+    index("session_report_org_offering_date_idx").on(t.organizationId, t.classOfferingId, t.date),
+    check("session_report_period_chk", sql`${t.periodNo} BETWEEN 1 AND 12`),
+    check("session_report_topic_chk", sql`char_length(${t.topic}) BETWEEN 1 AND 200`),
+    check("session_report_page_ref_chk", sql`${t.pageRef} IS NULL OR char_length(${t.pageRef}) BETWEEN 1 AND 100`),
+    check("session_report_private_note_chk", sql`${t.privateNote} IS NULL OR char_length(${t.privateNote}) BETWEEN 1 AND 1000`),
+    check("session_report_next_plan_chk", sql`${t.nextPlan} IS NULL OR char_length(${t.nextPlan}) BETWEEN 1 AND 300`),
+    check("session_report_status_chk", sql`${t.status} IN ('active', 'archived')`),
+    check("session_report_archived_chk", sql`(${t.status} = 'archived') = (${t.archivedAt} IS NOT NULL)`),
+    foreignKey({
+      name: "session_report_class_group_fk",
+      columns: [t.organizationId, t.classGroupId],
+      foreignColumns: [classGroup.organizationId, classGroup.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "session_report_offering_fk",
+      columns: [t.organizationId, t.classOfferingId],
+      foreignColumns: [classOffering.organizationId, classOffering.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "session_report_work_item_fk",
+      columns: [t.organizationId, t.workItemId],
+      foreignColumns: [workItem.organizationId, workItem.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "session_report_author_fk",
+      columns: [t.organizationId, t.authorPersonId],
+      foreignColumns: [person.organizationId, person.id],
     }).onDelete("restrict"),
   ],
 );

@@ -21,6 +21,10 @@ export const PERMISSIONS = [
   { code: "academic.attendance.read", module: "academic", name: "مشاهدهٴ حضور و غیاب", isSensitive: false },
   { code: "academic.attendance.write", module: "academic", name: "ثبت حضور و غیاب", isSensitive: false },
   { code: "academic.attendance.report", module: "academic", name: "گزارش حضور و غیاب", isSensitive: false },
+  // «دفتر کلاسی — گزارش جلسه» (2026-10-20; docs/decisions.md): write = the end-of-session report (the teacher of that
+  // زنگ's درس; the school's admins at the class). READING a report rides on the subject page's own gate
+  // (`academic.timetable.read`); the private «یادداشت دبیر» is shown only to a holder of THIS permission.
+  { code: "academic.session_report.write", module: "academic", name: "ثبت گزارش جلسه", isSensitive: false },
   { code: "academic.objective_rating.read", module: "academic", name: "مشاهدهٴ کارنامهٴ توصیفی", isSensitive: false },
   { code: "academic.objective_rating.write", module: "academic", name: "ثبت کارنامهٴ توصیفی", isSensitive: false },
   { code: "workspace.work_item.read", module: "workspace", name: "مشاهدهٴ کارتابل", isSensitive: false },

@@ -22,6 +22,7 @@ FKهای ترکیبی `(organization_id, x_id)`، همه `ON DELETE RESTRICT`، 
 | `academic.attendance.read` | دیدن حضور و غیاب (دانش‌آموز: خودش؛ کادر: در دامنهٴ خود) |
 | `academic.attendance.write` | ثبت/ویرایش یک ثبت |
 | `academic.attendance.report` | گزارش مدرسه و فهرست «امروز ثبت نشده» (`/admin/attendance`) |
+| `academic.session_report.write` | «گزارش جلسه» (دفتر کلاسی، مهاجرت `0027`): همان دامنهٔ `attendance.write` — دبیرِ آن زنگ و مدیران مدرسه؛ کارت زیر فهرست همین صفحه. خواندنِ گزارش‌ها با دروازهٔ صفحهٔ درس است و «یادداشت دبیر» فقط برای دارندهٔ این مجوز (docs/decisions.md 2026-10-20) |
 
 | نقش | read | write | report |
 |---|---|---|---|

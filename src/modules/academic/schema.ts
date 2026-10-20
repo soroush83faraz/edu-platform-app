@@ -7,6 +7,7 @@ export {
   learningObjective,
   objectiveRating,
   schoolEnrollment,
+  sessionReport,
   teacherAssignment,
   timetableSlot,
 } from "@/db/schema/academic";

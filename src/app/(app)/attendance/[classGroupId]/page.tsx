@@ -10,8 +10,9 @@ import { addDaysIso, isFutureIso, tehranToday, weekdayOfIso } from "@/lib/attend
 import { formatJalaliDateTime, isoDateToJalali } from "@/lib/format";
 import { requireContext } from "@/lib/ctx";
 import { formatTimeRangeFa, WEEKDAY_LABELS } from "@/lib/timetable";
-import { attendanceSessionQuery } from "@/modules/academic/queries";
+import { attendanceSessionQuery, sessionReportCellQuery } from "@/modules/academic/queries";
 import { AttendanceRoster } from "@/modules/academic/ui/AttendanceRoster";
+import { SessionReportCard } from "@/modules/academic/ui/SessionReportCard";
 import { canAtAnyScope } from "@/modules/iam/can";
 
 export const metadata: Metadata = { title: "ثبت حضور و غیاب" };
@@ -48,6 +49,9 @@ export default async function TakeAttendancePage({
   const data = result.data;
   // The session's own context (cached per request — `getRequestContext`), no extra query.
   const reportToCounselor = canAtAnyScope((await requireContext()).assignments, "counseling.teacher_report.write");
+  // «گزارش جلسه» (دفتر کلاسی): only at a زنگ with a درس, and only for someone who may write it — the query answers null
+  // (no card) for everyone else, so a read-only viewer sees the roll call exactly as before.
+  const reportCell = periodNo !== null && data.offering ? await sessionReportCellQuery({ classGroupId, date, periodNo }) : null;
   const dayName = WEEKDAY_LABELS[weekdayOfIso(date) ?? 0];
   const prev = addDaysIso(date, -1);
   const next = addDaysIso(date, 1);
@@ -151,7 +155,12 @@ export default async function TakeAttendancePage({
 
       {/* «گزارش به مشاور» on each row for a teacher (owner, 2026-10-13: the one place a teacher already sees their
           students); the report page itself checks that they teach the student. */}
-      <AttendanceRoster data={data} reportToCounselor={reportToCounselor} />
+      <AttendanceRoster data={data} reportToCounselor={reportToCounselor}>
+        {periodNo !== null && reportCell?.ok && reportCell.data ? (
+          // `key` re-seeds the form when the page moves to another day / زنگ (same component, new session).
+          <SessionReportCard key={`${date}:${periodNo}`} classGroupId={classGroupId} date={date} periodNo={periodNo} cell={reportCell.data} />
+        ) : null}
+      </AttendanceRoster>
     </ContentWidth>
   );
 }

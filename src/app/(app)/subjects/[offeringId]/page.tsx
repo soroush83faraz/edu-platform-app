@@ -16,7 +16,8 @@ import { formatJalaliDayOfMonth, formatJalaliShort, formatNumberFa } from "@/lib
 import { normalizeName, offeringHue } from "@/lib/subject-stamp";
 import { getTeacherHues } from "@/lib/teacher-hues";
 import { formatTimeFa, formatTimeRangeFa, sessionWeekDays, WEEKDAY_LABELS } from "@/lib/timetable";
-import { offeringPageQuery } from "@/modules/academic/queries";
+import { offeringPageQuery, offeringSessionReportsQuery } from "@/modules/academic/queries";
+import { SessionReportLog } from "@/modules/academic/ui/SessionReportLog";
 import { listWorkItemsQuery, openItemsByOfferingQuery } from "@/modules/workspace/queries";
 import { WorkItemList } from "@/modules/workspace/ui/WorkItemList";
 
@@ -48,6 +49,7 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
     notFound();
   }
   const { offering, sessions, nextSession, viewer } = page.data;
+  const sessionReports = await offeringSessionReportsQuery({ offeringId });
   const items = await listWorkItemsQuery({ offeringId, allDone, cursor });
   const open = items.ok ? items.data.open : [];
   const done = items.ok ? items.data.done : [];
@@ -230,6 +232,10 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
           </div>
         ) : null}
       </section>
+
+      {/* «دفتر کلاسی»: the session reports of this درس — topic, page, تکلیف, next plan for everyone who opens the page; the
+          دبیر's private note only inside the data the service returns to a writer (never selected for anyone else). */}
+      {sessionReports.ok ? <SessionReportLog data={sessionReports.data} /> : null}
     </ContentWidth>
   );
 }

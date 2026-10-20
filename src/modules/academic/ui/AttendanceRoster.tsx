@@ -25,6 +25,7 @@ const CHOICES: Array<{ status: AttendanceStatus; className: string }> = [
 ];
 
 /**
+ * (`children` = the page's «گزارش جلسه» card, rendered under the list.)
  * «ثبت حضور و غیاب» for one زنگ: the class roster, each student with a four-way segmented control
  * (حاضر / غایب / تأخیر / موجه) that is a real 44 px target at every width, an optional «دقیقهٴ تأخیر» field that
  * appears only on تأخیر, the «همه حاضر» shortcut, and a sticky footer that carries the live count and the one
@@ -35,7 +36,7 @@ const CHOICES: Array<{ status: AttendanceStatus; className: string }> = [
  * `reportToCounselor` (a teacher — `counseling.teacher_report.write`; owner 2026-10-13): each student's name row ends
  * with «گزارش به مشاور», a 44 px link to that student's report page (which itself checks the teaching).
  */
-export function AttendanceRoster({ data, reportToCounselor = false }: { data: SessionForTaking; reportToCounselor?: boolean }) {
+export function AttendanceRoster({ data, reportToCounselor = false, children }: { data: SessionForTaking; reportToCounselor?: boolean; children?: React.ReactNode }) {
   const router = useRouter();
   const [marks, setMarks] = useState<Record<string, Mark>>(() =>
     Object.fromEntries(data.rows.map((r) => [r.studentProfileId, { status: r.status, minutesLate: r.minutesLate }])),
@@ -161,6 +162,10 @@ export function AttendanceRoster({ data, reportToCounselor = false }: { data: Se
           );
         })}
       </ul>
+
+      {/* «گزارش جلسه» (دفتر کلاسی) — passed by the page, drawn under the roster and ABOVE the sticky bar, which must stay the
+          last child: its phone-width `-mb-16` and its stickiness both rely on being at the end of this column. */}
+      {children}
 
       {/* Phones: pinned flush to the screen's bottom edge (the hub shell has no bottom nav — owner 2026-10-07: the old
           3.5 rem lift left it floating mid-air), its padding growing by the home-indicator inset; the classic shell
