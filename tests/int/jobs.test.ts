@@ -394,6 +394,19 @@ describe("the real handlers", () => {
     for (const c of claimed) expect((await runJob(c, REGISTRY, "w")).outcome).toBe("done");
   });
 
+  it("the workspace scans (deadline reminders, request response times) run to done through the real registry", async () => {
+    await withTenant({ orgId: f.ORG_B }, async (tx) => {
+      await enqueueJob(tx, { orgId: f.ORG_B }, "workspace.scan_deadlines", {});
+      await enqueueJob(tx, { orgId: f.ORG_B }, "workspace.check_request_slas", {});
+      // A reminder for an item that does not exist (any more) does nothing and is done.
+      await enqueueJob(tx, { orgId: f.ORG_B }, "workspace.remind_deadline", { workItemId: "01900000-0000-7000-8000-000000000001", dueAt: "2026-10-21T08:30:00.000Z" });
+      await enqueueJob(tx, { orgId: f.ORG_B }, "workspace.notify_overdue", { workItemId: "01900000-0000-7000-8000-000000000001", dueAt: "2026-10-21T08:30:00.000Z" });
+    });
+    const claimed = await claimJobs("w", claimWants(REGISTRY.kinds, new Map(), 16));
+    expect(claimed.map((c) => c.kind).sort()).toEqual(["workspace.check_request_slas", "workspace.notify_overdue", "workspace.remind_deadline", "workspace.scan_deadlines"]);
+    for (const c of claimed) expect((await runJob(c, REGISTRY, "w")).outcome).toBe("done");
+  });
+
   it("kind names outside module.verb_noun are refused by the table (CHECK)", async () => {
     await expect(withTenant({ orgId: f.ORG_A }, (tx) => insertJob(tx, f.ORG_A, "NoDot", def(), { n: 1 }))).rejects.toSatisfy((e: unknown) => pgCode(e) === PG.CHECK_VIOLATION);
   });
