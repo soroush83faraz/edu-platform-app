@@ -13,8 +13,8 @@
 //   • a run in which most of what it saw looks orphaned (a wrong FILES_DIR, a restored database) deletes nothing and
 //     says so (`braked`) — `force` overrides that for an operator who has checked;
 //   • `dryRun` reports and deletes nothing.
-// Callers: the upload route, at most once an hour per organization and process, after the response
-// (src/app/api/files/route.ts → workspace/file-gates `sweepOrphansGate`), and `scripts/sweep-files.ts`
+// Callers: the worker's hourly `files.sweep_orphans` job, one organization per job (src/lib/jobs/handlers.ts — owner
+// 2026-10-20, docs/decisions.md; until then the upload route ran it opportunistically), and `scripts/sweep-files.ts`
 // (docs/ops/runbook.md). Logs carry counts and keys only.
 import { lstat, readdir, rm } from "node:fs/promises";
 import path from "node:path";
@@ -33,8 +33,6 @@ export const SWEEP_LIMITS = {
   /** A run that saw at least `brakeMinFiles` files, more than `brakeShare` of them orphans, deletes nothing. */
   brakeMinFiles: 10,
   brakeShare: 0.5,
-  /** The upload route sweeps one organization at most this often (per process). */
-  everyMs: 60 * 60 * 1000,
 } as const;
 
 /** Pure: delete the bytes of one file id? Only when no live row names them and they are older than `minAgeMs`. */

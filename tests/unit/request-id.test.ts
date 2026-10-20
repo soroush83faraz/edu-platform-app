@@ -69,7 +69,6 @@ vi.mock("@/modules/workspace/file-gates", () => ({
     return { ok: false, code: "FORBIDDEN", message: "-" };
   }),
   recordUploadGate: vi.fn(),
-  sweepOrphansGate: vi.fn(),
 }));
 
 describe("POST /api/files mints its own request id", () => {

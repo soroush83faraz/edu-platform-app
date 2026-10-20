@@ -1,7 +1,7 @@
 // Sweep orphan upload bytes («یتیم») — files under FILES_DIR that no live `files.file_object` row names, last written
 // more than 24 h ago (src/modules/files/sweep.ts; security review 2026-10-19, D6; docs/ops/runbook.md «فایل‌ها»). The
-// upload route already runs the same bounded sweep by itself (once an hour per organization and process); this is the
-// operator's lever after a crash, a restore, or for a whole volume:
+// worker already runs the same bounded sweep hourly for every organization (`files.sweep_orphans`, src/lib/jobs); this
+// is the operator's lever after a crash, a restore, or for a whole volume:
 //
 //   pnpm files:sweep --dry-run                          every organization directory under FILES_DIR, report only
 //   pnpm files:sweep --org <organization uuid>          one organization

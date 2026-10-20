@@ -16,12 +16,12 @@
 //   6. the kind from the BYTES (files/sniff) — anything else is refused and its temp file deleted;
 //   7. gate pass 2: decided again, the `pending` row + audit, the stale uploads expired, the rename into place
 //      (workspace/file-access `recordUpload`); on any failure the temp file AND the planned key are removed;
-//   8. after the response, at most once an hour per organization: the bounded orphan sweep (files/sweep, D6).
+// The bounded orphan sweep (files/sweep, D6) is the worker's hourly `files.sweep_orphans` job, not this route's.
 // Both slots are released in `finally`, whatever the path. This path is excluded from src/proxy.ts's matcher: a proxy
 // buffers (and past `proxyClientMaxBodySize`, silently truncates) the request body —
 // node_modules/next/dist/docs/…/proxyClientMaxBodySize.md — so it mints its own request id (`withMintedRequestId`).
 // Caddy caps bodies at 12 MB and a request's read at 120 s.
-import { NextResponse, after, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import type { Result } from "@/lib/actions";
 import { env } from "@/lib/env";
 import { FA_MESSAGES, HTTP_STATUS } from "@/lib/errors";
@@ -31,9 +31,8 @@ import { FILE_LIMITS, FILE_MESSAGES, slotCeilingFor } from "@/modules/files/limi
 import { ReceiveError, receiveToTemp, type Received } from "@/modules/files/receive";
 import { type RejectReason, sniffFile } from "@/modules/files/sniff";
 import { attemptWindow, discardTemp, freeBytes, keyedSlots, removeStored, slidingCounter, sweepTemp, tempDir, uploadSlots } from "@/modules/files/storage";
-import { SWEEP_LIMITS } from "@/modules/files/sweep";
 import { isSameOriginUpload, readUploadRequest } from "@/modules/files/upload-request";
-import { authorizeUploadGate, recordUploadGate, sweepOrphansGate } from "@/modules/workspace/file-gates";
+import { authorizeUploadGate, recordUploadGate } from "@/modules/workspace/file-gates";
 
 export const dynamic = "force-dynamic";
 
@@ -45,15 +44,6 @@ const personSlots = keyedSlots(FILE_LIMITS.maxConcurrentUploadsPerPerson);
 const attempts = attemptWindow(FILE_LIMITS.maxAttemptsPerHour, 60 * 60 * 1000);
 /** Slow aborts per person (idle, under the rate, past the wall clock) — the fairness of the process slots. */
 const slowAborts = slidingCounter(FILE_LIMITS.slowStrikeWindowMs);
-/** When this process last swept an organization's orphan bytes (files/sweep, D6): at most once per `everyMs`. */
-const lastSweep = new Map<string, number>();
-
-function sweepDue(orgId: string, now = Date.now()): boolean {
-  if (now - (lastSweep.get(orgId) ?? 0) < SWEEP_LIMITS.everyMs) return false;
-  lastSweep.set(orgId, now);
-  return true;
-}
-
 function fail(status: number, code: string, message: string): NextResponse {
   return NextResponse.json({ ok: false, code, message }, { status, headers: NO_STORE });
 }
@@ -156,15 +146,6 @@ async function upload(request: NextRequest): Promise<NextResponse> {
     committed = true;
     await removeStored(recorded.data.expiredKeys);
     void sweepTemp(FILE_LIMITS.tempTtlMs).catch(() => undefined);
-    if (sweepDue(ticket.data.orgId)) {
-      // After the response: bytes no live row names, older than a day, this organization only (bounded; files/sweep).
-      after(() =>
-        sweepOrphansGate(raw).then(
-          (r) => (r.ok ? undefined : logger.warn({ code: r.code }, "files: orphan sweep not run")),
-          (err: unknown) => logger.error({ err }, "files: orphan sweep failed"),
-        ),
-      );
-    }
     return NextResponse.json({ ok: true, data: recorded.data.file }, { status: 201, headers: NO_STORE });
   } catch (err) {
     logger.error({ err }, "files: upload failed");

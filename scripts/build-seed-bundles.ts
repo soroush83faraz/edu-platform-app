@@ -51,34 +51,44 @@ function pinImportMeta(entryAbs: string): EsbuildPlugin {
   };
 }
 
-export async function buildSeedBundles(): Promise<{ out: string; bytes: number; packages: string[] }[]> {
-  mkdirSync(OUT_DIR, { recursive: true });
-  const results: { out: string; bytes: number; packages: string[] }[] = [];
+export interface BundleResult {
+  out: string;
+  bytes: number;
+  packages: string[];
+}
+
+/** One entry → one self-contained ESM file (also used by scripts/build-worker.ts for the `worker` service). */
+export async function bundleEntry(entry: string, out: string): Promise<BundleResult> {
+  const entryAbs = resolve(ROOT, entry);
+  mkdirSync(dirname(out), { recursive: true });
+  const result = await esbuild.build({
+    entryPoints: [entryAbs],
+    outfile: out,
+    bundle: true,
+    platform: "node",
+    target: "node22",
+    format: "esm",
+    external: EXTERNAL,
+    tsconfig: resolve(ROOT, "tsconfig.json"),
+    metafile: true,
+    logLevel: "warning",
+    legalComments: "none",
+    // Inlined CommonJS packages may `require` Node built-ins; ESM output has no `require` of its own.
+    banner: { js: `// Generated from ${entry} by scripts/${entry === "scripts/worker.ts" ? "build-worker" : "build-seed-bundles"}.ts — do not edit.\nimport { createRequire as __seedCreateRequire } from "node:module";\nconst require = __seedCreateRequire(import.meta.url);` },
+    plugins: [pinImportMeta(entryAbs)],
+  });
+  const packages = new Set<string>();
+  for (const input of Object.keys(result.metafile.inputs)) {
+    const m = /node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?((?:@[^\\/]+[\\/])?[^\\/]+)/.exec(input);
+    if (m?.[1]) packages.add(m[1].replace("\\", "/"));
+  }
+  return { out, bytes: result.metafile.outputs[relative(ROOT, out).split("\\").join("/")]?.bytes ?? 0, packages: [...packages].sort() };
+}
+
+export async function buildSeedBundles(): Promise<BundleResult[]> {
+  const results: BundleResult[] = [];
   for (const entry of ENTRIES) {
-    const entryAbs = resolve(ROOT, entry);
-    const out = resolve(OUT_DIR, `${entry.replace(/^scripts\//, "").replace(/\.ts$/, "")}.mjs`);
-    const result = await esbuild.build({
-      entryPoints: [entryAbs],
-      outfile: out,
-      bundle: true,
-      platform: "node",
-      target: "node22",
-      format: "esm",
-      external: EXTERNAL,
-      tsconfig: resolve(ROOT, "tsconfig.json"),
-      metafile: true,
-      logLevel: "warning",
-      legalComments: "none",
-      // Inlined CommonJS packages may `require` Node built-ins; ESM output has no `require` of its own.
-      banner: { js: `// Generated from ${entry} by scripts/build-seed-bundles.ts — do not edit.\nimport { createRequire as __seedCreateRequire } from "node:module";\nconst require = __seedCreateRequire(import.meta.url);` },
-      plugins: [pinImportMeta(entryAbs)],
-    });
-    const packages = new Set<string>();
-    for (const input of Object.keys(result.metafile.inputs)) {
-      const m = /node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?((?:@[^\\/]+[\\/])?[^\\/]+)/.exec(input);
-      if (m?.[1]) packages.add(m[1].replace("\\", "/"));
-    }
-    results.push({ out, bytes: result.metafile.outputs[relative(ROOT, out).split("\\").join("/")]?.bytes ?? 0, packages: [...packages].sort() });
+    results.push(await bundleEntry(entry, resolve(OUT_DIR, `${entry.replace(/^scripts\//, "").replace(/\.ts$/, "")}.mjs`)));
   }
   return results;
 }

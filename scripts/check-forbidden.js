@@ -6,6 +6,8 @@
 //                 A stray `set_config(..., false)` on a pooled connection would leak one request's tenant into the
 //                 next; a stray `set_config('app.current_org_id', <input>, true)` would let a caller pick its tenant.
 //                 Allowed outside application code: scripts/ (seed/migrate run as app_owner), tests/, drizzle/.
+//   claim_jobs(  — leases due background jobs of EVERY organization (app.claim_jobs, migration 0026). Only the job
+//                 runner may call it; request code enqueues into its own organization (src/modules/ops/enqueue.ts).
 //
 // Plain Node, no dependencies (runs before install-heavy tooling and inside CI without a build).
 "use strict";
@@ -27,6 +29,13 @@ const RULES = [
     pattern: /set_config\s*\(/,
     allow: ["src/db/client.ts"],
     message: "set_config( may only be called in src/db/client.ts (withTenant / bindAccountContext). Use the wrapper instead.",
+  },
+  {
+    // The cross-organization job claim (migration 0026, SECURITY DEFINER): the worker's runner only.
+    name: "claim_jobs",
+    pattern: /claim_jobs\s*\(/,
+    allow: ["src/lib/jobs/runner.ts"],
+    message: "app.claim_jobs( may only be called by the job runner (src/lib/jobs/runner.ts). Enqueue with enqueueJob instead.",
   },
 ];
 

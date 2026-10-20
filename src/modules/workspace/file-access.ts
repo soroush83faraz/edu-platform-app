@@ -11,7 +11,7 @@
 //   • never from a «ورود آزمایشی» session (the pilot's open demo login must not become an anonymous file host);
 //   • the daily quota per person (rolling 24 h, every upload counted), serialised per person by an advisory lock;
 //   • a recorded upload is `pending`, bound to its uploader, purpose and target — only the write it was made for can
-//     attach it (./work-item-files `takePendingUploads`); left unattached for 24 h it expires (`expireStaleUploads`).
+//     attach it (./work-item-files `takePendingUploads`); left unattached for 24 h it expires (files/expire `expireStaleUploads` — on every upload and hourly in the worker).
 // Download — `findDownload`, on EVERY request: the file must be live and attached; the caller must see its تکلیف
 // (`canViewWorkItem` — assignees, the giver, the broad readers it allows); a پاسخ's file only its student or the
 // item's managers (and 0024's RESTRICTIVE policy hides the row from anyone else). Every refusal is NOT_FOUND.
@@ -34,6 +34,7 @@ import { FILE_MESSAGES, UPLOAD_PURPOSES, fileSizeProblem, withinDailyQuota, type
 import { nameForKind, sanitizeFileName } from "@/modules/files/names";
 import { STORAGE_KEY_RE, storageKeyFor } from "@/modules/files/paths";
 import { filesRoot, publishTemp } from "@/modules/files/storage";
+import { expireStaleUploads } from "@/modules/files/expire";
 import { type SweepReport, liveFileIds, sweepOrphans } from "@/modules/files/sweep";
 import { managesItem } from "./manage-policy";
 import { findMyAssigneeRow, type WorkItemCore } from "./repo";
@@ -190,25 +191,9 @@ export async function recordUpload(tx: Tx, ctx: FileAccessCtx, meta: UploadMeta,
 }
 
 /**
- * Uploads of this organization left `pending` (never attached by the form they were made for) for longer than
- * `pendingTtlMs` (24 h — the same interval is written in the SQL function): archived, at most 50 per call, rows nobody
- * holds (SKIP LOCKED — an attach in flight wins). One audit row with their ids. Returns their keys; the caller deletes
- * the bytes after the commit. Runs on every upload, so the files volume needs no cron for them. Through
- * `app.expire_stale_uploads` (migration 0025, SECURITY DEFINER, the current organization only): since 0025's
- * RESTRICTIVE policies app_rw sees no one else's pending upload, so it can no longer pick them itself.
- */
-export async function expireStaleUploads(tx: Tx, ctx: FileAccessCtx, limit = 50): Promise<string[]> {
-  const res = await tx.execute<{ file_id: string; file_storage_key: string }>(sql`select file_id, file_storage_key from app.expire_stale_uploads(${limit}::int)`);
-  const stale = res.rows.map((r) => ({ id: r.file_id, storageKey: r.file_storage_key }));
-  if (stale.length === 0) return [];
-  await audit(ctx, "files.file_object.expired", { schema: "files", table: "file_object", id: null }, null, { ids: stale.map((s) => s.id) }, tx);
-  return stale.map((s) => s.storageKey);
-}
-
-/**
- * The bounded orphan sweep of the caller's organization (files/sweep; security review 2026-10-19, D6): bytes under
- * FILES_DIR that no live row names, last written more than 24 h ago. Run by the upload route after a recorded upload,
- * in a transaction of its own through the gate (workspace/file-gates `sweepOrphansGate`); app.live_file_ids answers for
+ * The bounded orphan sweep of the transaction's organization (files/sweep; security review 2026-10-19, D6): bytes
+ * under FILES_DIR that no live row names, last written more than 24 h ago. Run hourly per organization by the worker
+ * (`files.sweep_orphans`, src/lib/jobs/handlers.ts — it calls files/sweep directly); app.live_file_ids answers for
  * this organization only. Reads only — the deletions are the files' own.
  */
 export function sweepOrphanFiles(tx: Tx, ctx: { orgId: string }): Promise<SweepReport> {

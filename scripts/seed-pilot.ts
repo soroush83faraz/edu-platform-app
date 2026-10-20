@@ -1506,7 +1506,7 @@ async function tenantTablesInDeleteOrder(db: Db): Promise<string[]> {
     from information_schema.columns c
     join information_schema.tables tb on tb.table_schema = c.table_schema and tb.table_name = c.table_name and tb.table_type = 'BASE TABLE'
     where c.column_name = 'organization_id'
-      and c.table_schema in ('tenancy','iam','academic','workspace','notif','files','audit','config','integ','counseling')
+      and c.table_schema in ('tenancy','iam','academic','workspace','notif','files','audit','config','integ','counseling','ops')
     order by 1`);
   const names = new Set(tables.rows.map((r) => r.t));
   const edges = await db.execute<{ child: string; parent: string }>(sql`

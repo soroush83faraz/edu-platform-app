@@ -1,7 +1,7 @@
 // Single entry point for drizzle-kit (drizzle.config.ts) and the Drizzle client.
 // One file per PostgreSQL schema; module code imports via src/modules/<ctx>/schema.ts.
 // Import order follows the dependency graph (tenancy <- iam <- files <- academic/workspace/notif/audit/config/integ;
-// counseling <- workspace).
+// counseling <- workspace; ops <- tenancy).
 export * from "./tenancy";
 export * from "./iam";
 export * from "./files";
@@ -12,3 +12,4 @@ export * from "./audit";
 export * from "./config";
 export * from "./integ";
 export * from "./counseling";
+export * from "./ops";

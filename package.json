@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "tsx scripts/build-sw.ts && tsx scripts/build-seed-catalog.ts && next build",
+    "build": "tsx scripts/build-sw.ts && tsx scripts/build-seed-catalog.ts && tsx scripts/build-worker.ts && next build",
     "build:sw": "tsx scripts/build-sw.ts",
     "build:seed-catalog": "tsx scripts/build-seed-catalog.ts",
+    "build:worker": "tsx scripts/build-worker.ts",
     "package:release": "node scripts/package-release.mjs",
     "start": "next start",
     "lint": "eslint .",
@@ -33,7 +34,8 @@
     "smoke:prod": "tsx scripts/smoke-prod.ts",
     "load:test": "tsx scripts/load-test.ts",
     "sessions:revoke": "tsx scripts/revoke-sessions.ts",
-    "files:sweep": "tsx scripts/sweep-files.ts"
+    "files:sweep": "tsx scripts/sweep-files.ts",
+    "worker": "tsx scripts/worker.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "2.2.1",

@@ -4,11 +4,9 @@
 // the planned row id / storage key and the received temp file — through a closure, so no client can ever call these
 // with facts of its own. The permission follows the purpose: `workspace.work_item.submit` for a student's پاسخ,
 // `workspace.work_item.attach` for the giver's files; the item rule is decided inside (./file-access).
-import { z } from "zod";
 import { defineAction, type Result } from "@/lib/actions";
-import type { SweepReport } from "@/modules/files/sweep";
 import type { Permission } from "@/modules/iam/permissions";
-import { type ReceivedUpload, type UploadPlan, type UploadTicket, type UploadedFile, UploadMeta, authorizeUpload, recordUpload, sweepOrphanFiles } from "./file-access";
+import { type ReceivedUpload, type UploadPlan, type UploadTicket, type UploadedFile, UploadMeta, authorizeUpload, recordUpload } from "./file-access";
 
 function permissionFor(raw: Record<string, unknown>): Permission {
   return raw.purpose === "submission" ? "workspace.work_item.submit" : "workspace.work_item.attach";
@@ -22,15 +20,4 @@ export function authorizeUploadGate(raw: Record<string, unknown>, announcedBytes
 /** Pass 2, the bytes received and sniffed: decide again, record the row, publish the bytes (./file-access `recordUpload`). */
 export function recordUploadGate(raw: Record<string, unknown>, plan: UploadPlan, received: ReceivedUpload): Promise<Result<{ file: UploadedFile; expiredKeys: string[] }>> {
   return defineAction({ schema: UploadMeta, permission: permissionFor(raw), scope: "any" }, (tx, input, ctx) => recordUpload(tx, ctx, input, plan, received))(raw);
-}
-
-const NoInput = z.object({}).strict();
-
-/**
- * After a recorded upload (the route, `after()` its response): the bounded orphan sweep of the uploader's organization
- * (./file-access `sweepOrphanFiles`; security review 2026-10-19, D6) — through the same gate, as the same caller, who
- * holds the upload's permission. Takes no client input.
- */
-export function sweepOrphansGate(raw: Record<string, unknown>): Promise<Result<SweepReport>> {
-  return defineAction({ schema: NoInput, permission: permissionFor(raw), scope: "any" }, (tx, _input, ctx) => sweepOrphanFiles(tx, ctx))({});
 }
