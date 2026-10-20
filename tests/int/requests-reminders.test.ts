@@ -144,9 +144,9 @@ async function buildWorld(tx: Tx): Promise<World> {
   };
 }
 
-const flag = (tx: Tx, w: World, key: "deadline_reminders" | "request_center", value: "on" | "off") => sub(tx, (sp) => as(sp, w.admin, (t) => setFlag(t, { ...w.admin, ip: null, userAgent: "int-test" }, { key, schoolId: null, value })));
+const flag = (tx: Tx, w: World, key: "deadline_reminders" | "request_center", value: "on" | "off") => sub(tx, (sp) => as(sp, w.admin, (t) => setFlag(t, { ...w.admin, userId: "00000000-0000-7000-8000-000000000000", ip: "127.0.0.1", userAgent: "int-test" }, { key, schoolId: null, value })));
 const quiet = (tx: Tx, w: World, start: string, end: string) =>
-  sub(tx, (sp) => as(sp, w.admin, (t) => setSetting(t, { ...w.admin, ip: null, userAgent: "int-test" }, { key: "notif.quiet_hours", schoolId: null, mode: "set", start, end })));
+  sub(tx, (sp) => as(sp, w.admin, (t) => setSetting(t, { ...w.admin, userId: "00000000-0000-7000-8000-000000000000", ip: "127.0.0.1", userAgent: "int-test" }, { key: "notif.quiet_hours", schoolId: null, mode: "set", start, end })));
 
 async function notificationsOf(tx: Tx, typeCode: string, sourceId: string): Promise<Array<{ recipient: string; title: string; deepLink: string | null }>> {
   const res = await tx.execute<{ recipient_person_id: string; title: string; deep_link: string | null }>(

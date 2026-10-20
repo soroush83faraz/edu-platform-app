@@ -1,5 +1,7 @@
 import { Suspense } from "react";
+import { CountBadge } from "@/components/CountBadge";
 import type { Ctx } from "@/lib/ctx";
+import { formatNumberFa } from "@/lib/format";
 import { audienceOf, emptyOpenCopy } from "@/lib/empty-copy";
 import { workItemVoice, workItemWords } from "@/lib/work-item-words";
 import { canAtAnyScope } from "@/modules/iam/can";
@@ -23,7 +25,7 @@ const GRID = "reveal-grid grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-4 md:gri
 export async function HomeGrid({ ctx }: { ctx: Ctx }) {
   const has = (p: Permission) => canAtAnyScope(ctx.assignments, p);
   // Shared with the desktop dashboard (`home-data.ts`, React cache): hats and tiles read once.
-  const { tiles, upcoming, variant } = await resolveHomeTiles(ctx);
+  const { tiles, upcoming, variant, pendingLeaves } = await resolveHomeTiles(ctx);
   const words = workItemWords(workItemVoice(ctx.assignments));
 
   return (
@@ -32,7 +34,9 @@ export async function HomeGrid({ ctx }: { ctx: Ctx }) {
         <nav aria-label="بخش‌ها">
           <ul className={GRID}>
             {tiles.map((t) => (
-              <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror} />
+              <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror}>
+                {t.code === "admin-leave" ? <CountBadge count={pendingLeaves} label={`${formatNumberFa(pendingLeaves)} درخواست در انتظار بررسی`} floating memoryKey="home-leave" /> : null}
+              </Tile>
             ))}
           </ul>
         </nav>

@@ -322,7 +322,7 @@ describe("«اولیا» — guardians", () => {
           ["guardian_full", "student", w.s2.studentProfileId],
         ].sort(),
       );
-      for (const a of guardian.assignments) for (const p of a.permissions.filter((x) => x !== "iam.guardian_message.send")) expect(p, p).toMatch(/\.read$/);
+      for (const a of guardian.assignments) for (const p of a.permissions.filter((x) => x !== "iam.guardian_message.send" && x !== "academic.leave.request")) expect(p, p).toMatch(/\.read$/);
       for (const p of ["workspace.work_item.create", "workspace.work_item.update", "workspace.work_item.comment", "academic.attendance.write", "academic.objective_rating.write", "iam.admin.access", "counseling.case.read"] as const) {
         expect(canAtAnyScope(guardian.assignments, p), p).toBe(false);
       }

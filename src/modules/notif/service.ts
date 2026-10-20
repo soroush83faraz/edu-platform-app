@@ -21,6 +21,9 @@ export type NotificationTypeCode =
   | "guardian.child_absent"
   | "guardian.report_card"
   | "guardian.message_answered"
+  | "guardian.leave_decided"
+  | "guardian.early_exit"
+  | "academic.leave_requested"
   | "account.password_reset"
   | "system.announcement";
 

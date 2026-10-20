@@ -1,4 +1,4 @@
-import { Award, CalendarCheck2, CalendarRange, ChevronLeft, MessageSquareText, NotebookPen, UserRound } from "lucide-react";
+import { Award, CalendarCheck2, CalendarRange, CalendarX2, ChevronLeft, MessageSquareText, NotebookPen, UserRound } from "lucide-react";
 import Link from "next/link";
 import { PageSection } from "@/components/layout/PageSection";
 import { RowMark } from "@/components/RowMark";
@@ -22,6 +22,8 @@ function childTiles(child: GuardianChild, taken: ReadonlySet<string>) {
     { code: "child-timetable", labelFa: label("برنامهٴ کلاسی"), href: childHref("timetable", child.studentProfileId), icon: CalendarRange },
     // «ارتباط ولی و مدرسه» (owner, 2026-10-19): a question / suggestion / criticism about this child to the school.
     { code: "child-messages", labelFa: "پیام به مدرسه", href: childHref("messages", child.studentProfileId), icon: MessageSquareText },
+    // «درخواست مرخصی» (owner, 2026-10-20): ask the school for this child's leave and follow the answer.
+    { code: "child-leave", labelFa: "درخواست مرخصی", href: childHref("leave", child.studentProfileId), icon: CalendarX2 },
   ];
 }
 

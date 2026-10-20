@@ -102,17 +102,18 @@ describe("the guardian's bell: the kind of event and the child's name — nothin
 
 describe("the «ولی» role in the catalog", () => {
   const guardian = SYSTEM_ROLES.find((r) => r.code === "guardian_full")!;
-  it("is read-only but for its own «پیام به مدرسه»: the child's work items, attendance, report card and week, its bell — no other write, no comment", () => {
+  it("is read-only but for its own «پیام به مدرسه» and «درخواست مرخصی»: the child's work items, attendance, report card and week, its bell — no other write, no comment", () => {
     expect([...guardian.permissions].sort()).toEqual([
       "academic.attendance.read",
+      "academic.leave.request",
       "academic.objective_rating.read",
       "academic.timetable.read",
       "iam.guardian_message.send",
       "notif.notification.read",
       "workspace.work_item.read",
     ]);
-    // The ONE write (owner, 2026-10-19) — a message to the school about the child; it changes nothing of the child's.
-    for (const p of guardian.permissions.filter((x) => x !== "iam.guardian_message.send")) expect(p, p).toMatch(/\.read$/);
+    // The two writes (owner, 2026-10-19 / 2026-10-20) — a message to the school and a leave request; neither changes the child's data.
+    for (const p of guardian.permissions.filter((x) => x !== "iam.guardian_message.send" && x !== "academic.leave.request")) expect(p, p).toMatch(/\.read$/);
   });
   it("its message permission is nobody else's: no manager, teacher, student or counselor role holds it", () => {
     for (const r of SYSTEM_ROLES.filter((x) => x.code !== "guardian_full")) expect(r.permissions, r.code).not.toContain("iam.guardian_message.send");

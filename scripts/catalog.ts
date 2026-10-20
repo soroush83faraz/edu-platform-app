@@ -50,6 +50,8 @@ export const NON_MANAGER_PERMS: readonly Permission[] = [
   "counseling.referral.create",
   "counseling.teacher_report.write",
   "iam.guardian_message.send",
+  // «درخواست مرخصی» (2026-10-20): a parent asks for their child's leave — never a manager's (they decide it).
+  "academic.leave.request",
   // «تحویل پاسخ» (2026-10-19): a student's own answer to a تکلیف given to them — never a manager's.
   "workspace.work_item.submit",
 ];
@@ -165,12 +167,23 @@ export const SYSTEM_ROLES: SystemRole[] = [
     // organization-scoped admin who also holds these permissions gets no guardian view of a child that is not theirs.
     // The ONE write (owner, 2026-10-19): `iam.guardian_message.send` — «پیام به مدرسه», a question / suggestion /
     // criticism about the child to the child's school (src/modules/iam/guardian-messages.ts); it changes nothing of
-    // the child's, and no manager holds it (`NON_MANAGER_PERMS`).
+    // the child's, and no manager holds it (`NON_MANAGER_PERMS`). The second (owner, 2026-10-20): `academic.leave.request`
+    // — «درخواست مرخصی» for ONE child (src/modules/iam/guardian-leave.ts); the school decides it, the child's roll call
+    // changes only once a manager approves.
     code: "guardian_full",
     name: "ولی",
-    description: "مشاهدهٴ تکالیف، حضور و غیاب، کارنامه و برنامهٴ کلاسی فرزند، و پیام به مدرسه",
+    description: "مشاهدهٴ تکالیف، حضور و غیاب، کارنامه و برنامهٴ کلاسی فرزند، پیام به مدرسه و درخواست مرخصی",
     allowedScopeTypes: ["student", "family"],
-    permissions: ["workspace.work_item.read", "notif.notification.read", "academic.timetable.read", "academic.attendance.read", "academic.objective_rating.read", "iam.guardian_message.send"],
+    permissions: [
+      "workspace.work_item.read",
+      "notif.notification.read",
+      "academic.timetable.read",
+      "academic.attendance.read",
+      "academic.objective_rating.read",
+      "iam.guardian_message.send",
+      // «درخواست مرخصی» (owner, 2026-10-20): the second write — a leave request for ONE child, decided by the school.
+      "academic.leave.request",
+    ],
   },
 ];
 
@@ -277,6 +290,11 @@ export const NOTIFICATION_TYPES: SystemNotificationType[] = [
   { code: "guardian.report_card", module: "guardian", name: "کارنامهٴ ماهانهٴ فرزند" },
   // «ارتباط ولی و مدرسه» (owner, 2026-10-19): the school answered the guardian's message — the child's name, never the answer.
   { code: "guardian.message_answered", module: "guardian", name: "پاسخ مدرسه به پیام ولی" },
+  // «مرخصی و خروج مجاز» (owner, 2026-10-20): the managers hear of a new request, the guardians of its decision and of an
+  // authorized early exit — the child's name and the kind of event only, never the reason, a date or a note.
+  { code: "academic.leave_requested", module: "academic", name: "درخواست مرخصی جدید" },
+  { code: "guardian.leave_decided", module: "guardian", name: "پاسخ مدرسه به درخواست مرخصی" },
+  { code: "guardian.early_exit", module: "guardian", name: "خروج مجاز فرزند" },
   { code: "account.password_reset", module: "iam", name: "رمز حساب بازنشانی شد", urgency: "high", userCanDisable: false },
   { code: "system.announcement", module: "system", name: "اطلاعیهٴ سامانه", userCanDisable: false },
 ];

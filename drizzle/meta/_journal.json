@@ -204,6 +204,13 @@
       "when": 1792496566921,
       "tag": "0028_request_sla",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792499096854,
+      "tag": "0029_leave_early_exit",
+      "breakpoints": true
     }
   ]
 }

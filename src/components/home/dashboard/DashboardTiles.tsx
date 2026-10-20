@@ -1,5 +1,6 @@
 import { ChevronLeft, Presentation } from "lucide-react";
 import Link from "next/link";
+import { CountBadge } from "@/components/CountBadge";
 import { PageSection } from "@/components/layout/PageSection";
 import { SubjectIcon } from "@/components/SubjectStamp";
 import { formatNumberFa } from "@/lib/format";
@@ -18,7 +19,7 @@ import { UpcomingTiles } from "../UpcomingTiles";
  * section, on the same grid (`UpcomingTiles`, owner 2026-09-27) — not doors; the roadmap stays on «بیشتر».
  */
 export function DashboardTiles({ home, full = false }: { home: HomeTiles; full?: boolean }) {
-  const { tiles, upcoming } = home;
+  const { tiles, upcoming, pendingLeaves } = home;
   const grid = cn("reveal-grid grid gap-x-1 gap-y-2", full ? "grid-cols-6 xl:grid-cols-8" : "grid-cols-4 xl:grid-cols-6");
   return (
     <>
@@ -26,7 +27,9 @@ export function DashboardTiles({ home, full = false }: { home: HomeTiles; full?:
         <nav aria-label="بخش‌ها">
           <ul className={grid}>
             {tiles.map((t) => (
-              <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror} compact />
+              <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} shade={t.shade} mirror={t.mirror} compact>
+                {t.code === "admin-leave" ? <CountBadge count={pendingLeaves} label={`${formatNumberFa(pendingLeaves)} درخواست در انتظار بررسی`} floating memoryKey="home-leave" /> : null}
+              </Tile>
             ))}
           </ul>
         </nav>

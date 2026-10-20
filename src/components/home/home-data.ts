@@ -6,7 +6,7 @@ import { cache } from "react";
 import type { Ctx } from "@/lib/ctx";
 import { homeTilesFor, showUpcomingOnHome, upcomingTilesFor, type HomeTile, type UpcomingTile } from "@/lib/modules-registry";
 import { getUiVariant, type UiVariant } from "@/lib/ui-variant";
-import { myClassQuery, myTimetableQuery, reportCardReachQuery } from "@/modules/academic/queries";
+import { myClassQuery, myTimetableQuery, pendingLeaveCountQuery, reportCardReachQuery } from "@/modules/academic/queries";
 import { isEnabled } from "@/modules/config/queries";
 import { canAtAnyScope } from "@/modules/iam/can";
 import { myChildrenQuery, type GuardianChild } from "@/modules/iam/guardian-queries";
@@ -55,6 +55,8 @@ export interface HomeTiles {
   isTeacher: boolean;
   /** The viewer's layout (`getUiVariant()`): the hub has no nav, so the board's own links open the hub's pages. */
   variant: UiVariant;
+  /** Guardians' leave requests waiting for the caller's schools — the badge of the «درخواست‌های مرخصی» tile (0 when there is none). */
+  pendingLeaves: number;
 }
 
 /** The live tiles of a person (hats + permissions + the viewer's layout variant), and the hats the desktop board branches on. */
@@ -74,5 +76,8 @@ export const resolveHomeTiles = cache(async (ctx: Ctx): Promise<HomeTiles> => {
   const requestCenter = adminScope !== null && (await isEnabled("request_center"));
   const tiles = homeTilesFor(tileHats, has, { variant, flags: (k) => k === "request_center" && requestCenter });
   const upcoming = variant === "hub" && showUpcomingOnHome(tileHats) ? upcomingTilesFor(tileHats) : [];
-  return { tiles, upcoming, hats, isStudent, isTeacher, variant };
+  // One more read, only for a person whose Home carries the «درخواست‌های مرخصی» tile.
+  const leave = tiles.some((t) => t.code === "admin-leave") ? await pendingLeaveCountQuery() : null;
+  const pendingLeaves = leave?.ok ? leave.data : 0;
+  return { tiles, upcoming, hats, isStudent, isTeacher, variant, pendingLeaves };
 });

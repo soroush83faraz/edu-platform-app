@@ -1,4 +1,4 @@
-import { BookOpen, CalendarClock, CalendarDays, ChevronLeft, GraduationCap, Plus, UserCheck, Users, UsersRound } from "lucide-react";
+import { BookOpen, CalendarClock, CalendarDays, CalendarX2, ChevronLeft, GraduationCap, Plus, UserCheck, Users, UsersRound } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -189,6 +189,8 @@ function SchoolDoors({ d }: { d: SchoolHubData }) {
   const doors = [
     { href: `/admin/schools/${d.school.id}/periods`, icon: CalendarClock, label: "برنامهٴ کلاسی", hint: "ساعت شروع و پایان هر زنگ این مدرسه" },
     ...(d.can.attendance ? [{ href: `/admin/attendance?school=${d.school.id}`, icon: UserCheck, label: "حضور و غیاب", hint: "گزارش کلاس‌های این مدرسه و زنگ‌های ثبت‌نشدهٴ امروز" }] : []),
+    // «مرخصی و خروج مجاز» (owner, 2026-10-20): this school's queue of guardians' leave requests and today's authorized exits.
+    ...(d.can.leave ? [{ href: `/admin/leave?school=${d.school.id}`, icon: CalendarX2, label: "درخواست‌های مرخصی", hint: "مرخصی اولیا برای تأیید یا رد، و خروج مجاز امروز" }] : []),
   ];
   return (
     <ul className="surface-work divide-y divide-line/70 overflow-hidden rounded-card">

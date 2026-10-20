@@ -21,6 +21,7 @@ import {
   SessionReportCellInput,
   StudentAttendanceInput,
 } from "./dto";
+import { pendingLeaveCount } from "./leave";
 import { classReportCards, classReportOverview, getRatingSheet, listRatableClasses, myReportCard, reportCardReach } from "./report-card";
 import { findStudentProfile, getMyClass, listClassesForPicker } from "./repo";
 import { getClassTimetable, getMyTimetable, getOfferingLink, getOfferingPage } from "./service";
@@ -116,6 +117,9 @@ export const attendanceClassesQuery = defineQuery({ schema: AttendanceReportInpu
   const reach = await attendanceReportReach(tx, ctx, input.schoolId);
   return listClassesForPicker(tx, reach.schoolIds);
 });
+
+/** Guardians' leave requests waiting for the caller's schools — the badge on Home's «درخواست‌های مرخصی» tile (the other leave reads: ./leave-queries). */
+export const pendingLeaveCountQuery = defineQuery({ permission: "academic.leave.decide", scope: "any" }, async (tx, _input, ctx) => pendingLeaveCount(tx, ctx));
 
 // ---------------------------------------------------------------------------------------------------------------
 // «کارنامهٴ توصیفی» (descriptive report card) — the service decides the scope inside the transaction (NOT_FOUND)

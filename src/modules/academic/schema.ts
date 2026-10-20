@@ -4,6 +4,8 @@ export {
   attendanceEntry,
   attendanceSession,
   classEnrollment,
+  earlyExit,
+  leaveRequest,
   learningObjective,
   objectiveRating,
   schoolEnrollment,

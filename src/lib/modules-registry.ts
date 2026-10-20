@@ -6,6 +6,7 @@ import {
   CalendarCheck,
   CalendarHeart,
   CalendarDays,
+  CalendarX2,
   ClipboardCheck,
   ClipboardList,
   FileSpreadsheet,
@@ -495,6 +496,19 @@ export const HOME_TILES: readonly HomeTile[] = [
     adminScope: "school",
   },
   {
+    // «درخواست‌های مرخصی» (owner, 2026-10-20): the queue of the guardians' leave requests of the manager's school —
+    // principal / vice principal (`academic.leave.decide`, which no teacher holds) — with the pending count as a badge
+    // (`HomeGrid`). Like the attendance report it is a SCHOOL admin's door; the organization admin reaches each school's
+    // queue on that school's hub («مدرسه‌ها» → the school → «درخواست‌های مرخصی»).
+    code: "admin-leave",
+    labelFa: "درخواست‌های مرخصی",
+    href: "/admin/leave",
+    icon: CalendarX2,
+    role: "admin",
+    permission: "academic.leave.decide",
+    adminScope: "school",
+  },
+  {
     // «مدرسه» for an admin of exactly one school — straight to that school's hub, where its structure is edited.
     // SCHOOL-SCOPED admins only (round 7): the organization admin, who defines the schools, reaches the list
     // through the «مدرسه‌ها» admin SECTION instead, so neither of them meets the destination twice.
@@ -620,6 +634,10 @@ export const HUB_TILES: readonly HomeTile[] = [
     reportCard: "staff",
   },
   { code: "my-report-card", labelFa: "کارنامهٴ من", href: "/report-card/me", icon: Award, role: "student", permission: "academic.objective_rating.read", reportCard: "student" },
+
+  // «درخواست‌های مرخصی» (owner, 2026-10-20): the school manager's queue — after the report cards, still before
+  // «حضور و غیاب», which stays the LAST tile of every role.
+  homeTile("admin-leave"),
 
   // «حضور و غیاب» last, for every role. The admin's report reads «گزارش حضور و غیاب», on a report glyph, for an
   // admin who also takes or reads a roll call (the teacher/student tile before it keeps the name and the glyph).

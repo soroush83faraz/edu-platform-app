@@ -25,6 +25,14 @@ export const PERMISSIONS = [
   // زنگ's درس; the school's admins at the class). READING a report rides on the subject page's own gate
   // (`academic.timetable.read`); the private «یادداشت دبیر» is shown only to a holder of THIS permission.
   { code: "academic.session_report.write", module: "academic", name: "ثبت گزارش جلسه", isSensitive: false },
+  // «مرخصی و خروج مجاز» (owner, 2026-10-20; docs/attendance.md): a guardian asks for a leave for their child — held only
+  // by the derived «ولی» role at the child's student scope (never a manager's: scripts/catalog.ts `NON_MANAGER_PERMS`),
+  // and every use ALSO needs the live link (`requireChild`, src/modules/iam/guardian-leave.ts). The school's managers
+  // (organization admin, principal, vice principal — `ALL_ROLE_PERMS`) decide a request and record an authorized early
+  // exit, each at the child's SCHOOL (src/modules/academic/leave.ts); no teacher holds either.
+  { code: "academic.leave.request", module: "academic", name: "درخواست مرخصی فرزند", isSensitive: false },
+  { code: "academic.leave.decide", module: "academic", name: "بررسی درخواست مرخصی", isSensitive: false },
+  { code: "academic.early_exit.write", module: "academic", name: "ثبت خروج مجاز", isSensitive: false },
   { code: "academic.objective_rating.read", module: "academic", name: "مشاهدهٴ کارنامهٴ توصیفی", isSensitive: false },
   { code: "academic.objective_rating.write", module: "academic", name: "ثبت کارنامهٴ توصیفی", isSensitive: false },
   { code: "workspace.work_item.read", module: "workspace", name: "مشاهدهٴ کارتابل", isSensitive: false },

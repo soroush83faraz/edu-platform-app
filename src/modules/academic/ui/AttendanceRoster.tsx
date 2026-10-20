@@ -1,18 +1,21 @@
 "use client";
 
-import { Check, CircleCheck, Clock, MessageSquarePlus, TriangleAlert, UserRoundCheck } from "lucide-react";
+import { Check, CircleCheck, Clock, DoorOpen, MessageSquarePlus, TriangleAlert, UserRoundCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/cn";
+import { Chip } from "@/components/Chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ATTENDANCE_LABELS, summaryLineFa, tally, type AttendanceStatus } from "@/lib/attendance";
 import { formatNumberFa, toFaDigits } from "@/lib/format";
+import { COVERAGE_LABELS } from "@/lib/leave";
 import { toAsciiDigits } from "@/lib/normalize";
 import { takeAttendanceAction } from "../actions";
 import type { SessionForTaking } from "../attendance";
+import { EarlyExitPanel } from "./EarlyExitPanel";
 
 type Mark = { status: AttendanceStatus; minutesLate: number | null };
 
@@ -43,13 +46,16 @@ export function AttendanceRoster({ data, reportToCounselor = false, children }: 
   );
   const [pending, start] = useTransition();
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  /** The student whose «خروج مجاز» panel is open (a manager's page only: `data.canRecordExit`). */
+  const [exitFor, setExitFor] = useState<string | null>(null);
 
   const counts = tally(data.rows.map((r) => marks[r.studentProfileId]?.status ?? "present"));
   const summary = summaryLineFa(counts);
   const set = (studentProfileId: string, patch: Partial<Mark>) =>
     setMarks((m) => ({ ...m, [studentProfileId]: { status: patch.status ?? m[studentProfileId].status, minutesLate: patch.minutesLate === undefined ? m[studentProfileId].minutesLate : patch.minutesLate } }));
 
-  const allPresent = () => setMarks(Object.fromEntries(data.rows.map((r) => [r.studentProfileId, { status: "present" as const, minutesLate: null }])));
+  // «همه حاضر» leaves a student whom a leave / an authorized exit covers «موجه» (still editable by hand).
+  const allPresent = () => setMarks(Object.fromEntries(data.rows.map((r) => [r.studentProfileId, { status: r.coverage ? ("excused" as const) : ("present" as const), minutesLate: null }])));
 
   const save = () => {
     start(async () => {
@@ -97,14 +103,27 @@ export function AttendanceRoster({ data, reportToCounselor = false, children }: 
           return (
             <li key={r.studentProfileId} className="flex flex-col gap-2 px-3 py-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="min-w-0 truncate text-row font-medium text-text">
-                  <bdi>{r.fullName}</bdi>
+                <p className="flex min-w-0 items-center gap-2 text-row font-medium text-text">
+                  <bdi className="truncate">{r.fullName}</bdi>
+                  {r.coverage ? <Chip tone="neutral">{COVERAGE_LABELS[r.coverage]}</Chip> : null}
                 </p>
                 <span className="flex shrink-0 items-center gap-1">
                   {r.studentNumber ? (
                     <bdi dir="ltr" className="tabular text-meta text-text-faint">
                       {toFaDigits(r.studentNumber)}
                     </bdi>
+                  ) : null}
+                  {data.canRecordExit && r.coverage !== "early_exit" ? (
+                    <button
+                      type="button"
+                      onClick={() => setExitFor(exitFor === r.studentProfileId ? null : r.studentProfileId)}
+                      aria-expanded={exitFor === r.studentProfileId}
+                      aria-label={`ثبت خروج مجاز ${r.fullName}`}
+                      title="خروج مجاز"
+                      className="pressable grid size-11 place-items-center rounded-xl text-text-muted hover:bg-surface-sunken hover:text-text"
+                    >
+                      <DoorOpen className="size-5" strokeWidth={1.75} aria-hidden />
+                    </button>
                   ) : null}
                   {reportToCounselor ? (
                     <Link
@@ -141,6 +160,7 @@ export function AttendanceRoster({ data, reportToCounselor = false, children }: 
                   );
                 })}
               </div>
+              {exitFor === r.studentProfileId ? <EarlyExitPanel studentProfileId={r.studentProfileId} studentName={r.fullName} onDone={() => setExitFor(null)} /> : null}
               {m.status === "late" ? (
                 <label className="flex items-center gap-2 px-1 text-meta text-text-muted">
                   <Clock className="size-4 shrink-0 text-warning-text" aria-hidden />

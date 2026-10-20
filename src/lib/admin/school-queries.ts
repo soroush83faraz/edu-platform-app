@@ -59,7 +59,7 @@ export interface SchoolHubData {
    * `attendance`: the «حضور و غیاب» door to `/admin/attendance?school=<id>` — shown to whoever may read the admin
    * attendance report (`academic.attendance.report`, the permission its queries check); the school is in scope here.
    */
-  can: { school: boolean; classes: boolean; attendance: boolean };
+  can: { school: boolean; classes: boolean; attendance: boolean; /** «درخواست‌های مرخصی» door (`academic.leave.decide`, 2026-10-20). */ leave?: boolean };
   /**
    * The way back, per caller. A school-scoped admin (one school in scope) arrived from Home's «مدرسه» tile, which
    * has no list behind it any more, so the door back is «خانه» → `/home`. The organization admin (or an admin
@@ -125,7 +125,7 @@ export const schoolHubQuery = defineQuery<SchoolHubData, typeof SchoolIdInput>(
       offerings: { total: Number(offerings?.total ?? 0), withoutTeacher: Number(offerings?.withoutTeacher ?? 0) },
       staff,
       students,
-      can: { school: gate(schoolResource, "update"), classes: gate(classResource, "create"), attendance: canAtAnyScope(ctx.assignments, "academic.attendance.report") },
+      can: { school: gate(schoolResource, "update"), classes: gate(classResource, "create"), attendance: canAtAnyScope(ctx.assignments, "academic.attendance.report"), leave: canAtAnyScope(ctx.assignments, "academic.leave.decide") },
       backHref: scope.kind === "school" && scope.schoolIds.length === 1 ? "/home" : "/admin/schools",
       backLabelFa: scope.kind === "school" && scope.schoolIds.length === 1 ? "خانه" : schoolsLabelFa(scope),
     };

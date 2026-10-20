@@ -27,6 +27,7 @@ import {
   type AttendanceStatus,
 } from "@/lib/attendance";
 import { can } from "@/modules/iam/can";
+import { coverageOf, type CoverageKind } from "./leave-coverage";
 import { notifyGuardiansOfAbsence, withdrawGuardianAbsences } from "@/modules/iam/guardian-notify";
 import { classOffering } from "@/modules/tenancy/schema";
 import {
@@ -175,10 +176,8 @@ export async function takeAttendance(tx: Tx, ctx: AttendanceCtx, input: TakeAtte
   const date = requireDate(input.date);
   if (isFutureIso(date, now)) fail("date", ATTENDANCE_MESSAGES.futureDate);
   const periodNo = input.periodNo ?? null;
-  if (periodNo !== null) {
-    const periods = (await listPeriodsOfSchools(tx, [cg.schoolId])).get(cg.schoolId) ?? [];
-    if (!periods.some((p) => p.periodNo === periodNo)) fail("periodNo", ATTENDANCE_MESSAGES.periodUnknown);
-  }
+  const schoolPeriods = (await listPeriodsOfSchools(tx, [cg.schoolId])).get(cg.schoolId) ?? [];
+  if (periodNo !== null && !schoolPeriods.some((p) => p.periodNo === periodNo)) fail("periodNo", ATTENDANCE_MESSAGES.periodUnknown);
   const offeringId = await resolveOffering(tx, cg, date, periodNo, input.classOfferingId ?? null);
   if (!(await allowed(tx, ctx, "academic.attendance.write", cg.id, offeringId))) throw notFound();
 
@@ -256,17 +255,23 @@ export async function takeAttendance(tx: Tx, ctx: AttendanceCtx, input: TakeAtte
   const noLongerAbsent = existing.filter((e) => e.status === "absent" && !absentNow.has(e.studentProfileId)).map((e) => e.studentProfileId);
   const withdrawnGuardianNotifications = await withdrawGuardianAbsences(tx, { attendanceSessionId: sessionId, studentProfileIds: noLongerAbsent });
 
+  // «مرخصی و خروج مجاز» (2026-10-20): a child with an approved leave (or an authorized early exit) covering this roll call
+  // may still be marked absent by the teacher, but the guardians are not told of an absence the school already knows of.
+  const periodStartsAt = periodNo === null ? null : (schoolPeriods.find((p) => p.periodNo === periodNo)?.startsAt ?? null);
+  const covered = await coverageOf(tx, { studentProfileIds: [...absentNow], date, periodNo, periodStartsAt });
+  const toNotify = [...absentNow].filter((id) => !covered.has(id));
+
   const counts = tally(wanted.map((e) => e.status));
   await audit(
     ctx,
     before ? "academic.attendance_session.retaken" : "academic.attendance_session.taken",
     { schema: "academic", table: "attendance_session", id: sessionId },
     before ? { date: before.date, periodNo: before.periodNo, classOfferingId: before.classOfferingId, counts: tally(existing.map((e) => e.status)) } : null,
-    { classGroupId: cg.id, date, periodNo, classOfferingId: offeringId, counts, removed: gone.length, withdrawnGuardianNotifications },
+    { classGroupId: cg.id, date, periodNo, classOfferingId: offeringId, counts, removed: gone.length, withdrawnGuardianNotifications, absentCovered: covered.size },
     tx,
   );
   // «اولیا»: the guardians of every child marked absent hear it — once per child per roll call (deduped).
-  await notifyGuardiansOfAbsence(tx, ctx, { attendanceSessionId: sessionId, absentStudentProfileIds: [...absentNow] });
+  await notifyGuardiansOfAbsence(tx, ctx, { attendanceSessionId: sessionId, absentStudentProfileIds: toNotify });
   return { sessionId, created: before === null, counts, takenAt };
 }
 
@@ -278,8 +283,14 @@ export interface TakingRow extends RosterStudent {
   status: AttendanceStatus;
   minutesLate: number | null;
   note: string | null;
-  /** false when this student has no mark yet in a saved roll call (the UI defaults them to «حاضر»). */
+  /** false when this student has no mark yet in a saved roll call (the UI defaults them to «حاضر», or «موجه» when covered). */
   recorded: boolean;
+  /**
+   * «مرخصی» / «خروج مجاز» (2026-10-20): an approved leave or an authorized early exit covers this roll call. An
+   * unrecorded student then opens pre-marked «موجه» (still editable); the tag stays on a saved one. The teacher sees
+   * the tag only — never the reason (`leave-coverage`).
+   */
+  coverage: CoverageKind | null;
 }
 
 export interface SessionForTaking {
@@ -294,6 +305,8 @@ export interface SessionForTaking {
   /** The saved roll call, when there is one («ثبت‌شده در …»). */
   saved: { takenAt: Date; takenByName: string | null; note: string | null } | null;
   canWrite: boolean;
+  /** Today's page for someone who records «خروج مجاز» at this class's school (a principal / vice principal / org admin). */
+  canRecordExit: boolean;
   /** The زنگ‌های the class has on this weekday — the page's period switcher. */
   periodsOfDay: Array<{ periodNo: number; label: string; subjectName: string; taken: boolean }>;
 }
@@ -323,16 +336,21 @@ export async function getSessionForTaking(
   const session = await findAttendanceSession(tx, cg.id, date, periodNo);
   const entries = session ? await listSessionEntries(tx, session.id) : [];
   const byStudent = new Map(entries.map((e) => [e.studentProfileId, e]));
+  const coverage = await coverageOf(tx, { studentProfileIds: roster.map((s) => s.studentProfileId), date, periodNo, periodStartsAt: period?.startsAt ?? null });
   const rows: TakingRow[] = roster.map((s) => {
     const e = byStudent.get(s.studentProfileId);
+    const covered = coverage.get(s.studentProfileId) ?? null;
     return {
       ...s,
-      status: (e?.status as AttendanceStatus | undefined) ?? "present",
+      // An unrecorded student opens «موجه» when a leave / exit covers the roll call; a saved mark is never overridden.
+      status: (e?.status as AttendanceStatus | undefined) ?? (covered ? "excused" : "present"),
       minutesLate: e?.minutesLate ?? null,
       note: e?.note ?? null,
       recorded: e !== undefined,
+      coverage: covered,
     };
   });
+  const canRecordExit = date === tehranToday(now) && (await can(tx, ctx, "academic.early_exit.write", { scopeType: "class_group", id: cg.id }));
 
   // The day's other زنگ‌ها: the class's timetable row for this weekday, with «ثبت‌شده» marks.
   const weekday = weekdayOfIso(date);
@@ -373,6 +391,7 @@ export async function getSessionForTaking(
     rows,
     saved: session ? { takenAt: session.takenAt, takenByName: session.takenByName, note: session.note } : null,
     canWrite,
+    canRecordExit,
     periodsOfDay,
   };
 }

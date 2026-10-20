@@ -84,7 +84,7 @@ describe("homeTilesFor", () => {
     const vice = homeTilesFor(principal, has(VICE_PERMS));
     expect(vice).toEqual(homeTilesFor(principal, has(PRINCIPAL_PERMS)));
     // «مشاوره» (2026-10-13): both read their school's counseling files.
-    expect(codes(vice)).toEqual(["inbox", "admin-attendance", "schools", "periods", "counseling"]);
+    expect(codes(vice)).toEqual(["inbox", "admin-attendance", "admin-leave", "schools", "periods", "counseling"]);
     expect(tile(vice, "periods")).toMatchObject({ href: "/admin/schools/s1/periods" });
     // Two schools: the same plural «مدرسه‌ها» and no زنگ‌بندی tile as a principal of two.
     expect(homeTilesFor(twoSchools, has(VICE_PERMS))).toEqual(homeTilesFor(twoSchools, has(PRINCIPAL_PERMS)));
@@ -211,10 +211,10 @@ describe("homeTilesFor — hub layout", () => {
     expect(hrefs(tiles)).not.toContain("/admin");
   });
 
-  it("principal of ONE school: پنل من · مدرسه · دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها · برنامهٴ کلاسی · تنظیمات · مشاوره · حضور و غیاب", () => {
+  it("principal of ONE school: پنل من · مدرسه · دانش‌آموزان · کارکنان · کلاس‌ها · نقش‌ها · برنامهٴ کلاسی · تنظیمات · مشاوره · درخواست‌های مرخصی · حضور و غیاب", () => {
     for (const perms of [PRINCIPAL_PERMS, VICE_PERMS]) {
       const tiles = homeTilesFor(principal, has(perms), hub);
-      expect(labels(tiles)).toEqual(["پنل من", "مدرسه", "دانش‌آموزان", "کارکنان", "کلاس‌ها", "نقش‌ها", "برنامهٴ کلاسی", "تنظیمات", "مشاوره", "حضور و غیاب"]);
+      expect(labels(tiles)).toEqual(["پنل من", "مدرسه", "دانش‌آموزان", "کارکنان", "کلاس‌ها", "نقش‌ها", "برنامهٴ کلاسی", "تنظیمات", "مشاوره", "درخواست‌های مرخصی", "حضور و غیاب"]);
       expect(tile(tiles, "schools")?.href).toBe("/admin/schools/s1");
       expect(tile(tiles, "periods")?.href).toBe("/admin/schools/s1/periods");
       expect(tile(tiles, "admin-attendance")?.href).toBe("/admin/attendance");
@@ -255,6 +255,7 @@ describe("homeTilesFor — hub layout", () => {
       "برنامهٴ کلاسی",
       "تنظیمات",
       "مشاوره",
+      "درخواست‌های مرخصی",
       "حضور و غیاب",
       "گزارش حضور و غیاب",
     ]);

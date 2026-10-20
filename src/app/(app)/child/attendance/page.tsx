@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
+import { ChildExitsAndLeaves } from "@/components/guardian/ChildExitsAndLeaves";
 import { ChildPageHeader, ChildSwitcher } from "@/components/guardian/ChildParts";
 import { ContentWidth } from "@/components/layout/ContentWidth";
 import { isoDateToJalali } from "@/lib/format";
 import { StudentAttendanceSection } from "@/modules/academic/ui/StudentAttendance";
 import { childParam } from "@/modules/iam/guardian-policy";
+import { childLeaveQuery } from "@/modules/iam/guardian-leave-queries";
 import { childAttendanceQuery } from "@/modules/iam/guardian-queries";
 
 export const metadata: Metadata = { title: "حضور و غیاب فرزند" };
@@ -17,6 +19,9 @@ export default async function ChildAttendancePage({ searchParams }: { searchPara
     notFound();
   }
   const { children, child, summary } = res.data;
+  // «مرخصی و خروج مجاز» (2026-10-20): the same child's authorized exits and live leaves, from the guardian's own leave read
+  // (its own `requireChild`); an answer other than ok simply leaves the section out — attendance never depends on it.
+  const leave = await childLeaveQuery({ child: child.studentProfileId });
   return (
     <ContentWidth size="reading" className="reveal-stagger">
       <ChildPageHeader
@@ -35,6 +40,7 @@ export default async function ChildAttendancePage({ searchParams }: { searchPara
         emptyTitle={`هنوز حضور و غیابی برای ${child.firstName} ثبت نشده`}
         emptyDescription="وقتی دبیر کلاس حضور و غیاب بزند، همین‌جا می‌آید."
       />
+      {leave.ok ? <ChildExitsAndLeaves child={child.studentProfileId} today={leave.data.today} exits={leave.data.exits} requests={leave.data.requests} /> : null}
     </ContentWidth>
   );
 }

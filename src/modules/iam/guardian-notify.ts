@@ -8,6 +8,10 @@
 //     year, never taken back when a level is later changed or cleared (`saveObjectiveRatings`, academic/report-card);
 //   • «پاسخ مدرسه به پیام شما دربارهٴ …»: an addressee answered the guardian's «پیام ولی» (owner 2026-10-19,
 //     ./guardian-messages) — once per message, from workspace `changeStatus` (`notifyGuardianOfMessageAnswer`);
+//   • «مرخصی تأیید شد / رد شد» and «خروج مجاز» (owner 2026-10-20, academic/leave): a manager decided a guardian's leave
+//     request / let the child leave school early — once per request / exit and guardian, the child's name only
+//     (`notifyGuardiansOfLeaveDecision`, `notifyGuardiansOfEarlyExit`); and a child covered by an approved leave or an
+//     exit is never reported absent (`takeAttendance` leaves them out of `notifyGuardiansOfAbsence`);
 //   • an overdue تکلیف is NOT a notification: phase 1 has no scheduler and no queue, so nothing could write it on time —
 //     the guardian's Home shows the child's overdue count when read instead (./guardian-views `listMyChildren`).
 // The title is the kind of event and the child's name, nothing else (`guardianNotificationTitle`); no body. The
@@ -31,7 +35,13 @@ import { childHref, guardianNotificationTitle } from "./guardian-policy";
 import { guardianLink, person, studentProfile } from "./schema";
 
 /** The guardian bell's types (scripts/catalog.ts, module `guardian`). */
-export const GUARDIAN_NOTIFICATION_TYPES: readonly NotificationTypeCode[] = ["guardian.child_absent", "guardian.report_card", "guardian.message_answered"];
+export const GUARDIAN_NOTIFICATION_TYPES: readonly NotificationTypeCode[] = [
+  "guardian.child_absent",
+  "guardian.report_card",
+  "guardian.message_answered",
+  "guardian.leave_decided",
+  "guardian.early_exit",
+];
 
 export interface GuardianNotifyCtx {
   orgId: string;
@@ -207,6 +217,58 @@ export async function notifyGuardianOfMessageAnswer(tx: Tx, ctx: GuardianNotifyC
     deepLink: childHref("messages", m.studentProfileId),
     dedupeKey: (personId) => `guardian:message:${m.id}:answered:${personId}`,
   });
+}
+
+/**
+ * «مرخصی تأیید شد / رد شد: <نام>» (owner, 2026-10-20) to the live guardians of the child when a manager decides a
+ * leave request (academic/leave `decideLeave`): the kind of decision and the child's name — never the dates, the
+ * reason or the manager's note; the guardian opens «درخواست‌های مرخصی» for those. Once per request and guardian.
+ */
+export async function notifyGuardiansOfLeaveDecision(
+  tx: Tx,
+  ctx: GuardianNotifyCtx,
+  input: { leaveRequestId: string; studentProfileId: string; approved: boolean },
+): Promise<number> {
+  let written = 0;
+  for (const c of await liveGuardiansOf(tx, ctx, [input.studentProfileId])) {
+    const recipients = notifiable(ctx.assignments, c.guardianPersonIds);
+    if (recipients.length === 0) continue;
+    written += await notifyMany(tx, ctx, recipients, {
+      typeCode: "guardian.leave_decided",
+      title: guardianNotificationTitle(input.approved ? "leave_approved" : "leave_rejected", c.childName),
+      body: null,
+      payload: { studentProfileId: c.studentProfileId },
+      sourceKind: "leave_request",
+      sourceId: input.leaveRequestId,
+      deepLink: childHref("leave", c.studentProfileId),
+      dedupeKey: (personId) => `guardian:leave:${input.leaveRequestId}:${personId}`,
+    });
+  }
+  return written;
+}
+
+/**
+ * «خروج مجاز: <نام>» (owner, 2026-10-20) to the live guardians of a child a manager just let leave school early
+ * (academic/leave `recordEarlyExit`) — the child's name only, not the time, the reason or who picks them up (the
+ * child's «حضور و غیاب» shows the time). Once per exit and guardian.
+ */
+export async function notifyGuardiansOfEarlyExit(tx: Tx, ctx: GuardianNotifyCtx, input: { earlyExitId: string; studentProfileId: string }): Promise<number> {
+  let written = 0;
+  for (const c of await liveGuardiansOf(tx, ctx, [input.studentProfileId])) {
+    const recipients = notifiable(ctx.assignments, c.guardianPersonIds);
+    if (recipients.length === 0) continue;
+    written += await notifyMany(tx, ctx, recipients, {
+      typeCode: "guardian.early_exit",
+      title: guardianNotificationTitle("early_exit", c.childName),
+      body: null,
+      payload: { studentProfileId: c.studentProfileId },
+      sourceKind: "early_exit",
+      sourceId: input.earlyExitId,
+      deepLink: childHref("attendance", c.studentProfileId),
+      dedupeKey: (personId) => `guardian:exit:${input.earlyExitId}:${personId}`,
+    });
+  }
+  return written;
 }
 
 /**

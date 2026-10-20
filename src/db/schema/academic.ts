@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, date, foreignKey, index, pgSchema, smallint, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { check, date, foreignKey, index, pgSchema, smallint, text, time, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { id, timestamps } from "./_common";
 import { person, staffProfile, studentProfile } from "./iam";
 import { academicYear, classGroup, classOffering, gradeLevel, orgFk, school, subject } from "./tenancy";
@@ -454,6 +454,139 @@ export const objectiveRating = academic.table(
     foreignKey({
       name: "objective_rating_rated_by_fk",
       columns: [t.organizationId, t.ratedByPersonId],
+      foreignColumns: [person.organizationId, person.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
+ * «درخواست مرخصی / غیبت موجه» (migration 0029; docs/attendance.md «مرخصی و خروج مجاز»): a guardian's request for ONE
+ * child — a date range of at most 14 days (`from_date`..`to_date`, never starting in the past) or, for a single day,
+ * a partial day (`from_period`..`to_period`) — with a reason category and an optional note (≤ 300). `pending` →
+ * `approved` / `rejected` by a manager of the child's school (`decided_by_person_id`, `decided_at`, an optional
+ * `decision_note`), or `cancelled` by the guardian who asked while it is still pending. Only an `approved` leave
+ * touches attendance: the roll call opens with the covered students pre-marked «موجه» and their guardians' «غیبت» is
+ * not sent (src/modules/academic/leave-coverage.ts). `school_id` is the child's school when the request was made (the
+ * scope a manager decides at). Rows are never deleted (`app_rw` has a RESTRICTIVE no-DELETE policy); the guardian
+ * who requests is `requested_by_person_id`. Notes are never copied into the audit trail or a notification.
+ */
+export const leaveRequest = academic.table(
+  "leave_request",
+  {
+    id: id(),
+    organizationId: orgFk(),
+    schoolId: uuid("school_id").notNull(),
+    studentProfileId: uuid("student_profile_id").notNull(),
+    requestedByPersonId: uuid("requested_by_person_id").notNull(),
+    fromDate: date("from_date").notNull(),
+    toDate: date("to_date").notNull(),
+    fromPeriod: smallint("from_period"),
+    toPeriod: smallint("to_period"),
+    category: text("category").notNull(),
+    note: text("note"),
+    status: text("status").notNull().default("pending"),
+    decidedByPersonId: uuid("decided_by_person_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decisionNote: text("decision_note"),
+    ...timestamps(),
+  },
+  (t) => [
+    unique("leave_request_org_id_uq").on(t.organizationId, t.id),
+    index("leave_request_org_school_status_idx").on(t.organizationId, t.schoolId, t.status, t.fromDate),
+    index("leave_request_org_student_idx").on(t.organizationId, t.studentProfileId, t.fromDate),
+    check("leave_request_category_chk", sql`${t.category} IN ('illness', 'family', 'travel', 'appointment', 'other')`),
+    check("leave_request_status_chk", sql`${t.status} IN ('pending', 'approved', 'rejected', 'cancelled')`),
+    check("leave_request_dates_chk", sql`${t.fromDate} <= ${t.toDate} AND ${t.toDate} - ${t.fromDate} <= 13`),
+    check(
+      "leave_request_periods_chk",
+      sql`(${t.fromPeriod} IS NULL AND ${t.toPeriod} IS NULL) OR (${t.fromPeriod} IS NOT NULL AND ${t.toPeriod} IS NOT NULL AND ${t.fromPeriod} BETWEEN 1 AND 12 AND ${t.toPeriod} BETWEEN 1 AND 12 AND ${t.fromPeriod} <= ${t.toPeriod} AND ${t.fromDate} = ${t.toDate})`,
+    ),
+    check("leave_request_note_chk", sql`${t.note} IS NULL OR char_length(${t.note}) BETWEEN 1 AND 300`),
+    check("leave_request_decision_note_chk", sql`${t.decisionNote} IS NULL OR (${t.status} IN ('approved', 'rejected') AND char_length(${t.decisionNote}) BETWEEN 1 AND 300)`),
+    check(
+      "leave_request_decision_chk",
+      sql`(${t.status} IN ('approved', 'rejected')) = (${t.decidedByPersonId} IS NOT NULL AND ${t.decidedAt} IS NOT NULL)`,
+    ),
+    foreignKey({
+      name: "leave_request_school_fk",
+      columns: [t.organizationId, t.schoolId],
+      foreignColumns: [school.organizationId, school.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "leave_request_student_fk",
+      columns: [t.organizationId, t.studentProfileId],
+      foreignColumns: [studentProfile.organizationId, studentProfile.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "leave_request_requested_by_fk",
+      columns: [t.organizationId, t.requestedByPersonId],
+      foreignColumns: [person.organizationId, person.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "leave_request_decided_by_fk",
+      columns: [t.organizationId, t.decidedByPersonId],
+      foreignColumns: [person.organizationId, person.id],
+    }).onDelete("restrict"),
+  ],
+);
+
+/**
+ * «خروج مجاز» (migration 0029; docs/attendance.md): a principal / vice principal records that a student leaves school
+ * at `exit_time` (Tehran wall clock) on `date` (today when recorded) — reason category, an optional note (≤ 300) and
+ * an optional «تحویل‌گیرنده» name (≤ 60). Every later زنگ of that day (one that starts at or after `exit_time`) opens
+ * pre-marked «موجه» with the tag «خروج مجاز», and the child's guardians get one notification. One `active` exit per
+ * student per day (partial unique index); a mistaken one is `cancelled` (never deleted: `app_rw` has a RESTRICTIVE
+ * no-DELETE policy). `recorded_by_person_id` is the manager from the session.
+ */
+export const earlyExit = academic.table(
+  "early_exit",
+  {
+    id: id(),
+    organizationId: orgFk(),
+    schoolId: uuid("school_id").notNull(),
+    studentProfileId: uuid("student_profile_id").notNull(),
+    date: date("date").notNull(),
+    exitTime: time("exit_time").notNull(),
+    category: text("category").notNull(),
+    note: text("note"),
+    pickedUpBy: text("picked_up_by"),
+    status: text("status").notNull().default("active"),
+    recordedByPersonId: uuid("recorded_by_person_id").notNull(),
+    cancelledByPersonId: uuid("cancelled_by_person_id"),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    ...timestamps(),
+  },
+  (t) => [
+    unique("early_exit_org_id_uq").on(t.organizationId, t.id),
+    uniqueIndex("early_exit_student_day_active_uq").on(t.organizationId, t.studentProfileId, t.date).where(sql`${t.status} = 'active'`),
+    index("early_exit_org_school_date_idx").on(t.organizationId, t.schoolId, t.date),
+    index("early_exit_org_student_idx").on(t.organizationId, t.studentProfileId, t.date),
+    check("early_exit_category_chk", sql`${t.category} IN ('illness', 'family', 'appointment', 'emergency', 'other')`),
+    check("early_exit_status_chk", sql`${t.status} IN ('active', 'cancelled')`),
+    check("early_exit_note_chk", sql`${t.note} IS NULL OR char_length(${t.note}) BETWEEN 1 AND 300`),
+    check("early_exit_picked_up_by_chk", sql`${t.pickedUpBy} IS NULL OR char_length(${t.pickedUpBy}) BETWEEN 1 AND 60`),
+    check(
+      "early_exit_cancel_chk",
+      sql`(${t.status} = 'cancelled') = (${t.cancelledByPersonId} IS NOT NULL AND ${t.cancelledAt} IS NOT NULL)`,
+    ),
+    foreignKey({
+      name: "early_exit_school_fk",
+      columns: [t.organizationId, t.schoolId],
+      foreignColumns: [school.organizationId, school.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "early_exit_student_fk",
+      columns: [t.organizationId, t.studentProfileId],
+      foreignColumns: [studentProfile.organizationId, studentProfile.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "early_exit_recorded_by_fk",
+      columns: [t.organizationId, t.recordedByPersonId],
+      foreignColumns: [person.organizationId, person.id],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "early_exit_cancelled_by_fk",
+      columns: [t.organizationId, t.cancelledByPersonId],
       foreignColumns: [person.organizationId, person.id],
     }).onDelete("restrict"),
   ],
