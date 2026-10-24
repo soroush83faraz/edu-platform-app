@@ -21,7 +21,8 @@
 // note's LENGTH — never its text; the managers' bell names the child only (`leaveRequestedTitle`).
 // The school's managers hear of a new request: the live holders of `academic.leave.decide` AT the child's school
 // (`leaveDeciders` — its principal and vice principals; exactly who may decide it), never the guardian; a school without
-// either is read from the queue only (and, with «مرکز درخواست‌ها» on, escalated to the organization admin).
+// either is read from the queue only. With «مرکز درخواست‌ها» on, an unanswered request escalates from the vice principals
+// to the principal and stops there — never to the organization admin (owner 2026-10-20, docs/decisions.md).
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
