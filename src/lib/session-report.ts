@@ -18,6 +18,10 @@ export const SESSION_REPORT_MESSAGES = {
   nothingToClear: "گزارشی برای این جلسه ثبت نشده است.",
   badDate: "تاریخ نامعتبر است.",
   futureDate: "برای روز آینده نمی‌توان گزارش جلسه ثبت کرد.",
+  /** The درس the page was opened for is no longer the timetable's at that زنگ (security review 2026-10-20, F1). */
+  lessonChanged: "درسِ این زنگ در برنامهٴ کلاسی عوض شده است؛ صفحه را دوباره باز کنید.",
+  /** «دفتر کلاسی» is switched off for the school (feature switch `class_register`). */
+  switchedOff: "دفتر کلاسی در این مدرسه خاموش است.",
 } as const;
 
 /** One line of free text: Persian-normalised, whitespace collapsed; empty becomes null. */

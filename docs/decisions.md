@@ -2685,7 +2685,8 @@ row) and a Home tile «تنظیمات» for admins.
   درس of that زنگ in `class_offering_id` (NOT NULL; from the weekly timetable, or the named offering validated against
   the class, exactly as `takeAttendance` resolves it, via the shared `resolveOffering`). The report does NOT hang on an
   `attendance_session` row: a دبیر may write it before or without the roll call; there is no FK to it. One report per
-  session (`session_report_cell_uq`); saving again updates it.
+  session (`session_report_cell_uq`); saving again updates it. (Superseded by the security review of 2026-10-20: the
+  درس is always the timetable's, never the client's, and the key is per session AND درس — migration 0031, below.)
 - **Permission `academic.session_report.write`** (teacher, and every manager role through `ALL_ROLE_PERMS`), checked
   with the same `allowed()` as attendance writes: at the class (the school's admins) or at the درس of that زنگ (its
   teacher); anything else is NOT_FOUND. A date in the future is refused (as for the roll call). READING has no
@@ -2837,3 +2838,37 @@ row) and a Home tile «تنظیمات» for admins.
 - **Privacy.** Notes (request, decision, exit) and the pickup name are free text: they reach no audit row (only their LENGTH and ids / dates / categories) and no notification (managers get «درخواست مرخصی: <نام>», guardians «مرخصی تأیید شد / رد شد: <نام>» and «خروج مجاز: <نام>» — no date, reason or time). Guardian bells about a child are pruned with the link like the other guardian types (`GUARDIAN_NOTIFICATION_TYPES`).
 - **Tests.** `tests/unit/leave.test.ts` (range rules, overlap, coverage, DTO bounds, catalog), `tests/int/leave.test.ts` (migration, CHECKs, guardian-only reach, school scope, decisions, roster pre-mark, silent absence, early exit, audit without text; written, run with `pnpm test:int`).
 - **Open (owner):** (a) a school with neither a principal nor a vice principal gets no bell for a new request (the queue still holds it; the organization admin is deliberately not notified). (b) An approved leave does not retro-excuse a roll call that was already saved. (c) Friday and holidays are not special-cased: a leave over them is allowed and covers nothing on days without a roll call.
+
+## 2026-10-20 — Security review of 0026–0028: the fixes (migrations 0031, 0032)
+
+The reviewer reproduced each finding; every fix below has an int test that failed before it.
+
+- **F1 (HIGH) — «گزارش جلسه»'s private note reached another درس's teacher; F2 — a cell could be squatted.** The report
+  was keyed by the roll call's cell `(class, date, زنگ)` alone, `getSessionReportCell` returned whatever row sat in the
+  cell, and `saveSessionReport` took a client `classOfferingId` that was only checked to belong to the class. So (P1)
+  after a timetable change the teacher of the درس now at a past cell read the earlier teacher's report and «یادداشت
+  دبیر», and could never write their own (`before.classOfferingId !== offeringId` → NOT_FOUND: locked out); and (P2) a
+  teacher could name their own درس at another درس's cell, write a report there, read it back to that درس's teacher and
+  lock them out. **Fix:** the درس of a session is ALWAYS the timetable's (`resolveOffering` without a client value); a
+  named one is compared AFTER the scope check and refused when it differs («درسِ این زنگ در برنامهٴ کلاسی عوض شده
+  است…»; the card sends the درس it was opened for); every read and write of a cell touches only the row of THAT درس
+  (`findReportOfCell(…, offeringId)`), and the unique key is `(organization, class, date, زنگ, درس)`
+  (`session_report_cell_offering_uq`, migration 0031): after a timetable change the new درس's teacher writes a report of
+  their own BESIDE the earlier one; nobody takes over, reads or overwrites another درس's row (both stay on their own
+  subject pages). Clearing follows the same rule. Chosen over "take over the foreign row": no report (or private note)
+  ever changes hands, and nothing is lost.
+- **F7 — the card preselected a تکلیف the teacher may not choose** (another's, linked by an admin), so saving the form
+  unchanged failed «تکلیف انتخاب‌شده برای این درس نیست». Now the card shows such a link read-only (its title only when
+  the viewer may open it), never among the choices; the field is LEFT OUT when untouched and the service keeps the link
+  (`workItemId` omitted = keep, null = none, an id = validated choice — no new capability: only an existing link stays).
+- **F5 — switches nobody read.** `class_register` and `leave_requests` are built: no longer `upcoming`, default ON,
+  school-overridable, and read where their features live — «دفتر کلاسی» off: no card, no log on the subject page, saving
+  / clearing FORBIDDEN («دفتر کلاسی در این مدرسه خاموش است.», after the scope check, so an outsider learns nothing).
+  `deadline_reminders` (the scan, the reminder, the overdue notice, per item's school) and `request_center` (the check,
+  the managers' page, its Home tile, «درخواست‌های من») were confirmed read where they should be.
+- **F10 — accepted exceptions to "additive only"** (recorded here as such): 0026 replaced `config.feature_flag`'s unique
+  key `(organization_id, key)` with `(organization_id, school_id, key)` NULLS NOT DISTINCT — the table had never been
+  written; 0031 replaces `academic.session_report`'s `session_report_cell_uq` with the wider
+  `session_report_cell_offering_uq` — a widening (it cannot fail on existing rows) of a table not yet in production.
+  docs/db.md now names the report's audit actions in full (`academic.session_report.created`,
+  `academic.session_report.updated`, `academic.session_report.cleared`; the schema comment said `.saved`).

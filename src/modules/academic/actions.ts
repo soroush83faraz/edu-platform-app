@@ -8,7 +8,7 @@ import { can } from "@/modules/iam/can";
 import { getAdminScope, assertSchoolInScope } from "@/modules/iam/service";
 import { setSchoolPeriods } from "@/modules/tenancy/service";
 import { takeAttendance } from "./attendance";
-import { SaveObjectiveRatingsInput, SaveSessionReportInput, SessionReportCellInput, SetSchoolPeriodsInput, SetTimetableSlotInput, TakeAttendanceInput } from "./dto";
+import { ClearSessionReportInput, SaveObjectiveRatingsInput, SaveSessionReportInput, SetSchoolPeriodsInput, SetTimetableSlotInput, TakeAttendanceInput } from "./dto";
 import { saveObjectiveRatings } from "./report-card";
 import { setTimetableSlot } from "./service";
 import { clearSessionReport, saveSessionReport } from "./session-report";
@@ -66,13 +66,14 @@ export const saveSessionReportAction = defineAction({ schema: SaveSessionReportI
     classOfferingId: input.classOfferingId ?? null,
     topic: input.topic,
     pageRef: input.pageRef ?? null,
-    workItemId: input.workItemId ?? null,
+    // Omitted stays omitted: the report keeps its link (one the caller may not be able to choose — F7).
+    workItemId: input.workItemId,
     privateNote: input.privateNote ?? null,
     nextPlan: input.nextPlan ?? null,
   }),
 );
 
 /** «پاک‌کردن گزارش جلسه» — soft: the report is withdrawn (archived), never deleted. Same scope rule as saving it. */
-export const clearSessionReportAction = defineAction({ schema: SessionReportCellInput, permission: "academic.session_report.write", scope: "any" }, async (tx, input, ctx) =>
-  clearSessionReport(tx, ctx, { classGroupId: input.classGroupId, date: input.date, periodNo: input.periodNo }),
+export const clearSessionReportAction = defineAction({ schema: ClearSessionReportInput, permission: "academic.session_report.write", scope: "any" }, async (tx, input, ctx) =>
+  clearSessionReport(tx, ctx, { classGroupId: input.classGroupId, date: input.date, periodNo: input.periodNo, classOfferingId: input.classOfferingId ?? null }),
 );

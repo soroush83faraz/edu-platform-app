@@ -39,19 +39,20 @@ export const FEATURE_FLAGS = {
     schoolOverridable: true,
     upcoming: true,
   },
+  // Built (2026-10-20) and ON by default (security review F5: a switch must be read where its feature lives):
+  // «درخواست مرخصی» — off, a school's guardians file no new request (the form and its Home door go; what was already
+  // asked is still decided, and keeps its response clock); «دفتر کلاسی» — off, no «گزارش جلسه» card, log or write.
   leave_requests: {
     labelFa: "درخواست مرخصی",
     descriptionFa: "درخواست مرخصی دانش‌آموز از سوی ولی و رسیدگی مدرسه به آن.",
-    default: false,
+    default: true,
     schoolOverridable: true,
-    upcoming: true,
   },
   class_register: {
     labelFa: "دفتر کلاسی",
     descriptionFa: "ثبت روزانهٴ هر زنگ: موضوع درس، تکلیف و یادداشت دبیر.",
-    default: false,
+    default: true,
     schoolOverridable: true,
-    upcoming: true,
   },
   deadline_reminders: {
     labelFa: "یادآوری مهلت تکالیف",

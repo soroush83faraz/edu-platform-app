@@ -218,6 +218,13 @@
       "when": 1792500575103,
       "tag": "0030_request_sla_leave_pause",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792502289657,
+      "tag": "0031_session_report_offering_key",
+      "breakpoints": true
     }
   ]
 }

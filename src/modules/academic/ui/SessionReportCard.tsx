@@ -17,7 +17,11 @@ import { SESSION_REPORT_LIMITS } from "@/lib/session-report";
 import { clearSessionReportAction, saveSessionReportAction } from "../actions";
 import type { SessionReportCell } from "../session-report";
 
-const FIELDS = ["topic", "pageRef", "workItemId", "privateNote", "nextPlan"];
+const FIELDS = ["topic", "pageRef", "workItemId", "privateNote", "nextPlan", "classOfferingId"];
+
+/** The select's values beside the ids: keep the report's تکلیف the caller cannot choose (F7) / no تکلیف. */
+const KEEP = "keep";
+const NONE = "";
 
 /** A field's live counter «۱۲ از ۲۰۰» — neutral text, danger only when the limit is hit. */
 function Counter({ n, max }: { n: number; max: number }) {
@@ -52,14 +56,15 @@ export function SessionReportCard({
   const saved = cell.report;
   const [topic, setTopic] = useState(saved?.topic ?? "");
   const [pageRef, setPageRef] = useState(saved?.pageRef ?? "");
-  const [workItemId, setWorkItemId] = useState(saved?.workItem?.id ?? "");
+  // A linked تکلیف the caller may not choose (another's, linked by the school's admins) is never preselected among the
+  // choices: it is shown read-only and kept (`KEEP` → the field is left out) unless another or «بدون تکلیف» is picked.
+  const locked = cell.lockedWorkItem;
+  const [workItemId, setWorkItemId] = useState(saved?.workItem?.id ?? (locked ? KEEP : NONE));
   const [privateNote, setPrivateNote] = useState(saved?.privateNote ?? "");
   const [nextPlan, setNextPlan] = useState(saved?.nextPlan ?? "");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // A linked تکلیف that is no longer in the choices (closed since) stays selectable so saving does not silently drop it.
-  const choices = [...cell.workItems];
-  if (saved?.workItem && !choices.some((w) => w.id === saved.workItem?.id)) choices.unshift({ id: saved.workItem.id, title: saved.workItem.title || "تکلیف پیشین این جلسه" });
+  const choices = cell.workItems;
 
   const submit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -73,9 +78,11 @@ export function SessionReportCard({
         classGroupId,
         date,
         periodNo,
+        // The درس this card was opened for: the service refuses it if the timetable has moved on since.
+        classOfferingId: cell.offeringId,
         topic: topic.trim(),
         pageRef: pageRef.trim() === "" ? null : pageRef.trim(),
-        workItemId: workItemId === "" ? null : workItemId,
+        ...(workItemId === KEEP ? {} : { workItemId: workItemId === NONE ? null : workItemId }),
         privateNote: privateNote.trim() === "" ? null : privateNote.trim(),
         nextPlan: nextPlan.trim() === "" ? null : nextPlan.trim(),
       });
@@ -92,11 +99,11 @@ export function SessionReportCard({
   const clear = () => {
     if (pending) return;
     start(async () => {
-      const r = await clearSessionReportAction({ classGroupId, date, periodNo });
+      const r = await clearSessionReportAction({ classGroupId, date, periodNo, classOfferingId: cell.offeringId });
       if (r.ok) {
         setTopic("");
         setPageRef("");
-        setWorkItemId("");
+        setWorkItemId(NONE);
         setPrivateNote("");
         setNextPlan("");
         setErrors({});
@@ -159,7 +166,8 @@ export function SessionReportCard({
               aria-invalid={errors.workItemId ? true : undefined}
               aria-describedby={errors.workItemId ? `${ids}-workItemId-err` : undefined}
             >
-              <option value="">بدون تکلیف</option>
+              {locked ? <option value={KEEP}>همان تکلیفِ ثبت‌شده</option> : null}
+              <option value={NONE}>بدون تکلیف</option>
               {choices.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.title}
@@ -167,7 +175,12 @@ export function SessionReportCard({
               ))}
             </SelectNative>
             {err("workItemId")}
-            {choices.length === 0 ? <p className="text-meta text-text-muted">برای این درس هنوز تکلیفی نداده‌اید.</p> : null}
+            {locked ? (
+              <p className="text-meta text-text-muted">
+                تکلیفِ ثبت‌شدهٴ این جلسه: {locked.title ? <bdi>«{locked.title}»</bdi> : "تکلیفی که در فهرست شما نیست"} — تا تکلیف دیگری یا «بدون تکلیف» را انتخاب نکنید، همان می‌ماند.
+              </p>
+            ) : null}
+            {choices.length === 0 && !locked ? <p className="text-meta text-text-muted">برای این درس هنوز تکلیفی نداده‌اید.</p> : null}
           </div>
         </div>
 

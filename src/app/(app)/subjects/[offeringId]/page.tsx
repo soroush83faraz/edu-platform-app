@@ -235,7 +235,7 @@ export default async function SubjectPage({ params, searchParams }: { params: Pr
 
       {/* «دفتر کلاسی»: the session reports of this درس — topic, page, تکلیف, next plan for everyone who opens the page; the
           دبیر's private note only inside the data the service returns to a writer (never selected for anyone else). */}
-      {sessionReports.ok ? <SessionReportLog data={sessionReports.data} /> : null}
+      {sessionReports.ok && sessionReports.data.enabled ? <SessionReportLog data={sessionReports.data} /> : null}
     </ContentWidth>
   );
 }

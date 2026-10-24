@@ -5,16 +5,22 @@
 // FORBIDDEN (docs/admin.md «قانون دامنه»).
 //
 // WHO WRITES: exactly who may take the roll call of that cell — `academic.session_report.write` at the class (the
-// school's admins) or at the درس of that زنگ (its teacher). The same `allowed()` and `resolveOffering()` as attendance.
+// school's admins) or at the درس of that زنگ (its teacher). The same `allowed()` as attendance; the درس is ALWAYS the
+// one the weekly timetable puts at the cell (`resolveOffering` without a client value) — a درس the client names must be
+// that one (security review 2026-10-20, F1: a teacher naming their own درس of the class could write — and own — a cell
+// that was another's). A report belongs to its cell AND درس (migration 0031): every read and write of a cell touches
+// only the row of the cell's درس, so when the timetable moves another درس into a past cell its teacher gets a report
+// of their own and never reads (or overwrites) the earlier one — nor its private note (F1 / F2).
 // WHO READS: whoever opens the subject page (`openOffering`: the offering's teacher, a student of its class, a holder
 // of `academic.timetable.read` there). The private «یادداشت دبیر» is selected from the database ONLY for a holder of the
 // write permission at that class / درس; everyone else's query returns a SQL `null` in its place, so the text never
 // reaches the service's memory, let alone a page. The audit rows carry ids and text lengths, never the text.
+// The feature switch `class_register` (default on; a school may turn it off): off → no card, no log, no write.
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { isFutureIso, isValidIsoDate } from "@/lib/attendance";
-import { AppError, notFound, validation } from "@/lib/errors";
+import { AppError, forbidden, notFound, validation } from "@/lib/errors";
 import {
   SESSION_REPORT_LIMITS,
   SESSION_REPORT_MESSAGES,
@@ -25,6 +31,7 @@ import {
   type SessionReportPublic,
   type SessionReportStaff,
 } from "@/lib/session-report";
+import { flagEnabled } from "@/modules/config/service";
 import { canBroadly } from "@/modules/iam/can";
 import { canViewWorkItem } from "@/modules/workspace/service";
 import { workItem } from "@/modules/workspace/schema";
@@ -97,8 +104,11 @@ interface ReportRow {
   status: string;
 }
 
-/** The (active or archived) report of a cell, with the private note — callers have already passed the write gate. */
-async function findReportOfCell(tx: Tx, classGroupId: string, date: string, periodNo: number): Promise<ReportRow | null> {
+/**
+ * The (active or archived) report of a cell FOR ONE درس, with the private note — callers have already passed the write
+ * gate at that درس. Never the report of another درس of the same cell (F1).
+ */
+async function findReportOfCell(tx: Tx, classGroupId: string, date: string, periodNo: number, offeringId: string): Promise<ReportRow | null> {
   const [row] = await tx
     .select({
       id: sessionReport.id,
@@ -111,7 +121,7 @@ async function findReportOfCell(tx: Tx, classGroupId: string, date: string, peri
       status: sessionReport.status,
     })
     .from(sessionReport)
-    .where(and(eq(sessionReport.classGroupId, classGroupId), eq(sessionReport.date, date), eq(sessionReport.periodNo, periodNo)))
+    .where(and(eq(sessionReport.classGroupId, classGroupId), eq(sessionReport.date, date), eq(sessionReport.periodNo, periodNo), eq(sessionReport.classOfferingId, offeringId)))
     .limit(1);
   return row ?? null;
 }
@@ -121,7 +131,12 @@ function requireDate(date: string): string {
   return date;
 }
 
-/** Facts every cell operation starts from: the class, the date (never the future), the زنگ, the درس of that زنگ. */
+/**
+ * Facts every cell write starts from: the class, the date (never the future), the زنگ, and the درس the weekly
+ * timetable puts there — the scope is decided on THAT درس (NOT_FOUND outside it), and only then a درس the client
+ * named is compared with it (a stale page after a timetable change → «صفحه را دوباره باز کنید»). Then the school's
+ * switch (`class_register`).
+ */
 async function openCell(tx: Tx, ctx: SessionReportCtx, input: { classGroupId: string; date: string; periodNo: number; classOfferingId?: string | null }, now: Date) {
   const cg = await findClassGroupFacts(tx, input.classGroupId);
   if (!cg) throw notFound();
@@ -129,13 +144,15 @@ async function openCell(tx: Tx, ctx: SessionReportCtx, input: { classGroupId: st
   if (isFutureIso(date, now)) fail("date", SESSION_REPORT_MESSAGES.futureDate);
   const periods = (await listPeriodsOfSchools(tx, [cg.schoolId])).get(cg.schoolId) ?? [];
   if (!periods.some((p) => p.periodNo === input.periodNo)) fail("periodNo", ATTENDANCE_MESSAGES.periodUnknown);
-  const offeringId = await resolveOffering(tx, cg, date, input.periodNo, input.classOfferingId ?? null);
-  // No درس at that زنگ and none named: nobody's offering scope can hold — admins get a precise message, others NOT_FOUND.
+  const offeringId = await resolveOffering(tx, cg, date, input.periodNo, null);
+  // No درس at that زنگ: nobody's offering scope can hold — admins get a precise message, others NOT_FOUND.
   if (offeringId === null) {
     if (!(await allowed(tx, ctx, WRITE, cg.id, null))) throw notFound();
     fail("periodNo", SESSION_REPORT_MESSAGES.noLesson);
   }
   if (!(await allowed(tx, ctx, WRITE, cg.id, offeringId))) throw notFound();
+  if (input.classOfferingId && input.classOfferingId !== offeringId) fail("classOfferingId", SESSION_REPORT_MESSAGES.lessonChanged);
+  if (!(await flagEnabled(tx, "class_register", cg.schoolId))) throw forbidden(SESSION_REPORT_MESSAGES.switchedOff);
   return { cg, date, offeringId };
 }
 
@@ -144,10 +161,18 @@ export interface SaveSessionReportInput {
   /** ISO `YYYY-MM-DD`, Tehran calendar; never in the future. */
   date: string;
   periodNo: number;
-  /** The درس; when omitted it is resolved from the class's weekly timetable at that زنگ. */
+  /**
+   * The درس the page was opened for (`SessionReportCell.offeringId`) — compared with the timetable's, never trusted;
+   * omitted = the timetable's.
+   */
   classOfferingId?: string | null;
   topic: string;
   pageRef?: string | null;
+  /**
+   * The تکلیف of the session: an id = link it (one the caller may choose), null = none, UNDEFINED = keep the link the
+   * report already has — one the caller may be unable to choose (another's تکلیف linked by the school's admins), which
+   * the card shows read-only instead of offering it (F7).
+   */
   workItemId?: string | null;
   privateNote?: string | null;
   nextPlan?: string | null;
@@ -159,10 +184,11 @@ export interface SaveSessionReportResult {
 }
 
 /**
- * Upserts the report of ONE session (natural key `(class_group, date, period_no)` — writing again UPDATES the row, also
- * one that was cleared). Validates like the roll call (date never in the future, the زنگ exists, the درس belongs to the
- * class), then the texts (cleaned, bounded) and the linked تکلیف (of this درس, the caller's own — or any, for the school's
- * admins). The author is always the session's person; the audit row keeps ids and text lengths only.
+ * Upserts the report of ONE session of the cell's درس (natural key `(class_group, date, period_no, class_offering)` —
+ * writing again UPDATES the row, also one that was cleared). Validates like the roll call (date never in the future,
+ * the زنگ exists, the درس is the timetable's), then the texts (cleaned, bounded) and the linked تکلیف (of this درس, the
+ * caller's own — or any, for the school's admins; omitted = the row's own link kept). The author is always the
+ * session's person; the audit row keeps ids and text lengths only.
  */
 export async function saveSessionReport(tx: Tx, ctx: SessionReportCtx, input: SaveSessionReportInput, now = new Date()): Promise<SaveSessionReportResult> {
   const { cg, date, offeringId } = await openCell(tx, ctx, input, now);
@@ -176,13 +202,10 @@ export async function saveSessionReport(tx: Tx, ctx: SessionReportCtx, input: Sa
   if (privateNote !== null && privateNote.length > SESSION_REPORT_LIMITS.privateNote) fail("privateNote", SESSION_REPORT_MESSAGES.privateNoteTooLong);
   const nextPlan = cleanReportLine(input.nextPlan);
   if (nextPlan !== null && nextPlan.length > SESSION_REPORT_LIMITS.nextPlan) fail("nextPlan", SESSION_REPORT_MESSAGES.nextPlanTooLong);
-  const workItemId = input.workItemId ?? null;
-  if (workItemId !== null) await assertChoosable(tx, ctx, offeringId, workItemId);
-
-  const before = await findReportOfCell(tx, cg.id, date, input.periodNo);
-  // A cell whose درس changed since the report was written (the timetable moved): the caller must also hold the write
-  // permission at the report's own درس, or one teacher could overwrite another's report by timetable luck.
-  if (before && before.classOfferingId !== offeringId && !(await allowed(tx, ctx, WRITE, cg.id, before.classOfferingId))) throw notFound();
+  const before = await findReportOfCell(tx, cg.id, date, input.periodNo, offeringId);
+  // Omitted: the link stays as it is (validated when it was set); otherwise none, or one the caller may choose.
+  const workItemId = input.workItemId === undefined ? (before?.workItemId ?? null) : input.workItemId;
+  if (input.workItemId !== undefined && workItemId !== null) await assertChoosable(tx, ctx, offeringId, workItemId);
 
   const values = { classOfferingId: offeringId, topic, pageRef, workItemId, privateNote, nextPlan, authorPersonId: ctx.personId, status: "active", archivedAt: null };
   const cell = { classGroupId: cg.id, date, periodNo: input.periodNo };
@@ -209,14 +232,19 @@ export async function saveSessionReport(tx: Tx, ctx: SessionReportCtx, input: Sa
   return { reportId, created: before === null };
 }
 
-/** «پاک‌کردن گزارش»: the report of a cell is withdrawn (status `archived`), never deleted; re-saving brings it back. */
-export async function clearSessionReport(tx: Tx, ctx: SessionReportCtx, input: { classGroupId: string; date: string; periodNo: number }, now = new Date()): Promise<{ reportId: string }> {
-  const cg = await findClassGroupFacts(tx, input.classGroupId);
-  if (!cg) throw notFound();
-  const date = requireDate(input.date);
-  const existing = await findReportOfCell(tx, cg.id, date, input.periodNo);
-  // The gate is the REPORT's own درس (the timetable may have moved on): admins at the class, its teacher at the درس.
-  if (!existing || !(await allowed(tx, ctx, WRITE, cg.id, existing.classOfferingId))) throw notFound();
+/**
+ * «پاک‌کردن گزارش»: the report of the cell's درس (the timetable's, as for saving — the same gate) is withdrawn (status
+ * `archived`), never deleted; re-saving brings it back.
+ */
+export async function clearSessionReport(
+  tx: Tx,
+  ctx: SessionReportCtx,
+  input: { classGroupId: string; date: string; periodNo: number; classOfferingId?: string | null },
+  now = new Date(),
+): Promise<{ reportId: string }> {
+  const { cg, date, offeringId } = await openCell(tx, ctx, input, now);
+  const existing = await findReportOfCell(tx, cg.id, date, input.periodNo, offeringId);
+  if (!existing) throw notFound();
   if (existing.status === "archived") fail("periodNo", SESSION_REPORT_MESSAGES.nothingToClear);
   await tx.update(sessionReport).set({ status: "archived", archivedAt: now }).where(eq(sessionReport.id, existing.id));
   await audit(
@@ -231,31 +259,54 @@ export async function clearSessionReport(tx: Tx, ctx: SessionReportCtx, input: {
 }
 
 export interface SessionReportCell {
-  /** The درس of that زنگ (what the report is about). */
+  /** The درس of that زنگ (what the report is about) — the form sends it back, the service compares it. */
   offeringId: string;
-  /** The saved, active report with the private note — null when none. */
+  /** The saved, active report of THIS درس with the private note — null when none. Its `workItem` only when choosable. */
   report: SessionReportStaff | null;
   /** The caller's تکلیف choices for the form. */
   workItems: WorkItemChoice[];
+  /**
+   * The report links a تکلیف the caller may NOT choose (F7): shown read-only — its title when they may open it, else
+   * null — and kept on save unless they pick another or «بدون تکلیف». Never preselected in the choices.
+   */
+  lockedWorkItem: { title: string | null } | null;
 }
 
 /**
- * The «گزارش جلسه» card of the roll-call page: null unless the caller may WRITE the report of this cell (a date in the
- * future, a زنگ without a درس, or a class that is not theirs → no card). Never throws for a missing report.
+ * The «گزارش جلسه» card of the roll-call page: null unless the caller may WRITE the report of this cell's درس (a date
+ * in the future, a زنگ without a درس, a class that is not theirs, or the school's switch off → no card). The report is
+ * the row of the درس the timetable puts there NOW — another درس's report of the same cell is never read (F1). Never
+ * throws for a missing report.
  */
 export async function getSessionReportCell(tx: Tx, ctx: SessionReportCtx, input: { classGroupId: string; date: string; periodNo: number }, now = new Date()): Promise<SessionReportCell | null> {
   const cg = await findClassGroupFacts(tx, input.classGroupId);
   if (!cg || !isValidIsoDate(input.date) || isFutureIso(input.date, now)) return null;
   const offeringId = await resolveOffering(tx, cg, input.date, input.periodNo, null);
   if (offeringId === null || !(await allowed(tx, ctx, WRITE, cg.id, offeringId))) return null;
-  const row = await findReportOfCell(tx, cg.id, input.date, input.periodNo);
+  if (!(await flagEnabled(tx, "class_register", cg.schoolId))) return null;
+  const row = await findReportOfCell(tx, cg.id, input.date, input.periodNo, offeringId);
   const report: SessionReportStaff | null =
     row && row.status === "active"
       ? { id: row.id, date: input.date, periodNo: input.periodNo, topic: row.topic, pageRef: row.pageRef, nextPlan: row.nextPlan, privateNote: row.privateNote, workItem: null }
       : null;
   const workItems = await listWorkItemChoices(tx, ctx, offeringId);
-  if (report && row?.workItemId) report.workItem = workItems.find((w) => w.id === row.workItemId) ?? { id: row.workItemId, title: "" };
-  return { offeringId, report, workItems };
+  let lockedWorkItem: SessionReportCell["lockedWorkItem"] = null;
+  if (report && row?.workItemId) {
+    const choice = workItems.find((w) => w.id === row.workItemId);
+    if (choice) report.workItem = choice;
+    else lockedWorkItem = { title: await viewableTitle(tx, ctx, row.workItemId) };
+  }
+  return { offeringId, report, workItems, lockedWorkItem };
+}
+
+/** The title of a تکلیف THIS viewer may open (`canViewWorkItem`), else null — a title never reaches anyone else. */
+async function viewableTitle(tx: Tx, ctx: SessionReportCtx, workItemId: string): Promise<string | null> {
+  try {
+    return (await canViewWorkItem(tx, ctx, workItemId)).title;
+  } catch (err) {
+    if (AppError.is(err) && err.code === "NOT_FOUND") return null;
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -272,6 +323,8 @@ export interface OfferingSessionReports {
   reports: OfferingSessionReport[];
   /** Whether the private «یادداشت دبیر» was included (the caller holds the write permission here). */
   includesPrivate: boolean;
+  /** The school's «دفتر کلاسی» switch (`class_register`): off → no reports, and the page leaves the section out. */
+  enabled: boolean;
 }
 
 /**
@@ -283,6 +336,7 @@ export interface OfferingSessionReports {
 export async function listOfferingSessionReports(tx: Tx, ctx: SessionReportCtx, offeringId: string): Promise<OfferingSessionReports> {
   const { offering } = await openOffering(tx, ctx, offeringId);
   const includesPrivate = await allowed(tx, ctx, WRITE, offering.classGroupId, offering.id);
+  if (!(await flagEnabled(tx, "class_register", offering.schoolId))) return { reports: [], includesPrivate, enabled: false };
   const rows = await tx
     .select({
       id: sessionReport.id,
@@ -302,14 +356,7 @@ export async function listOfferingSessionReports(tx: Tx, ctx: SessionReportCtx, 
 
   const periods = (await listPeriodsOfSchools(tx, [offering.schoolId])).get(offering.schoolId) ?? [];
   const titles = new Map<string, string | null>();
-  for (const id of new Set(rows.flatMap((r) => (r.workItemId ? [r.workItemId] : [])))) {
-    try {
-      titles.set(id, (await canViewWorkItem(tx, ctx, id)).title);
-    } catch (err) {
-      if (!(AppError.is(err) && err.code === "NOT_FOUND")) throw err;
-      titles.set(id, null);
-    }
-  }
+  for (const id of new Set(rows.flatMap((r) => (r.workItemId ? [r.workItemId] : [])))) titles.set(id, await viewableTitle(tx, ctx, id));
   const reports = rows.map((r) => {
     const title = r.workItemId ? titles.get(r.workItemId) : null;
     const staff: SessionReportStaff = {
@@ -324,5 +371,5 @@ export async function listOfferingSessionReports(tx: Tx, ctx: SessionReportCtx, 
     };
     return { report: shapeSessionReport(staff, includesPrivate), periodLabel: periods.find((p) => p.periodNo === Number(r.periodNo))?.label ?? null };
   });
-  return { reports, includesPrivate };
+  return { reports, includesPrivate, enabled: true };
 }

@@ -285,13 +285,17 @@ export const attendanceEntry = academic.table(
 /**
  * «دفتر کلاسی — گزارش جلسه» (migration 0027): the end-of-session report a دبیر writes for ONE session — the same cell a
  * roll call is taken for, `(class_group, date, period_no)`, with the درس of that زنگ in `class_offering_id` (always set:
- * a report is about a subject). One row per session (`session_report_cell_uq`); writing again UPDATES it, clearing it
- * is soft (`status = 'archived'` + `archived_at`; `app_rw` may not DELETE). `topic` («موضوع تدریس‌شده», required),
+ * a report is about a subject, and the درس is the one the weekly timetable puts at that cell — never the client's).
+ * One row per session AND درس (`session_report_cell_offering_uq`, migration 0031 — security review 2026-10-20 F1/F2:
+ * when the timetable moves another درس into a past cell, its teacher writes a report of their own beside the earlier
+ * one, never reads or overwrites it); writing again UPDATES it, clearing it is soft (`status = 'archived'` +
+ * `archived_at`; `app_rw` may not DELETE). `topic` («موضوع تدریس‌شده», required),
  * `page_ref` («صفحه/فصل»), `work_item_id` («تکلیف این جلسه»: an existing non-confidential تکلیف of the SAME درس —
  * composite FK; the service checks the درس and the caller), `next_plan` («برنامهٴ جلسهٴ بعد») are read by whoever
  * opens the subject page; `private_note` («یادداشت دبیر») is for staff who can write the report only (the service
  * never selects it for anyone else — src/lib/session-report.ts). `author_person_id` is the last writer.
- * The audit trail carries ids and text LENGTHS, never the text (`academic.session_report.saved`).
+ * The audit trail carries ids and text LENGTHS, never the text (`academic.session_report.created` / `.updated` /
+ * `.cleared`).
  */
 export const sessionReport = academic.table(
   "session_report",
@@ -313,7 +317,7 @@ export const sessionReport = academic.table(
     ...timestamps(),
   },
   (t) => [
-    unique("session_report_cell_uq").on(t.organizationId, t.classGroupId, t.date, t.periodNo),
+    unique("session_report_cell_offering_uq").on(t.organizationId, t.classGroupId, t.date, t.periodNo, t.classOfferingId),
     unique("session_report_org_id_uq").on(t.organizationId, t.id),
     index("session_report_org_offering_date_idx").on(t.organizationId, t.classOfferingId, t.date),
     check("session_report_period_chk", sql`${t.periodNo} BETWEEN 1 AND 12`),

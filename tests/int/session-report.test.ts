@@ -4,7 +4,7 @@
 // تکلیف link (of THIS درس, the caller's own — or any for an admin), the privacy of «یادداشت دبیر» (a student's read has
 // no such field), the soft clear, the audit rows (ids and lengths, never the text) and the DELETE policy of app_rw.
 // Every write happens inside a withTenant transaction that ends with Rollback, so other files' fixture counts stay intact.
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { withTenant, type Tx } from "@/db/client";
 import { auditLog, sessionReport, workItem } from "@/db/schema";
@@ -118,7 +118,7 @@ describe("saveSessionReport", () => {
     });
   });
 
-  it("the database refuses a second row for the same session (unique per class × date × زنگ)", async () => {
+  it("the database refuses a second row for the same session and درس (unique per class × date × زنگ × درس, migration 0031)", async () => {
     await rolledBack(async (tx) => {
       await setUpClass(tx);
       await saveSessionReport(tx, teacher, full, NOW);
@@ -185,10 +185,11 @@ describe("saveSessionReport", () => {
       await expect(saveSessionReport(tx, admin, { ...cell, topic: "ا".repeat(201) }, NOW)).rejects.toSatisfy(isValidation("موضوع تدریس‌شده حداکثر ۲۰۰ نویسه است."));
       await expect(saveSessionReport(tx, admin, { ...cell, topic: TOPIC, privateNote: "ا".repeat(1001) }, NOW)).rejects.toSatisfy(isValidation("یادداشت دبیر حداکثر ۱۰۰۰ نویسه است."));
       await expect(saveSessionReport(tx, admin, { ...cell, topic: TOPIC, nextPlan: "ا".repeat(301) }, NOW)).rejects.toSatisfy(isValidation("برنامهٴ جلسهٴ بعد حداکثر ۳۰۰ نویسه است."));
-      // An offering of ANOTHER class may not be pinned to this cell.
+      // A درس the client names is never used (F1): class A2 has no درس at that زنگ in the timetable, whatever is named.
       await expect(saveSessionReport(tx, admin, { classGroupId: f.CLASS_GROUP_A2, date: TODAY, periodNo: PERIOD, classOfferingId: f.OFFERING_A1, topic: TOPIC }, NOW)).rejects.toSatisfy(
-        isValidation("این درس برای این کلاس تعریف نشده است."),
+        isValidation("برای این زنگ درسی در برنامهٴ کلاسی نیست؛ گزارش جلسه برای زنگِ بدون درس ثبت نمی‌شود."),
       );
+      expect(await tx.select({ id: sessionReport.id }).from(sessionReport).where(eq(sessionReport.classGroupId, f.CLASS_GROUP_A2))).toEqual([]);
     });
   });
 
@@ -339,6 +340,137 @@ describe("reading: the subject page's «دفتر کلاسی» and the card", () 
       const card = await getSessionReportCell(tx, teacher, cell, NOW);
       expect(card?.offeringId).toBe(f.OFFERING_A1);
       expect(card?.report?.topic).toBe("امروز");
+    });
+  });
+});
+
+// Security review 2026-10-20 — F1 / F2 / F7 and the `class_register` switch (F5). A second درس of class A1 (علوم) with
+// its own teacher, so a cell can change hands.
+const SUBJECT_X = "0199a000-0009-7000-8000-0000000000cc";
+const OFFERING_X = "0199a000-000c-7000-8000-0000000000c2";
+const TEACHER_X = "0199a000-0006-7000-8000-0000000000c3";
+const teacherX = ctxOf(f.ORG_A, TEACHER_X, [teacherOf(OFFERING_X)]);
+const yesterdayCell = { ...cell, date: YESTERDAY };
+
+async function secondOffering(tx: Tx): Promise<void> {
+  await tx.execute(sql`insert into tenancy.subject (id, organization_id, name, code) values (${SUBJECT_X}::uuid, ${f.ORG_A}::uuid, 'علوم', 'SCI-X')`);
+  await tx.execute(sql`
+    insert into tenancy.class_offering (id, organization_id, class_group_id, subject_id, term_id)
+    values (${OFFERING_X}::uuid, ${f.ORG_A}::uuid, ${f.CLASS_GROUP_A1}::uuid, ${SUBJECT_X}::uuid, ${f.TERM_A}::uuid)`);
+  await tx.execute(sql`insert into iam.person (id, organization_id, first_name, last_name) values (${TEACHER_X}::uuid, ${f.ORG_A}::uuid, 'رضا', 'کریمی')`);
+}
+
+const reportsOfCell = (tx: Tx, date: string) =>
+  tx
+    .select({ offering: sessionReport.classOfferingId, topic: sessionReport.topic, note: sessionReport.privateNote, author: sessionReport.authorPersonId })
+    .from(sessionReport)
+    .where(and(eq(sessionReport.classGroupId, f.CLASS_GROUP_A1), eq(sessionReport.date, date), eq(sessionReport.periodNo, PERIOD)));
+
+describe("a report belongs to its cell AND the timetable's درس (security review 2026-10-20, F1 / F2 / F7)", () => {
+  it("P1 — the timetable moves another درس into a past cell: its teacher reads an EMPTY card (never the earlier report or its private note) and writes their own beside it; the first report is untouched", async () => {
+    await rolledBack(async (tx) => {
+      await setUpClass(tx);
+      await secondOffering(tx);
+      await saveSessionReport(tx, teacher, { ...yesterdayCell, topic: TOPIC, privateNote: NOTE }, NOW);
+      // The timetable changes: yesterday's زنگ ۲ is now علوم.
+      await setTimetableSlot(tx, admin, { classGroupId: f.CLASS_GROUP_A1, weekday: weekdayOfIso(YESTERDAY)!, periodNo: PERIOD, classOfferingId: OFFERING_X });
+
+      // علوم's teacher opens yesterday's زنگ ۲: a card for علوم with NO report — not ریاضی's, not its note.
+      const card = await getSessionReportCell(tx, teacherX, yesterdayCell, NOW);
+      expect(card).toMatchObject({ offeringId: OFFERING_X, report: null, lockedWorkItem: null });
+      expect(JSON.stringify(card)).not.toContain(NOTE);
+      expect(JSON.stringify(card)).not.toContain(TOPIC);
+      // …and writes a report of their own: no lock-out (F2), nothing of the first one is touched.
+      const own = await saveSessionReport(tx, teacherX, { ...yesterdayCell, classOfferingId: OFFERING_X, topic: "چرخهٔ آب", privateNote: "یادداشت علوم" }, NOW);
+      expect(own.created).toBe(true);
+      const rows = await reportsOfCell(tx, YESTERDAY);
+      expect(rows.sort((a, b) => a.offering.localeCompare(b.offering))).toEqual(
+        [
+          { offering: f.OFFERING_A1, topic: TOPIC, note: NOTE, author: f.PERSON_A2 },
+          { offering: OFFERING_X, topic: "چرخهٔ آب", note: "یادداشت علوم", author: TEACHER_X },
+        ].sort((a, b) => a.offering.localeCompare(b.offering)),
+      );
+      // The school's admin reads the cell's CURRENT درس — علوم's report, never ریاضی's note through the card.
+      const adminCard = await getSessionReportCell(tx, vice, yesterdayCell, NOW);
+      expect(adminCard?.report).toMatchObject({ topic: "چرخهٔ آب", privateNote: "یادداشت علوم" });
+      expect(JSON.stringify(adminCard)).not.toContain(NOTE);
+      // ریاضی's teacher no longer has that cell; their report stays on ریاضی's page, علوم's on علوم's.
+      expect(await getSessionReportCell(tx, teacher, yesterdayCell, NOW)).toBeNull();
+      const mathPage = await listOfferingSessionReports(tx, teacher, f.OFFERING_A1);
+      expect(mathPage.reports.map((r) => r.report.topic)).toEqual([TOPIC]);
+      const sciencePage = await listOfferingSessionReports(tx, teacherX, OFFERING_X);
+      expect(sciencePage.reports.map((r) => r.report.topic)).toEqual(["چرخهٔ آب"]);
+      expect(JSON.stringify(sciencePage)).not.toContain(NOTE);
+      // Clearing is the cell's درس's too: علوم's teacher clears only علوم's report.
+      await clearSessionReport(tx, teacherX, { ...yesterdayCell, classOfferingId: OFFERING_X }, NOW);
+      expect((await reportsOfCell(tx, YESTERDAY)).map((r) => r.note).sort()).toEqual([NOTE, "یادداشت علوم"].sort());
+      const statuses = await tx.select({ offering: sessionReport.classOfferingId, status: sessionReport.status }).from(sessionReport).where(eq(sessionReport.date, YESTERDAY));
+      expect(Object.fromEntries(statuses.map((s) => [s.offering, s.status]))).toEqual({ [f.OFFERING_A1]: "active", [OFFERING_X]: "archived" });
+    });
+  });
+
+  it("P2 — a crafted classOfferingId: a teacher naming their own درس at another درس's cell is NOT_FOUND and writes nothing; an admin naming a درس the timetable does not put there is refused; the cell's teacher is never locked out", async () => {
+    await rolledBack(async (tx) => {
+      await setUpClass(tx);
+      await secondOffering(tx);
+      // TODAY's زنگ ۲ is ریاضی: علوم's teacher may not take it, by naming علوم or not.
+      await expect(saveSessionReport(tx, teacherX, { ...full, classOfferingId: OFFERING_X }, NOW)).rejects.toSatisfy(isCode("NOT_FOUND"));
+      await expect(saveSessionReport(tx, teacherX, full, NOW)).rejects.toSatisfy(isCode("NOT_FOUND"));
+      expect(await getSessionReportCell(tx, teacherX, cell, NOW)).toBeNull();
+      await expect(clearSessionReport(tx, teacherX, { ...cell, classOfferingId: OFFERING_X }, NOW)).rejects.toSatisfy(isCode("NOT_FOUND"));
+      // An admin of the school naming the wrong درس: refused, nothing written.
+      await expect(saveSessionReport(tx, vice, { ...full, classOfferingId: OFFERING_X }, NOW)).rejects.toSatisfy(isValidation("درسِ این زنگ در برنامهٴ کلاسی عوض شده است؛ صفحه را دوباره باز کنید."));
+      expect(await reportsOfCell(tx, TODAY)).toEqual([]);
+      // ریاضی's teacher writes the cell (naming it or not) — and its note never reaches علوم's page.
+      expect((await saveSessionReport(tx, teacher, { ...full, classOfferingId: f.OFFERING_A1 }, NOW)).created).toBe(true);
+      expect(await reportsOfCell(tx, TODAY)).toEqual([{ offering: f.OFFERING_A1, topic: TOPIC, note: NOTE, author: f.PERSON_A2 }]);
+      expect((await listOfferingSessionReports(tx, teacherX, OFFERING_X)).reports).toEqual([]);
+    });
+  });
+
+  it("F7 — a linked تکلیف the teacher may not choose is shown read-only, not preselected; saving without touching it keeps it; another or «بدون تکلیف» replaces it", async () => {
+    await rolledBack(async (tx) => {
+      await setUpClass(tx);
+      const mine = await newWorkItem(tx, f.PERSON_A2);
+      const colleagues = await newWorkItem(tx, f.PERSON_A1);
+      // The organization admin links a colleague's تکلیف (any of the درس — a broad update holder).
+      const { reportId } = await saveSessionReport(tx, admin, { ...cell, topic: TOPIC, workItemId: colleagues }, NOW);
+      const linkOf = async () => (await tx.select({ w: sessionReport.workItemId }).from(sessionReport).where(eq(sessionReport.id, reportId)))[0].w;
+
+      const card = await getSessionReportCell(tx, teacher, cell, NOW);
+      expect(card?.report?.workItem).toBeNull();
+      expect(card?.workItems.map((w) => w.id)).toEqual([mine]);
+      // The teacher may not open it: no title reaches them.
+      expect(card?.lockedWorkItem).toEqual({ title: null });
+      // Saving the rest, the تکلیف field left out: the link is kept (no «invalid تکلیف» refusal, no silent drop).
+      await saveSessionReport(tx, teacher, { ...cell, topic: "موضوع تازه" }, NOW);
+      expect(await linkOf()).toBe(colleagues);
+      // An explicit choice of theirs replaces it; «بدون تکلیف» removes it; a colleague's is still refused when CHOSEN.
+      await saveSessionReport(tx, teacher, { ...cell, topic: TOPIC, workItemId: mine }, NOW);
+      expect(await linkOf()).toBe(mine);
+      expect((await getSessionReportCell(tx, teacher, cell, NOW))?.report?.workItem).toMatchObject({ id: mine });
+      await saveSessionReport(tx, teacher, { ...cell, topic: TOPIC, workItemId: null }, NOW);
+      expect(await linkOf()).toBeNull();
+      await expect(saveSessionReport(tx, teacher, { ...cell, topic: TOPIC, workItemId: colleagues }, NOW)).rejects.toSatisfy(isValidation("تکلیف انتخاب‌شده برای این درس نیست."));
+    });
+  });
+
+  it("the school's «دفتر کلاسی» switch (class_register, default on): off → no card, no log, no write; on again → all back", async () => {
+    await rolledBack(async (tx) => {
+      await setUpClass(tx);
+      await saveSessionReport(tx, teacher, full, NOW);
+      await tx.execute(sql`insert into config.feature_flag (id, organization_id, school_id, key, enabled) values (app.uuid_generate_v7(), ${f.ORG_A}::uuid, ${f.SCHOOL_A}::uuid, 'class_register', false)`);
+      // Fresh savepoints: the switches are read once per transaction.
+      const fresh = <T>(fn: (sp: Tx) => Promise<T>) => tx.transaction(fn);
+      expect(await fresh((sp) => getSessionReportCell(sp, teacher, cell, NOW))).toBeNull();
+      expect(await fresh((sp) => listOfferingSessionReports(sp, teacher, f.OFFERING_A1))).toMatchObject({ reports: [], enabled: false });
+      await expect(fresh((sp) => saveSessionReport(sp, teacher, full, NOW))).rejects.toSatisfy((e: unknown) => AppError.is(e) && e.code === "FORBIDDEN" && e.message === "دفتر کلاسی در این مدرسه خاموش است.");
+      await expect(fresh((sp) => clearSessionReport(sp, teacher, cell, NOW))).rejects.toSatisfy(isCode("FORBIDDEN"));
+      // Out of scope stays NOT_FOUND whatever the switch (nothing is learned about it).
+      await expect(fresh((sp) => saveSessionReport(sp, teacherOfElse, full, NOW))).rejects.toSatisfy(isCode("NOT_FOUND"));
+      await tx.execute(sql`update config.feature_flag set enabled = true where key = 'class_register'`);
+      expect((await fresh((sp) => getSessionReportCell(sp, teacher, cell, NOW)))?.report).toMatchObject({ topic: TOPIC });
+      expect((await fresh((sp) => listOfferingSessionReports(sp, teacher, f.OFFERING_A1))).enabled).toBe(true);
     });
   });
 });

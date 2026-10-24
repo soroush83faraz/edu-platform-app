@@ -154,9 +154,9 @@ export const SessionReportCellInput = z.object({ classGroupId: uuid, date: isoDa
 export type SessionReportCellInput = z.output<typeof SessionReportCellInput>;
 
 /**
- * «ذخیرهٴ گزارش جلسه»: the lengths mirror the CHECKs of `academic.session_report`. The درس is NOT trusted from the
- * client unless named — then the service validates it against the class, exactly like the roll call; the author is
- * always the session's person.
+ * «ذخیرهٴ گزارش جلسه»: the lengths mirror the CHECKs of `academic.session_report`. The درس is NEVER taken from the
+ * client: the service uses the timetable's and refuses a named one that differs (security review 2026-10-20, F1); the
+ * author is always the session's person. `workItemId` omitted = keep the report's link (F7), null / `""` = none.
  */
 export const SaveSessionReportInput = z
   .object({
@@ -173,3 +173,7 @@ export const SaveSessionReportInput = z
   })
   .strict();
 export type SaveSessionReportInput = z.output<typeof SaveSessionReportInput>;
+
+/** «پاک‌کردن گزارش جلسه»: the cell, and the درس the page was opened for (compared with the timetable's, as for saving). */
+export const ClearSessionReportInput = z.object({ classGroupId: uuid, date: isoDate, periodNo: reportPeriodNo, classOfferingId: uuid.nullable().optional() }).strict();
+export type ClearSessionReportInput = z.output<typeof ClearSessionReportInput>;
