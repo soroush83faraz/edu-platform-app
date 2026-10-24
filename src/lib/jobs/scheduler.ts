@@ -39,7 +39,13 @@ export function scheduleProblems(defs: readonly ScheduleCheckInput[], kinds: Rea
   return problems;
 }
 
-/** Upserts the code's schedules into ops.schedule; a changed cron restarts its clock from `now`. */
+/**
+ * Upserts the code's schedules into ops.schedule; a changed cron restarts its clock from `now`. A stored tick that can
+ * never be right is repaired the same way (security review 2026-10-20, F4): not finite, or LATER than the next tick the
+ * cron gives from now — only tampering or a broken clock writes either, and either would silence the schedule. (Firing
+ * a tick again is harmless: its jobs are deduplicated by `schedule:<name>:<tick>`.) The table refuses non-finite ticks
+ * outright since migration 0032.
+ */
 export async function syncSchedules(defs: readonly ScheduleCheckInput[], kinds: Readonly<Record<string, JobKindDef>>, now: Date = new Date()): Promise<void> {
   const problems = scheduleProblems(defs, kinds);
   if (problems.length > 0) throw new Error(`schedules: ${problems.join("; ")}`);
@@ -52,7 +58,11 @@ export async function syncSchedules(defs: readonly ScheduleCheckInput[], kinds: 
         on conflict (name) do update
           set kind = excluded.kind,
               cron = excluded.cron,
-              next_fire_at = case when s.cron is distinct from excluded.cron then excluded.next_fire_at else s.next_fire_at end`);
+              next_fire_at = case
+                when s.cron is distinct from excluded.cron then excluded.next_fire_at
+                when not isfinite(s.next_fire_at) or s.next_fire_at > excluded.next_fire_at then excluded.next_fire_at
+                else s.next_fire_at end,
+              last_fired_at = case when s.last_fired_at is null or isfinite(s.last_fired_at) then s.last_fired_at end`);
     }
   });
 }

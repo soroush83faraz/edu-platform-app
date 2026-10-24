@@ -28,6 +28,7 @@ services:
       APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:-app_owner_dev}
       APP_RW_PASSWORD: ${APP_RW_PASSWORD:-app_rw_dev}
       APP_BACKUP_PASSWORD: ${APP_BACKUP_PASSWORD:-app_backup_dev}
+      APP_WORKER_PASSWORD: ${APP_WORKER_PASSWORD:-app_worker_dev}
       TZ: UTC
     ports:
       - "15433:5432"

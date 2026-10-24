@@ -210,7 +210,7 @@ describe("«مشاوره» — the counseling file", () => {
   it("migration 0018: tenant_isolation + the RESTRICTIVE policies for app_rw on every counseling table; no DELETE, no referral UPDATE; work_item.is_confidential", async () => {
     await asAppRw(async (c) => {
       const policies = await c.query<{ t: string; policyname: string; permissive: string; cmd: string; roles: string[] }>(
-        `select tablename as t, policyname, permissive, cmd, roles::text[] as roles from pg_policies where schemaname = 'counseling' order by 1, 2`,
+        `select tablename as t, policyname, permissive, cmd, array(select r::text from unnest(roles) r where r <> 'app_worker' order by r) as roles /* the worker's role (0032) is bound like app_rw */ from pg_policies where schemaname = 'counseling' order by 1, 2`,
       );
       const of = (t: string) => policies.rows.filter((p) => p.t === t).map((p) => `${p.policyname}:${p.permissive}:${p.cmd}:${p.roles.join(",")}`);
       expect(of("counselor_note")).toEqual(["counseling_insert:RESTRICTIVE:INSERT:app_rw", "counseling_read:RESTRICTIVE:SELECT:app_rw", "counseling_update:RESTRICTIVE:UPDATE:app_rw", "tenant_isolation:PERMISSIVE:ALL:public"]);

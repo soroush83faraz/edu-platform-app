@@ -27,6 +27,8 @@ services:
       APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:?set APP_OWNER_PASSWORD in .env}
       APP_RW_PASSWORD: ${APP_RW_PASSWORD:?set APP_RW_PASSWORD in .env}
       APP_BACKUP_PASSWORD: ${APP_BACKUP_PASSWORD:?set APP_BACKUP_PASSWORD in .env}
+      # Optional (first start only): creates app_worker, the worker's own role (migration 0032; deploy/README.md).
+      APP_WORKER_PASSWORD: ${APP_WORKER_PASSWORD:-}
       TZ: UTC
     expose: ["5432"]
     volumes:
@@ -46,6 +48,8 @@ services:
     env_file: .env
     environment:
       TZ: UTC
+      # The worker's credential stays with the worker (security review 2026-10-20, F3).
+      WORKER_DATABASE_URL: ""
     depends_on:
       db:
         condition: service_healthy
@@ -61,6 +65,7 @@ services:
     env_file: .env
     environment:
       TZ: UTC
+      WORKER_DATABASE_URL: ""
     depends_on:
       db:
         condition: service_healthy
@@ -81,6 +86,9 @@ services:
       PORT: "3000"
       APP_VERSION: ${APP_VERSION:-${APP_IMAGE}}
       FILES_DIR: /data/files
+      # The web process never holds the worker's credential: app_rw cannot claim jobs or touch the schedules
+      # (migration 0032), and this keeps a compromised web process from simply logging in as app_worker.
+      WORKER_DATABASE_URL: ""
     expose: ["3000"]
     volumes:
       - files:/data/files
@@ -93,8 +101,10 @@ services:
         condition: service_completed_successfully
 
   # Background jobs + recurring schedules (owner 2026-10-20; src/lib/jobs, docs/ops/runbook.md «کارهای پس‌زمینه»): the
-  # SAME image as `app`, its own process — scripts/worker.mjs, bundled by `pnpm build`. Connects as app_rw
-  # (DATABASE_URL, like the app; a small pool), mounts the files volume for the file sweeps. Stateless: stop / start /
+  # SAME image as `app`, its own process — scripts/worker.mjs, bundled by `pnpm build`. Connects as its OWN role
+  # app_worker (WORKER_DATABASE_URL, migration 0032 — the only role that may claim jobs across organizations and write
+  # ops.schedule), or as app_rw (DATABASE_URL) until the operator has created that role (the fallback; a small pool),
+  # mounts the files volume for the file sweeps. Stateless: stop / start /
   # restart any time — a run in flight rolls back and its job is claimed again when its lease expires. The healthcheck
   # reads the mtime of the file the loop touches every turn (the image's own HEALTHCHECK is the app's HTTP probe).
   worker:
@@ -112,6 +122,8 @@ services:
       FILES_DIR: /data/files
       DB_POOL_MAX: "4"
       WORKER_ALIVE_FILE: /tmp/edu-worker-alive
+      # Any image's worker — this one, or an older one after rollback.sh — connects as app_worker once it is set.
+      DATABASE_URL: ${WORKER_DATABASE_URL:-${DATABASE_URL}}
     volumes:
       - files:/data/files
     mem_limit: 256m

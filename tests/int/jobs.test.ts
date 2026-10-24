@@ -1,7 +1,17 @@
 // The Postgres job runner (migration 0026; src/modules/ops, src/lib/jobs): outbox enqueue, SKIP LOCKED claims, lease
 // expiry, fencing, retries with backoff, dead-letter, the system actor's audit rows, RLS of ops.job, and the scheduler
 // firing a tick once with two workers. Test kinds (`test.*`) are passed in a registry of the test's own; the real
-// registry's handlers are smoke-run at the end.
+// registry's handlers are smoke-run at the end. Since migration 0032 the worker has its own role, app_worker (security
+// review 2026-10-20, F3 / F4 / F8): this file's pool connects as it when the cluster has it (WORKER_DATABASE_URL —
+// tests/int/env.ts), the separation from app_rw is asserted, and so are the fair claim and the schedules' repair.
+// The pool is the worker's: point DATABASE_URL at its role BEFORE the imports below build it.
+import { vi } from "vitest";
+
+vi.hoisted(() => {
+  const worker = process.env.EDU_TEST_WORKER_URL;
+  if (worker) process.env.DATABASE_URL = worker;
+});
+
 import os from "node:os";
 import path from "node:path";
 import { sql } from "drizzle-orm";
@@ -18,7 +28,7 @@ import { enqueueJob, insertJob } from "@/modules/ops/enqueue";
 import type { JobKindDef } from "@/modules/ops/kinds";
 import { PermanentJobError } from "@/modules/ops/retry";
 import * as f from "./fixtures";
-import { PG, Rollback, asAppRw, inRolledBackTx, pgCode } from "./helpers";
+import { PG, Rollback, asAppOwner, asAppRw, asAppWorker, inRolledBackTx, pgCode } from "./helpers";
 
 const ORG_CTX = "select set_config('app.current_org_id', $1, true)";
 const Ids = z.object({ n: z.number().int() }).strict();
@@ -56,8 +66,12 @@ const allOrgs = async (): Promise<string[]> => (await withoutTenant((tx) => tx.e
 afterEach(async () => {
   ran.length = 0;
   for (const orgId of await allOrgs()) await withTenant({ orgId }, (tx) => tx.execute(sql`delete from ops.job`));
-  await withoutTenant((tx) => tx.execute(sql`delete from ops.schedule where name like 'test.%'`));
+  // The worker never deletes a schedule (no DELETE on ops.schedule): the owner tidies up the test's own.
+  await asAppOwner((c) => c.query("delete from ops.schedule where name like 'test.%'"));
 });
+
+/** Does the cluster have the worker's own role (migration 0032)? Until the operator creates it, app_rw is the worker. */
+const workerRoleExists = () => asAppOwner(async (c) => (await c.query<{ w: boolean }>("select exists (select 1 from pg_roles where rolname = 'app_worker') as w")).rows[0].w);
 
 describe("enqueue (outbox)", () => {
   it("a job enqueued in a transaction that rolls back does not exist; a committed one does", async () => {
@@ -107,16 +121,72 @@ describe("RLS of ops.job", () => {
     expect(claimed[0]).toMatchObject({ orgId: f.ORG_A, attempt: 1 });
   });
 
-  it("app.claim_jobs is EXECUTE-able by app_rw only and returns no payload column", async () => {
-    await asAppRw(async (c) => {
-      const res = await c.query<{ public: boolean; rw: boolean; cols: string }>(
+  it("app.claim_jobs is EXECUTE-able by the worker's role only (app_rw only while app_worker does not exist) and returns no payload column", async () => {
+    const hasWorker = await workerRoleExists();
+    await asAppOwner(async (c) => {
+      const res = await c.query<{ public: boolean; rw: boolean; worker: boolean | null; cols: string }>(
         `select has_function_privilege('public', 'app.claim_jobs(text, text[], integer[], integer[])', 'EXECUTE') as public,
                 has_function_privilege('app_rw', 'app.claim_jobs(text, text[], integer[], integer[])', 'EXECUTE') as rw,
+                case when exists (select 1 from pg_roles where rolname = 'app_worker')
+                     then has_function_privilege('app_worker', 'app.claim_jobs(text, text[], integer[], integer[])', 'EXECUTE') end as worker,
                 (select string_agg(a, ',') from unnest((select proargnames from pg_proc where proname = 'claim_jobs')) a) as cols`,
       );
-      expect(res.rows[0].public).toBe(false);
-      expect(res.rows[0].rw).toBe(true);
+      expect(res.rows[0]).toMatchObject(hasWorker ? { public: false, rw: false, worker: true } : { public: false, rw: true, worker: null });
       expect(res.rows[0].cols).not.toContain("payload");
+    });
+  });
+});
+
+describe("the worker's own role, app_worker (migration 0032; security review F3 / F4)", () => {
+  it("app_rw — the WEB role — can neither claim across organizations nor touch ops.schedule; app_worker holds exactly that, plus app_rw's grants and policies", async () => {
+    if (!(await workerRoleExists())) {
+      // The fallback state (the role is created by the operator — deploy/README.md): app_rw keeps both, the worker runs.
+      await asAppOwner(async (c) => {
+        const r = await c.query<{ claim: boolean; sched: boolean }>(
+          `select has_function_privilege('app_rw', 'app.claim_jobs(text, text[], integer[], integer[])', 'EXECUTE') as claim,
+                  has_table_privilege('app_rw', 'ops.schedule', 'UPDATE') as sched`,
+        );
+        expect(r.rows[0]).toEqual({ claim: true, sched: true });
+      });
+      return;
+    }
+    await asAppRw(async (c) => {
+      await expect(c.query("select job_id from app.claim_jobs('web', '{test.record}', '{1}', '{60}')")).rejects.toMatchObject({ code: PG.INSUFFICIENT_PRIVILEGE });
+      await expect(c.query("select name from ops.schedule")).rejects.toMatchObject({ code: PG.INSUFFICIENT_PRIVILEGE });
+      await expect(c.query("update ops.schedule set next_fire_at = 'infinity'")).rejects.toMatchObject({ code: PG.INSUFFICIENT_PRIVILEGE });
+    });
+    await asAppWorker(async (c) => {
+      expect((await c.query<{ who: string }>("select current_user as who")).rows[0].who).toBe("app_worker");
+      // Bound by tenant RLS like app_rw: no organization bound, no job seen; and no DELETE of a schedule.
+      expect((await c.query("select id from ops.job")).rowCount).toBe(0);
+      await expect(c.query("delete from ops.schedule where name = 'nobody'")).rejects.toMatchObject({ code: PG.INSUFFICIENT_PRIVILEGE });
+    });
+    await asAppOwner(async (c) => {
+      // Member of nothing; no attribute that widens it.
+      const role = await c.query(`select rolsuper, rolbypassrls, rolinherit, rolcreaterole, rolcreatedb,
+                                        (select count(*)::int from pg_auth_members m where m.member = r.oid) as memberships
+                                 from pg_roles r where rolname = 'app_worker'`);
+      expect(role.rows[0]).toEqual({ rolsuper: false, rolbypassrls: false, rolinherit: false, rolcreaterole: false, rolcreatedb: false, memberships: 0 });
+      // Exactly app_rw's table grants in the application schemas — but for ops.schedule, the worker's alone.
+      const grants = await c.query<{ t: string; p: string; rw: boolean; worker: boolean }>(`
+        select n.nspname || '.' || t.relname as t, p.p,
+               has_table_privilege('app_rw', t.oid, p.p) as rw, has_table_privilege('app_worker', t.oid, p.p) as worker
+        from pg_class t join pg_namespace n on n.oid = t.relnamespace
+        cross join unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE']) as p(p)
+        where t.relkind = 'r' and n.nspname in ('tenancy','iam','academic','workspace','notif','files','audit','config','integ','counseling','ops')`);
+      const differ = grants.rows.filter((g) => g.rw !== g.worker).map((g) => `${g.t}:${g.p}:${g.rw}/${g.worker}`);
+      expect(differ.sort()).toEqual(["ops.schedule:INSERT:false/true", "ops.schedule:SELECT:false/true", "ops.schedule:UPDATE:false/true"]);
+      expect(grants.rows.find((g) => g.t === "ops.schedule" && g.p === "DELETE")).toMatchObject({ rw: false, worker: false });
+      // Every policy that binds app_rw binds app_worker (the RESTRICTIVE person policies bind the system actor as before).
+      const unbound = await c.query(`select schemaname || '.' || tablename || ' ' || policyname as p from pg_policies
+                                     where 'app_rw' = any (roles) and not ('app_worker' = any (roles))`);
+      expect(unbound.rows).toEqual([]);
+      const bound = await c.query<{ n: number }>(`select count(*)::int as n from pg_policies where 'app_worker' = any (roles)`);
+      expect(bound.rows[0].n).toBeGreaterThan(20);
+      // The app functions app_rw may execute, the worker may too.
+      const fns = await c.query(`select bool_and(has_function_privilege('app_worker', f, 'EXECUTE')) as ok
+                                 from unnest(array['app.guardian_message_routes(uuid)', 'app.expire_stale_uploads(integer)', 'app.live_file_ids(uuid[])']) f`);
+      expect(fns.rows[0]).toEqual({ ok: true });
     });
   });
 });
@@ -125,8 +195,8 @@ describe("claiming", () => {
   it("two workers claiming at the same time never get the same job (FOR UPDATE SKIP LOCKED)", async () => {
     for (let n = 0; n < 12; n++) await enqueue(n % 2 ? f.ORG_A : f.ORG_B, "test.record", n);
     // Two raw connections, the first holding its claim open: the second skips the locked rows instead of waiting.
-    await asAppRw(async (c1) => {
-      await asAppRw(async (c2) => {
+    await asAppWorker(async (c1) => {
+      await asAppWorker(async (c2) => {
         await c1.query("BEGIN");
         const first = await c1.query<{ job_id: string }>("select job_id from app.claim_jobs('w1', '{test.record}', '{5}', '{60}')");
         const second = await c2.query<{ job_id: string }>("select job_id from app.claim_jobs('w2', '{test.record}', '{50}', '{60}')");
@@ -138,6 +208,25 @@ describe("claiming", () => {
         expect(a.filter((id) => b.includes(id))).toEqual([]);
       });
     });
+  });
+
+  it("the pick is FAIR across organizations: one organization's burst does not starve another's job of the same kind (security review F8)", async () => {
+    // Organization A queued ten jobs ten minutes ago; B queued one a minute ago — all due.
+    const due = (orgId: string, n: number, minutesAgo: number) =>
+      withTenant({ orgId }, (tx) =>
+        tx.execute<{ id: string }>(sql`insert into ops.job (id, organization_id, kind, payload, run_at)
+          values (app.uuid_generate_v7(), ${orgId}::uuid, 'test.record', ${JSON.stringify({ n })}::jsonb, now() - make_interval(mins => ${minutesAgo}::int)) returning id`),
+      );
+    for (let n = 0; n < 10; n++) await due(f.ORG_A, n, 10);
+    const b = (await due(f.ORG_B, 99, 1)).rows[0].id;
+    // A claim of two: A's oldest, then B's oldest — not A's two oldest.
+    const first = await claimJobs("w-fair", [{ kind: "test.record", limit: 2, leaseSeconds: 60 }]);
+    expect(first.map((c) => c.orgId).sort()).toEqual([f.ORG_A, f.ORG_B].sort());
+    expect(first.map((c) => c.id)).toContain(b);
+    // With B served, A's remaining jobs come by age.
+    const rest = await claimJobs("w-fair", [{ kind: "test.record", limit: 50, leaseSeconds: 60 }]);
+    expect(rest).toHaveLength(9);
+    expect(new Set(rest.map((c) => c.orgId))).toEqual(new Set([f.ORG_A]));
   });
 
   it("two worker loops running the same jobs concurrently execute each exactly once", async () => {
@@ -312,14 +401,29 @@ describe("scheduler", () => {
     expect(jobs.rows).toEqual([{ dedupe_key: `schedule:test.every_minute:${tick.toISOString()}` }]);
   });
 
-  it("a changed cron restarts the schedule's clock; an unchanged one keeps it", async () => {
+  it("a changed cron restarts the schedule's clock; an unchanged one keeps a tick it may have; an absurd tick is repaired, a non-finite one refused (security review F4)", async () => {
     await syncSchedules(SCHED, kinds);
     const read = async () =>
       (await withoutTenant((tx) => tx.execute<{ cron: string; next_fire_at: Date }>(sql`select cron, next_fire_at from ops.schedule where name = 'test.every_minute'`))).rows[0];
-    const far = new Date(Date.now() + 86_400_000);
-    await withoutTenant((tx) => tx.execute(sql`update ops.schedule set next_fire_at = ${far.toISOString()}::timestamptz where name = 'test.every_minute'`));
+    const setTick = (at: Date) => withoutTenant((tx) => tx.execute(sql`update ops.schedule set next_fire_at = ${at.toISOString()}::timestamptz where name = 'test.every_minute'`));
+    // A due tick not fired yet is kept (it fires next).
+    const due = new Date(Date.now() - 30_000);
+    await setTick(due);
     await syncSchedules(SCHED, kinds);
-    expect(new Date((await read()).next_fire_at).toISOString()).toBe(far.toISOString());
+    expect(new Date((await read()).next_fire_at).toISOString()).toBe(due.toISOString());
+    // A tick later than the cron's next one from now (a day ahead of an every-minute cron) can only be tampering or a
+    // broken clock — it would silence the schedule: repaired to the next tick.
+    const far = new Date(Date.now() + 86_400_000);
+    await setTick(far);
+    await syncSchedules(SCHED, kinds);
+    expect(new Date((await read()).next_fire_at).getTime()).toBeLessThanOrEqual(Date.now() + 61_000);
+    // 'infinity' / '-infinity' never get in (CHECK schedule_finite_chk, 0032).
+    for (const bad of ["infinity", "-infinity"]) {
+      await expect(withoutTenant((tx) => tx.execute(sql`update ops.schedule set next_fire_at = ${bad}::timestamptz where name = 'test.every_minute'`))).rejects.toSatisfy(
+        (e: unknown) => pgCode(e) === PG.CHECK_VIOLATION,
+      );
+    }
+    await setTick(far);
     await syncSchedules([{ ...SCHED[0], cron: "*/5 * * * *" }], kinds);
     const changed = await read();
     expect(changed.cron).toBe("*/5 * * * *");

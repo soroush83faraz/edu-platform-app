@@ -225,6 +225,13 @@
       "when": 1792502289657,
       "tag": "0031_session_report_offering_key",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792826390810,
+      "tag": "0032_worker_role",
+      "breakpoints": true
     }
   ]
 }

@@ -431,9 +431,13 @@ describe("«یادآوری مهلت» and «مرکز درخواست‌ها»", (
         expect(mine.rows.map((r) => r.id)).toEqual([sent.workItemId]);
         expect((await listInbox(tx, w.viceA.personId, { tab: "todo" })).rows.length).toBe(2);
 
-        // app_rw (this transaction's role) never deletes a clock — 0028's RESTRICTIVE policy: the DELETE matches no row.
-        const del = await sub(tx, (t) => t.execute(sql`delete from workspace.request_sla where work_item_id = ${sent.workItemId}::uuid`));
-        expect(del.rowCount).toBe(0);
+        // app_rw (this transaction's role) never deletes a clock — refused outright since 0032's REVOKE (0028's RESTRICTIVE
+        // policy is the second net).
+        const del = await sub(tx, (t) => t.execute(sql`delete from workspace.request_sla where work_item_id = ${sent.workItemId}::uuid`)).then(
+          () => "deleted",
+          (e: { cause?: { code?: string }; code?: string }) => e.cause?.code ?? e.code,
+        );
+        expect(del).toBe("42501");
         expect(await slaRow(tx, sent.workItemId)).toBeDefined();
 
         // Another organization reads none of it, and its check finds nothing (RLS: the tenant bound to the transaction).

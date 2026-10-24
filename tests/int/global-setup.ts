@@ -4,7 +4,7 @@
 //   3. insert fixtures for organizations A and B as app_owner.
 // app_owner has NO BYPASSRLS and the tables are FORCE RLS, so even fixtures must set the org context.
 import { Client } from "pg";
-import { OWNER_URL } from "./env";
+import { OWNER_URL, WORKER_URL } from "./env";
 import { runMigrations } from "../../scripts/migrate";
 import * as f from "./fixtures";
 
@@ -15,6 +15,19 @@ export default async function setup(): Promise<void> {
   const { applied, total } = await runMigrations({ test: true, connectionString: OWNER_URL });
   if (applied !== total) throw new Error(`expected a fresh database to apply all ${total} migrations, applied ${applied}`);
   await seed();
+  // The worker's own role (migration 0032) exists in this cluster? Then the job runner's tests connect as it — read
+  // by tests/int/jobs.test.ts (`vi.hoisted`, before its pool is built) and `asAppWorker`; every test worker inherits it.
+  process.env.EDU_TEST_WORKER_URL = (await workerRoleExists()) ? (WORKER_URL ?? "") : "";
+}
+
+async function workerRoleExists(): Promise<boolean> {
+  const c = new Client({ connectionString: OWNER_URL });
+  await c.connect();
+  try {
+    return (await c.query<{ w: boolean }>("select exists (select 1 from pg_roles where rolname = 'app_worker') as w")).rows[0].w;
+  } finally {
+    await c.end();
+  }
 }
 
 /** Reset-equivalent without superuser: app_owner drops every schema it owns (extensions live in public). */

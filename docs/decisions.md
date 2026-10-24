@@ -2637,7 +2637,8 @@ Registered now: `files.sweep_orphans` hourly at :17, `files.expire_uploads` hour
 03:30 (done > 14 days, dead > 90 days).
 
 **Process.** A `worker` compose service from the SAME image: `node scripts/worker.mjs`, bundled at `pnpm build` by
-scripts/build-worker.ts (esbuild from tsx, like the seed bundles; pg and pino external), app_rw, `DB_POOL_MAX=4`, the
+scripts/build-worker.ts (esbuild from tsx, like the seed bundles; pg and pino external), app_rw (since 0032 its own role
+app_worker — the security review below), `DB_POOL_MAX=4`, the
 files volume, `mem_limit: 256m`, a healthcheck on the mtime of a file the loop touches. `deploy.sh` starts it,
 `rollback.sh` restarts it on the previous image (or stops it when that image predates it), `watchdog.sh` alerts when it
 is not healthy or a job died in the last 24 h. Dev: `pnpm worker`. Runbook: docs/ops/runbook.md §۳-الف.
@@ -2876,6 +2877,39 @@ The reviewer reproduced each finding; every fix below has an int test that faile
   The page and the service now use the SAME rule as the actions — `schoolLevelScope` (src/modules/iam/can.ts: the
   organization, or the schools of school-scoped holders); a branch-scoped holder gets no level (FORBIDDEN → 404) and
   no «تنظیمات» Home tile. The same rule now governs the leave queue (see «مرخصی و خروج مجاز», merge review).
+- **F3 — the web role could claim jobs across organizations; F4 — and rewrite the schedules.** `app.claim_jobs` was
+  EXECUTE-able by app_rw and ops.schedule writable by it, because the worker ran as app_rw: SQL running as the web role
+  could lease (stall) any organization's due jobs and read their ids, organizations and kinds, or push a schedule's
+  `next_fire_at` to 'infinity' (silenced for good) or '-infinity' (every tick reading it throws). **Fix (migration
+  0032):** the worker's own role **`app_worker`** — `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`, member
+  of nothing, app_rw's guard-rail settings. `app.apply_grants()` (0026's body, redefined) mirrors app_rw on it: schema
+  usage, table / sequence DML, default privileges, every REVOKE, EXECUTE on the three SECURITY DEFINER app functions
+  app_rw holds, and — essential — every RLS policy bound `TO app_rw` is re-bound `TO app_rw, app_worker` (`ALTER
+  POLICY`), so the system actor stays under exactly the RESTRICTIVE person policies it was under as app_rw (counseling,
+  files, guardian messages, attachments, submissions, the no-delete / own-name policies). Then the worker-only rights:
+  EXECUTE on `app.claim_jobs` and SELECT / INSERT / UPDATE on ops.schedule (no DELETE) for app_worker ONLY — app_rw
+  loses both (the web app never reads ops.schedule; the watchdog reads ops.job as app_backup). **Roles cannot be made by
+  a migration** (app_owner is NOCREATEROLE): a new install gets the role from deploy/db/initdb/01-roles.sh
+  (`APP_WORKER_PASSWORD`), an existing server from the one-time superuser SQL in deploy/README.md «نقش app_worker»;
+  until the role exists, apply_grants leaves app_rw both rights — the **fallback**: the worker keeps running as app_rw
+  on DATABASE_URL, nothing breaks on deploy, and the first apply_grants after the role appears (the next migration, or
+  `SELECT app.apply_grants();` by hand) completes the switch. The worker reads **`WORKER_DATABASE_URL`**
+  (src/lib/jobs/db-url.ts — set before the env module builds the pool; a warning when it falls back); in compose the
+  worker service's `DATABASE_URL` is `${WORKER_DATABASE_URL:-${DATABASE_URL}}`, so an OLDER image's worker after a
+  rollback connects as app_worker too, and `app` / `migrate` / `seed` get an empty `WORKER_DATABASE_URL` — the web
+  process never holds the worker's credential. ops.schedule also gets `CHECK (isfinite(next_fire_at) …)` (non-finite
+  values repaired first), and `syncSchedules` repairs at worker start a tick later than the cron's next one from now
+  (only tampering or a broken clock writes one; a repeated tick is a no-op — its jobs are deduplicated by tick).
+  The REVOKE DELETE lines 0027 / 0028 / 0029 deferred joined this redefinition (session_report, request_sla,
+  leave_request, early_exit — the RESTRICTIVE policies stay as a second net). Int tests (tests/int/jobs.test.ts) assert
+  the separation when the cluster has the role and the fallback when it has not; the dev cluster gets the role from
+  docker-compose.dev.yml (`APP_WORKER_PASSWORD`, default `app_worker_dev`) or the same one-time SQL.
+- **F8 — the claim was not fair across organizations.** It took each kind's oldest due rows, so one organization's
+  burst kept every other organization's jobs of that kind waiting behind it. `app.claim_jobs` (0032) takes, per kind,
+  the window of the 1000 oldest due rows in ROUNDS across organizations — every organization's oldest due job before
+  anyone's second (`row_number() OVER (PARTITION BY kind, organization_id …)`), then by age — locks the chosen rows FOR
+  UPDATE SKIP LOCKED and re-checks them as due. Signature, validation, dead-lettering, leases and the no-payload result
+  are unchanged. Int test: ten old jobs of A and one newer of B → a claim of two gets one of each.
 - **F6 — the ESLint fence around src/lib/jobs had a gap.** `no-restricted-imports` matches the specifier TEXT
   (`@/lib/jobs/*`, `**/lib/jobs/*`), so a relative import from inside src/lib (`./jobs/runner` in src/lib/x.ts,
   `../jobs/runner` in src/lib/admin/x.ts) passed. A local rule, `local/no-job-runtime` (eslint-rules/no-job-runtime.mjs),

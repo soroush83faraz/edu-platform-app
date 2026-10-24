@@ -11,6 +11,14 @@ export async function asAppOwner<T>(fn: (c: Client) => Promise<T>): Promise<T> {
   return withClient(OWNER_URL, fn);
 }
 
+/**
+ * Opens a raw pg connection as the worker's role (app_worker, migration 0032) — app_rw while the cluster has none (the
+ * global setup decides: EDU_TEST_WORKER_URL).
+ */
+export async function asAppWorker<T>(fn: (c: Client) => Promise<T>): Promise<T> {
+  return withClient(process.env.EDU_TEST_WORKER_URL || RW_URL, fn);
+}
+
 /** Opens a raw pg connection as the dump role (app_backup: SELECT-only grants, BYPASSRLS). */
 export async function asAppBackup<T>(fn: (c: Client) => Promise<T>): Promise<T> {
   return withClient(BACKUP_URL, fn);

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { withTenant } from "@/db/client";
 import { person, roleAssignment } from "@/db/schema";
 import * as f from "./fixtures";
-import { PG, Rollback, asAppRw, inRolledBackTx, pgCode } from "./helpers";
+import { PG, Rollback, asAppOwner, asAppRw, inRolledBackTx, pgCode } from "./helpers";
 
 const ctxA = { orgId: f.ORG_A };
 const ORG_CTX = "select set_config('app.current_org_id', $1, true)";
@@ -35,7 +35,9 @@ describe("role_assignment_valid_range_chk", () => {
 
 describe("updated_at is maintained by the server (app.set_updated_at)", () => {
   it("every base table with an updated_at column has the BEFORE UPDATE trigger", async () => {
-    await asAppRw(async (c) => {
+    // As the owner: information_schema lists only what the current role may touch, and app_rw holds no privilege on
+    // ops.schedule since 0032 (the worker's alone).
+    await asAppOwner(async (c) => {
       const res = await c.query<{ table: string; has_trigger: boolean }>(
         `select c.table_schema || '.' || c.table_name as table,
                 exists (select 1 from pg_trigger tg

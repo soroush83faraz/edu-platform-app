@@ -223,3 +223,7 @@ pnpm sessions:revoke --all --yes           # همه — بعد از نشت DB/se
 
 - مدیر مدرسه / معاون: ............ · توسعه‌دهنده (شما): ............ · آروان (تیکت): panel.arvancloud.ir
 - اگر ۱۵ دقیقه گذشت و حل نشد → `docs/ops/incident.md`.
+
+### نقشِ دیتابیسِ کارگر (`app_worker`، مهاجرت `0032`)
+
+کارگر با نقشِ خودش وصل می‌شود (`WORKER_DATABASE_URL`)؛ فقط او `app.claim_jobs` را اجرا و `ops.schedule` را می‌نویسد، و `app_rw` (وب) هیچ‌کدام را ندارد. نشانهٔ اشکال: در لاگ کارگر `permission denied for function claim_jobs` (کارگر با `app_rw` وصل شده — `WORKER_DATABASE_URL` تنظیم نیست یا `compose.yml` قدیمی است) یا هشدارِ `WORKER_DATABASE_URL is not set` (نقش هنوز ساخته نشده یا متغیر نیست). راه‌حل و بررسی: deploy/README.md «نقش app_worker».

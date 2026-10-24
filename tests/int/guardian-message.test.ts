@@ -265,7 +265,7 @@ describe("«ارتباط ولی و مدرسه» — guardian messages", () => {
       );
       expect(rls.rows).toEqual([{ enabled: true, forced: true }]);
       const policies = await c.query<{ policyname: string; cmd: string; permissive: string; roles: string[] }>(
-        `select policyname, cmd, permissive, roles::text[] as roles from pg_policies where schemaname = 'workspace' and tablename = 'guardian_message' order by policyname`,
+        `select policyname, cmd, permissive, array(select r::text from unnest(roles) r where r <> 'app_worker' order by r) as roles /* the worker's role (0032) is bound like app_rw */ from pg_policies where schemaname = 'workspace' and tablename = 'guardian_message' order by policyname`,
       );
       expect(policies.rows).toEqual([
         { policyname: "guardian_message_insert", cmd: "INSERT", permissive: "RESTRICTIVE", roles: ["app_rw"] },

@@ -189,8 +189,10 @@ describe("the admin surfaces read permissions, so the vice principal sees the pr
   it("Home: a vice principal of ONE school gets the principal's tiles, «زنگ‌بندی» of that school included", () => {
     const hats: TileHats = { isStudent: false, isTeacher: false, isAdmin: true, adminScope: "school", singleSchoolId: SCHOOL_A };
     const has = (perms: readonly string[]) => (p: Permission) => perms.includes(p);
-    const vice = homeTilesFor(hats, has(VICE));
-    expect(vice).toEqual(homeTilesFor(hats, has(PRINCIPAL)));
+    // The school takes leave requests (switch `leave_requests`, on by default).
+    const opts = { flags: (k: string) => k === "leave_requests" };
+    const vice = homeTilesFor(hats, has(VICE), opts);
+    expect(vice).toEqual(homeTilesFor(hats, has(PRINCIPAL), opts));
     expect(vice.map((t) => t.code)).toEqual(["inbox", "admin-attendance", "admin-leave", "schools", "periods", "counseling"]);
     expect(vice.find((t) => t.code === "periods")?.href).toBe(`/admin/schools/${SCHOOL_A}/periods`);
   });

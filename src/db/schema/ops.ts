@@ -73,5 +73,8 @@ export const schedule = ops.table(
   (t) => [
     check("schedule_name_chk", sql`${t.name} ~ '^[a-z][a-z0-9_.-]{2,79}$'`),
     check("schedule_cron_chk", sql`char_length(${t.cron}) BETWEEN 9 AND 100`),
+    // A tick is a real instant (migration 0032; security review 2026-10-20, F4): 'infinity' would silence a schedule
+    // for good, '-infinity' would break every tick that reads it.
+    check("schedule_finite_chk", sql`isfinite(${t.nextFireAt}) AND (${t.lastFiredAt} IS NULL OR isfinite(${t.lastFiredAt}))`),
   ],
 );

@@ -68,6 +68,51 @@ docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 \
 
 بررسی: `docker compose exec -T db psql -U postgres -c "select rolname, rolbypassrls, rolconfig from pg_roles where rolname like 'app_%'"` → فقط `app_backup` باید `rolbypassrls = t` باشد و `app_rw` سه تنظیم را در `rolconfig` داشته باشد. سپس `docker compose exec -T db pg_dump -Fc -U app_backup app > /dev/null && echo ok`.
 
+### نقش `app_worker` — کارگرِ پس‌زمینه با نقشِ خودش (مهاجرت `0032`، بازبینی امنیتی ۲۰۲۶-۱۰-۲۰ F3/F4)
+
+تا `0032` کارگر با `app_rw` وصل می‌شد، پس نقشِ **وب** هم می‌توانست `app.claim_jobs` را صدا بزند (کارهای همهٴ سازمان‌ها را اجاره کند و شناسه/سازمان/نوعشان را ببیند) و `ops.schedule` را بازنویسی کند. حالا نقشِ `app_worker` (عضو هیچ نقشی نیست، `NOINHERIT NOBYPASSRLS`) دقیقاً grantها و سیاست‌های RLSِ `app_rw` را دارد به‌علاوهٴ `EXECUTE` روی `app.claim_jobs` و `SELECT/INSERT/UPDATE` روی `ops.schedule` — و `app_rw` این دو را **از دست می‌دهد**. `app_owner` (نقشِ مهاجرت) `NOCREATEROLE` است، پس نقش را مهاجرت نمی‌سازد: نصبِ تازه آن را از `01-roles.sh` می‌گیرد (اگر `APP_WORKER_PASSWORD` در `.env` باشد)، سرورِ موجود با گامِ یک‌بارهٴ زیر. تا نقش ساخته نشده، `app.apply_grants()` آن دو حق را برای `app_rw` نگه می‌دارد و کارگر مثل قبل کار می‌کند (هیچ استقراری نمی‌شکند).
+
+**ترتیبِ بی‌وقفه روی سرورِ موجود** (پیش از استقرارِ نسخه‌ای که `0032` را دارد؛ ترتیبِ دیگر هم کار می‌کند — پایین را ببینید):
+
+1. رمز بسازید و در `/srv/school/.env` بگذارید (مثل رمزهای دیگر نگه دارید):
+
+   ```bash
+   PW="$(openssl rand -base64 36 | tr -d '/+=' | cut -c1-40)"
+   printf 'APP_WORKER_PASSWORD=%s\nWORKER_DATABASE_URL=postgres://app_worker:%s@db:5432/app\n' "$PW" "$PW" >> /srv/school/.env
+   chmod 600 /srv/school/.env
+   ```
+
+2. نقش را با superuser بسازید (همان تنظیم‌های `app_rw`):
+
+   ```bash
+   cd /srv/school && set -a && . ./.env && set +a
+   docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -v pw="$APP_WORKER_PASSWORD" <<'SQL'
+   CREATE ROLE app_worker LOGIN PASSWORD :'pw' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+   ALTER ROLE app_worker SET statement_timeout = '10s';
+   ALTER ROLE app_worker SET idle_in_transaction_session_timeout = '30s';
+   ALTER ROLE app_worker SET lock_timeout = '5s';
+   SQL
+   ```
+
+3. `compose.yml` تازه را کپی کنید (`scp deploy/compose.yml deploy@SERVER:/srv/school/` — سرویس `worker` حالا `DATABASE_URL: ${WORKER_DATABASE_URL:-${DATABASE_URL}}` می‌گیرد و `app`/`migrate`/`seed` مقدار خالیِ `WORKER_DATABASE_URL`) و طبق معمول مستقر کنید: `migrate` مهاجرت `0032` را اجرا می‌کند و `app.apply_grants()`ِ آخرش نقشِ موجود را می‌بیند — grantها و سیاست‌ها را رویش آینه می‌کند و claim و `ops.schedule` را از `app_rw` می‌گیرد؛ `worker` تازه با `app_worker` بالا می‌آید. (کارگرِ قدیمی در چند ثانیهٔ بینِ مهاجرت و جایگزینی‌اش نمی‌تواند claim کند؛ کارها فقط کمی دیرتر اجرا می‌شوند.)
+
+**اگر نسخه پیش‌تر مستقر شده** (۰۰۳۲ بدون نقش اجرا شده و کارگر با `app_rw` کار می‌کند): گام‌های ۱ و ۲، بعد grantها را دوباره اعمال کنید و کارگر را با env تازه بالا بیاورید:
+
+```bash
+docker compose exec -T db psql -U app_owner -d app -v ON_ERROR_STOP=1 -c "SELECT app.apply_grants();"
+docker compose up -d --force-recreate worker
+```
+
+**بررسی:**
+
+```bash
+docker compose exec -T db psql -U postgres -d app -tAc "select has_function_privilege('app_rw','app.claim_jobs(text, text[], integer[], integer[])','EXECUTE'), has_function_privilege('app_worker','app.claim_jobs(text, text[], integer[], integer[])','EXECUTE'), has_table_privilege('app_rw','ops.schedule','SELECT')"
+# انتظار: f|t|f
+docker compose logs --tail=20 worker   # «worker: started» بدون هشدارِ «WORKER_DATABASE_URL is not set»
+```
+
+**بازگشت (`rollback.sh`)**: ایمیجِ قبلی `WORKER_DATABASE_URL` را نمی‌شناسد، اما سرویس `worker` در `compose.yml` تازه `DATABASE_URL` را برایش به `WORKER_DATABASE_URL` می‌گذارد، پس کارگرِ قدیمی هم با `app_worker` وصل می‌شود و کار می‌کند. (اگر `compose.yml` قدیمی را برگردانید، کارگر با `app_rw` وصل می‌شود و claim ندارد؛ موقتاً: `GRANT EXECUTE ON FUNCTION app.claim_jobs(text, text[], integer[], integer[]) TO app_rw; GRANT SELECT, INSERT, UPDATE ON ops.schedule TO app_rw;` و پس از بازگشت به نسخهٔ تازه `SELECT app.apply_grants();`.)
+
 ## بازگشت دستی
 
 ```bash
@@ -184,7 +229,7 @@ AGE_IDENTITY=key.txt  APP_DIR=. COMPOSE_FILE=docker-compose.dev.yml bash deploy/
 
 ## سرویس `worker` — کارهای پس‌زمینه (از ۲۰۲۶-۱۰-۲۰)
 
-صف و زمان‌بندِ فقط-Postgres (`ops.job`، `ops.schedule`؛ مهاجرت `0026`؛ `docs/decisions.md` «صف، زمان‌بند و Feature Flag»). **همان ایمیج** `app`، فرایندِ خودش: `pnpm build` (مرحلهٔ builder) با `scripts/build-worker.ts` فایل `scripts/worker.mjs` را می‌سازد (drizzle/zod درونش؛ `pg` و `pino` از node_modulesِ standalone) و `COPY /app/scripts` آن را در ایمیج می‌گذارد. به‌عنوان `app_rw` وصل می‌شود (همان `DATABASE_URL`)، با pool کوچک (`DB_POOL_MAX=4`)، و volume فایل‌ها را برای جاروی فایل‌ها mount می‌کند. healthcheck = mtime فایلی که حلقه هر دور لمس می‌کند (`/tmp/edu-worker-alive`، کمتر از ۹۰ ثانیه)؛ `HEALTHCHECK` خود ایمیج (HTTP اپ) را بازنویسی می‌کند. عملیات: `docs/ops/runbook.md` §۳-الف.
+صف و زمان‌بندِ فقط-Postgres (`ops.job`، `ops.schedule`؛ مهاجرت `0026`؛ `docs/decisions.md` «صف، زمان‌بند و Feature Flag»). **همان ایمیج** `app`، فرایندِ خودش: `pnpm build` (مرحلهٔ builder) با `scripts/build-worker.ts` فایل `scripts/worker.mjs` را می‌سازد (drizzle/zod درونش؛ `pg` و `pino` از node_modulesِ standalone) و `COPY /app/scripts` آن را در ایمیج می‌گذارد. با نقشِ خودش `app_worker` وصل می‌شود (`WORKER_DATABASE_URL`؛ تا ساخته‌شدنِ نقش با `app_rw` و همان `DATABASE_URL` — «نقش app_worker» بالا را ببینید)، با pool کوچک (`DB_POOL_MAX=4`)، و volume فایل‌ها را برای جاروی فایل‌ها mount می‌کند. healthcheck = mtime فایلی که حلقه هر دور لمس می‌کند (`/tmp/edu-worker-alive`، کمتر از ۹۰ ثانیه)؛ `HEALTHCHECK` خود ایمیج (HTTP اپ) را بازنویسی می‌کند. عملیات: `docs/ops/runbook.md` §۳-الف.
 
 تغییرِ `compose.yml` (در مخزن اعمال شده) — یک سرویس تازه بین `app` و `caddy`:
 

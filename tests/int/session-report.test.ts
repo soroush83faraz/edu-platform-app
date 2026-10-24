@@ -483,14 +483,15 @@ describe("app_rw may not DELETE a report", () => {
       );
       expect(rls.rows).toEqual([{ enabled: true, forced: true }]);
       const pol = await c.query<{ policyname: string; permissive: string; cmd: string; roles: string[] }>(
-        "select policyname, permissive, cmd, roles::text[] as roles from pg_policies where schemaname = 'academic' and tablename = 'session_report' order by policyname",
+        "select policyname, permissive, cmd, array(select r::text from unnest(roles) r where r <> 'app_worker' order by r) as roles /* the worker's role (0032) is bound like app_rw */ from pg_policies where schemaname = 'academic' and tablename = 'session_report' order by policyname",
       );
       expect(pol.rows.map((p) => `${p.policyname}:${p.permissive}:${p.cmd}`)).toEqual(["session_report_no_delete:RESTRICTIVE:DELETE", "tenant_isolation:PERMISSIVE:ALL"]);
-      expect(pol.rows[0].roles).toEqual(["app_rw"]);
+      // app_rw — and the worker's role (0032) when the cluster has it, bound like app_rw.
+      expect(pol.rows[0].roles.filter((r) => r !== "app_worker")).toEqual(["app_rw"]);
     });
   });
 
-  it("a raw DELETE as the runtime role removes nothing (RESTRICTIVE policy, USING false); the row is still there", async () => {
+  it("a raw DELETE as the runtime role is refused (0032's REVOKE; the RESTRICTIVE policy is the second net); the row is still there", async () => {
     await asAppRw(async (c) => {
       await inRolledBackTx(c, async () => {
         await c.query("select set_config('app.current_org_id', $1, true)", [f.ORG_A]);
@@ -499,8 +500,9 @@ describe("app_rw may not DELETE a report", () => {
            values (gen_random_uuid(), $1, $2, $3, $4::date, 2, 'موضوع', $5) returning id`,
           [f.ORG_A, f.CLASS_GROUP_A1, f.OFFERING_A1, TODAY, f.PERSON_A2],
         );
-        const del = await c.query("delete from academic.session_report where id = $1", [ins.rows[0].id]);
-        expect(del.rowCount).toBe(0);
+        await c.query("savepoint del");
+        await expect(c.query("delete from academic.session_report where id = $1", [ins.rows[0].id])).rejects.toMatchObject({ code: PG.INSUFFICIENT_PRIVILEGE });
+        await c.query("rollback to savepoint del");
         const left = await c.query("select 1 from academic.session_report where id = $1", [ins.rows[0].id]);
         expect(left.rowCount).toBe(1);
       });

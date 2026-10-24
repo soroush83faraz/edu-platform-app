@@ -238,22 +238,24 @@ describe("«مرخصی و خروج مجاز» — leave requests and authorized 
       ]);
       for (const t of ["leave_request", "early_exit"]) {
         const policies = await c.query<{ policyname: string; cmd: string; permissive: string; roles: string[] }>(
-          `select policyname, cmd, permissive, roles::text[] as roles from pg_policies where schemaname = 'academic' and tablename = $1 order by policyname`,
+          `select policyname, cmd, permissive, array(select r::text from unnest(roles) r where r <> 'app_worker' order by r) as roles /* the worker's role (0032) is bound like app_rw */ from pg_policies where schemaname = 'academic' and tablename = $1 order by policyname`,
           [t],
         );
-        expect(policies.rows, t).toEqual([
+        // The worker's role (0032), when the cluster has it, is bound by the same policies as app_rw.
+        const app = (roles: string[]) => roles.filter((r) => r !== "app_worker");
+        expect(policies.rows.map((p) => ({ ...p, roles: app(p.roles) })), t).toEqual([
           { policyname: `${t}_insert`, cmd: "INSERT", permissive: "RESTRICTIVE", roles: ["app_rw"] },
           { policyname: `${t}_no_delete`, cmd: "DELETE", permissive: "RESTRICTIVE", roles: ["app_rw"] },
           { policyname: "tenant_isolation", cmd: "ALL", permissive: "PERMISSIVE", roles: ["public"] },
         ]);
       }
-      // app.apply_grants() was NOT redefined: the default grants are still there (the policy, not a REVOKE, blocks DELETE) and
-      // the earlier REVOKEs of 0020 / 0022 survived.
+      // 0029 did not redefine app.apply_grants() (the policy blocked DELETE); 0032 did and added the deferred REVOKE —
+      // two nets now. The earlier REVOKEs of 0020 / 0022 survived.
       const priv = await c.query<{ d: boolean; g: boolean; m: boolean }>(
         `select has_table_privilege('app_rw', 'academic.leave_request', 'DELETE') as d, has_table_privilege('app_rw', 'iam.guardian_link', 'DELETE') as g,
                 has_table_privilege('app_rw', 'workspace.guardian_message', 'UPDATE') as m`,
       );
-      expect(priv.rows[0]).toEqual({ d: true, g: false, m: false });
+      expect(priv.rows[0]).toEqual({ d: false, g: false, m: false });
     });
   });
 
@@ -291,10 +293,11 @@ describe("«مرخصی و خروج مجاز» — leave requests and authorized 
       const stolen = await as(tx, w.g2, (t) => sub(t, async (sp) => { await sp.insert(leaveRequest).values({ ...row, fromDate: addDaysIso(TODAY, 60), toDate: addDaysIso(TODAY, 60) }); })).then(() => undefined, (e) => pgCode(e));
       expect(stolen).toBe(PG.INSUFFICIENT_PRIVILEGE);
 
-      // No DELETE: the RESTRICTIVE policy leaves the rows where they are, for the guardian and the principal alike.
+      // No DELETE: refused outright (0032's REVOKE; the RESTRICTIVE policy is the second net) — the rows stay, for the
+      // guardian and the principal alike.
       for (const who of [w.g1, w.principalA]) {
-        const gone = await as(tx, who, (t) => t.execute<{ id: string }>(sql`delete from academic.leave_request returning id`));
-        expect(gone.rows, who.personId).toEqual([]);
+        const gone = await as(tx, who, (t) => sub(t, (sp) => sp.execute<{ id: string }>(sql`delete from academic.leave_request returning id`))).then(() => undefined, (e) => pgCode(e));
+        expect(gone, who.personId).toBe(PG.INSUFFICIENT_PRIVILEGE);
       }
       const left = await tx.execute<{ n: number }>(sql`select count(*)::int as n from academic.leave_request`);
       expect(Number(left.rows[0].n)).toBe(3);
@@ -309,8 +312,8 @@ describe("«مرخصی و خروج مجاز» — leave requests and authorized 
       expect(await addExit({ studentProfileId: w.s2.studentProfileId, pickedUpBy: "x".repeat(61) }).then(() => undefined, (e) => pgCode(e))).toBe(PG.CHECK_VIOLATION);
       expect(await addExit({ studentProfileId: w.s2.studentProfileId, status: "cancelled" }).then(() => undefined, (e) => pgCode(e))).toBe(PG.CHECK_VIOLATION);
       expect(await addExit({ studentProfileId: w.s2.studentProfileId }, w.viceA).then(() => undefined, (e) => pgCode(e))).toBe(PG.INSUFFICIENT_PRIVILEGE);
-      const noDelete = await as(tx, w.principalA, (t) => t.execute<{ id: string }>(sql`delete from academic.early_exit returning id`));
-      expect(noDelete.rows).toEqual([]);
+      const noDelete = await as(tx, w.principalA, (t) => sub(t, (sp) => sp.execute<{ id: string }>(sql`delete from academic.early_exit returning id`))).then(() => undefined, (e) => pgCode(e));
+      expect(noDelete).toBe(PG.INSUFFICIENT_PRIVILEGE);
     });
   });
 

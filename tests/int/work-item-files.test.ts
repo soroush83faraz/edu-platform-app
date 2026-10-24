@@ -277,7 +277,7 @@ describe("«پیوست تکلیف و تحویل پاسخ» — files on a تکل
         { t: "work_item_submission", enabled: true, forced: true },
       ]);
       const policies = await c.query<{ tablename: string; policyname: string; cmd: string; permissive: string; roles: string[] }>(
-        `select tablename, policyname, cmd, permissive, roles::text[] as roles from pg_policies
+        `select tablename, policyname, cmd, permissive, array(select r::text from unnest(roles) r where r <> 'app_worker' order by r) as roles /* the worker's role (0032) is bound like app_rw */ from pg_policies
           where schemaname = 'workspace' and tablename in ('work_item_submission', 'work_item_attachment') order by tablename, policyname`,
       );
       expect(policies.rows).toEqual([
@@ -307,7 +307,7 @@ describe("«پیوست تکلیف و تحویل پاسخ» — files on a تکل
   it("migration 0025: files.file_object has its three RESTRICTIVE policies; the two new functions are SECURITY DEFINER, pinned, app_rw-only; 0023's is unchanged", async () => {
     await asAppRw(async (c) => {
       const policies = await c.query<{ policyname: string; cmd: string; permissive: string; roles: string[] }>(
-        `select policyname, cmd, permissive, roles::text[] as roles from pg_policies where schemaname = 'files' and tablename = 'file_object' order by policyname`,
+        `select policyname, cmd, permissive, array(select r::text from unnest(roles) r where r <> 'app_worker' order by r) as roles /* the worker's role (0032) is bound like app_rw */ from pg_policies where schemaname = 'files' and tablename = 'file_object' order by policyname`,
       );
       expect(policies.rows).toEqual([
         { policyname: "file_insert", cmd: "INSERT", permissive: "RESTRICTIVE", roles: ["app_rw"] },
