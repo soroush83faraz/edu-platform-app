@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import localRules from "./eslint-rules/no-job-runtime.mjs";
 
 /** Only these paths may touch the DB access boundary (`src/db/client`). */
 const DB_CLIENT_ALLOWED = ["src/lib/actions/**", "src/lib/ctx.ts", "src/lib/jobs/**", "src/db/**", "src/app/api/health/**", "scripts/**", "tests/int/**"];
@@ -21,8 +22,11 @@ const fontPattern = {
   group: ["next/font/google"],
   message: "Google Fonts are blocked in Iran. Use next/font/local (Vazirmatn is self-hosted in the root layout).",
 };
+// The specifier patterns below catch the alias and the long relative forms; `local/no-job-runtime`
+// (eslint-rules/no-job-runtime.mjs) RESOLVES every relative / `@/` specifier, so `./jobs/runner` inside src/lib is
+// caught too (security review 2026-10-20, F6).
 const jobsPattern = {
-  group: ["@/lib/jobs", "@/lib/jobs/*", "**/lib/jobs/*"],
+  group: ["@/lib/jobs", "@/lib/jobs/*", "**/lib/jobs", "**/lib/jobs/*"],
   message: "The job runtime (src/lib/jobs) runs only in the worker. Enqueue with enqueueJob from @/modules/ops inside your transaction.",
 };
 const dbClientPatterns = [dbClientPattern, fontPattern];
@@ -39,9 +43,12 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
+    plugins: { local: localRules },
     rules: {
       "react/no-danger": "error",
       "no-restricted-imports": ["error", { paths: cnPaths, patterns: [dbClientPattern, fontPattern, jobsPattern, ...cnPatterns] }],
+      // Exempts src/lib/jobs, scripts/ and tests/ itself.
+      "local/no-job-runtime": "error",
     },
   },
   {

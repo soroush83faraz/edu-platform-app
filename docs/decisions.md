@@ -2876,6 +2876,12 @@ The reviewer reproduced each finding; every fix below has an int test that faile
   The page and the service now use the SAME rule as the actions — `schoolLevelScope` (src/modules/iam/can.ts: the
   organization, or the schools of school-scoped holders); a branch-scoped holder gets no level (FORBIDDEN → 404) and
   no «تنظیمات» Home tile. The same rule now governs the leave queue (see «مرخصی و خروج مجاز», merge review).
+- **F6 — the ESLint fence around src/lib/jobs had a gap.** `no-restricted-imports` matches the specifier TEXT
+  (`@/lib/jobs/*`, `**/lib/jobs/*`), so a relative import from inside src/lib (`./jobs/runner` in src/lib/x.ts,
+  `../jobs/runner` in src/lib/admin/x.ts) passed. A local rule, `local/no-job-runtime` (eslint-rules/no-job-runtime.mjs),
+  RESOLVES every relative or `@/` specifier (imports, re-exports, dynamic `import()`) and refuses a target in
+  src/lib/jobs from anywhere but src/lib/jobs, scripts/ and tests/; the text patterns stay as a second net.
+  Fixtures: tests/unit/eslint-no-job-runtime.test.ts (RuleTester).
 - **F10 — accepted exceptions to "additive only"** (recorded here as such): 0026 replaced `config.feature_flag`'s unique
   key `(organization_id, key)` with `(organization_id, school_id, key)` NULLS NOT DISTINCT — the table had never been
   written; 0031 replaces `academic.session_report`'s `session_report_cell_uq` with the wider
