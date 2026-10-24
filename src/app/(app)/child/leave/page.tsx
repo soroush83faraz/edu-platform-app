@@ -28,10 +28,12 @@ export default async function ChildLeavePage({ searchParams }: { searchParams: P
       <ChildPageHeader title="درخواست مرخصی" child={child} />
       <ChildSwitcher items={children} current={child.studentProfileId} page="leave" />
       <PageSection id="new-leave" title="درخواست تازه" surface="work">
-        {res.data.schoolId ? (
-          <LeaveRequestForm child={child.studentProfileId} childFirstName={child.firstName} periods={periods.map((p) => ({ periodNo: p.periodNo, label: p.label }))} />
-        ) : (
+        {!res.data.schoolId ? (
           <p className="text-sm text-text-muted">{child.firstName} هنوز در مدرسه‌ای ثبت‌نام فعال ندارد؛ درخواست مرخصی ممکن نیست.</p>
+        ) : !res.data.enabled ? (
+          <p className="text-sm text-text-muted">مدرسهٴ {child.firstName} فعلاً درخواست مرخصی را از این‌جا نمی‌پذیرد؛ برای مرخصی با مدرسه تماس بگیرید.</p>
+        ) : (
+          <LeaveRequestForm child={child.studentProfileId} childFirstName={child.firstName} periods={periods.map((p) => ({ periodNo: p.periodNo, label: p.label }))} />
         )}
       </PageSection>
       <PageSection id="my-leaves" title="درخواست‌های مرخصی" count={requests.length > 0 ? requests.length : undefined}>

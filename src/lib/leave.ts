@@ -93,6 +93,8 @@ export const LEAVE_MESSAGES = {
   exitExists: "برای این دانش‌آموز امروز خروج مجاز ثبت شده است؛ ابتدا آن را لغو کنید.",
   exitNotActive: "این خروج مجاز دیگر فعال نیست.",
   pickupTooLong: `نام تحویل‌گیرنده حداکثر ${formatNumberFa(EARLY_EXIT_PICKUP_MAX)} نویسه است.`,
+  /** The school's feature switch `leave_requests` is off (src/modules/config/flags.ts). */
+  switchedOff: "درخواست مرخصی در مدرسهٴ این دانش‌آموز فعال نیست.",
 } as const;
 
 /** The first problem of a leave's dates / periods, or null. `today` is the Tehran date the request is made on. */

@@ -2864,8 +2864,18 @@ The reviewer reproduced each finding; every fix below has an int test that faile
 - **F5 — switches nobody read.** `class_register` and `leave_requests` are built: no longer `upcoming`, default ON,
   school-overridable, and read where their features live — «دفتر کلاسی» off: no card, no log on the subject page, saving
   / clearing FORBIDDEN («دفتر کلاسی در این مدرسه خاموش است.», after the scope check, so an outsider learns nothing).
-  `deadline_reminders` (the scan, the reminder, the overdue notice, per item's school) and `request_center` (the check,
-  the managers' page, its Home tile, «درخواست‌های من») were confirmed read where they should be.
+  «درخواست مرخصی» off (the child's school): `requestLeave` FORBIDDEN («درخواست مرخصی در مدرسهٴ این دانش‌آموز فعال
+  نیست.»), the guardian's page shows a notice instead of the form, the child's Home tile, the managers' Home tile (their
+  one school's value, else the organization's) and the school hub's door go; a PENDING request is still decided, still
+  withdrawable by its guardian, and keeps its response clock — what was asked is answered. «خروج مجاز» is not a request
+  and is not behind this switch. `deadline_reminders` (the scan, the reminder, the overdue notice, per item's school)
+  and `request_center` (the check, the managers' page, its Home tile, «درخواست‌های من») were confirmed read where they
+  should be.
+- **F9 — the settings page offered a branch-scoped vice principal a level its saves refused** (the page narrowed by
+  `getPermissionScope`, where a branch counts for its school; the actions check `can(…, { scopeType: "school" })`).
+  The page and the service now use the SAME rule as the actions — `schoolLevelScope` (src/modules/iam/can.ts: the
+  organization, or the schools of school-scoped holders); a branch-scoped holder gets no level (FORBIDDEN → 404) and
+  no «تنظیمات» Home tile. The same rule now governs the leave queue (see «مرخصی و خروج مجاز», merge review).
 - **F10 — accepted exceptions to "additive only"** (recorded here as such): 0026 replaced `config.feature_flag`'s unique
   key `(organization_id, key)` with `(organization_id, school_id, key)` NULLS NOT DISTINCT — the table had never been
   written; 0031 replaces `academic.session_report`'s `session_report_cell_uq` with the wider

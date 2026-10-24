@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { SYSTEM_ROLES } from "../../scripts/catalog";
 import { HOME_TILES, MODULES, UPCOMING_MODULES, homeTilesFor, showUpcomingOnHome, upcomingTilesFor, type TileHats } from "@/lib/modules-registry";
 import { isOrganizationAdmin, navRoleFor, type Assignment } from "@/modules/iam/can";
+import type { FlagKey } from "@/modules/config/flags";
 import type { Permission } from "@/modules/iam/permissions";
 
 const ADMIN_PERMS: Permission[] = [
@@ -84,7 +85,9 @@ describe("homeTilesFor", () => {
     const vice = homeTilesFor(principal, has(VICE_PERMS));
     expect(vice).toEqual(homeTilesFor(principal, has(PRINCIPAL_PERMS)));
     // «مشاوره» (2026-10-13): both read their school's counseling files.
-    expect(codes(vice)).toEqual(["inbox", "admin-attendance", "admin-leave", "schools", "periods", "counseling"]);
+    expect(codes(vice)).toEqual(["inbox", "admin-attendance", "schools", "periods", "counseling"]);
+    // «درخواست‌های مرخصی» only while the school takes leave requests (switch `leave_requests`, security review F5).
+    expect(codes(homeTilesFor(principal, has(VICE_PERMS), { flags: (k) => k === "leave_requests" }))).toEqual(["inbox", "admin-attendance", "admin-leave", "schools", "periods", "counseling"]);
     expect(tile(vice, "periods")).toMatchObject({ href: "/admin/schools/s1/periods" });
     // Two schools: the same plural «مدرسه‌ها» and no زنگ‌بندی tile as a principal of two.
     expect(homeTilesFor(twoSchools, has(VICE_PERMS))).toEqual(homeTilesFor(twoSchools, has(PRINCIPAL_PERMS)));
@@ -157,7 +160,8 @@ describe("homeTilesFor — hub layout", () => {
   const STUDENT_PERMS = catalogPerms("student");
   const TEACHER_PERMS = catalogPerms("teacher");
   const ORG_PERMS = catalogPerms("org_admin");
-  const hub = { variant: "hub" } as const;
+  // The school takes leave requests (switch `leave_requests`, on by default); every other switch off.
+  const hub = { variant: "hub", flags: (k: FlagKey) => k === "leave_requests" } as const;
   const hrefs = (tiles: ReturnType<typeof homeTilesFor>) => tiles.map((t) => t.href);
   const labels = (tiles: ReturnType<typeof homeTilesFor>) => tiles.map((t) => t.labelFa);
   const teachingPrincipal: TileHats = { ...principal, isTeacher: true };
@@ -218,6 +222,8 @@ describe("homeTilesFor — hub layout", () => {
       expect(tile(tiles, "schools")?.href).toBe("/admin/schools/s1");
       expect(tile(tiles, "periods")?.href).toBe("/admin/schools/s1/periods");
       expect(tile(tiles, "admin-attendance")?.href).toBe("/admin/attendance");
+      // The school's switch off: no «درخواست‌های مرخصی» door.
+      expect(codes(homeTilesFor(principal, has(perms), { variant: "hub" }))).not.toContain("admin-leave");
     }
     // Two schools: «مدرسه‌ها» plural, no برنامهٴ کلاسی tile (it belongs to one school) — as in classic.
     const two = homeTilesFor(twoSchools, has(PRINCIPAL_PERMS), hub);

@@ -16,7 +16,8 @@ import { eq, inArray } from "drizzle-orm";
 import type { Ctx, Tx } from "@/lib/actions";
 import { audit } from "@/lib/audit";
 import { forbidden, notFound, validation } from "@/lib/errors";
-import { type AdminScope, assertSchoolInScope, getPermissionScope } from "@/modules/iam/service";
+import { schoolLevelScope } from "@/modules/iam/can";
+import { type AdminScope, assertSchoolInScope } from "@/modules/iam/service";
 import { school } from "@/modules/tenancy/schema";
 import { FEATURE_FLAGS, FLAG_KEYS, type FlagDef, type FlagKey, type FlagRow, type FlagSource, resolveFlag } from "./flags";
 import { deleteFlag, deleteSetting, findFlagForUpdate, findSettingForUpdate, insertFlag, insertSetting, listFlagRows, listSettingRows, updateFlag, updateSetting } from "./repo";
@@ -64,9 +65,21 @@ export const CONFIG_PERMISSION = "config.settings.manage" as const;
 
 type ConfigCtx = Pick<Ctx, "orgId" | "personId" | "userId" | "requestId" | "ip" | "userAgent" | "assignments">;
 
+/**
+ * Where the caller may change the switches and settings: AT the organization (an organization-scoped holder) or AT a
+ * school (a school-scoped one) — exactly what the actions' `can(…, { scopeType: "school" })` accepts, so the page never
+ * offers a level the save refuses. A BRANCH-scoped holder (a vice principal of one branch) changes nothing school-wide
+ * (security review 2026-10-20, F9). FORBIDDEN when there is no such level.
+ */
+function configScope(ctx: Pick<ConfigCtx, "assignments">): AdminScope {
+  const scope = schoolLevelScope(ctx.assignments, CONFIG_PERMISSION);
+  if (!scope) throw forbidden();
+  return scope;
+}
+
 /** May the caller write this level? Organization: org-scoped holders only. School: in scope, key overridable, school exists. */
 async function assertMayEdit(tx: Tx, ctx: ConfigCtx, def: { schoolOverridable: boolean }, schoolId: string | null): Promise<AdminScope> {
-  const scope = await getPermissionScope(tx, ctx, CONFIG_PERMISSION);
+  const scope = configScope(ctx);
   if (schoolId === null) {
     if (scope.kind !== "organization") throw forbidden();
     return scope;
@@ -183,7 +196,7 @@ export interface SettingsPageView {
  * falls back to their first school / is NOT_FOUND) and only the school-overridable keys.
  */
 export async function settingsView(tx: Tx, ctx: ConfigCtx & { orgName: string }, requested: string | null): Promise<SettingsPageView> {
-  const scope = await getPermissionScope(tx, ctx, CONFIG_PERMISSION);
+  const scope = configScope(ctx);
   const schools = await tx
     .select({ id: school.id, name: school.name })
     .from(school)

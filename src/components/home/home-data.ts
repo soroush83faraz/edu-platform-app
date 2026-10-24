@@ -7,6 +7,7 @@ import type { Ctx } from "@/lib/ctx";
 import { homeTilesFor, showUpcomingOnHome, upcomingTilesFor, type HomeTile, type UpcomingTile } from "@/lib/modules-registry";
 import { getUiVariant, type UiVariant } from "@/lib/ui-variant";
 import { myClassQuery, myTimetableQuery, pendingLeaveCountQuery, reportCardReachQuery } from "@/modules/academic/queries";
+import type { FlagKey } from "@/modules/config/flags";
 import { isEnabled } from "@/modules/config/queries";
 import { canAtAnyScope, schoolLevelScope } from "@/modules/iam/can";
 import { myChildrenQuery, type GuardianChild } from "@/modules/iam/guardian-queries";
@@ -29,6 +30,9 @@ export const getMyClass = cache(async () => {
   const r = await myClassQuery();
   return r.ok ? r.data : null;
 });
+
+/** Does the child's school take leave requests (switch `leave_requests`)? — the guardian's «درخواست مرخصی» tile. */
+export const leaveRequestsOpen = cache(async (schoolId: string | null): Promise<boolean> => schoolId !== null && (await isEnabled("leave_requests", schoolId)));
 
 /** «فرزندان» (2026-10-18): a guardian's live children — read only for a session that wears the «ولی» hat. */
 export const getMyChildren = cache(async (): Promise<GuardianChild[]> => {
@@ -72,13 +76,18 @@ export const resolveHomeTiles = cache(async (ctx: Ctx): Promise<HomeTiles> => {
   const reach = has("academic.objective_rating.read") ? await reportCardReachQuery() : null;
   const reportCard = reach?.ok ? reach.data : { staff: false, student: false };
   const tileHats = { isStudent, isTeacher, isAdmin: adminScope !== null, adminScope, singleSchoolId: hats?.adminSingleSchoolId ?? null, reportCard };
-  // Tiles behind a feature switch (organization-level ones only: Home names no school).
+  // Tiles behind a feature switch: the organization's value, or — for a school-overridable switch and an admin of ONE
+  // school — that school's.
   const requestCenter = adminScope !== null && (await isEnabled("request_center"));
-  // «درخواست‌های مرخصی» is decided AT the school (`decideLeave`): no tile for whoever holds the permission only below it
-  // (a branch-scoped vice principal) — the page would refuse them.
-  const tiles = homeTilesFor(tileHats, has, { variant, flags: (k) => k === "request_center" && requestCenter }).filter(
-    (t) => t.code !== "admin-leave" || schoolLevelScope(ctx.assignments, "academic.leave.decide") !== null,
-  );
+  const leaveRequests = adminScope !== null && (await isEnabled("leave_requests", hats?.adminSingleSchoolId ?? null));
+  const flagOn = (k: FlagKey) => (k === "request_center" && requestCenter) || (k === "leave_requests" && leaveRequests);
+  // A tile whose page acts AT the school (`decideLeave`, the settings' school level) is hidden from whoever holds the
+  // permission only below it (a branch-scoped vice principal) — the page would refuse them (security review F9).
+  const atSchool: Partial<Record<string, Permission>> = { "admin-leave": "academic.leave.decide", settings: "config.settings.manage" };
+  const tiles = homeTilesFor(tileHats, has, { variant, flags: flagOn }).filter((t) => {
+    const p = atSchool[t.code];
+    return !p || schoolLevelScope(ctx.assignments, p) !== null;
+  });
   const upcoming = variant === "hub" && showUpcomingOnHome(tileHats) ? upcomingTilesFor(tileHats) : [];
   // One more read, only for a person whose Home carries the «درخواست‌های مرخصی» tile.
   const leave = tiles.some((t) => t.code === "admin-leave") ? await pendingLeaveCountQuery() : null;

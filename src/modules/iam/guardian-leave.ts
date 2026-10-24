@@ -25,7 +25,7 @@
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { Tx } from "@/lib/actions";
 import { audit, type AuditCtx } from "@/lib/audit";
-import { notFound, validation } from "@/lib/errors";
+import { forbidden, notFound, validation } from "@/lib/errors";
 import { addDaysIso, tehranToday } from "@/lib/attendance";
 import {
   LEAVE_MAX_PENDING,
@@ -42,6 +42,7 @@ import { allDeciders, leaveDeciders } from "@/modules/academic/leave-deciders";
 import { earlyExit, leaveRequest } from "@/modules/academic/schema";
 import { listPeriodsOfSchools, type PeriodRow } from "@/modules/academic/repo";
 import type { RequestLeaveInput } from "@/modules/academic/leave-dto";
+import { flagEnabled } from "@/modules/config/service";
 import { lockActivePersons, findStudentAnchor } from "@/modules/counseling/repo";
 import { notifyMany } from "@/modules/notif/service";
 import { closeLeaveRequestClock } from "@/modules/workspace/request-clock";
@@ -86,6 +87,8 @@ export interface ChildLeavePage extends ChildContext {
   exits: ChildExitRow[];
   /** The child's school NOW (null: no live school enrollment — nothing can be requested). */
   schoolId: string | null;
+  /** The school takes leave requests (feature switch `leave_requests`, default on); false without a school. */
+  enabled: boolean;
   /** The school's bell schedule (the partial-day pickers); empty when the school has none or the child belongs to none. */
   periods: PeriodRow[];
   today: string;
@@ -130,6 +133,7 @@ export async function childLeavePage(tx: Tx, ctx: GuardianLeaveCtx, requested: s
     ...c,
     today,
     schoolId: anchor?.schoolId ?? null,
+    enabled: anchor ? await flagEnabled(tx, "leave_requests", anchor.schoolId) : false,
     periods,
     requests: rows.map(({ requestedBy, ...r }) => ({ ...r, mine: requestedBy === ctx.personId })),
     exits: exits.map((e) => ({ ...e, exitTime: normalizeClock(e.exitTime) ?? e.exitTime })),
@@ -156,6 +160,8 @@ export async function requestLeave(tx: Tx, ctx: GuardianLeaveCtx, input: Request
 
   const anchor = await findStudentAnchor(tx, child.studentProfileId);
   if (!anchor) throw fail("child", MSG.noSchool);
+  // The school's switch: off, no NEW request (a pending one is still decided, a guardian may still withdraw theirs).
+  if (!(await flagEnabled(tx, "leave_requests", anchor.schoolId))) throw forbidden(MSG.switchedOff);
   if (fromPeriod !== null && toPeriod !== null) {
     const periods = (await listPeriodsOfSchools(tx, [anchor.schoolId])).get(anchor.schoolId) ?? [];
     if (!periods.some((p) => p.periodNo === fromPeriod)) throw fail("fromPeriod", MSG.periodUnknown);

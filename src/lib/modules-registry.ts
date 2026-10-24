@@ -507,6 +507,8 @@ export const HOME_TILES: readonly HomeTile[] = [
     role: "admin",
     permission: "academic.leave.decide",
     adminScope: "school",
+    // Behind the school's switch (2026-10-20, security review F5): read for the admin's one school, else the organization.
+    flag: "leave_requests",
   },
   {
     // «مدرسه» for an admin of exactly one school — straight to that school's hub, where its structure is edited.

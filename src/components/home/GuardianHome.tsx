@@ -7,13 +7,16 @@ import type { Ctx } from "@/lib/ctx";
 import { formatNumberFa } from "@/lib/format";
 import { childHref, homeChildHref, pickChild } from "@/modules/iam/guardian-policy";
 import type { GuardianChild } from "@/modules/iam/guardian-queries";
-import { getMyChildren, resolveHomeTiles } from "./home-data";
+import { getMyChildren, leaveRequestsOpen, resolveHomeTiles } from "./home-data";
 import { Tile } from "./Tile";
 
 const GRID = "reveal-grid grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7";
 
-/** The guardian's tiles for ONE child (`labels` already holds the labels the person's other tiles use). */
-function childTiles(child: GuardianChild, taken: ReadonlySet<string>) {
+/**
+ * The guardian's tiles for ONE child (`labels` already holds the labels the person's other tiles use). `leave`: the
+ * child's school takes leave requests (switch `leave_requests`; the request itself re-checks it).
+ */
+function childTiles(child: GuardianChild, taken: ReadonlySet<string>, leave: boolean) {
   const label = (base: string) => (taken.has(base) ? `${base} فرزند` : base);
   return [
     { code: "child-work", labelFa: "تکالیف فرزند", href: childHref("work", child.studentProfileId), icon: NotebookPen },
@@ -23,7 +26,7 @@ function childTiles(child: GuardianChild, taken: ReadonlySet<string>) {
     // «ارتباط ولی و مدرسه» (owner, 2026-10-19): a question / suggestion / criticism about this child to the school.
     { code: "child-messages", labelFa: "پیام به مدرسه", href: childHref("messages", child.studentProfileId), icon: MessageSquareText },
     // «درخواست مرخصی» (owner, 2026-10-20): ask the school for this child's leave and follow the answer.
-    { code: "child-leave", labelFa: "درخواست مرخصی", href: childHref("leave", child.studentProfileId), icon: CalendarX2 },
+    ...(leave ? [{ code: "child-leave", labelFa: "درخواست مرخصی", href: childHref("leave", child.studentProfileId), icon: CalendarX2 }] : []),
   ];
 }
 
@@ -78,6 +81,7 @@ export async function GuardianHome({ ctx, selected }: { ctx: Ctx; selected?: str
   const takenLabels = (await resolveHomeTiles(ctx)).tiles.map((t) => t.labelFa);
   const child = pickChild(children, selected) ?? children[0];
   const several = children.length > 1;
+  const leave = await leaveRequestsOpen(child.schoolId);
   return (
     <PageSection id="children" title="فرزندان" count={several ? children.length : undefined}>
       <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -106,7 +110,7 @@ export async function GuardianHome({ ctx, selected }: { ctx: Ctx; selected?: str
       </ul>
       <nav aria-label={`بخش‌های ${child.firstName}`}>
         <ul className={GRID}>
-          {childTiles(child, new Set(takenLabels)).map((t) => (
+          {childTiles(child, new Set(takenLabels), leave).map((t) => (
             <Tile key={t.code} href={t.href} label={t.labelFa} icon={t.icon} />
           ))}
         </ul>

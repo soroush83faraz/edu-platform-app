@@ -136,6 +136,18 @@ describe("the «تنظیمات» page view", () => {
 });
 
 describe("RLS of config.feature_flag / config.setting_value", () => {
+  it("a BRANCH-scoped vice principal: the page and the saves agree — no level to view, nothing to change (security review F9)", async () => {
+    const branchVice = { ...base, orgId: f.ORG_A, personId: f.PERSON_A1, assignments: [{ roleCode: "vice_principal", roleId: "r4", scopeType: "branch", scopeId: f.BRANCH_A, permissions: ALL } satisfies Assignment] };
+    await inOrgA(async (tx) => {
+      expect(await codeOf(settingsView(tx, branchVice, null))).toBe("FORBIDDEN");
+      expect(await codeOf(settingsView(tx, branchVice, f.SCHOOL_A))).toBe("FORBIDDEN");
+      expect(await codeOf(setFlag(tx, branchVice, { key: "messaging", schoolId: f.SCHOOL_A, value: "on" }))).toBe("FORBIDDEN");
+      expect(await codeOf(setSetting(tx, branchVice, { key: "notif.quiet_hours", schoolId: f.SCHOOL_A, mode: "set", start: "21:00", end: "06:00" }))).toBe("FORBIDDEN");
+      // The school's own principal still sees and changes the school's level.
+      expect((await settingsView(tx, principal, f.SCHOOL_A)).schoolId).toBe(f.SCHOOL_A);
+    });
+  });
+
   it("a tenant sees only its own rows and cannot write another's", async () => {
     await asAppRw(async (c) => {
       await inRolledBackTx(c, async () => {

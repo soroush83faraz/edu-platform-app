@@ -630,4 +630,25 @@ describe("«مرخصی و خروج مجاز» — leave requests and authorized 
       await expect(as(tx, branchVice, (t) => listTodaysEarlyExits(t, branchVice, {}, NOW))).rejects.toSatisfy(isError("FORBIDDEN"));
     });
   });
+
+  it("the school's switch `leave_requests` (default on): off → no NEW request and the page says so; what was asked is still decided, and its guardian may still withdraw it (security review F5)", async () => {
+    await rolledBack(async (tx) => {
+      const w = await buildWorld(tx);
+      const pending = await ask(tx, w, w.g1, w.s1, { fromDate: TOMORROW, toDate: TOMORROW });
+      const second = await ask(tx, w, w.g1, w.s1, { fromDate: addDaysIso(TODAY, 3), toDate: addDaysIso(TODAY, 3) });
+      await tx.execute(sql`insert into config.feature_flag (id, organization_id, school_id, key, enabled) values (app.uuid_generate_v7(), ${f.ORG_A}::uuid, ${f.SCHOOL_A}::uuid, 'leave_requests', false)`);
+      // A fresh savepoint per call: the switches are read once per transaction.
+      const fresh = <T>(fn: (sp: Tx) => Promise<T>) => sub(tx, fn);
+      await expect(fresh((sp) => ask(sp, w, w.g1, w.s1, { fromDate: addDaysIso(TODAY, 5), toDate: addDaysIso(TODAY, 5) }))).rejects.toSatisfy(isError("FORBIDDEN", LEAVE_MESSAGES.switchedOff));
+      expect(await fresh((sp) => as(sp, w.g1, (t) => childLeavePage(t, w.g1, w.s1.studentProfileId, NOW)))).toMatchObject({ enabled: false });
+      // Another family's child of ANOTHER school is unaffected (the switch is school A's).
+      expect(await fresh((sp) => as(sp, w.gB, (t) => childLeavePage(t, w.gB, w.sB.studentProfileId, NOW)))).toMatchObject({ enabled: true });
+      // Still decided, still withdrawn.
+      await expect(fresh((sp) => decide(sp, w.principalA, pending.id, "approved"))).resolves.toMatchObject({ status: "approved" });
+      await expect(fresh((sp) => as(sp, w.g1, (t) => cancelLeave(t, w.g1, { id: second.id })))).resolves.toMatchObject({ id: second.id });
+      // Back on: requests again.
+      await tx.execute(sql`update config.feature_flag set enabled = true where key = 'leave_requests'`);
+      await expect(fresh((sp) => ask(sp, w, w.g1, w.s1, { fromDate: addDaysIso(TODAY, 5), toDate: addDaysIso(TODAY, 5) }))).resolves.toMatchObject({ id: expect.any(String) });
+    });
+  });
 });

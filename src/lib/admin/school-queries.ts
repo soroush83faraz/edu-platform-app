@@ -9,6 +9,7 @@ import { notFound } from "@/lib/errors";
 import { assertSchoolInScope, getAdminScope } from "@/modules/iam/service";
 import { findSchoolById } from "@/modules/tenancy/repo";
 import { academicYear, branch, classGroup, classOffering } from "@/modules/tenancy/schema";
+import { flagEnabled } from "@/modules/config/service";
 import { canAtAnyScope, holdsAtSchool } from "@/modules/iam/can";
 import { resourceOpGate, type AnyResourceDef, type ResourceOp } from "./defineResource";
 import { schoolsLabelFa } from "./nav";
@@ -126,8 +127,9 @@ export const schoolHubQuery = defineQuery<SchoolHubData, typeof SchoolIdInput>(
       staff,
       students,
       can: { school: gate(schoolResource, "update"), classes: gate(classResource, "create"), attendance: canAtAnyScope(ctx.assignments, "academic.attendance.report"),
-        // The queue decides AT the school (`decideLeave`), so the door shows only where that check passes.
-        leave: holdsAtSchool(ctx.assignments, "academic.leave.decide", sch.id),
+        // The queue decides AT the school (`decideLeave`), so the door shows only where that check passes — and while
+        // the school takes leave requests (switch `leave_requests`; pending ones stay reachable from their bells).
+        leave: holdsAtSchool(ctx.assignments, "academic.leave.decide", sch.id) && (await flagEnabled(tx, "leave_requests", sch.id)),
       },
       backHref: scope.kind === "school" && scope.schoolIds.length === 1 ? "/home" : "/admin/schools",
       backLabelFa: scope.kind === "school" && scope.schoolIds.length === 1 ? "خانه" : schoolsLabelFa(scope),

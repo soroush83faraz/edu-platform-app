@@ -37,6 +37,8 @@ export interface GuardianChild {
   relation: GuardianRelation;
   classGroupId: string | null;
   className: string | null;
+  /** The school of the child's class (the feature switches a child tile depends on are that school's). */
+  schoolId: string | null;
   schoolName: string | null;
   /** The class's پایه has learning objectives — a دبستان class: the «کارنامه» tile exists. */
   primary: boolean;
@@ -75,12 +77,13 @@ export async function listMyChildren(tx: Tx, ctx: GuardianViewCtx, bounds: DayBo
     relation: string;
     class_group_id: string | null;
     class_name: string | null;
+    school_id: string | null;
     school_name: string | null;
     is_primary: boolean;
     overdue: number;
   }>(sql`
     select sp.id as student_profile_id, sp.person_id, p.first_name, p.last_name, gl.relation,
-      cls.class_group_id, cls.class_name, cls.school_name,
+      cls.class_group_id, cls.class_name, cls.school_id, cls.school_name,
       coalesce(cls.is_primary, false) as is_primary,
       (
         select count(*)::int
@@ -97,7 +100,7 @@ export async function listMyChildren(tx: Tx, ctx: GuardianViewCtx, bounds: DayBo
     join iam.student_profile sp on sp.id = gl.student_profile_id
     join iam.person p on p.id = sp.person_id
     left join lateral (
-      select cg.id as class_group_id, cg.name as class_name, s.name as school_name,
+      select cg.id as class_group_id, cg.name as class_name, s.id as school_id, s.name as school_name,
         exists (select 1 from academic.learning_objective lo where lo.grade_level_id = cg.grade_level_id and lo.status = 'active') as is_primary
       from academic.class_enrollment ce
       join tenancy.class_group cg on cg.id = ce.class_group_id
@@ -120,6 +123,7 @@ export async function listMyChildren(tx: Tx, ctx: GuardianViewCtx, bounds: DayBo
       relation: isGuardianRelation(r.relation) ? r.relation : "other",
       classGroupId: r.class_group_id,
       className: r.class_name,
+      schoolId: r.school_id,
       schoolName: r.school_name,
       primary: r.is_primary,
       overdue: Number(r.overdue),
